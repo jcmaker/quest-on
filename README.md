@@ -38,8 +38,8 @@ Quest-On는 강사와 학생을 연결하는 현대적인 학습 플랫폼입니
 1. 저장소 클론
 
 ```bash
-git clone <repository-url>
-cd quest-on-mvp
+git clone https://github.com/jcmaker/quest-on.git
+cd quest-on
 ```
 
 2. 의존성 설치
