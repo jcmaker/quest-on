@@ -36,16 +36,28 @@ export async function POST(request: NextRequest) {
     }
 
     // 현재 문제 찾기
+    interface QuestionData {
+      id: string;
+      text: string;
+      type: string;
+      core_ability?: string;
+    }
+
     const currentQuestion =
-      exam.questions?.find((q: any) => q.id === questionId) ||
+      exam.questions?.find((q: QuestionData) => q.id === questionId) ||
       exam.questions?.[0];
 
     // 대화 히스토리에서 이전 메시지들을 프롬프트로 구성
+    interface MessageData {
+      type: string;
+      content: string;
+    }
+
     const conversationContext =
       conversationHistory
         ?.slice(-10) // 최근 10개 메시지만 사용
         .map(
-          (msg: any) =>
+          (msg: MessageData) =>
             `${msg.type === "ai" ? "AI" : "Student"}: ${msg.content}`
         )
         .join("\n") || "";

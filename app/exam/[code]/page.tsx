@@ -47,7 +47,6 @@ interface DraftAnswer {
 export default function ExamPage() {
   const params = useParams();
   const router = useRouter();
-  const { signOut } = useClerk();
   const { user } = useUser();
   const examCode = params.code as string;
 
