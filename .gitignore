@@ -42,3 +42,5 @@ next-env.d.ts
 
 #sql
 *.sql
+# SQL files in database directory (can be committed if needed)
+# database/*.sql

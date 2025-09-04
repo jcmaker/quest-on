@@ -116,8 +116,8 @@ export default function InstructorHome() {
             <Link href="/instructor/new">
               <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
                 <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
-                    <Plus className="w-6 h-6 text-white" />
+                  <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
+                    <Plus className="w-6 h-6 text-primary-foreground" />
                   </div>
                   <h3 className="font-semibold text-foreground mb-2">
                     새 시험 생성
@@ -132,8 +132,8 @@ export default function InstructorHome() {
             <Link href="/instructor/exams">
               <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
                 <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
-                    <FileText className="w-6 h-6 text-white" />
+                  <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
+                    <FileText className="w-6 h-6 text-primary-foreground" />
                   </div>
                   <h3 className="font-semibold text-foreground mb-2">
                     시험 관리
@@ -147,8 +147,8 @@ export default function InstructorHome() {
 
             <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
               <CardContent className="p-6 text-center">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
-                  <Users className="w-6 h-6 text-white" />
+                <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
+                  <Users className="w-6 h-6 text-primary-foreground" />
                 </div>
                 <h3 className="font-semibold text-foreground mb-2">
                   학생 관리
@@ -161,8 +161,8 @@ export default function InstructorHome() {
 
             {/* <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
               <CardContent className="p-6 text-center">
-                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
-                  <BarChart3 className="w-6 h-6 text-white" />
+                <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
+                  <BarChart3 className="w-6 h-6 text-primary-foreground" />
                 </div>
                 <h3 className="font-semibold text-foreground mb-2">
                   분석 리포트

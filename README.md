@@ -86,6 +86,9 @@ quest-on-mvp/
 ├── components/             # 재사용 가능한 컴포넌트
 │   ├── auth/              # 인증 관련 컴포넌트
 │   └── ui/                # UI 컴포넌트
+├── database/              # 데이터베이스 관련 파일
+│   ├── database-setup.sql # 데이터베이스 초기 설정
+│   ├── *.sql             # 기타 SQL 파일들
 ├── lib/                    # 유틸리티 함수
 └── public/                 # 정적 파일
 ```

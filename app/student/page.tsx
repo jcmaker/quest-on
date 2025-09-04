@@ -70,21 +70,21 @@ export default async function StudentDashboard() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-green-100 text-green-800";
+        return "bg-accent text-accent-foreground";
       case "in-progress":
-        return "bg-yellow-100 text-yellow-800";
+        return "bg-secondary text-secondary-foreground";
       case "not-started":
-        return "bg-gray-100 text-gray-800";
+        return "bg-muted text-muted-foreground";
       default:
-        return "bg-gray-100 text-gray-800";
+        return "bg-muted text-muted-foreground";
     }
   };
 
   const getScoreColor = (score: number) => {
-    if (score >= 90) return "text-green-600";
-    if (score >= 80) return "text-blue-600";
-    if (score >= 70) return "text-yellow-600";
-    return "text-red-600";
+    if (score >= 90) return "text-primary";
+    if (score >= 80) return "text-accent-foreground";
+    if (score >= 70) return "text-secondary-foreground";
+    return "text-destructive";
   };
 
   const completedExams = mockExamResults.filter(

@@ -28,13 +28,13 @@ export default function LandingPage() {
   }, [isLoaded, isSignedIn, userRole, router]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
         <div className="text-center mb-16">
-          <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-6">
+          <h1 className="text-5xl font-bold text-foreground mb-6">
             Quest-On에 오신 것을 환영합니다
           </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+          <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
             강사와 학생을 연결하는 현대적인 학습 플랫폼으로, 흥미롭고
             상호작용적인 환경을 제공합니다.
           </p>
@@ -84,7 +84,7 @@ export default function LandingPage() {
         </div>
 
         <div className="text-center">
-          <p className="text-gray-600 dark:text-gray-300 mb-4">
+          <p className="text-muted-foreground mb-4">
             {isSignedIn && userRole === "student"
               ? "시험에 참여하려면 위의 카드를 클릭하세요"
               : "시작하려면 위의 로그인 버튼을 클릭하거나 카드를 선택하세요"}

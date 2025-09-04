@@ -11,7 +11,6 @@ import {
   GraduationCap,
   FileText,
   Users,
-  Settings,
   Plus,
   Edit,
   Eye,
@@ -23,10 +22,22 @@ import {
   AlertCircle,
 } from "lucide-react";
 
+interface Exam {
+  id: string;
+  title: string;
+  code: string;
+  description: string;
+  status: string;
+  created_at: string;
+  duration: number;
+  questionsCount: number;
+  student_count?: number;
+}
+
 export default function ExamManagement() {
   const router = useRouter();
   const { isSignedIn, isLoaded, user } = useUser();
-  const [exams, setExams] = useState([]);
+  const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Get user role from metadata
