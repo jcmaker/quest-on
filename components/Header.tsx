@@ -18,7 +18,11 @@ export function Header() {
         {/* Logo */}
         <Link href="/" className="flex items-center space-x-2">
           <div className="flex items-center space-x-2">
-            <BookOpen className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+            <img
+              src="/qlogo_icon.png"
+              alt="Quest-On Logo"
+              className="h-8 w-8"
+            />
             <span className="text-xl font-bold text-gray-900 dark:text-white">
               Quest-On
             </span>
@@ -61,7 +65,7 @@ export function Header() {
               </Link>
             </>
           )}
-          {!isSignedIn && (
+          {/* {!isSignedIn && (
             <>
               <Link
                 href="/join"
@@ -70,7 +74,7 @@ export function Header() {
                 학생용
               </Link>
             </>
-          )}
+          )} */}
         </nav>
 
         {/* Auth Section */}

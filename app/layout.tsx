@@ -18,6 +18,11 @@ export const metadata: Metadata = {
   title: "Quest-On - Modern Learning Platform",
   description:
     "Connect instructors and students in an engaging, interactive learning environment",
+  icons: {
+    icon: "/qlogo_icon.png",
+    shortcut: "/qlogo_icon.png",
+    apple: "/qlogo_icon.png",
+  },
 };
 
 export default function RootLayout({
