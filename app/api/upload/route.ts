@@ -70,12 +70,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (5MB for Vercel compatibility)
-    const maxSize = 5 * 1024 * 1024; // 5MB
+    // Validate file size (10MB for original, will be compressed)
+    const maxSize = 10 * 1024 * 1024; // 10MB (will be compressed)
     if (file.size > maxSize) {
-      console.log(`File size ${file.size} exceeds 5MB limit`);
+      console.log(`File size ${file.size} exceeds 10MB limit`);
       return NextResponse.json(
-        { error: "File size exceeds 5MB limit. Please use a smaller file." },
+        { error: "File size exceeds 10MB limit. Please use a smaller file." },
         { status: 400 }
       );
     }
@@ -103,9 +103,30 @@ export async function POST(request: NextRequest) {
     const sanitizedFileName = sanitizeFileName(fileName);
     const finalFileName = `${Date.now()}-${sanitizedFileName}`;
 
-    // Convert file to buffer
+    // Convert file to buffer and compress if needed
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    let buffer = Buffer.from(arrayBuffer);
+    
+    // Compress images for AI processing (maintain text readability)
+    if (file.type.startsWith('image/')) {
+      try {
+        const sharp = require('sharp');
+        const compressedBuffer = await sharp(buffer)
+          .jpeg({ quality: 70, progressive: true }) // Good balance for AI text recognition
+          .png({ compressionLevel: 6, progressive: true })
+          .webp({ quality: 70 })
+          .toBuffer();
+        
+        // Only use compressed version if it's significantly smaller
+        if (compressedBuffer.length < buffer.length * 0.8) {
+          buffer = compressedBuffer;
+          console.log(`Image compressed: ${arrayBuffer.byteLength} → ${buffer.length} bytes`);
+        }
+      } catch (compressionError) {
+        console.log("Image compression failed, using original:", compressionError);
+        // Continue with original buffer if compression fails
+      }
+    }
 
     // Upload to Supabase Storage
     console.log("Uploading to Supabase Storage:", {
