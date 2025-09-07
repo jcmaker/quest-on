@@ -4,13 +4,15 @@ import { useUser, SignInButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/auth/UserMenu";
 import Link from "next/link";
-import { BookOpen, GraduationCap, Users } from "lucide-react";
+import Image from "next/image";
+import { GraduationCap, Users } from "lucide-react";
 
 export function Header() {
   const { isSignedIn, isLoaded, user } = useUser();
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
+  const hasRole = Boolean(user?.unsafeMetadata?.role);
 
   return (
     <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:bg-gray-950/95 dark:border-gray-800">
@@ -18,9 +20,11 @@ export function Header() {
         {/* Logo */}
         <Link href="/" className="flex items-center space-x-2">
           <div className="flex items-center space-x-2">
-            <img
+            <Image
               src="/qlogo_icon.png"
               alt="Quest-On Logo"
+              width={32}
+              height={32}
               className="h-8 w-8"
             />
             <span className="text-xl font-bold text-gray-900 dark:text-white">
@@ -32,7 +36,7 @@ export function Header() {
         {/* Navigation */}
         <nav className="hidden md:flex items-center space-x-6">
           {isSignedIn &&
-            user?.unsafeMetadata?.role &&
+            hasRole &&
             userRole === "instructor" && (
               <>
                 <Link
@@ -51,7 +55,7 @@ export function Header() {
               </>
             )}
           {isSignedIn &&
-            user?.unsafeMetadata?.role &&
+            hasRole &&
             userRole === "student" && (
               <>
                 <Link
