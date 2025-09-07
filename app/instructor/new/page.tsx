@@ -193,7 +193,7 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
       "image/webp",
     ];
 
-    const maxSize = 10 * 1024 * 1024; // 10MB
+    const maxSize = 5 * 1024 * 1024; // 5MB
 
     if (!allowedTypes.includes(file.type)) {
       alert(
@@ -203,7 +203,7 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
     }
 
     if (file.size > maxSize) {
-      alert("파일 크기가 10MB를 초과합니다.");
+      alert("파일 크기가 5MB를 초과합니다.");
       return false;
     }
 
@@ -510,7 +510,7 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
                     📎 파일 선택
                   </Label>
                   <span className="text-sm text-muted-foreground">
-                    PDF, PPT, 워드, 이미지 파일 (최대 10MB)
+                    PDF, PPT, 워드, 이미지 파일 (최대 5MB)
                   </span>
                 </div>
 

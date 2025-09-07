@@ -193,6 +193,7 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
     }
 
     const systemPrompt = `당신은 시험 중인 학생을 도와주는 **시험 보조자(Test/Clarification Assistant)**입니다.
+    
 ${
   requestExamTitle
     ? `학생이 시험: ${requestExamTitle} (코드: ${

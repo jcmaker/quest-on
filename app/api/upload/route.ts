@@ -70,11 +70,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (10MB)
-    const maxSize = 10 * 1024 * 1024;
+    // Validate file size (5MB for Vercel compatibility)
+    const maxSize = 5 * 1024 * 1024; // 5MB
     if (file.size > maxSize) {
+      console.log(`File size ${file.size} exceeds 5MB limit`);
       return NextResponse.json(
-        { error: "File size exceeds 10MB limit" },
+        { error: "File size exceeds 5MB limit. Please use a smaller file." },
         { status: 400 }
       );
     }
