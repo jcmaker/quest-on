@@ -61,18 +61,25 @@ export default function OnboardingPage() {
 
   if (!isLoaded || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="text-center">로딩 중...</div>
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent mx-auto mb-4"></div>
+          <p className="text-muted-foreground">로딩 중...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Quest-On에 오신 것을 환영합니다!</CardTitle>
-          <CardDescription>시작하려면 역할을 선택해주세요</CardDescription>
+    <div className="flex min-h-screen items-center justify-center p-4 bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
+      <Card className="w-full max-w-md shadow-xl border-0">
+        <CardHeader className="text-center pb-6">
+          <CardTitle className="text-2xl">
+            Quest-On에 오신 것을 환영합니다!
+          </CardTitle>
+          <CardDescription className="text-base">
+            시작하려면 역할을 선택해주세요
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <RadioGroup
@@ -81,23 +88,29 @@ export default function OnboardingPage() {
               setRole(value as "instructor" | "student")
             }
           >
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
               <RadioGroupItem value="instructor" id="instructor" />
-              <Label htmlFor="instructor" className="text-base">
-                강사
+              <Label
+                htmlFor="instructor"
+                className="text-base cursor-pointer flex-1"
+              >
+                강사 (시험 출제자)
               </Label>
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors">
               <RadioGroupItem value="student" id="student" />
-              <Label htmlFor="student" className="text-base">
-                학생
+              <Label
+                htmlFor="student"
+                className="text-base cursor-pointer flex-1"
+              >
+                학생 (시험 응시자)
               </Label>
             </div>
           </RadioGroup>
 
           <Button
             onClick={handleRoleSubmit}
-            className="w-full"
+            className="w-full h-12 text-lg"
             disabled={isSubmitting}
           >
             {isSubmitting ? "설정 중..." : "계속하기"}

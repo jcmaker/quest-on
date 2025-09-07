@@ -50,12 +50,20 @@ export default function InstructorHome() {
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
-  // Redirect non-instructors
+  // Redirect non-instructors or users without role
   useEffect(() => {
-    if (isLoaded && isSignedIn && userRole !== "instructor") {
-      router.push("/student");
+    if (isLoaded && isSignedIn) {
+      // Role이 설정되지 않은 경우 onboarding으로 리다이렉트
+      if (!user?.unsafeMetadata?.role) {
+        router.push("/onboarding");
+        return;
+      }
+      // Role이 instructor가 아닌 경우 student 페이지로 리다이렉트
+      if (userRole !== "instructor") {
+        router.push("/student");
+      }
     }
-  }, [isLoaded, isSignedIn, userRole, router]);
+  }, [isLoaded, isSignedIn, userRole, user, router]);
 
   // Fetch exams when user is loaded
   useEffect(() => {

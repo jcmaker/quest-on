@@ -31,6 +31,13 @@ export default async function StudentDashboard() {
   }
 
   const role = user.unsafeMetadata?.role as string;
+
+  // Role이 설정되지 않은 경우 onboarding으로 리다이렉트
+  if (!role) {
+    redirect("/onboarding");
+  }
+
+  // Role이 student가 아닌 경우 instructor 페이지로 리다이렉트
   if (role !== "student") {
     redirect("/instructor");
   }

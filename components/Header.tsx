@@ -31,50 +31,45 @@ export function Header() {
 
         {/* Navigation */}
         <nav className="hidden md:flex items-center space-x-6">
-          {isSignedIn && userRole === "instructor" && (
-            <>
-              <Link
-                href="/instructor"
-                className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
-              >
-                <Users className="h-4 w-4" />
-                <span>대시보드</span>
-              </Link>
-              <Link
-                href="/instructor/new"
-                className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
-              >
-                <span>새 시험 만들기</span>
-              </Link>
-            </>
-          )}
-          {isSignedIn && userRole === "student" && (
-            <>
-              <Link
-                href="/student"
-                className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
-              >
-                <GraduationCap className="h-4 w-4" />
-                <span>내 시험</span>
-              </Link>
-              <Link
-                href="/join"
-                className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
-              >
-                <span>시험 참여</span>
-              </Link>
-            </>
-          )}
-          {/* {!isSignedIn && (
-            <>
-              <Link
-                href="/join"
-                className="text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
-              >
-                학생용
-              </Link>
-            </>
-          )} */}
+          {isSignedIn &&
+            user?.unsafeMetadata?.role &&
+            userRole === "instructor" && (
+              <>
+                <Link
+                  href="/instructor"
+                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
+                >
+                  <Users className="h-4 w-4" />
+                  <span>대시보드</span>
+                </Link>
+                <Link
+                  href="/instructor/new"
+                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
+                >
+                  <span>새 시험 만들기</span>
+                </Link>
+              </>
+            )}
+          {isSignedIn &&
+            user?.unsafeMetadata?.role &&
+            userRole === "student" && (
+              <>
+                <Link
+                  href="/student"
+                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
+                >
+                  <GraduationCap className="h-4 w-4" />
+                  <span>내 시험</span>
+                </Link>
+                <Link
+                  href="/join"
+                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
+                >
+                  <span>시험 참여</span>
+                </Link>
+              </>
+            )}
+          {/* Role이 설정되지 않은 사용자에게는 네비게이션을 보여주지 않음 */}
         </nav>
 
         {/* Auth Section */}
