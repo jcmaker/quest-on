@@ -10,14 +10,20 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
+    console.log("Upload API called");
+    
     // Get current user
     const user = await currentUser();
+    console.log("User:", user ? { id: user.id, role: user.unsafeMetadata?.role } : "No user");
+    
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
+    console.log("User role:", userRole);
+    
     if (userRole !== "instructor") {
       return NextResponse.json(
         { error: "Instructor access required" },
@@ -29,7 +35,15 @@ export async function POST(request: NextRequest) {
     const file = formData.get("file") as File;
     const fileName = formData.get("fileName") as string;
 
+    console.log("File info:", {
+      fileName: fileName,
+      fileSize: file?.size,
+      fileType: file?.type,
+      hasFile: !!file
+    });
+
     if (!file) {
+      console.log("No file provided");
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
@@ -90,6 +104,13 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(arrayBuffer);
 
     // Upload to Supabase Storage
+    console.log("Uploading to Supabase Storage:", {
+      bucket: "exam-materials",
+      path: `instructor-${user.id}/${finalFileName}`,
+      contentType: file.type,
+      bufferSize: buffer.length
+    });
+
     const { data, error } = await supabase.storage
       .from("exam-materials")
       .upload(`instructor-${user.id}/${finalFileName}`, buffer, {
@@ -99,11 +120,18 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error("Supabase storage error:", error);
+      console.error("Error details:", {
+        message: error.message,
+        statusCode: error.statusCode,
+        error: error.error
+      });
       return NextResponse.json(
         { error: `Upload failed: ${error.message}` },
         { status: 500 }
       );
     }
+
+    console.log("Upload successful:", data);
 
     // Get public URL
     const { data: urlData } = supabase.storage
@@ -119,6 +147,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Upload error:", error);
+    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
