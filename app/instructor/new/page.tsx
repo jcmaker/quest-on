@@ -399,7 +399,7 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
                   onChange={(e) =>
                     setExamData((prev) => ({ ...prev, title: e.target.value }))
                   }
-                  placeholder="예: 수학 101 중간고사"
+                  placeholder="예) 국제경영론 25-1 중간고사"
                   required
                 />
               </div>
@@ -434,7 +434,7 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="description">시험 안내</Label>
+              <Label htmlFor="description">시험 관련 지침</Label>
               <Textarea
                 id="description"
                 value={examData.description}
