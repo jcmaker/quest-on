@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
-
+import sharp from "sharp";
 // Initialize Supabase client with service role key for server-side operations
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -25,11 +25,16 @@ export async function POST(request: NextRequest) {
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
-    console.log("User role:", userRole);
+    console.log("Upload API - User role:", userRole, "User ID:", user.id);
 
     if (userRole !== "instructor") {
+      console.log("Upload API - Access denied. User role:", userRole);
       return NextResponse.json(
-        { error: "Instructor access required" },
+        {
+          error: "Instructor access required",
+          details: `User role: ${userRole || "not set"}`,
+          userId: user.id,
+        },
         { status: 403 }
       );
     }
@@ -106,24 +111,28 @@ export async function POST(request: NextRequest) {
     // Convert file to buffer and compress if needed
     const arrayBuffer = await file.arrayBuffer();
     let buffer = Buffer.from(arrayBuffer);
-    
+
     // Compress images for AI processing (maintain text readability)
-    if (file.type.startsWith('image/')) {
+    if (file.type.startsWith("image/")) {
       try {
-        const sharp = require('sharp');
         const compressedBuffer = await sharp(buffer)
           .jpeg({ quality: 70, progressive: true }) // Good balance for AI text recognition
           .png({ compressionLevel: 6, progressive: true })
           .webp({ quality: 70 })
           .toBuffer();
-        
+
         // Only use compressed version if it's significantly smaller
         if (compressedBuffer.length < buffer.length * 0.8) {
-          buffer = compressedBuffer;
-          console.log(`Image compressed: ${arrayBuffer.byteLength} → ${buffer.length} bytes`);
+          buffer = Buffer.from(compressedBuffer.buffer as ArrayBuffer);
+          console.log(
+            `Image compressed: ${arrayBuffer.byteLength} → ${buffer.length} bytes`
+          );
         }
       } catch (compressionError) {
-        console.log("Image compression failed, using original:", compressionError);
+        console.log(
+          "Image compression failed, using original:",
+          compressionError
+        );
         // Continue with original buffer if compression fails
       }
     }

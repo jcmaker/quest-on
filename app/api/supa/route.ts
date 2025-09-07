@@ -74,9 +74,16 @@ async function createExam(data: {
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
+    console.log("Create exam - User role:", userRole, "User ID:", user.id);
+
     if (userRole !== "instructor") {
+      console.log("Create exam - Access denied. User role:", userRole);
       return NextResponse.json(
-        { error: "Instructor access required" },
+        {
+          error: "Instructor access required",
+          details: `User role: ${userRole || "not set"}`,
+          userId: user.id,
+        },
         { status: 403 }
       );
     }

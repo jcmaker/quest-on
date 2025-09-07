@@ -42,12 +42,24 @@ export default function LandingPage() {
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
-  // Redirect instructors to their dashboard
+  // Redirect users based on their role
   useEffect(() => {
-    if (isLoaded && isSignedIn && userRole === "instructor") {
-      router.push("/instructor");
+    if (isLoaded && isSignedIn) {
+      // If user has no role set, redirect to onboarding
+      if (!user?.unsafeMetadata?.role) {
+        router.push("/onboarding");
+        return;
+      }
+
+      // Redirect instructors to their dashboard
+      if (userRole === "instructor") {
+        router.push("/instructor");
+      } else if (userRole === "student") {
+        // Students can stay on landing page or redirect to student dashboard
+        // For now, let them stay on landing page
+      }
     }
-  }, [isLoaded, isSignedIn, userRole, router]);
+  }, [isLoaded, isSignedIn, userRole, user, router]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">

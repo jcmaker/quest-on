@@ -20,6 +20,14 @@ export default function OnboardingPage() {
   const [role, setRole] = useState<"instructor" | "student">("student");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Get role from localStorage if available
+  useEffect(() => {
+    const savedRole = localStorage.getItem("selectedRole");
+    if (savedRole && (savedRole === "instructor" || savedRole === "student")) {
+      setRole(savedRole as "instructor" | "student");
+    }
+  }, []);
+
   useEffect(() => {
     if (isLoaded && !user) {
       router.push("/sign-in");
@@ -35,6 +43,9 @@ export default function OnboardingPage() {
       await user.update({
         unsafeMetadata: { role },
       });
+
+      // Clear localStorage after successful role update
+      localStorage.removeItem("selectedRole");
 
       // Redirect based on role
       if (role === "instructor") {
