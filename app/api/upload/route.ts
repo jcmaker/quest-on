@@ -11,11 +11,14 @@ const supabase = createClient(
 export async function POST(request: NextRequest) {
   try {
     console.log("Upload API called");
-    
+
     // Get current user
     const user = await currentUser();
-    console.log("User:", user ? { id: user.id, role: user.unsafeMetadata?.role } : "No user");
-    
+    console.log(
+      "User:",
+      user ? { id: user.id, role: user.unsafeMetadata?.role } : "No user"
+    );
+
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -23,7 +26,7 @@ export async function POST(request: NextRequest) {
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     console.log("User role:", userRole);
-    
+
     if (userRole !== "instructor") {
       return NextResponse.json(
         { error: "Instructor access required" },
@@ -39,7 +42,7 @@ export async function POST(request: NextRequest) {
       fileName: fileName,
       fileSize: file?.size,
       fileType: file?.type,
-      hasFile: !!file
+      hasFile: !!file,
     });
 
     if (!file) {
@@ -108,7 +111,7 @@ export async function POST(request: NextRequest) {
       bucket: "exam-materials",
       path: `instructor-${user.id}/${finalFileName}`,
       contentType: file.type,
-      bufferSize: buffer.length
+      bufferSize: buffer.length,
     });
 
     const { data, error } = await supabase.storage
@@ -122,8 +125,6 @@ export async function POST(request: NextRequest) {
       console.error("Supabase storage error:", error);
       console.error("Error details:", {
         message: error.message,
-        statusCode: error.statusCode,
-        error: error.error
       });
       return NextResponse.json(
         { error: `Upload failed: ${error.message}` },
@@ -147,7 +148,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("Upload error:", error);
-    console.error("Error stack:", error instanceof Error ? error.stack : "No stack trace");
+    console.error(
+      "Error stack:",
+      error instanceof Error ? error.stack : "No stack trace"
+    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
