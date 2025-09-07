@@ -62,6 +62,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Sanitize filename to remove special characters and Korean characters
+    const sanitizeFileName = (name: string) => {
+      // Extract file extension
+      const lastDotIndex = name.lastIndexOf(".");
+      const extension = lastDotIndex !== -1 ? name.substring(lastDotIndex) : "";
+      const nameWithoutExt =
+        lastDotIndex !== -1 ? name.substring(0, lastDotIndex) : name;
+
+      // Replace Korean characters and special characters with safe alternatives
+      const sanitized =
+        nameWithoutExt
+          .replace(/[가-힣]/g, "") // Remove Korean characters
+          .replace(/[^a-zA-Z0-9_-]/g, "_") // Replace special chars with underscore
+          .replace(/_+/g, "_") // Replace multiple underscores with single
+          .replace(/^_|_$/g, "") || // Remove leading/trailing underscores
+        "file"; // Fallback if name becomes empty
+
+      return sanitized + extension;
+    };
+
+    const sanitizedFileName = sanitizeFileName(fileName);
+    const finalFileName = `${Date.now()}-${sanitizedFileName}`;
+
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -69,7 +92,7 @@ export async function POST(request: NextRequest) {
     // Upload to Supabase Storage
     const { data, error } = await supabase.storage
       .from("exam-materials")
-      .upload(`instructor-${user.id}/${fileName}`, buffer, {
+      .upload(`instructor-${user.id}/${finalFileName}`, buffer, {
         contentType: file.type,
         upsert: false,
       });
@@ -89,7 +112,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       url: urlData.publicUrl,
-      fileName: file.name,
+      fileName: file.name, // Keep original filename for display
+      sanitizedFileName: finalFileName, // Include sanitized filename for reference
       size: file.size,
       type: file.type,
     });
