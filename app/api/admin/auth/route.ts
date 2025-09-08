@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import crypto from "crypto";
 
-const secret = new TextEncoder().encode(
-  process.env.ADMIN_JWT_SECRET || "admin-secret-key"
-);
+// 간단한 세션 ID 생성
+function generateSessionId(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,16 +24,12 @@ export async function POST(request: NextRequest) {
 
     // 인증 확인
     if (username === adminUsername && password === adminPassword) {
-      // JWT 토큰 생성
-      const token = await new SignJWT({ role: "admin" })
-        .setProtectedHeader({ alg: "HS256" })
-        .setIssuedAt()
-        .setExpirationTime("24h")
-        .sign(secret);
+      // 세션 ID 생성
+      const sessionId = generateSessionId();
 
-      // 쿠키에 토큰 저장
+      // 쿠키에 세션 저장
       const cookieStore = await cookies();
-      cookieStore.set("admin-token", token, {
+      cookieStore.set("admin-session", sessionId, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
@@ -59,7 +56,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE() {
   try {
     const cookieStore = await cookies();
-    cookieStore.delete("admin-token");
+    cookieStore.delete("admin-session");
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Admin logout error:", error);

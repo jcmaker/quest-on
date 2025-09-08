@@ -1,47 +1,27 @@
-import { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
 
-const secret = new TextEncoder().encode(
-  process.env.ADMIN_JWT_SECRET || "admin-secret-key"
-);
-
-export async function verifyAdminToken(request?: NextRequest) {
+export async function verifyAdminToken(): Promise<{ isAdmin: boolean }> {
   try {
-    let token: string | undefined;
+    const cookieStore = await cookies();
+    const sessionId = cookieStore.get("admin-session")?.value;
 
-    if (request) {
-      // API 라우트에서 사용
-      token = request.cookies.get("admin-token")?.value;
-    } else {
-      // 서버 컴포넌트에서 사용
-      const cookieStore = await cookies();
-      token = cookieStore.get("admin-token")?.value;
+    if (!sessionId) {
+      return { isAdmin: false };
     }
 
-    if (!token) {
-      return { isAdmin: false, error: "No token found" };
-    }
-
-    const { payload } = await jwtVerify(token, secret);
-
-    if (payload.role === "admin") {
-      return { isAdmin: true };
-    } else {
-      return { isAdmin: false, error: "Invalid token" };
-    }
+    // 세션이 존재하면 어드민으로 인증
+    return { isAdmin: true };
   } catch (error) {
-    console.error("Admin token verification error:", error);
-    return { isAdmin: false, error: "Token verification failed" };
+    console.error("Admin verification error:", error);
+    return { isAdmin: false };
   }
 }
 
-export async function requireAdmin(request?: NextRequest) {
-  const { isAdmin, error } = await verifyAdminToken(request);
-
+export async function requireAdmin(request: NextRequest): Promise<void> {
+  const { isAdmin } = await verifyAdminToken();
+  
   if (!isAdmin) {
-    throw new Error(error || "Admin access required");
+    throw new Error("Unauthorized");
   }
-
-  return true;
 }
