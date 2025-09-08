@@ -65,7 +65,13 @@ export default function AdminDashboard() {
   const fetchUsers = async () => {
     try {
       setIsLoading(true);
+      setError("");
       const response = await fetch("/api/admin/users");
+
+      if (response.status === 403) {
+        router.push("/admin/login");
+        return;
+      }
 
       if (response.ok) {
         const data = await response.json();
@@ -117,12 +123,25 @@ export default function AdminDashboard() {
     // 페이지 로드 시 인증 확인
     const checkAuth = async () => {
       try {
+        // 먼저 사용자 목록을 가져와서 인증 확인
         const response = await fetch("/api/admin/users");
+        
         if (response.status === 403) {
+          // 인증되지 않은 경우 로그인 페이지로 리다이렉트
           router.push("/admin/login");
           return;
         }
-        fetchUsers();
+        
+        if (response.ok) {
+          // 인증된 경우 사용자 데이터 설정
+          const data = await response.json();
+          setUsers(data.users);
+          setStats(data.stats);
+          setIsLoading(false);
+        } else {
+          setError("사용자 정보를 불러오는데 실패했습니다.");
+          setIsLoading(false);
+        }
       } catch (error) {
         console.error("Auth check error:", error);
         router.push("/admin/login");

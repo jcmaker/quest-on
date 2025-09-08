@@ -22,6 +22,6 @@ export async function requireAdmin(request: NextRequest): Promise<void> {
   const { isAdmin } = await verifyAdminToken();
   
   if (!isAdmin) {
-    throw new Error("Unauthorized");
+    throw new Error("Admin access required");
   }
 }
