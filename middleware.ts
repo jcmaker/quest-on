@@ -9,8 +9,10 @@ const isProtectedRoute = createRouteMatcher([
 const isPublicRoute = createRouteMatcher([
   "/",
   "/join",
+  "/admin/login",
   "/api/chat",
   "/api/feedback",
+  "/api/admin/auth",
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);
