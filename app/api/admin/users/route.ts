@@ -7,7 +7,7 @@ const clerk = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY!,
 });
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // 어드민 인증 확인
     await requireAdmin();

@@ -103,7 +103,7 @@ export async function GET(
           let decompressedAnswerData = null;
           let decompressedFeedbackData = null;
 
-          if (submission.compressed_answer_data) {
+          if (submission.compressed_answer_data && typeof submission.compressed_answer_data === 'string') {
             try {
               decompressedAnswerData = decompressData(
                 submission.compressed_answer_data
@@ -113,7 +113,7 @@ export async function GET(
             }
           }
 
-          if (submission.compressed_feedback_data) {
+          if (submission.compressed_feedback_data && typeof submission.compressed_feedback_data === 'string') {
             try {
               decompressedFeedbackData = decompressData(
                 submission.compressed_feedback_data
@@ -137,7 +137,7 @@ export async function GET(
         session.messages?.map((message: Record<string, unknown>) => {
           let decompressedContent = null;
 
-          if (message.compressed_content) {
+          if (message.compressed_content && typeof message.compressed_content === 'string') {
             try {
               decompressedContent = decompressData(message.compressed_content);
             } catch (error) {
