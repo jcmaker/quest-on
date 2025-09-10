@@ -75,13 +75,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (10MB for original, will be compressed)
-    const maxSize = 10 * 1024 * 1024; // 10MB (will be compressed)
+    // Validate file size (50MB for original, will be compressed)
+    const maxSize = 50 * 1024 * 1024; // 50MB (will be compressed)
     if (file.size > maxSize) {
-      console.log(`File size ${file.size} exceeds 10MB limit`);
+      console.log(`File size ${file.size} exceeds 50MB limit`);
       return NextResponse.json(
-        { error: "File size exceeds 10MB limit. Please use a smaller file." },
-        { status: 400 }
+        { error: "File size exceeds 50MB limit. Please use a smaller file." },
+        { status: 413 }
       );
     }
 

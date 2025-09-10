@@ -194,7 +194,7 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
       "image/webp",
     ];
 
-    const maxSize = 10 * 1024 * 1024; // 10MB (will be compressed)
+    const maxSize = 50 * 1024 * 1024; // 50MB (will be compressed)
 
     if (!allowedTypes.includes(file.type)) {
       alert(
@@ -204,7 +204,7 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
     }
 
     if (file.size > maxSize) {
-      alert("파일 크기가 10MB를 초과합니다.");
+      alert("파일 크기가 50MB를 초과합니다.");
       return false;
     }
 
@@ -295,17 +295,32 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
           formData.append("file", file);
           formData.append("fileName", fileName);
 
-          const uploadResponse = await fetch("/api/upload", {
-            method: "POST",
-            body: formData,
-          });
+          try {
+            const uploadResponse = await fetch("/api/upload", {
+              method: "POST",
+              body: formData,
+            });
 
-          if (!uploadResponse.ok) {
-            throw new Error(`Failed to upload ${file.name}`);
+            if (!uploadResponse.ok) {
+              const errorData = await uploadResponse.json().catch(() => ({}));
+              console.error(`Upload failed for ${file.name}:`, errorData);
+              throw new Error(
+                `Failed to upload ${file.name}: ${
+                  errorData.error || uploadResponse.statusText
+                }`
+              );
+            }
+
+            const uploadResult = await uploadResponse.json();
+            return uploadResult.url;
+          } catch (error) {
+            console.error(`Upload error for ${file.name}:`, error);
+            throw new Error(
+              `Failed to upload ${file.name}: ${
+                error instanceof Error ? error.message : "Unknown error"
+              }`
+            );
           }
-
-          const uploadResult = await uploadResponse.json();
-          return uploadResult.url;
         });
 
         materialUrls = await Promise.all(uploadPromises);
@@ -511,7 +526,7 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
                     📎 파일 선택
                   </Label>
                   <span className="text-sm text-muted-foreground">
-                    PDF, PPT, 워드, 이미지 파일 (최대 10MB, 자동 압축)
+                    PDF, PPT, 워드, 이미지 파일 (최대 50MB, 자동 압축)
                   </span>
                 </div>
 
