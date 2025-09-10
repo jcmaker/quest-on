@@ -18,7 +18,7 @@ export async function verifyAdminToken(): Promise<{ isAdmin: boolean }> {
   }
 }
 
-export async function requireAdmin(_request: NextRequest): Promise<void> {
+export async function requireAdmin(): Promise<void> {
   const { isAdmin } = await verifyAdminToken();
   
   if (!isAdmin) {

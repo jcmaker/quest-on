@@ -160,9 +160,9 @@ async function submitExam(data: {
   studentId: string;
   sessionId: string;
   answers: unknown[];
-  chatHistory?: any[];
+  chatHistory?: unknown[];
   feedback?: string;
-  feedbackResponses?: any[];
+  feedbackResponses?: unknown[];
 }) {
   try {
     // Compress the session data

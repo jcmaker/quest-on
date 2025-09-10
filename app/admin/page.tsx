@@ -125,13 +125,13 @@ export default function AdminDashboard() {
       try {
         // 먼저 사용자 목록을 가져와서 인증 확인
         const response = await fetch("/api/admin/users");
-        
+
         if (response.status === 403) {
           // 인증되지 않은 경우 로그인 페이지로 리다이렉트
           router.push("/admin/login");
           return;
         }
-        
+
         if (response.ok) {
           // 인증된 경우 사용자 데이터 설정
           const data = await response.json();
@@ -339,7 +339,9 @@ export default function AdminDashboard() {
                           {user.imageUrl ? (
                             <div
                               className="w-10 h-10 rounded-full bg-cover bg-center"
-                              style={{ backgroundImage: `url(${user.imageUrl})` }}
+                              style={{
+                                backgroundImage: `url(${user.imageUrl})`,
+                              }}
                               title={user.firstName || user.email}
                             />
                           ) : (
