@@ -176,14 +176,16 @@ export async function GET(
           session.compression_metadata.compressedSize || 0;
       }
 
-      sessionCompressionStats.submissions.forEach((meta: Record<string, unknown>) => {
-        sessionCompressionStats.totalOriginalSize += (meta.originalSize as number) || 0;
-        sessionCompressionStats.totalCompressedSize += (meta.compressedSize as number) || 0;
+      sessionCompressionStats.submissions.forEach((meta) => {
+        const metaObj = meta as Record<string, unknown>;
+        sessionCompressionStats.totalOriginalSize += (metaObj.originalSize as number) || 0;
+        sessionCompressionStats.totalCompressedSize += (metaObj.compressedSize as number) || 0;
       });
 
-      sessionCompressionStats.messages.forEach((meta: Record<string, unknown>) => {
-        sessionCompressionStats.totalOriginalSize += (meta.originalSize as number) || 0;
-        sessionCompressionStats.totalCompressedSize += (meta.compressedSize as number) || 0;
+      sessionCompressionStats.messages.forEach((meta) => {
+        const metaObj = meta as Record<string, unknown>;
+        sessionCompressionStats.totalOriginalSize += (metaObj.originalSize as number) || 0;
+        sessionCompressionStats.totalCompressedSize += (metaObj.compressedSize as number) || 0;
       });
 
       return {

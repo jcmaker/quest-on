@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClerkClient } from "@clerk/nextjs/server";
 import { requireAdmin } from "@/lib/admin-auth";
 
