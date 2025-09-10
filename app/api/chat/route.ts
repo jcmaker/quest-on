@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
+import { compressData } from "@/lib/compression";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -68,6 +69,8 @@ export async function POST(request: NextRequest) {
       questionId,
       examTitle: requestExamTitle,
       examCode: requestExamCode,
+      examId,
+      studentId,
       currentQuestionText,
       requestCoreAbility: requestCoreAbility,
     } = body;
@@ -227,13 +230,58 @@ ${
 5. 학생 질문이 모호하면 조건/가정을 되묻고 필요한 설정을 만든다.
 `;
 
-    // 메시지 DB 저장 (유저 → AI)
+    // Get or create session for this student and exam
+    let actualSessionId = sessionId;
+
+    // If using temporary session, try to find or create a real session
+    if (sessionId.startsWith("temp_")) {
+      const { data: existingSession } = await supabase
+        .from("sessions")
+        .select("id")
+        .eq("exam_id", examId)
+        .eq("student_id", studentId)
+        .single();
+
+      if (existingSession) {
+        actualSessionId = existingSession.id;
+      } else {
+        // Create new session
+        const { data: newSession, error: createError } = await supabase
+          .from("sessions")
+          .insert([
+            {
+              exam_id: examId,
+              student_id: studentId,
+            },
+          ])
+          .select()
+          .single();
+
+        if (createError) {
+          console.error("Error creating session:", createError);
+          // Continue with temp session
+        } else {
+          actualSessionId = newSession.id;
+        }
+      }
+    }
+
+    // Compress user message
+    const userMessageData = {
+      content: message,
+      timestamp: new Date().toISOString(),
+    };
+    const compressedUserMessage = compressData(userMessageData);
+
+    // 메시지 DB 저장 (유저 → AI) with compression
     await supabase.from("messages").insert([
       {
-        session_id: sessionId,
+        session_id: actualSessionId,
         q_idx: questionId || 0,
         role: "user",
-        content: message,
+        content: message, // Keep original for backward compatibility
+        compressed_content: compressedUserMessage.data,
+        compression_metadata: compressedUserMessage.metadata,
         created_at: new Date().toISOString(),
       },
     ]);
@@ -257,12 +305,21 @@ ${
       console.log("Saving AI response to database, length:", aiResponse.length);
     }
 
+    // Compress AI response
+    const aiMessageData = {
+      content: aiResponse,
+      timestamp: new Date().toISOString(),
+    };
+    const compressedAiMessage = compressData(aiMessageData);
+
     await supabase.from("messages").insert([
       {
-        session_id: sessionId,
+        session_id: actualSessionId,
         q_idx: questionId || 0,
         role: "ai",
-        content: aiResponse,
+        content: aiResponse, // Keep original for backward compatibility
+        compressed_content: compressedAiMessage.data,
+        compression_metadata: compressedAiMessage.metadata,
         created_at: new Date().toISOString(),
       },
     ]);
@@ -272,7 +329,7 @@ ${
       .update({
         used_clarifications: (session.used_clarifications ?? 0) + 1,
       })
-      .eq("id", sessionId);
+      .eq("id", actualSessionId);
 
     if (process.env.NODE_ENV === "development") {
       console.log("Returning regular session response");

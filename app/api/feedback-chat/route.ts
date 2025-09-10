@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
+import { compressData } from "@/lib/compression";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -14,7 +15,7 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, examCode, questionId, conversationHistory } =
+    const { message, examCode, questionId, conversationHistory, studentId } =
       await request.json();
 
     if (!message || !examCode) {
@@ -122,6 +123,87 @@ ${conversationContext}
         { error: "Failed to generate AI response" },
         { status: 500 }
       );
+    }
+
+    // Store feedback chat interaction with compression
+    if (studentId) {
+      try {
+        // Get or create session for this student and exam
+        const { data: session, error: sessionError } = await supabase
+          .from("sessions")
+          .select("id")
+          .eq("exam_id", exam.id)
+          .eq("student_id", studentId)
+          .single();
+
+        let sessionId;
+        if (sessionError || !session) {
+          // Create new session
+          const { data: newSession, error: createError } = await supabase
+            .from("sessions")
+            .insert([
+              {
+                exam_id: exam.id,
+                student_id: studentId,
+                submitted_at: new Date().toISOString(),
+              },
+            ])
+            .select()
+            .single();
+
+          if (createError) throw createError;
+          sessionId = newSession.id;
+        } else {
+          sessionId = session.id;
+        }
+
+        // Compress the chat interaction
+        const chatInteraction = {
+          studentMessage: message,
+          aiResponse: response,
+          timestamp: new Date().toISOString(),
+          examCode,
+          questionId,
+        };
+
+        const compressedData = compressData(chatInteraction);
+
+        // Store in messages table with compression
+        const { error: insertError } = await supabase.from("messages").insert([
+          {
+            session_id: sessionId,
+            q_idx: questionId ? parseInt(questionId) : 0,
+            role: "user",
+            content: message,
+            compressed_content: compressedData.data,
+            compression_metadata: compressedData.metadata,
+            created_at: new Date().toISOString(),
+          },
+          {
+            session_id: sessionId,
+            q_idx: questionId ? parseInt(questionId) : 0,
+            role: "ai",
+            content: response,
+            compressed_content: compressedData.data,
+            compression_metadata: compressedData.metadata,
+            created_at: new Date().toISOString(),
+          },
+        ]);
+
+        if (insertError) {
+          console.error("Failed to store chat interaction:", insertError);
+        } else {
+          console.log("Chat interaction compressed and stored:", {
+            sessionId,
+            originalSize: compressedData.metadata.originalSize,
+            compressedSize: compressedData.metadata.compressedSize,
+            compressionRatio: compressedData.metadata.compressionRatio,
+          });
+        }
+      } catch (error) {
+        console.error("Error storing chat interaction:", error);
+        // Continue with response even if storage fails
+      }
     }
 
     return NextResponse.json({

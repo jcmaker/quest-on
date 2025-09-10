@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
+import { compressData } from "@/lib/compression";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabase = createClient(
@@ -157,30 +158,78 @@ async function updateExam(data: {
 async function submitExam(data: {
   examId: string;
   studentId: string;
+  sessionId: string;
   answers: unknown[];
+  chatHistory?: any[];
+  feedback?: string;
+  feedbackResponses?: any[];
 }) {
   try {
-    // Store exam submission
-    const { data: submission, error: submissionError } = await supabase
-      .from("exam_submissions")
-      .insert([
-        {
-          exam_id: data.examId,
-          student_id: data.studentId,
-          answers: data.answers,
-          submitted_at: new Date().toISOString(),
-          status: "submitted",
-        },
-      ])
+    // Compress the session data
+    const sessionData = {
+      chatHistory: data.chatHistory || [],
+      answers: data.answers,
+      feedback: data.feedback,
+      feedbackResponses: data.feedbackResponses || [],
+    };
+
+    const compressedSessionData = compressData(sessionData);
+
+    // Update session with compressed data
+    const { data: session, error: sessionError } = await supabase
+      .from("sessions")
+      .update({
+        compressed_session_data: compressedSessionData.data,
+        compression_metadata: compressedSessionData.metadata,
+        submitted_at: new Date().toISOString(),
+      })
+      .eq("id", data.sessionId)
       .select()
       .single();
 
-    if (submissionError) throw submissionError;
+    if (sessionError) throw sessionError;
 
-    // Update exam status if needed
-    // Add any other necessary database operations
+    // Store individual submissions with compressed data
+    const submissionInserts = data.answers.map((answer: any, index: number) => {
+      const submissionData = {
+        answer: answer.text || answer,
+        feedback: data.feedback,
+        studentReply: data.feedbackResponses?.[index],
+      };
 
-    return NextResponse.json({ submission });
+      const compressedSubmissionData = compressData(submissionData);
+
+      return {
+        session_id: data.sessionId,
+        q_idx: index,
+        answer: answer.text || answer,
+        ai_feedback: data.feedback ? { feedback: data.feedback } : null,
+        student_reply: data.feedbackResponses?.[index],
+        compressed_answer_data: compressedSubmissionData.data,
+        compression_metadata: compressedSubmissionData.metadata,
+      };
+    });
+
+    const { data: submissions, error: submissionsError } = await supabase
+      .from("submissions")
+      .insert(submissionInserts)
+      .select();
+
+    if (submissionsError) throw submissionsError;
+
+    console.log("Exam submission compressed and stored:", {
+      sessionId: data.sessionId,
+      originalSize: compressedSessionData.metadata.originalSize,
+      compressedSize: compressedSessionData.metadata.compressedSize,
+      compressionRatio: compressedSessionData.metadata.compressionRatio,
+      submissionsCount: submissions.length,
+    });
+
+    return NextResponse.json({
+      session,
+      submissions,
+      compressionStats: compressedSessionData.metadata,
+    });
   } catch (error) {
     console.error("Submit exam error:", error);
     return NextResponse.json(

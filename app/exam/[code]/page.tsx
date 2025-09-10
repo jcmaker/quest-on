@@ -183,7 +183,10 @@ export default function ExamPage() {
   const handleAutoSubmit = async () => {
     // Save all draft answers before auto-submit
     await saveAllDrafts();
-    router.push(`/exam/${examCode}/answer`);
+
+    // Pass chat history to answer page via URL params
+    const chatHistoryParam = encodeURIComponent(JSON.stringify(chatHistory));
+    router.push(`/exam/${examCode}/answer?chatHistory=${chatHistoryParam}`);
   };
 
   const formatTime = (seconds: number) => {
@@ -254,6 +257,8 @@ export default function ExamPage() {
           questionId: exam?.questions[currentQuestion]?.id,
           examTitle: exam?.title,
           examCode: exam?.code,
+          examId: exam?.id,
+          studentId: user?.id,
           currentQuestionText: exam?.questions[currentQuestion]?.text,
           currentQuestionCoreAbility:
             exam?.questions[currentQuestion]?.core_ability,

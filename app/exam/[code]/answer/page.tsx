@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,6 +43,7 @@ interface Answer {
 export default function AnswerSubmission() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const { user } = useUser();
 
   const examCode = params.code as string;
 
@@ -68,13 +70,16 @@ export default function AnswerSubmission() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Handle startQuestion parameter from URL
+  // Handle startQuestion and chatHistory parameters from URL
   useEffect(() => {
     const startQuestionParam = searchParams.get("startQuestion");
+    const chatHistoryParam = searchParams.get("chatHistory");
+
     console.log(
       "Answer page loaded with startQuestion param:",
       startQuestionParam
     );
+    console.log("Answer page loaded with chatHistory param:", chatHistoryParam);
 
     if (startQuestionParam) {
       const questionIndex = parseInt(startQuestionParam, 10);
@@ -84,6 +89,27 @@ export default function AnswerSubmission() {
         setStartQuestion(questionIndex);
         setCurrentQuestion(questionIndex);
         console.log("Set current question to:", questionIndex);
+      }
+    }
+
+    // Load chat history from URL params
+    if (chatHistoryParam) {
+      try {
+        const parsedChatHistory = JSON.parse(
+          decodeURIComponent(chatHistoryParam)
+        );
+        console.log("Loaded chat history from URL:", parsedChatHistory);
+
+        // Convert chat history format to match the expected format
+        const convertedChatHistory = parsedChatHistory.map((msg: any) => ({
+          type: msg.type === "user" ? "student" : "ai",
+          content: msg.message || msg.content,
+          timestamp: msg.timestamp,
+        }));
+
+        setChatMessages(convertedChatHistory);
+      } catch (error) {
+        console.error("Error parsing chat history from URL:", error);
       }
     }
   }, [searchParams]);
@@ -213,7 +239,7 @@ export default function AnswerSubmission() {
     setIsSubmitting(true);
 
     try {
-      // Submit answers to API
+      // Submit answers to API with chat history and student ID
       const response = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -221,6 +247,8 @@ export default function AnswerSubmission() {
           examCode,
           answers,
           examId: exam.id,
+          chatHistory: chatMessages,
+          studentId: user?.id,
         }),
       });
 

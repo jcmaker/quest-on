@@ -108,6 +108,23 @@ export default function ExamDetail({
 
         const examResult = await examResponse.json();
 
+        // Fetch actual student submissions
+        const sessionsResponse = await fetch(
+          `/api/exam/${resolvedParams.examId}/sessions`
+        );
+        let students = exampleStudents; // fallback to example data
+
+        if (sessionsResponse.ok) {
+          const sessionsResult = await sessionsResponse.json();
+          students = sessionsResult.sessions.map((session: any) => ({
+            id: session.student_id,
+            name: `Student ${session.student_id.slice(0, 8)}`, // Generate name from ID
+            email: `${session.student_id}@example.com`,
+            status: session.submitted_at ? "completed" : "in-progress",
+            submittedAt: session.submitted_at,
+          }));
+        }
+
         setExam({
           id: examResult.exam.id,
           title: examResult.exam.title,
@@ -117,7 +134,7 @@ export default function ExamDetail({
           status: examResult.exam.status,
           createdAt: examResult.exam.created_at,
           questions: examResult.exam.questions || [],
-          students: exampleStudents, // Use example students instead of API data
+          students: students,
         });
       } catch (err) {
         console.error("Error fetching exam data:", err);
