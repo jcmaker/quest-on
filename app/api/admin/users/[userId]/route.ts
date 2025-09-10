@@ -13,7 +13,7 @@ export async function PATCH(
 ) {
   try {
     // 어드민 인증 확인
-    await requireAdmin(request);
+    await requireAdmin();
 
     const { userId } = await params;
     const { role } = await request.json();
@@ -64,7 +64,7 @@ export async function GET(
 ) {
   try {
     // 어드민 인증 확인
-    await requireAdmin(request);
+    await requireAdmin();
 
     const { userId } = await params;
 

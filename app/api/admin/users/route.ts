@@ -10,7 +10,7 @@ const clerk = createClerkClient({
 export async function GET(request: NextRequest) {
   try {
     // 어드민 인증 확인
-    await requireAdmin(request);
+    await requireAdmin();
 
     // 모든 사용자 정보 가져오기
     const users = await clerk.users.getUserList({
