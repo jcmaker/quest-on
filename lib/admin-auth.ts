@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
 export async function verifyAdminToken(): Promise<{ isAdmin: boolean }> {
   try {
@@ -18,7 +18,7 @@ export async function verifyAdminToken(): Promise<{ isAdmin: boolean }> {
   }
 }
 
-export async function requireAdmin(request: NextRequest): Promise<void> {
+export async function requireAdmin(_request: NextRequest): Promise<void> {
   const { isAdmin } = await verifyAdminToken();
   
   if (!isAdmin) {

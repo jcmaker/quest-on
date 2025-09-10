@@ -19,7 +19,7 @@ export interface CompressedData {
  * @param data - The data to compress (string or object)
  * @returns Compressed data with metadata
  */
-export function compressData(data: any): CompressedData {
+export function compressData(data: unknown): CompressedData {
   const originalString = typeof data === "string" ? data : JSON.stringify(data);
   const originalSize = new Blob([originalString]).size;
 
@@ -53,7 +53,7 @@ export function compressData(data: any): CompressedData {
  * @param compressedData - The compressed data string
  * @returns Decompressed data
  */
-export function decompressData(compressedData: string): any {
+export function decompressData(compressedData: string): unknown {
   if (!compressedData) {
     throw new Error("No compressed data provided");
   }
@@ -78,10 +78,10 @@ export function decompressData(compressedData: string): any {
  * @returns Compressed submission data
  */
 export function compressExamSubmissionData(submissionData: {
-  chatHistory?: any[];
-  answers?: any[];
+  chatHistory?: unknown[];
+  answers?: unknown[];
   feedback?: string;
-  feedbackResponses?: any[];
+  feedbackResponses?: unknown[];
 }): {
   compressedChatData?: CompressedData;
   compressedAnswers?: CompressedData;
@@ -89,7 +89,7 @@ export function compressExamSubmissionData(submissionData: {
   compressedFeedbackResponses?: CompressedData;
   compressionMetadata: CompressionMetadata;
 } {
-  const result: any = {};
+  const result: Record<string, unknown> = {};
   let totalOriginalSize = 0;
   let totalCompressedSize = 0;
 
@@ -153,12 +153,12 @@ export function decompressExamSubmissionData(compressedSubmissionData: {
   compressed_feedback?: string;
   compressed_feedback_responses?: string;
 }): {
-  chatHistory?: any[];
-  answers?: any[];
+  chatHistory?: unknown[];
+  answers?: unknown[];
   feedback?: string;
-  feedbackResponses?: any[];
+  feedbackResponses?: unknown[];
 } {
-  const result: any = {};
+  const result: Record<string, unknown> = {};
 
   if (compressedSubmissionData.compressed_chat_data) {
     result.chatHistory = decompressData(

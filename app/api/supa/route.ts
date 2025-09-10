@@ -190,9 +190,10 @@ async function submitExam(data: {
     if (sessionError) throw sessionError;
 
     // Store individual submissions with compressed data
-    const submissionInserts = data.answers.map((answer: any, index: number) => {
+    const submissionInserts = data.answers.map((answer: unknown, index: number) => {
+      const answerObj = answer as Record<string, unknown>;
       const submissionData = {
-        answer: answer.text || answer,
+        answer: answerObj.text || answer,
         feedback: data.feedback,
         studentReply: data.feedbackResponses?.[index],
       };
@@ -202,7 +203,7 @@ async function submitExam(data: {
       return {
         session_id: data.sessionId,
         q_idx: index,
-        answer: answer.text || answer,
+        answer: answerObj.text || answer,
         ai_feedback: data.feedback ? { feedback: data.feedback } : null,
         student_reply: data.feedbackResponses?.[index],
         compressed_answer_data: compressedSubmissionData.data,

@@ -81,7 +81,7 @@ export async function GET(
 
     // Decompress submissions data
     const decompressedSubmissions =
-      session.submissions?.map((submission: any) => {
+      session.submissions?.map((submission: Record<string, unknown>) => {
         let decompressedAnswerData = null;
         let decompressedFeedbackData = null;
 
@@ -116,7 +116,7 @@ export async function GET(
 
     // Decompress messages data
     const decompressedMessages =
-      session.messages?.map((message: any) => {
+      session.messages?.map((message: Record<string, unknown>) => {
         let decompressedContent = null;
 
         if (message.compressed_content) {
@@ -140,11 +140,11 @@ export async function GET(
       session: session.compression_metadata || null,
       submissions:
         session.submissions
-          ?.map((s: any) => s.compression_metadata)
+          ?.map((s: Record<string, unknown>) => s.compression_metadata)
           .filter(Boolean) || [],
       messages:
         session.messages
-          ?.map((m: any) => m.compression_metadata)
+          ?.map((m: Record<string, unknown>) => m.compression_metadata)
           .filter(Boolean) || [],
       totalOriginalSize: 0,
       totalCompressedSize: 0,
@@ -158,14 +158,14 @@ export async function GET(
         session.compression_metadata.compressedSize || 0;
     }
 
-    compressionStats.submissions.forEach((meta: any) => {
-      compressionStats.totalOriginalSize += meta.originalSize || 0;
-      compressionStats.totalCompressedSize += meta.compressedSize || 0;
+    compressionStats.submissions.forEach((meta: Record<string, unknown>) => {
+      compressionStats.totalOriginalSize += (meta.originalSize as number) || 0;
+      compressionStats.totalCompressedSize += (meta.compressedSize as number) || 0;
     });
 
-    compressionStats.messages.forEach((meta: any) => {
-      compressionStats.totalOriginalSize += meta.originalSize || 0;
-      compressionStats.totalCompressedSize += meta.compressedSize || 0;
+    compressionStats.messages.forEach((meta: Record<string, unknown>) => {
+      compressionStats.totalOriginalSize += (meta.originalSize as number) || 0;
+      compressionStats.totalCompressedSize += (meta.compressedSize as number) || 0;
     });
 
     compressionStats.totalOriginalSize = compressionStats.totalOriginalSize;

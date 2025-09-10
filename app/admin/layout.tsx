@@ -1,5 +1,4 @@
-import { redirect } from "next/navigation";
-import { verifyAdminToken } from "@/lib/admin-auth";
+// Admin layout component
 
 export default async function AdminLayout({
   children,

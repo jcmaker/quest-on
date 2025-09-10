@@ -101,7 +101,7 @@ export default function AnswerSubmission() {
         console.log("Loaded chat history from URL:", parsedChatHistory);
 
         // Convert chat history format to match the expected format
-        const convertedChatHistory = parsedChatHistory.map((msg: any) => ({
+        const convertedChatHistory = parsedChatHistory.map((msg: Record<string, unknown>) => ({
           type: msg.type === "user" ? "student" : "ai",
           content: msg.message || msg.content,
           timestamp: msg.timestamp,
