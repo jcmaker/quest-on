@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useRouter } from "next/navigation";
+import { Sparkles } from "lucide-react";
 
 export default function CreateExam() {
   const router = useRouter();
@@ -641,7 +642,8 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
                                 htmlFor={`auto-generate-${question.id}`}
                                 className="text-sm"
                               >
-                                자동생성
+                                <Sparkles className="w-4 h-4 text-primary" />
+                                AI 스마트 생성
                               </Label>
                               <Switch
                                 id={`auto-generate-${question.id}`}
