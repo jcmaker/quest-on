@@ -116,13 +116,22 @@ export default function ExamDetail({
 
         if (sessionsResponse.ok) {
           const sessionsResult = await sessionsResponse.json();
-          students = sessionsResult.sessions.map((session: Record<string, unknown>) => ({
-            id: session.student_id,
-            name: `Student ${session.student_id.slice(0, 8)}`, // Generate name from ID
-            email: `${session.student_id}@example.com`,
-            status: session.submitted_at ? "completed" : "in-progress",
-            submittedAt: session.submitted_at,
-          }));
+          students = sessionsResult.sessions.map(
+            (session: Record<string, unknown>) => {
+              const studentId =
+                typeof session.student_id === "string"
+                  ? session.student_id
+                  : "";
+              const submittedAt = session.submitted_at ?? null;
+              return {
+                id: studentId,
+                name: `Student ${studentId.slice(0, 8)}`, // Generate name from ID
+                email: `${studentId}@example.com`,
+                status: submittedAt ? "completed" : "in-progress",
+                submittedAt: submittedAt,
+              };
+            }
+          );
         }
 
         setExam({
