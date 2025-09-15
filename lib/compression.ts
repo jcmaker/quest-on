@@ -95,23 +95,26 @@ export function compressExamSubmissionData(submissionData: {
 
   // Compress chat history
   if (submissionData.chatHistory && submissionData.chatHistory.length > 0) {
-    result.compressedChatData = compressData(submissionData.chatHistory);
-    totalOriginalSize += result.compressedChatData.metadata.originalSize;
-    totalCompressedSize += result.compressedChatData.metadata.compressedSize;
+    const compressedChatData = compressData(submissionData.chatHistory);
+    result.compressedChatData = compressedChatData;
+    totalOriginalSize += compressedChatData.metadata.originalSize;
+    totalCompressedSize += compressedChatData.metadata.compressedSize;
   }
 
   // Compress answers
   if (submissionData.answers && submissionData.answers.length > 0) {
-    result.compressedAnswers = compressData(submissionData.answers);
-    totalOriginalSize += result.compressedAnswers.metadata.originalSize;
-    totalCompressedSize += result.compressedAnswers.metadata.compressedSize;
+    const compressedAnswers = compressData(submissionData.answers);
+    result.compressedAnswers = compressedAnswers;
+    totalOriginalSize += compressedAnswers.metadata.originalSize;
+    totalCompressedSize += compressedAnswers.metadata.compressedSize;
   }
 
   // Compress feedback
   if (submissionData.feedback) {
-    result.compressedFeedback = compressData(submissionData.feedback);
-    totalOriginalSize += result.compressedFeedback.metadata.originalSize;
-    totalCompressedSize += result.compressedFeedback.metadata.compressedSize;
+    const compressedFeedback = compressData(submissionData.feedback);
+    result.compressedFeedback = compressedFeedback;
+    totalOriginalSize += compressedFeedback.metadata.originalSize;
+    totalCompressedSize += compressedFeedback.metadata.compressedSize;
   }
 
   // Compress feedback responses
@@ -121,11 +124,11 @@ export function compressExamSubmissionData(submissionData: {
   ) {
     result.compressedFeedbackResponses = compressData(
       submissionData.feedbackResponses
-    );
-    totalOriginalSize +=
-      result.compressedFeedbackResponses.metadata.originalSize;
-    totalCompressedSize +=
-      result.compressedFeedbackResponses.metadata.compressedSize;
+    ) as CompressedData;
+    const compressedFeedbackResponses =
+      result.compressedFeedbackResponses as CompressedData;
+    totalOriginalSize += compressedFeedbackResponses.metadata.originalSize;
+    totalCompressedSize += compressedFeedbackResponses.metadata.compressedSize;
   }
 
   // Create overall compression metadata
@@ -139,7 +142,14 @@ export function compressExamSubmissionData(submissionData: {
     timestamp: new Date().toISOString(),
   };
 
-  return result;
+  return {
+    compressedChatData: result.compressedChatData as CompressedData,
+    compressedAnswers: result.compressedAnswers as CompressedData,
+    compressedFeedback: result.compressedFeedback as CompressedData,
+    compressedFeedbackResponses:
+      result.compressedFeedbackResponses as CompressedData,
+    compressionMetadata: result.compressionMetadata as CompressionMetadata,
+  };
 }
 
 /**
