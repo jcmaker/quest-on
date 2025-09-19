@@ -190,26 +190,28 @@ async function submitExam(data: {
     if (sessionError) throw sessionError;
 
     // Store individual submissions with compressed data
-    const submissionInserts = data.answers.map((answer: unknown, index: number) => {
-      const answerObj = answer as Record<string, unknown>;
-      const submissionData = {
-        answer: answerObj.text || answer,
-        feedback: data.feedback,
-        studentReply: data.feedbackResponses?.[index],
-      };
+    const submissionInserts = data.answers.map(
+      (answer: unknown, index: number) => {
+        const answerObj = answer as Record<string, unknown>;
+        const submissionData = {
+          answer: answerObj.text || answer,
+          feedback: data.feedback,
+          studentReply: data.feedbackResponses?.[index],
+        };
 
-      const compressedSubmissionData = compressData(submissionData);
+        const compressedSubmissionData = compressData(submissionData);
 
-      return {
-        session_id: data.sessionId,
-        q_idx: index,
-        answer: answerObj.text || answer,
-        ai_feedback: data.feedback ? { feedback: data.feedback } : null,
-        student_reply: data.feedbackResponses?.[index],
-        compressed_answer_data: compressedSubmissionData.data,
-        compression_metadata: compressedSubmissionData.metadata,
-      };
-    });
+        return {
+          session_id: data.sessionId,
+          q_idx: index,
+          answer: answerObj.text || answer,
+          ai_feedback: data.feedback ? { feedback: data.feedback } : null,
+          student_reply: data.feedbackResponses?.[index],
+          compressed_answer_data: compressedSubmissionData.data,
+          compression_metadata: compressedSubmissionData.metadata,
+        };
+      }
+    );
 
     const { data: submissions, error: submissionsError } = await supabase
       .from("submissions")
@@ -402,9 +404,22 @@ async function createOrGetSession(data: { examId: string; studentId: string }) {
 
       if (messagesError) throw messagesError;
 
+      // 프론트엔드가 기대하는 형식으로 변환
+      const formattedMessages = (messages || []).map((msg) => ({
+        type: msg.role === "user" ? "user" : "assistant",
+        message: msg.content,
+        timestamp: msg.created_at,
+      }));
+
+      console.log(
+        "📨 Loading existing messages:",
+        formattedMessages.length,
+        "messages"
+      );
+
       return NextResponse.json({
         session: existingSession,
-        messages: messages || [],
+        messages: formattedMessages,
       });
     }
 

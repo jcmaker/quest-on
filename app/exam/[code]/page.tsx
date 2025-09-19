@@ -149,8 +149,16 @@ export default function ExamPage() {
         setSessionId(result.session.id);
 
         // Load existing chat history
-        if (result.messages) {
+        if (result.messages && result.messages.length > 0) {
+          console.log(
+            "📨 Restoring chat history:",
+            result.messages.length,
+            "messages"
+          );
+          console.log("📨 First message:", result.messages[0]);
           setChatHistory(result.messages);
+        } else {
+          console.log("📨 No existing messages to restore");
         }
       } else {
         const errorData = await response.json().catch(() => ({}));
@@ -221,11 +229,11 @@ export default function ExamPage() {
       return;
     }
 
-    // Always use temporary session for now to avoid database issues
-    const tempId = `temp_${Date.now()}_${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-    console.log("Using temporary session ID:", tempId);
+    // Use actual session ID if available, fallback to temp
+    const actualSessionId =
+      sessionId ||
+      `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log("Using session ID:", actualSessionId);
 
     const userMessage = {
       type: "user" as const,
@@ -240,13 +248,12 @@ export default function ExamPage() {
 
     console.log("Sending chat message:", {
       message: currentMessage,
-      tempId,
+      sessionId: actualSessionId,
       questionId: exam?.questions[currentQuestion]?.id,
     });
 
     try {
-      const actualSessionId = tempId; // Use the local variable directly
-      console.log("Using temporary session ID for chat:", actualSessionId);
+      console.log("Sending chat with session ID:", actualSessionId);
 
       const response = await fetch("/api/chat", {
         method: "POST",

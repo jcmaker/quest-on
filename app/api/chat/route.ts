@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
-import { compressData } from "@/lib/compression";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -62,6 +61,27 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     console.log("Chat API received request:", body);
+    console.log(
+      "🔍 DEBUG: sessionId =",
+      body.sessionId,
+      "| startsWith temp_ =",
+      body.sessionId?.startsWith("temp_")
+    );
+
+    // 🧪 DB 연결 테스트
+    try {
+      const { data: testData, error: testError } = await supabase
+        .from("sessions")
+        .select("id")
+        .limit(1);
+      console.log(
+        "✅ DB 연결 테스트:",
+        testError ? "실패" : "성공",
+        testError || `(${testData?.length || 0}개 레코드 조회)`
+      );
+    } catch (dbTestError) {
+      console.error("❌ DB 연결 테스트 실패:", dbTestError);
+    }
 
     const {
       message,
@@ -82,20 +102,56 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!sessionId || !sessionId.startsWith("temp_")) {
+    if (!sessionId) {
       if (process.env.NODE_ENV === "development") {
-        console.log("Invalid or missing sessionId:", sessionId);
+        console.log("Missing sessionId:", sessionId);
       }
-      return NextResponse.json(
-        { error: "Missing or invalid sessionId" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
     }
 
-    // ✅ 임시 세션 처리
+    // ✅ 임시 세션 처리 - DB 저장도 함께 수행
     if (sessionId.startsWith("temp_")) {
       if (process.env.NODE_ENV === "development") {
         console.log("Processing temporary session:", sessionId);
+      }
+
+      // 임시 세션이라도 실제 세션을 찾거나 생성
+      let actualSessionId = sessionId;
+      if (examId && studentId) {
+        const { data: existingSession } = await supabase
+          .from("sessions")
+          .select("id")
+          .eq("exam_id", examId)
+          .eq("student_id", studentId)
+          .single();
+
+        if (existingSession) {
+          actualSessionId = existingSession.id;
+          if (process.env.NODE_ENV === "development") {
+            console.log("Found existing session:", actualSessionId);
+          }
+        } else {
+          // Create new session
+          const { data: newSession, error: createError } = await supabase
+            .from("sessions")
+            .insert([
+              {
+                exam_id: examId,
+                student_id: studentId,
+              },
+            ])
+            .select()
+            .single();
+
+          if (!createError && newSession) {
+            actualSessionId = newSession.id;
+            if (process.env.NODE_ENV === "development") {
+              console.log("Created new session:", actualSessionId);
+            }
+          } else {
+            console.error("Error creating session:", createError);
+          }
+        }
       }
 
       const tempSystemPrompt = `당신은 시험 중인 학생을 도와주는 **시험 보조자(Test/Clarification Assistant)**입니다.
@@ -127,6 +183,45 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
  4. 응답은 간결하고 명확하게, 200단어(또는 300자) 이내로 제시하세요.
 `;
 
+      // 사용자 메시지 DB 저장 (임시 세션도 저장)
+      if (actualSessionId && !actualSessionId.startsWith("temp_")) {
+        if (process.env.NODE_ENV === "development") {
+          console.log(
+            "Saving temp session user message to database, length:",
+            message.length
+          );
+        }
+
+        // questionId를 안전한 정수로 변환
+        const safeQIdx = questionId
+          ? Math.abs(parseInt(questionId) % 2147483647)
+          : 0;
+        console.log(
+          "🔍 DEBUG: temp session questionId =",
+          questionId,
+          "→ safeQIdx =",
+          safeQIdx
+        );
+
+        const { error: userMessageError } = await supabase
+          .from("messages")
+          .insert([
+            {
+              session_id: actualSessionId,
+              q_idx: safeQIdx,
+              role: "user",
+              content: message,
+            },
+          ]);
+
+        if (userMessageError) {
+          console.error(
+            "Error saving temp session user message:",
+            userMessageError
+          );
+        }
+      }
+
       const aiResponse = await getAIResponse(tempSystemPrompt, message, 0.2);
 
       // Ensure we have a valid response
@@ -142,6 +237,53 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
         );
       }
 
+      // AI 응답 DB 저장 (임시 세션도 저장)
+      if (actualSessionId && !actualSessionId.startsWith("temp_")) {
+        if (process.env.NODE_ENV === "development") {
+          console.log(
+            "Saving temp session AI response to database, length:",
+            aiResponse.length
+          );
+        }
+
+        // AI 메시지용 safeQIdx 재사용 (임시 세션에서는 다시 선언 필요)
+        const aiSafeQIdx = questionId
+          ? Math.abs(parseInt(questionId) % 2147483647)
+          : 0;
+
+        const { error: aiMessageError } = await supabase
+          .from("messages")
+          .insert([
+            {
+              session_id: actualSessionId,
+              q_idx: aiSafeQIdx,
+              role: "ai",
+              content: aiResponse,
+            },
+          ]);
+
+        if (aiMessageError) {
+          console.error(
+            "Error saving temp session AI message:",
+            aiMessageError
+          );
+        }
+
+        // 세션 사용 횟수 업데이트
+        const { data: currentSession } = await supabase
+          .from("sessions")
+          .select("used_clarifications")
+          .eq("id", actualSessionId)
+          .single();
+
+        await supabase
+          .from("sessions")
+          .update({
+            used_clarifications: (currentSession?.used_clarifications || 0) + 1,
+          })
+          .eq("id", actualSessionId);
+      }
+
       console.log(
         "Returning temp session response, length:",
         aiResponse.length
@@ -150,12 +292,16 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
       return NextResponse.json({
         response: aiResponse,
         timestamp: new Date().toISOString(),
-        examCode: "TEMP",
+        examCode: requestExamCode || "TEMP",
         questionId: questionId || "temp",
       });
     }
 
     // ✅ 정규 세션 처리
+    console.log(
+      "🔍 DEBUG: Entering REGULAR session processing for sessionId:",
+      sessionId
+    );
     if (process.env.NODE_ENV === "development") {
       console.log("Looking up session:", sessionId);
     }
@@ -266,25 +412,30 @@ ${
       }
     }
 
-    // Compress user message
-    const userMessageData = {
-      content: message,
-      timestamp: new Date().toISOString(),
-    };
-    const compressedUserMessage = compressData(userMessageData);
+    // User message data preparation
+    if (process.env.NODE_ENV === "development") {
+      console.log("Saving user message to database, length:", message.length);
+    }
 
-    // 메시지 DB 저장 (유저 → AI) with compression
-    await supabase.from("messages").insert([
+    // 메시지 DB 저장 (유저 → AI)
+    // questionId를 안전한 정수로 변환 (PostgreSQL integer 범위: -2^31 ~ 2^31-1)
+    const safeQIdx = questionId
+      ? Math.abs(parseInt(questionId) % 2147483647)
+      : 0;
+    console.log("🔍 DEBUG: questionId =", questionId, "→ safeQIdx =", safeQIdx);
+
+    const { error: userMessageError } = await supabase.from("messages").insert([
       {
         session_id: actualSessionId,
-        q_idx: questionId || 0,
+        q_idx: safeQIdx,
         role: "user",
-        content: message, // Keep original for backward compatibility
-        compressed_content: compressedUserMessage.data,
-        compression_metadata: compressedUserMessage.metadata,
-        created_at: new Date().toISOString(),
+        content: message,
       },
     ]);
+
+    if (userMessageError) {
+      console.error("Error saving user message:", userMessageError);
+    }
 
     const aiResponse = await getAIResponse(systemPrompt, message, 0.2);
 
@@ -305,24 +456,22 @@ ${
       console.log("Saving AI response to database, length:", aiResponse.length);
     }
 
-    // Compress AI response
-    const aiMessageData = {
-      content: aiResponse,
-      timestamp: new Date().toISOString(),
-    };
-    const compressedAiMessage = compressData(aiMessageData);
+    // AI response data preparation - already logged above
 
-    await supabase.from("messages").insert([
+    // AI 메시지용 safeQIdx 재사용
+
+    const { error: aiMessageError } = await supabase.from("messages").insert([
       {
         session_id: actualSessionId,
-        q_idx: questionId || 0,
+        q_idx: safeQIdx,
         role: "ai",
-        content: aiResponse, // Keep original for backward compatibility
-        compressed_content: compressedAiMessage.data,
-        compression_metadata: compressedAiMessage.metadata,
-        created_at: new Date().toISOString(),
+        content: aiResponse,
       },
     ]);
+
+    if (aiMessageError) {
+      console.error("Error saving AI message:", aiMessageError);
+    }
 
     await supabase
       .from("sessions")
