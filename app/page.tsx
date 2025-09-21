@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import React from "react";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -42,40 +42,51 @@ export default function LandingPage() {
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
-  // Redirect users based on their role
-  useEffect(() => {
-    if (isLoaded && isSignedIn) {
-      // If user has no role set, redirect to onboarding
+  // Handle button click based on user state
+  const handleQuestOnClick = () => {
+    if (!isLoaded) return;
+
+    if (!isSignedIn) {
+      // Not logged in - redirect to sign up
+      router.push("/sign-up");
+    } else {
+      // Logged in - redirect based on role
       if (!user?.unsafeMetadata?.role) {
         router.push("/onboarding");
-        return;
-      }
-
-      // Redirect instructors to their dashboard
-      if (userRole === "instructor") {
-        router.push("/instructor");
-      } else if (userRole === "student") {
-        // Students can stay on landing page or redirect to student dashboard
-        // For now, let them stay on landing page
+      } else {
+        switch (userRole) {
+          case "instructor":
+            router.push("/instructor");
+            break;
+          case "student":
+            router.push("/student");
+            break;
+          case "admin":
+            router.push("/admin");
+            break;
+          default:
+            router.push("/student");
+        }
       }
     }
-  }, [isLoaded, isSignedIn, userRole, user, router]);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-primary via-chart-2 to-chart-3 text-foreground min-h-screen">
+      {/* <section className="relative overflow-hidden bg-gradient-to-br from-primary via-chart-2 to-chart-3 text-foreground min-h-screen"> */}
+      <section className="relative overflow-hidden text-foreground min-h-screen">
         {/* Animated Background Elements */}
         <div className="absolute inset-0">
           {/* Floating Particles */}
-          <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-white/20 rounded-full animate-pulse"></div>
+          {/* <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-white/20 rounded-full animate-pulse"></div>
           <div className="absolute top-1/3 right-1/3 w-1 h-1 bg-white/30 rounded-full animate-bounce"></div>
           <div className="absolute top-2/3 left-1/2 w-3 h-3 bg-white/10 rounded-full animate-pulse"></div>
           <div className="absolute top-1/2 right-1/4 w-1.5 h-1.5 bg-white/25 rounded-full animate-bounce"></div>
-          <div className="absolute bottom-1/4 left-1/3 w-2.5 h-2.5 bg-white/15 rounded-full animate-pulse"></div>
+          <div className="absolute bottom-1/4 left-1/3 w-2.5 h-2.5 bg-white/15 rounded-full animate-pulse"></div> */}
 
           {/* Geometric Shapes */}
-          <div
+          {/* <div
             className="absolute top-20 left-20 w-20 h-20 border border-white/10 rotate-45 animate-spin"
             style={{ animationDuration: "20s" }}
           ></div>
@@ -84,7 +95,7 @@ export default function LandingPage() {
             className="absolute bottom-32 left-16 w-24 h-24 border border-white/5 rotate-12 animate-spin"
             style={{ animationDuration: "15s" }}
           ></div>
-          <div className="absolute bottom-20 right-20 w-12 h-12 bg-white/5 rotate-45 animate-bounce"></div>
+          <div className="absolute bottom-20 right-20 w-12 h-12 bg-white/5 rotate-45 animate-bounce"></div> */}
 
           {/* Gradient Orbs */}
           <div className="absolute top-1/4 right-1/4 w-64 h-64 bg-gradient-to-r from-chart-1/20 to-chart-2/20 rounded-full blur-3xl animate-pulse"></div>
@@ -99,7 +110,7 @@ export default function LandingPage() {
         </div>
 
         {/* Animated Grid Pattern */}
-        <div className="absolute inset-0 opacity-10">
+        {/* <div className="absolute inset-0 opacity-10">
           <div
             className="absolute inset-0"
             style={{
@@ -107,10 +118,10 @@ export default function LandingPage() {
               backgroundSize: "50px 50px",
             }}
           ></div>
-        </div>
+        </div> */}
 
         {/* Moving Light Rays */}
-        <div className="absolute inset-0">
+        {/* <div className="absolute inset-0">
           <div className="absolute top-0 left-1/4 w-px h-full bg-gradient-to-b from-transparent via-white/20 to-transparent animate-pulse"></div>
           <div
             className="absolute top-0 right-1/3 w-px h-full bg-gradient-to-b from-transparent via-white/15 to-transparent animate-pulse"
@@ -120,7 +131,7 @@ export default function LandingPage() {
             className="absolute top-0 left-2/3 w-px h-full bg-gradient-to-b from-transparent via-white/10 to-transparent animate-pulse"
             style={{ animationDelay: "2s" }}
           ></div>
-        </div>
+        </div> */}
 
         {/* AI Neural Network Pattern */}
         <div className="absolute inset-0 opacity-20">
@@ -171,7 +182,7 @@ export default function LandingPage() {
         </div>
 
         {/* Floating AI Icons */}
-        <div className="absolute inset-0 pointer-events-none">
+        {/* <div className="absolute inset-0 pointer-events-none">
           <div
             className="absolute top-1/3 right-1/4 animate-float"
             style={{ animationDelay: "0s" }}
@@ -196,7 +207,7 @@ export default function LandingPage() {
               <Target className="w-4 h-4 text-white/60" />
             </div>
           </div>
-        </div>
+        </div> */}
 
         <div className="relative container mx-auto px-4 py-24 lg:py-32 min-h-screen flex items-center">
           <div className="text-center max-w-4xl mx-auto animate-fade-in-up">
@@ -209,19 +220,25 @@ export default function LandingPage() {
               AI 기반 시험 출제 & 대화형 평가 플랫폼
             </Badge>
             <h1
-              className="text-5xl lg:text-7xl font-bold mb-6 bg-gradient-to-r from-background to-muted bg-clip-text text-transparent animate-fade-in-up"
-              style={{ animationDelay: "0.4s" }}
+              className="text-5xl lg:text-7xl font-bold mb-6 bg-gradient-to-r from-cyan-300 via-blue-500 to-purple-600 bg-clip-text text-transparent animate-fade-in-up"
+              style={{
+                animationDelay: "0.4s",
+                backgroundSize: "200% 200%",
+                animation:
+                  "fade-in-up 1s ease-out 0.4s both, gradient-shift 3s ease-in-out infinite",
+              }}
             >
               Quest-On
             </h1>
             <h1
-              className="text-4xl lg:text-6xl font-bold mb-6 bg-gradient-to-r from-background to-muted bg-clip-text text-transparent animate-fade-in-up"
+              // className="text-4xl lg:text-6xl font-bold mb-6 bg-gradient-to-r from-background to-muted bg-clip-text text-transparent animate-fade-in-up"
+              className="text-4xl lg:text-6xl font-bold mb-6 text-foreground animate-fade-in-up"
               style={{ animationDelay: "0.6s" }}
             >
               AI와 함께하는 새로운 시험 경험
             </h1>
             <p
-              className="text-xl lg:text-2xl text-muted mb-8 max-w-3xl mx-auto leading-relaxed animate-fade-in-up"
+              className="text-xl lg:text-2xl text-foreground mb-8 max-w-3xl mx-auto leading-relaxed animate-fade-in-up"
               style={{ animationDelay: "0.8s" }}
             >
               교수자는 쉽게 시험을 출제하고, 학생은 AI와 대화하며 새로운 평가를
@@ -229,29 +246,18 @@ export default function LandingPage() {
               만나보세요.
             </p>
             <div
-              className="flex flex-col sm:flex-row gap-4 justify-center mb-12 animate-fade-in-up"
+              className="flex justify-center mb-12 animate-fade-in-up"
               style={{ animationDelay: "1s" }}
             >
-              <Link href="/instructor">
-                <Button
-                  size="lg"
-                  className="bg-background text-primary hover:bg-muted hover:scale-105 hover:shadow-lg transition-all duration-300 text-lg px-8 py-4 group"
-                >
-                  <BookOpen className="w-5 h-5 mr-2 group-hover:animate-bounce" />
-                  교수자 시작하기
-                  <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform duration-300" />
-                </Button>
-              </Link>
-              <Link href="/join">
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="border-border/30 text-foreground hover:bg-background/10 hover:scale-105 hover:shadow-lg transition-all duration-300 text-lg px-8 py-4 group"
-                >
-                  <GraduationCap className="w-5 h-5 mr-2 group-hover:animate-bounce" />
-                  학생 체험하기
-                </Button>
-              </Link>
+              <Button
+                onClick={handleQuestOnClick}
+                size="lg"
+                className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white hover:scale-105 hover:shadow-lg transition-all duration-300 text-lg px-12 py-4 group"
+              >
+                <Sparkles className="w-5 h-5 mr-2 group-hover:animate-bounce" />
+                Quest-on 이용해보기
+                <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform duration-300" />
+              </Button>
             </div>
           </div>
         </div>
