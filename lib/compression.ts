@@ -15,7 +15,7 @@ export interface CompressedData {
 }
 
 /**
- * Compress data using LZ-String algorithm
+ * Compress data using LZ-String algorithm with Base64 encoding for safe storage
  * @param data - The data to compress (string or object)
  * @returns Compressed data with metadata
  */
@@ -23,8 +23,8 @@ export function compressData(data: unknown): CompressedData {
   const originalString = typeof data === "string" ? data : JSON.stringify(data);
   const originalSize = new Blob([originalString]).size;
 
-  // Compress using LZ-String
-  const compressed = LZString.compress(originalString);
+  // Compress using LZ-String and encode with Base64 for safe JSON storage
+  const compressed = LZString.compressToBase64(originalString);
 
   if (!compressed) {
     throw new Error("Failed to compress data");
@@ -34,7 +34,7 @@ export function compressData(data: unknown): CompressedData {
   const compressionRatio = originalSize > 0 ? compressedSize / originalSize : 0;
 
   const metadata: CompressionMetadata = {
-    algorithm: "lz-string",
+    algorithm: "lz-string-base64",
     version: "1.0.0",
     originalSize,
     compressedSize,
@@ -49,7 +49,7 @@ export function compressData(data: unknown): CompressedData {
 }
 
 /**
- * Decompress data using LZ-String algorithm
+ * Decompress data using LZ-String algorithm with Base64 decoding
  * @param compressedData - The compressed data string
  * @returns Decompressed data
  */
@@ -58,7 +58,13 @@ export function decompressData(compressedData: string): unknown {
     throw new Error("No compressed data provided");
   }
 
-  const decompressed = LZString.decompress(compressedData);
+  // Try Base64 decompression first (new format)
+  let decompressed = LZString.decompressFromBase64(compressedData);
+
+  // Fallback to regular decompression (legacy format)
+  if (!decompressed) {
+    decompressed = LZString.decompress(compressedData);
+  }
 
   if (!decompressed) {
     throw new Error("Failed to decompress data");
@@ -133,7 +139,7 @@ export function compressExamSubmissionData(submissionData: {
 
   // Create overall compression metadata
   result.compressionMetadata = {
-    algorithm: "lz-string",
+    algorithm: "lz-string-base64",
     version: "1.0.0",
     originalSize: totalOriginalSize,
     compressedSize: totalCompressedSize,

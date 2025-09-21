@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
@@ -69,6 +69,7 @@ export default function AnswerSubmission() {
   const [conversationEnded, setConversationEnded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Handle startQuestion and chatHistory parameters from URL
   useEffect(() => {
@@ -101,11 +102,13 @@ export default function AnswerSubmission() {
         console.log("Loaded chat history from URL:", parsedChatHistory);
 
         // Convert chat history format to match the expected format
-        const convertedChatHistory = parsedChatHistory.map((msg: Record<string, unknown>) => ({
-          type: msg.type === "user" ? "student" : "ai",
-          content: msg.message || msg.content,
-          timestamp: msg.timestamp,
-        }));
+        const convertedChatHistory = parsedChatHistory.map(
+          (msg: Record<string, unknown>) => ({
+            type: msg.type === "user" ? "student" : "ai",
+            content: msg.message || msg.content,
+            timestamp: msg.timestamp,
+          })
+        );
 
         setChatMessages(convertedChatHistory);
       } catch (error) {
@@ -114,10 +117,55 @@ export default function AnswerSubmission() {
     }
   }, [searchParams]);
 
-  // Fetch exam data from database
+  // Get or create session for this exam
+  const getOrCreateSession = useCallback(
+    async (examId: string) => {
+      if (!user) {
+        console.log("User not found, cannot create session");
+        return;
+      }
+
+      console.log("Getting/creating session for:", {
+        examId,
+        studentId: user.id,
+      });
+
+      try {
+        const response = await fetch("/api/supa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "create_or_get_session",
+            data: {
+              examId,
+              studentId: user.id,
+            },
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log("Session result:", result);
+
+          if (result.session) {
+            setSessionId(result.session.id);
+            console.log("Session ID set:", result.session.id);
+          }
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Session creation error:", errorData);
+        }
+      } catch (error) {
+        console.error("Error creating session:", error);
+      }
+    },
+    [user]
+  );
+
+  // Fetch exam data and get/create session
   useEffect(() => {
-    const fetchExam = async () => {
-      if (!examCode) {
+    const fetchExamAndSession = async () => {
+      if (!examCode || !user) {
         setIsLoading(false);
         return;
       }
@@ -155,9 +203,8 @@ export default function AnswerSubmission() {
               "questions"
             );
 
-            // TODO: Load draft answers from database
-            // This would require a new API endpoint to fetch saved drafts
-            console.log("TODO: Load draft answers from previous session");
+            // Get or create session for this exam
+            await getOrCreateSession(result.exam.id);
           } else {
             console.error("Exam not found in database");
             setError("시험을 찾을 수 없습니다. 시험 코드를 확인해주세요.");
@@ -175,8 +222,8 @@ export default function AnswerSubmission() {
       }
     };
 
-    fetchExam();
-  }, [examCode]);
+    fetchExamAndSession();
+  }, [examCode, user, getOrCreateSession]);
 
   const updateAnswer = (questionId: string, text: string) => {
     setAnswers((prev) =>
@@ -236,17 +283,33 @@ export default function AnswerSubmission() {
       return;
     }
 
+    // Check if sessionId is available
+    if (!sessionId) {
+      console.error("Session ID not available");
+      alert("세션 정보를 찾을 수 없습니다. 페이지를 새로고침해주세요.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      // Submit answers to API with chat history and student ID
+      // Submit answers to API with session ID, chat history and student ID
+      console.log("Submitting with sessionId:", sessionId);
+
+      // Sanitize answers before sending
+      const sanitizedAnswers = answers.map((answer) => ({
+        ...answer,
+        text: answer.text?.replace(/\u0000/g, "") || "", // Remove null characters
+      }));
+
       const response = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           examCode,
-          answers,
+          answers: sanitizedAnswers,
           examId: exam.id,
+          sessionId: sessionId, // 세션 ID 추가
           chatHistory: chatMessages,
           studentId: user?.id,
         }),
@@ -254,6 +317,7 @@ export default function AnswerSubmission() {
 
       if (response.ok) {
         const data = await response.json();
+        console.log("Submission successful:", data);
         setFeedback(data.feedback);
         setIsSubmitted(true);
 
@@ -261,6 +325,10 @@ export default function AnswerSubmission() {
         setTimeout(() => {
           startChatMode();
         }, 1000); // 1초 후에 자동으로 채팅 모드 시작
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Submission failed:", errorData);
+        alert("답안 제출에 실패했습니다. 다시 시도해주세요.");
       }
     } catch (error) {
       console.error("Error submitting answers:", error);
