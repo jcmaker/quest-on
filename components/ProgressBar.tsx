@@ -11,7 +11,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({ currentStep }) => {
   const steps = [
     {
       id: "exam" as const,
-      label: "인터렉티브 시험",
+      label: "대화",
       icon: Brain,
       description: "문제 풀이 및 AI 도움",
     },
@@ -37,7 +37,7 @@ const ProgressBar: React.FC<ProgressBarProps> = ({ currentStep }) => {
     <div className="w-full py-2 px-4 relative">
       <div className="flex items-center justify-between max-w-3xl mx-auto relative">
         {/* Progress Line Background */}
-        <div className="absolute top-4 left-0 right-0 h-0.5 bg-gray-300">
+        <div className="absolute top-4 left-6 right-6 h-0.5 bg-gray-300">
           <div
             className="h-full bg-green-500 transition-all duration-500 ease-out"
             style={{

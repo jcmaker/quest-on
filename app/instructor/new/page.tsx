@@ -15,6 +15,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
+import { toast } from "sonner";
 
 export default function CreateExam() {
   const router = useRouter();
@@ -27,6 +28,8 @@ export default function CreateExam() {
     materials: [] as File[],
     instructions: "", // AI 프롬프트 추가
   });
+  const [disabledFiles, setDisabledFiles] = useState<Set<number>>(new Set());
+  const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
   const [questions, setQuestions] = useState<Question[]>([]);
 
   interface Question {
@@ -48,6 +51,43 @@ export default function CreateExam() {
       result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
     setExamData((prev) => ({ ...prev, code: result }));
+  };
+
+  // 파일 용량 계산 함수
+  const calculateTotalSize = (files: File[]) => {
+    return files.reduce((total, file) => total + file.size, 0);
+  };
+
+  // 파일 용량 검증 및 비활성화 처리
+  const validateAndManageFileSize = (files: File[]) => {
+    const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+    const totalSize = calculateTotalSize(files);
+
+    if (totalSize <= MAX_SIZE) {
+      // 용량이 정상인 경우
+      setDisabledFiles(new Set());
+      setCanAddMoreFiles(true);
+      return true;
+    }
+
+    // 용량 초과 시 처리
+    setCanAddMoreFiles(false);
+    toast.error("파일 용량이 50MB를 초과했습니다. 일부 파일이 비활성화됩니다.");
+
+    // 뒤에서부터 파일을 하나씩 비활성화하여 50MB 이하로 만들기
+    const newDisabledFiles = new Set<number>();
+    let currentSize = 0;
+
+    for (let i = files.length - 1; i >= 0; i--) {
+      currentSize += files[i].size;
+      if (currentSize > MAX_SIZE) {
+        newDisabledFiles.add(i);
+        currentSize -= files[i].size; // 이 파일은 제외
+      }
+    }
+
+    setDisabledFiles(newDisabledFiles);
+    return false;
   };
 
   const generateQuestionWithAI = async (questionId: string) => {
@@ -212,12 +252,28 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canAddMoreFiles) {
+      toast.error("파일 용량이 초과되어 더 이상 파일을 추가할 수 없습니다.");
+      e.target.value = "";
+      return;
+    }
+
     const files = Array.from(e.target.files || []);
     const validFiles = files.filter(validateFile);
 
+    if (validFiles.length === 0) {
+      e.target.value = "";
+      return;
+    }
+
+    const newMaterials = [...examData.materials, ...validFiles];
+
+    // 용량 검증 및 관리
+    validateAndManageFileSize(newMaterials);
+
     setExamData((prev) => ({
       ...prev,
-      materials: [...prev.materials, ...validFiles],
+      materials: newMaterials,
     }));
 
     // Reset input
@@ -225,9 +281,14 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
   };
 
   const removeFile = (index: number) => {
+    const newMaterials = examData.materials.filter((_, i) => i !== index);
+
+    // 파일 삭제 후 용량 재검증
+    validateAndManageFileSize(newMaterials);
+
     setExamData((prev) => ({
       ...prev,
-      materials: prev.materials.filter((_, i) => i !== index),
+      materials: newMaterials,
     }));
   };
 
@@ -288,8 +349,13 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
       let materialUrls: string[] = [];
 
       // Upload files to Supabase Storage if any materials exist
-      if (examData.materials.length > 0) {
-        const uploadPromises = examData.materials.map(async (file) => {
+      // 비활성화된 파일들을 제외하고 업로드
+      const activeMaterials = examData.materials.filter(
+        (_, index) => !disabledFiles.has(index)
+      );
+
+      if (activeMaterials.length > 0) {
+        const uploadPromises = activeMaterials.map(async (file) => {
           const fileName = `${Date.now()}-${file.name}`;
           const formData = new FormData();
           formData.append("file", file);
@@ -518,50 +584,83 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
                     accept=".pdf,.ppt,.pptx,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp"
                     onChange={handleFileSelect}
                     className="hidden"
+                    disabled={!canAddMoreFiles}
                   />
                   <Label
                     htmlFor="materials"
-                    className="flex items-center gap-2 px-4 py-2 border border-dashed border-gray-300 rounded-md cursor-pointer hover:border-gray-400 transition-colors"
+                    className={`flex items-center gap-2 px-4 py-2 border border-dashed rounded-md transition-colors ${
+                      canAddMoreFiles
+                        ? "border-gray-300 cursor-pointer hover:border-gray-400"
+                        : "border-gray-200 cursor-not-allowed bg-gray-50 text-gray-400"
+                    }`}
                   >
                     📎 파일 선택
                   </Label>
                   <span className="text-sm text-muted-foreground">
                     PDF, PPT, 워드, 이미지 파일 (최대 50MB, 자동 압축)
+                    {!canAddMoreFiles && " - 용량 초과로 추가 불가"}
                   </span>
                 </div>
 
                 {examData.materials.length > 0 && (
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">
-                      업로드된 파일:
-                    </Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-sm font-medium">
+                        업로드된 파일:
+                      </Label>
+                      <span className="text-xs text-muted-foreground">
+                        총 용량:{" "}
+                        {(
+                          calculateTotalSize(examData.materials) /
+                          1024 /
+                          1024
+                        ).toFixed(1)}
+                        MB / 50MB
+                      </span>
+                    </div>
                     <div className="space-y-1">
-                      {examData.materials.map((file, index) => (
-                        <div
-                          key={index}
-                          className="flex items-center justify-between p-2 bg-gray-50 rounded-md"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg">
-                              {getFileIcon(file.name)}
-                            </span>
-                            <span className="text-sm font-medium">
-                              {file.name}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              ({(file.size / 1024 / 1024).toFixed(1)}MB)
-                            </span>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => removeFile(index)}
+                      {examData.materials.map((file, index) => {
+                        const isDisabled = disabledFiles.has(index);
+                        return (
+                          <div
+                            key={index}
+                            className={`flex items-center justify-between p-2 rounded-md ${
+                              isDisabled
+                                ? "bg-red-50 border border-red-200"
+                                : "bg-gray-50"
+                            }`}
                           >
-                            ✕
-                          </Button>
-                        </div>
-                      ))}
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">
+                                {getFileIcon(file.name)}
+                              </span>
+                              <span
+                                className={`text-sm font-medium ${
+                                  isDisabled ? "text-red-600" : ""
+                                }`}
+                              >
+                                {file.name}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                ({(file.size / 1024 / 1024).toFixed(1)}MB)
+                              </span>
+                              {isDisabled && (
+                                <span className="text-xs text-red-500 font-medium">
+                                  (용량 초과로 비활성화)
+                                </span>
+                              )}
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => removeFile(index)}
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
