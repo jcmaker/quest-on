@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
       console.error("[upload] Supabase storage error details:", {
         message: error.message,
         name: error.name,
-        statusCode: (error as any).statusCode,
+        statusCode: (error as { statusCode?: number }).statusCode,
         error: JSON.stringify(error, null, 2),
         storagePath: storagePath,
         bucket: "exam-materials",
