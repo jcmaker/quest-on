@@ -341,6 +341,25 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 비활성화된 버튼 클릭 시 이유 안내
+    if (!examData.title) {
+      toast.error("시험 제목을 입력해주세요.");
+      return;
+    }
+    if (!examData.code) {
+      toast.error("시험 코드를 생성해주세요.");
+      return;
+    }
+    if (questions.length === 0) {
+      toast.error("최소 1개 이상의 문제를 추가해주세요.");
+      return;
+    }
+    if (!canAddMoreFiles) {
+      toast.error("파일 용량이 50MB를 초과했습니다. 일부 파일을 삭제해주세요.");
+      return;
+    }
+
     if (!examData.title || !examData.code || questions.length === 0) return;
 
     setIsLoading(true);
@@ -356,10 +375,16 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
 
       if (activeMaterials.length > 0) {
         const uploadPromises = activeMaterials.map(async (file) => {
-          const fileName = `${Date.now()}-${file.name}`;
+          // 원본 파일명은 파일 자체의 name 속성으로 서버에 전달됨
+          console.log(`[client] Processing file: ${file.name}`, {
+            originalName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+          });
+
           const formData = new FormData();
           formData.append("file", file);
-          formData.append("fileName", fileName);
+          // fileName은 더 이상 전송하지 않음 (서버가 file.name에서 추출)
 
           try {
             const uploadResponse = await fetch("/api/upload", {
@@ -367,29 +392,64 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
               body: formData,
             });
 
-            if (!uploadResponse.ok) {
-              const errorData = await uploadResponse.json().catch(() => ({}));
-              console.error(`Upload failed for ${file.name}:`, errorData);
-              throw new Error(
-                `Failed to upload ${file.name}: ${
-                  errorData.error || uploadResponse.statusText
-                }`
-              );
+            // 표준화된 응답 처리
+            const result = await uploadResponse.json();
+
+            if (!uploadResponse.ok || !result.ok) {
+              // 구조화된 에러 응답 처리
+              const errorCode = result.code || "UNKNOWN_ERROR";
+              const errorMessage = result.message || "업로드 실패";
+              const traceId = result.traceId || "N/A";
+
+              console.error(`[client] Upload failed for ${file.name}:`, {
+                code: errorCode,
+                message: errorMessage,
+                traceId: traceId,
+                details: result.details,
+              });
+
+              throw new Error(`${file.name}: ${errorMessage} [${errorCode}]`);
             }
 
-            const uploadResult = await uploadResponse.json();
-            return uploadResult.url;
+            // 업로드 성공 로깅
+            console.log(`[client] Upload successful for ${file.name}:`, {
+              originalName: result.meta?.originalName,
+              objectKey: result.objectKey,
+              url: result.url,
+              size: result.meta?.size,
+              mime: result.meta?.mime,
+            });
+
+            // URL만 반환 (DB에는 URL만 저장, 원본명은 메타데이터에서 관리)
+            return result.url;
           } catch (error) {
-            console.error(`Upload error for ${file.name}:`, error);
-            throw new Error(
-              `Failed to upload ${file.name}: ${
-                error instanceof Error ? error.message : "Unknown error"
-              }`
-            );
+            console.error(`[client] Upload error for ${file.name}:`, error);
+
+            // 에러 메시지가 이미 구조화되어 있으므로 그대로 전달
+            throw error;
           }
         });
 
-        materialUrls = await Promise.all(uploadPromises);
+        try {
+          console.log(
+            `[client] Starting upload of ${activeMaterials.length} files...`
+          );
+          materialUrls = await Promise.all(uploadPromises);
+          console.log(
+            `[client] Successfully uploaded ${materialUrls.length} files`
+          );
+        } catch (uploadError) {
+          console.error("[client] File upload failed:", uploadError);
+
+          // 에러 메시지 추출 및 표시
+          const errorMessage =
+            uploadError instanceof Error
+              ? uploadError.message
+              : "파일 업로드 중 오류가 발생했습니다.";
+
+          toast.error(errorMessage);
+          throw uploadError; // Re-throw to prevent exam creation
+        }
       }
 
       // Prepare exam data for database
@@ -875,11 +935,14 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
           </Button>
           <Button
             type="submit"
-            disabled={
-              isLoading ||
+            disabled={isLoading}
+            className={
               !examData.title ||
               !examData.code ||
-              questions.length === 0
+              questions.length === 0 ||
+              !canAddMoreFiles
+                ? "opacity-50 cursor-not-allowed"
+                : ""
             }
           >
             {isLoading ? "만들기 중..." : "시험 만들기"}

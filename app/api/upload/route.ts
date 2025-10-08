@@ -1,61 +1,98 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
+import { randomUUID } from "crypto";
 import sharp from "sharp";
+
 // Initialize Supabase client with service role key for server-side operations
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// 표준화된 에러 응답 헬퍼
+function errorJson(
+  code: string,
+  message: string,
+  details?: unknown,
+  status = 400
+) {
+  const traceId = randomUUID();
+  console.error(`[${traceId}] ${code}:`, message, details);
+  return NextResponse.json(
+    { ok: false, code, message, details, traceId },
+    { status }
+  );
+}
+
+// 안전한 저장용 key 생성 (원본명은 메타데이터로만 저장)
+function makeSafeObjectKey(originalName: string, extFallback = ".bin") {
+  const ts = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  const id = randomUUID();
+  // 확장자 추출 (마지막 점 기준, 너무 긴/이상한 건 버림)
+  const m = originalName.match(/\.([a-zA-Z0-9]{1,8})$/);
+  const ext = m ? `.${m[1].toLowerCase()}` : extFallback;
+  // 슬래시를 언더스코어로 변경 (일부 storage는 중첩 폴더 미지원)
+  return `${ts}_${id}${ext}`;
+}
+
 export async function POST(request: NextRequest) {
+  let objectKey: string | null = null;
+
   try {
-    console.log("Upload API called");
+    console.log("[upload] start");
+
+    // 환경 변수 확인
+    console.log("[upload] Environment check:", {
+      hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      supabaseUrlPrefix:
+        process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + "...",
+    });
+
+    // Supabase 연결 테스트
+    try {
+      const { data: buckets, error: listError } =
+        await supabase.storage.listBuckets();
+      console.log("[upload] Supabase connection test:", {
+        canListBuckets: !listError,
+        bucketsFound: buckets?.length || 0,
+        hasExamMaterials: buckets?.some((b) => b.name === "exam-materials"),
+        listError: listError?.message,
+      });
+    } catch (testError) {
+      console.error("[upload] Supabase connection failed:", testError);
+    }
 
     // Get current user
     const user = await currentUser();
-    console.log(
-      "User:",
-      user ? { id: user.id, role: user.unsafeMetadata?.role } : "No user"
-    );
-
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "로그인이 필요합니다.", null, 401);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
-    console.log("Upload API - User role:", userRole, "User ID:", user.id);
+    console.log("[upload] User:", { id: user.id, role: userRole });
 
     if (userRole !== "instructor") {
-      console.log("Upload API - Access denied. User role:", userRole);
-      return NextResponse.json(
-        {
-          error: "Instructor access required",
-          details: `User role: ${userRole || "not set"}`,
-          userId: user.id,
-        },
-        { status: 403 }
+      return errorJson(
+        "FORBIDDEN",
+        "강사 권한이 필요합니다.",
+        { userRole, userId: user.id },
+        403
       );
     }
 
+    // 반드시 form-data로만 받기 (쿼리에 파일명 넣지 않기)
     const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const fileName = formData.get("fileName") as string;
-
-    console.log("File info:", {
-      fileName: fileName,
-      fileSize: file?.size,
-      fileType: file?.type,
-      hasFile: !!file,
-    });
+    const file = formData.get("file") as File | null;
+    const originalName = file?.name || "unnamed";
 
     if (!file) {
-      console.log("No file provided");
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      return errorJson("NO_FILE", "파일이 존재하지 않습니다.", null, 400);
     }
 
-    // Validate file type
+    // Validate file type (화이트리스트)
     const allowedTypes = [
       "application/pdf",
       "application/vnd.ms-powerpoint",
@@ -69,44 +106,40 @@ export async function POST(request: NextRequest) {
     ];
 
     if (!allowedTypes.includes(file.type)) {
-      return NextResponse.json(
-        { error: "Unsupported file type" },
-        { status: 400 }
+      return errorJson(
+        "INVALID_FILE_TYPE",
+        "지원되지 않는 파일 형식입니다.",
+        { fileType: file.type, allowedTypes },
+        400
       );
     }
 
-    // Validate file size (50MB for original, will be compressed)
-    const maxSize = 50 * 1024 * 1024; // 50MB (will be compressed)
+    // Validate file size (50MB)
+    const maxSize = 50 * 1024 * 1024;
     if (file.size > maxSize) {
-      console.log(`File size ${file.size} exceeds 50MB limit`);
-      return NextResponse.json(
-        { error: "File size exceeds 50MB limit. Please use a smaller file." },
-        { status: 413 }
+      return errorJson(
+        "FILE_TOO_LARGE",
+        "파일 크기가 50MB를 초과합니다.",
+        { fileSize: file.size, maxSize },
+        413
       );
     }
 
-    // Sanitize filename to remove special characters and Korean characters
-    const sanitizeFileName = (name: string) => {
-      // Extract file extension
-      const lastDotIndex = name.lastIndexOf(".");
-      const extension = lastDotIndex !== -1 ? name.substring(lastDotIndex) : "";
-      const nameWithoutExt =
-        lastDotIndex !== -1 ? name.substring(0, lastDotIndex) : name;
+    // 안전한 저장용 키 생성 (원본명은 메타데이터로만)
+    objectKey = makeSafeObjectKey(originalName);
 
-      // Replace Korean characters and special characters with safe alternatives
-      const sanitized =
-        nameWithoutExt
-          .replace(/[가-힣]/g, "") // Remove Korean characters
-          .replace(/[^a-zA-Z0-9_-]/g, "_") // Replace special chars with underscore
-          .replace(/_+/g, "_") // Replace multiple underscores with single
-          .replace(/^_|_$/g, "") || // Remove leading/trailing underscores
-        "file"; // Fallback if name becomes empty
+    // Supabase Storage 경로: instructor-{userId}/{objectKey}
+    // objectKey는 이미 날짜/uuid.ext 형식이므로 그대로 사용
+    const storagePath = `instructor-${user.id}/${objectKey}`;
 
-      return sanitized + extension;
-    };
-
-    const sanitizedFileName = sanitizeFileName(fileName);
-    const finalFileName = `${Date.now()}-${sanitizedFileName}`;
+    console.log("[upload] Storage path generated:", {
+      originalName,
+      objectKey,
+      storagePath,
+      fileSize: file.size,
+      fileType: file.type,
+      userId: user.id,
+    });
 
     // Convert file to buffer and compress if needed
     const arrayBuffer = await file.arrayBuffer();
@@ -137,55 +170,109 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Upload to Supabase Storage
-    console.log("Uploading to Supabase Storage:", {
+    console.log("[upload] Uploading to Supabase:", {
       bucket: "exam-materials",
-      path: `instructor-${user.id}/${finalFileName}`,
-      contentType: file.type,
+      path: storagePath,
       bufferSize: buffer.length,
+      contentType: file.type,
     });
 
+    // Supabase Storage 업로드 시도
     const { data, error } = await supabase.storage
       .from("exam-materials")
-      .upload(`instructor-${user.id}/${finalFileName}`, buffer, {
+      .upload(storagePath, buffer, {
         contentType: file.type,
-        upsert: false,
+        upsert: true, // 임시로 덮어쓰기 허용 (중복 파일 에러 방지)
       });
 
+    console.log("[upload] Supabase response:", {
+      hasData: !!data,
+      hasError: !!error,
+      dataPath: data?.path,
+      errorMessage: error?.message,
+      errorDetails: error,
+    });
+
     if (error) {
-      console.error("Supabase storage error:", error);
-      console.error("Error details:", {
+      console.error("[upload] Supabase storage error details:", {
         message: error.message,
+        name: error.name,
+        statusCode: (error as any).statusCode,
+        error: JSON.stringify(error, null, 2),
+        storagePath: storagePath,
+        bucket: "exam-materials",
       });
-      return NextResponse.json(
-        { error: `Upload failed: ${error.message}` },
-        { status: 500 }
+
+      // 에러 타입별 구체적인 메시지
+      let userMessage = "파일 저장 중 오류가 발생했습니다.";
+      let errorCode = "STORAGE_ERROR";
+
+      if (error.message.includes("Bucket not found")) {
+        userMessage = "스토리지 버킷을 찾을 수 없습니다.";
+        errorCode = "BUCKET_NOT_FOUND";
+      } else if (
+        error.message.includes("row-level security") ||
+        error.message.includes("policy")
+      ) {
+        userMessage = "파일 업로드 권한이 없습니다. RLS 정책을 확인하세요.";
+        errorCode = "POLICY_VIOLATION";
+      } else if (error.message.includes("already exists")) {
+        userMessage = "같은 이름의 파일이 이미 존재합니다.";
+        errorCode = "FILE_EXISTS";
+      } else if (
+        error.message.includes("Invalid JWT") ||
+        error.message.includes("JWT")
+      ) {
+        userMessage = "인증 토큰이 유효하지 않습니다.";
+        errorCode = "INVALID_TOKEN";
+      }
+
+      return errorJson(
+        errorCode,
+        userMessage,
+        {
+          originalError: error.message,
+          storagePath: storagePath,
+          bucket: "exam-materials",
+          hint: "서버 로그에서 [upload] Supabase storage error details를 확인하세요.",
+        },
+        500
       );
     }
 
-    console.log("Upload successful:", data);
+    console.log("[upload] Upload successful:", data.path);
 
     // Get public URL
     const { data: urlData } = supabase.storage
       .from("exam-materials")
       .getPublicUrl(data.path);
 
-    return NextResponse.json({
-      url: urlData.publicUrl,
-      fileName: file.name, // Keep original filename for display
-      sanitizedFileName: finalFileName, // Include sanitized filename for reference
-      size: file.size,
-      type: file.type,
-    });
-  } catch (error) {
-    console.error("Upload error:", error);
-    console.error(
-      "Error stack:",
-      error instanceof Error ? error.stack : "No stack trace"
-    );
+    // 표준화된 성공 응답 (원본명은 메타데이터로만)
     return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+      {
+        ok: true,
+        objectKey: data.path, // 클라이언트는 이 key로만 접근
+        url: urlData.publicUrl,
+        meta: {
+          originalName: originalName,
+          size: file.size,
+          mime: file.type,
+        },
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("[upload] Unexpected error:", error);
+
+    // 구조화된 에러 응답
+    return errorJson(
+      "UPLOAD_FAILED",
+      "업로드 중 예상치 못한 오류가 발생했습니다.",
+      {
+        error: error instanceof Error ? error.message : String(error),
+        objectKey,
+      },
+      500
     );
   }
 }
