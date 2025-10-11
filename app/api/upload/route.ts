@@ -75,6 +75,10 @@ export async function POST(request: NextRequest) {
       url: request.url,
       method: request.method,
       contentType: request.headers.get("content-type"),
+      userAgent: request.headers.get("user-agent"),
+      origin: request.headers.get("origin"),
+      referer: request.headers.get("referer"),
+      timestamp: new Date().toISOString(),
     });
 
     // 환경 변수 확인

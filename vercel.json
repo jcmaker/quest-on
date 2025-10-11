@@ -15,11 +15,15 @@
         },
         {
           "key": "Access-Control-Allow-Methods",
-          "value": "POST, OPTIONS"
+          "value": "POST, OPTIONS, GET"
         },
         {
           "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type"
+          "value": "Content-Type, Authorization"
+        },
+        {
+          "key": "Allow",
+          "value": "POST, OPTIONS, GET"
         }
       ]
     }
