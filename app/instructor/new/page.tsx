@@ -385,9 +385,9 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
           });
 
           try {
-            // 클라이언트에서 Supabase Storage로 직접 업로드 (Vercel 4MB 제한 우회)
+            // RLS 정책 문제 해결을 위한 Signed URL 방식
             const { createClient } = await import("@supabase/supabase-js");
-            
+
             const supabase = createClient(
               process.env.NEXT_PUBLIC_SUPABASE_URL!,
               process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -396,19 +396,25 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
             // 안전한 파일명 생성
             const timestamp = new Date().toISOString().slice(0, 10);
             const randomId = crypto.randomUUID();
-            const fileExtension = file.name.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase() || 'bin';
+            const fileExtension =
+              file.name.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase() ||
+              "bin";
             const safeFileName = `${timestamp}_${randomId}.${fileExtension}`;
-            
+
             // Storage 경로: instructor-{userId}/{safeFileName}
             const storagePath = `instructor-${user?.id}/${safeFileName}`;
 
-            console.log(`[client] Direct upload to Supabase (bypass Vercel 4MB limit):`, {
-              originalName: file.name,
-              storagePath: storagePath,
-              fileSize: file.size,
-              fileType: file.type,
-            });
+            console.log(
+              `[client] Attempting direct upload to Supabase:`,
+              {
+                originalName: file.name,
+                storagePath: storagePath,
+                fileSize: file.size,
+                fileType: file.type,
+              }
+            );
 
+            // 먼저 직접 업로드 시도
             const { data, error } = await supabase.storage
               .from("exam-materials")
               .upload(storagePath, file, {
@@ -417,24 +423,50 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
               });
 
             if (error) {
-              console.error(`[client] Supabase upload error for ${file.name}:`, error);
-              
-              // RLS 정책 에러에 대한 특별한 메시지
-              if (error.message.includes("row-level security")) {
-                throw new Error(
-                  `${file.name}: Storage 권한 문제입니다. 관리자에게 문의하세요. (RLS 정책 확인 필요)`
-                );
+              console.error(
+                `[client] Direct upload failed for ${file.name}:`,
+                error
+              );
+
+              // RLS 정책 에러인 경우 서버 API로 폴백
+              if (error.message.includes("row-level security") || error.message.includes("policy")) {
+                console.log(`[client] RLS policy error detected, falling back to server API for ${file.name}`);
+                
+                // 서버 API로 폴백 (4MB 제한 있지만 작은 파일은 가능)
+                const formData = new FormData();
+                formData.append("file", file);
+
+                const uploadResponse = await fetch("/api/upload", {
+                  method: "POST",
+                  body: formData,
+                });
+
+                if (!uploadResponse.ok) {
+                  if (uploadResponse.status === 413) {
+                    throw new Error(
+                      `${file.name}: 파일이 너무 큽니다 (${(file.size / 1024 / 1024).toFixed(1)}MB). RLS 정책 수정이 필요합니다.`
+                    );
+                  }
+                  throw new Error(`${file.name}: 서버 업로드 실패 (${uploadResponse.status})`);
+                }
+
+                const result = await uploadResponse.json();
+                if (!result.ok) {
+                  throw new Error(`${file.name}: ${result.message}`);
+                }
+
+                console.log(`[client] Server upload successful for ${file.name}`);
+                return result.url;
               }
-              
+
               throw new Error(`${file.name}: 업로드 실패 - ${error.message}`);
             }
 
-            // 공개 URL 가져오기
+            // 직접 업로드 성공
             const { data: urlData } = supabase.storage
               .from("exam-materials")
               .getPublicUrl(data.path);
 
-            // 업로드 성공 로깅
             console.log(`[client] Direct upload successful for ${file.name}:`, {
               originalName: file.name,
               storagePath: data.path,
@@ -443,7 +475,6 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
               fileType: file.type,
             });
 
-            // 공개 URL 반환
             return urlData.publicUrl;
           } catch (error) {
             console.error(
