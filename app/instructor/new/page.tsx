@@ -16,9 +16,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { useUser } from "@clerk/nextjs";
 
 export default function CreateExam() {
   const router = useRouter();
+  const { user } = useUser();
   const [isLoading, setIsLoading] = useState(false);
   const [examData, setExamData] = useState({
     title: "",
@@ -382,75 +384,61 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
             fileType: file.type,
           });
 
-          const formData = new FormData();
-          formData.append("file", file);
-          // fileName은 더 이상 전송하지 않음 (서버가 file.name에서 추출)
-
           try {
-            const uploadResponse = await fetch("/api/upload", {
-              method: "POST",
-              body: formData,
+            // 클라이언트에서 Supabase Storage로 직접 업로드
+            const { createClient } = await import("@supabase/supabase-js");
+            
+            const supabase = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+            );
+
+            // 안전한 파일명 생성 (서버와 동일한 로직)
+            const timestamp = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+            const randomId = crypto.randomUUID();
+            const fileExtension = file.name.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase() || 'bin';
+            const safeFileName = `${timestamp}_${randomId}.${fileExtension}`;
+            
+            // Storage 경로: instructor-{userId}/{safeFileName}
+            const storagePath = `instructor-${user?.id}/${safeFileName}`;
+
+            console.log(`[client] Direct upload to Supabase:`, {
+              originalName: file.name,
+              storagePath: storagePath,
+              fileSize: file.size,
+              fileType: file.type,
             });
 
-            // 응답 검증 및 JSON 파싱 (에러 처리 강화)
-            let result;
-            try {
-              result = await uploadResponse.json();
-            } catch (jsonError) {
-              // JSON 파싱 실패 시 (405, 500 등의 비-JSON 응답)
-              console.error(`[client] JSON parse error for ${file.name}:`, {
-                status: uploadResponse.status,
-                statusText: uploadResponse.statusText,
-                jsonError:
-                  jsonError instanceof Error
-                    ? jsonError.message
-                    : String(jsonError),
+            const { data, error } = await supabase.storage
+              .from("exam-materials")
+              .upload(storagePath, file, {
+                contentType: file.type,
+                upsert: true,
               });
 
-              // 413 에러에 대한 특별한 메시지
-              if (uploadResponse.status === 413) {
-                throw new Error(
-                  `${file.name}: 파일이 너무 큽니다 (${(file.size / 1024 / 1024).toFixed(1)}MB). 25MB 이하의 파일만 업로드 가능합니다.`
-                );
-              }
-
-              throw new Error(
-                `${file.name}: 서버 응답 파싱 실패 (${uploadResponse.status} ${uploadResponse.statusText})`
-              );
+            if (error) {
+              console.error(`[client] Supabase upload error for ${file.name}:`, error);
+              throw new Error(`${file.name}: Supabase 업로드 실패 - ${error.message}`);
             }
 
-            if (!uploadResponse.ok || !result.ok) {
-              // 구조화된 에러 응답 처리
-              const errorCode = result.code || "UNKNOWN_ERROR";
-              const errorMessage = result.message || "업로드 실패";
-              const traceId = result.traceId || "N/A";
-
-              console.error(`[client] Upload failed for ${file.name}:`, {
-                code: errorCode,
-                message: errorMessage,
-                traceId: traceId,
-                details: result.details,
-                status: uploadResponse.status,
-              });
-
-              throw new Error(`${file.name}: ${errorMessage} [${errorCode}]`);
-            }
+            // 공개 URL 가져오기
+            const { data: urlData } = supabase.storage
+              .from("exam-materials")
+              .getPublicUrl(data.path);
 
             // 업로드 성공 로깅
-            console.log(`[client] Upload successful for ${file.name}:`, {
-              originalName: result.meta?.originalName,
-              objectKey: result.objectKey,
-              url: result.url,
-              size: result.meta?.size,
-              mime: result.meta?.mime,
+            console.log(`[client] Direct upload successful for ${file.name}:`, {
+              originalName: file.name,
+              storagePath: data.path,
+              publicUrl: urlData.publicUrl,
+              fileSize: file.size,
+              fileType: file.type,
             });
 
-            // URL만 반환 (DB에는 URL만 저장, 원본명은 메타데이터에서 관리)
-            return result.url;
+            // 공개 URL 반환
+            return urlData.publicUrl;
           } catch (error) {
-            console.error(`[client] Upload error for ${file.name}:`, error);
-
-            // 에러 메시지가 이미 구조화되어 있으므로 그대로 전달
+            console.error(`[client] Direct upload error for ${file.name}:`, error);
             throw error;
           }
         });
