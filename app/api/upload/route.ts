@@ -81,6 +81,7 @@ export async function POST(request: NextRequest) {
       origin: request.headers.get("origin"),
       referer: request.headers.get("referer"),
       timestamp: new Date().toISOString(),
+      runtime: "nodejs", // 명시적으로 Runtime 표시
     });
 
     // 환경 변수 확인

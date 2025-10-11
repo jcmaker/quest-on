@@ -407,6 +407,13 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
                     : String(jsonError),
               });
 
+              // 413 에러에 대한 특별한 메시지
+              if (uploadResponse.status === 413) {
+                throw new Error(
+                  `${file.name}: 파일이 너무 큽니다 (${(file.size / 1024 / 1024).toFixed(1)}MB). 25MB 이하의 파일만 업로드 가능합니다.`
+                );
+              }
+
               throw new Error(
                 `${file.name}: 서버 응답 파싱 실패 (${uploadResponse.status} ${uploadResponse.statusText})`
               );
