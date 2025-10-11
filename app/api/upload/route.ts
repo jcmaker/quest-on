@@ -1,3 +1,6 @@
+// Node.js Runtime 사용 (4MB → 25MB 업로드 한도 증가)
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
@@ -152,12 +155,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (50MB)
-    const maxSize = 50 * 1024 * 1024;
+    // Validate file size (25MB - Node.js Runtime 제한)
+    const maxSize = 25 * 1024 * 1024;
     if (file.size > maxSize) {
       return errorJson(
         "FILE_TOO_LARGE",
-        "파일 크기가 50MB를 초과합니다.",
+        "파일 크기가 25MB를 초과합니다.",
         { fileSize: file.size, maxSize },
         413
       );
