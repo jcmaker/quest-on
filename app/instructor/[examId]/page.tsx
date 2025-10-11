@@ -122,9 +122,11 @@ export default function ExamDetail({
                 typeof session.student_id === "string"
                   ? session.student_id
                   : "";
+              const sessionId =
+                typeof session.id === "string" ? session.id : "";
               const submittedAt = session.submitted_at ?? null;
               return {
-                id: studentId,
+                id: sessionId, // Use session ID for routing to grade page
                 name: `Student ${studentId.slice(0, 8)}`, // Generate name from ID
                 email: `${studentId}@example.com`,
                 status: submittedAt ? "completed" : "in-progress",

@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { redirect } from "next/navigation";
@@ -29,20 +28,61 @@ import {
 
 interface Conversation {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "ai";
   content: string;
-  timestamp: string;
+  created_at: string;
 }
 
-interface StudentSubmission {
+interface Question {
   id: string;
-  studentId: string;
-  studentName: string;
-  finalAnswer: string;
-  feedback: string;
-  score?: number;
-  aiConversations: Conversation[];
-  submittedAt: string;
+  idx: number;
+  type: string;
+  prompt: string;
+  ai_context?: string;
+}
+
+interface Submission {
+  id: string;
+  q_idx: number;
+  answer: string;
+  ai_feedback?: Record<string, unknown>;
+  student_reply?: string;
+  decompressed?: {
+    answerData?: Record<string, unknown>;
+    feedbackData?: Record<string, unknown>;
+  };
+}
+
+interface Grade {
+  id: string;
+  q_idx: number;
+  score: number;
+  comment?: string;
+}
+
+interface SessionData {
+  session: {
+    id: string;
+    exam_id: string;
+    student_id: string;
+    submitted_at: string;
+    used_clarifications: number;
+    created_at: string;
+  };
+  exam: {
+    id: string;
+    title: string;
+    code: string;
+    questions: Question[];
+  };
+  student: {
+    name: string;
+    email: string;
+  };
+  submissions: Record<string, Submission>;
+  messages: Record<string, Conversation[]>;
+  grades: Record<string, Grade>;
+  overallScore: number | null;
 }
 
 export default function GradeStudentPage({
@@ -53,70 +93,12 @@ export default function GradeStudentPage({
   const resolvedParams = use(params);
   const { isSignedIn, isLoaded, user } = useUser();
 
-  const [submission, setSubmission] = useState<StudentSubmission | null>(null);
+  const [sessionData, setSessionData] = useState<SessionData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [score, setScore] = useState<number>(0);
-  const [feedback, setFeedback] = useState<string>("");
+  const [scores, setScores] = useState<Record<number, number>>({});
+  const [feedbacks, setFeedbacks] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
-
-  // Mock data for demonstration
-  const mockSubmission: StudentSubmission = {
-    id: resolvedParams.studentId,
-    studentId: resolvedParams.studentId,
-    studentName: "Justin Cho",
-    finalAnswer:
-      "Project A:\n• NPV +$153M, IRR 11.5%\n• 안정적 Cash Flow, 큰 Risk 없음\n\nProject B:\n• NPV +$182M, IRR 14.2%\n• Growth Option 존재, 경쟁사 대비 전략적 필요\n• Debt 50% 활용 시 WACC 낮아지고 배당 안정성 유지 가능\n\n결론:\n• B 선택\n• 이유: 재무적 성과 우수, 전략적 성장 옵션, 자본조달 방식으로 리스크 관리 가능",
-    feedback:
-      "프로젝트 평가에 대한 답안이 매우 체계적이고 전문적으로 작성되었습니다. NPV, IRR 등 주요 재무 지표를 적절히 활용하였으며, 현금흐름 안정성과 리스크 요인을 고려한 분석이 돋보입니다. 다만, 구체적인 자금조달 방식과 배당 정책에 대한 세부적인 수치 분석이 추가되면 더 완벽한 평가가 될 것입니다.",
-    score: 85,
-    aiConversations: [
-      {
-        id: "1",
-        role: "user",
-        content: "두 기업의 5년 예상 cash flow를 알려주세요.",
-        timestamp: "2024-01-20T10:30:00Z",
-      },
-      {
-        id: "2",
-        role: "assistant",
-        content:
-          "두 프로젝트의 5년 예상 현금 흐름을 비교하기 위한 간단한 예시를 아래와 같이 제시합니다.\n\n프로젝트 A:\n- 초기 투자: $100,000\n- 연간 현금 흐름: $20,000\n- 5년 후 잔액: $100,000 + $100,000 = $200,000\n\n프로젝트 B:\n- 초기 투자: $150,000\n- 연간 현금 흐름: $30,000\n- 5년 후 잔액: $150,000 + $150,000 = $300,000",
-        timestamp: "2024-01-20T10:30:15Z",
-      },
-      {
-        id: "3",
-        role: "user",
-        content: "두 기업의 시장 리스크 보고해주세요.",
-        timestamp: "2024-01-20T10:31:00Z",
-      },
-      {
-        id: "4",
-        role: "assistant",
-        content:
-          "시장 리스크를 비교하기 위해 두 프로젝트의 주요 요소를 정리한 간단한 표를 제시하겠습니다. 이 표는 각 프로젝트의 시장 리스크 요인을 나열합니다.",
-        timestamp: "2024-01-20T10:31:20Z",
-      },
-    ],
-    submittedAt: "2024-01-20T11:00:00Z",
-  };
-
-  // AI 피드백 대화 데이터
-  const aiFeedbackConversations: Conversation[] = [
-    {
-      id: "feedback-1",
-      role: "assistant",
-      content:
-        "학생님이 제출하신 프로젝트 평가 답안을 검토해보았습니다. NPV, IRR, WACC 등의 재무 지표를 적절히 활용하였고, 프로젝트의 선택에 있어서 전략적인 요소를 고려한 점이 인상적이었습니다. 🎯\n\n**첫번째로, Project B의 NPV와 IRR이 더 높긴 하지만, 프로젝트 리스크를 충분히 고려하였는지 궁금합니다.** Project B의 성장 옵션을 활용하여 경쟁사에 대응하는 것이 전략적으로 필요하다고 판단하였지만, 이러한 성장 옵션은 종종 높은 리스크를 동반하곤 합니다. 따라서, 프로젝트 B의 리스크를 어떻게 평가하였는지, 그리고 이를 어떻게 관리할 것인지에 대한 논의가 더 필요해 보입니다. 성장 옵션의 가치를 어떻게 평가하였는지, 이를 NPV 계산에 어떻게 반영하였는지도 알려주실 수 있을까요?\n\n**두번째로, 자본조달 구조에 대한 논의가 더 필요해 보입니다.** 답안에서는 Project B를 위해 50%의 부채를 활용할 계획이라고 언급하였는데, 이는 고정비용이 증가하고, 이에 따라 경영 위험이 높아질 수 있음을 의미합니다. 이러한 추가적인 리스크를 고려하였는지, 그리고 이를 관리하기 위한 계획이 있는지 알려주실 수 있을까요? 또한, 이러한 자본조달 구조가 어떻게 배당 안정성에 영향을 미치는지에 대한 논의도 필요해 보입니다.\n\n**종합적으로 봤을 때,** 답안은 NPV, IRR, WACC 등의 재무 지표를 적절히 활용하였고, 프로젝트의 선택에 있어서 전략적인 요소를 고려하였습니다. 그러나, 프로젝트 리스크와 자본조달 구조의 리스크에 대한 논의가 더 필요해 보입니다. 이러한 요소들을 고려하여 투자 결정을 다시 한번 검토해 보시는 것이 좋겠습니다.",
-      timestamp: "2024-01-20T11:05:00Z",
-    },
-    {
-      id: "feedback-2",
-      role: "user",
-      content:
-        "**프로젝트 리스크 평가에 대해:**\nProject B의 성장 옵션은 경쟁사 대비 25%의 시장 점유율 확대 가능성을 가지고 있지만, 이에 따른 리스크도 고려하였습니다. Black-Scholes 모델을 활용하여 성장 옵션의 가치를 $45M로 산정하였으며, 이는 NPV 계산 시 옵션 가치로 반영되었습니다.\n\n**리스크 관리 방안:**\n• 단계적 투자 (Phase 1: $80M, Phase 2: $100M)\n• Pilot 프로젝트를 통한 시장 테스트\n• Exit Strategy: 2년 내 15% ROI 미달시 프로젝트 중단\n\n**자본조달 구조의 리스크 관리:**\n50% 부채 활용 시 이자비용이 증가하지만, 다음과 같은 리스크 관리 방안을 마련하였습니다:\n• Interest Rate Swap을 통한 금리 리스크 헤지\n• Debt Covenant 설정으로 재무 건전성 유지\n• 배당 안정성 확보를 위한 Retained Earnings 정책\n\n이러한 추가 분석을 통해 Project B의 타당성을 더 강화할 수 있을 것 같습니다. 어떻게 생각하시나요?",
-      timestamp: "2024-01-20T11:06:00Z",
-    },
-  ];
+  const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
 
   // Redirect non-instructors
   useEffect(() => {
@@ -129,34 +111,77 @@ export default function GradeStudentPage({
   }, [isLoaded, isSignedIn, user]);
 
   useEffect(() => {
-    // Simulate API call to get student submission
-    const fetchSubmission = async () => {
+    const fetchSessionData = async () => {
       try {
         setLoading(true);
-        // In real implementation, this would be an API call
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        setSubmission(mockSubmission);
-        setScore(mockSubmission.score || 0);
-        setFeedback(mockSubmission.feedback);
+        // studentId is actually sessionId in the URL
+        const response = await fetch(
+          `/api/session/${resolvedParams.studentId}/grade`
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to fetch session data");
+        }
+
+        const data: SessionData = await response.json();
+        setSessionData(data);
+
+        // Initialize scores and feedbacks from existing grades
+        const initialScores: Record<number, number> = {};
+        const initialFeedbacks: Record<number, string> = {};
+
+        Object.entries(data.grades).forEach(([qIdx, grade]) => {
+          initialScores[parseInt(qIdx)] = grade.score;
+          initialFeedbacks[parseInt(qIdx)] = grade.comment || "";
+        });
+
+        setScores(initialScores);
+        setFeedbacks(initialFeedbacks);
       } catch (error) {
-        console.error("Error fetching submission:", error);
+        console.error("Error fetching session data:", error);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchSubmission();
-  }, [resolvedParams.examId, resolvedParams.studentId]);
+    fetchSessionData();
+  }, [resolvedParams.studentId]);
 
-  const handleSaveGrade = async () => {
+  const handleSaveGrade = async (questionIdx: number) => {
     try {
       setSaving(true);
-      // In real implementation, this would save to database
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      console.log("Grade saved:", { score, feedback });
-      // Show success message
+      const response = await fetch(
+        `/api/session/${resolvedParams.studentId}/grade`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            questionIdx,
+            score: scores[questionIdx] || 0,
+            comment: feedbacks[questionIdx] || "",
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to save grade");
+      }
+
+      // Refresh data to get updated overall score
+      const refreshResponse = await fetch(
+        `/api/session/${resolvedParams.studentId}/grade`
+      );
+      if (refreshResponse.ok) {
+        const data: SessionData = await refreshResponse.json();
+        setSessionData(data);
+      }
+
+      alert("채점이 저장되었습니다.");
     } catch (error) {
       console.error("Error saving grade:", error);
+      alert("채점 저장 중 오류가 발생했습니다.");
     } finally {
       setSaving(false);
     }
@@ -188,7 +213,7 @@ export default function GradeStudentPage({
     );
   }
 
-  if (!submission) {
+  if (!sessionData) {
     return (
       <div className="container mx-auto p-6">
         <div className="text-center py-12">
@@ -202,6 +227,22 @@ export default function GradeStudentPage({
       </div>
     );
   }
+
+  // Get current question data
+  const currentQuestion = sessionData.exam.questions[selectedQuestionIdx];
+  const currentSubmission = sessionData.submissions[selectedQuestionIdx] as
+    | Submission
+    | undefined;
+  const currentMessages = sessionData.messages[selectedQuestionIdx] || [];
+
+  // Separate messages into AI conversations (before submission) and feedback conversations (after submission)
+  const aiConversations = currentMessages.filter(
+    (msg) => msg.role === "user" || msg.role === "ai"
+  );
+
+  // For now, we'll assume all messages are AI conversations during the exam
+  // In a real implementation, you might have a flag or timestamp to distinguish
+  const duringExamMessages = aiConversations;
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
@@ -218,11 +259,17 @@ export default function GradeStudentPage({
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">
-              {submission.studentName} 학생 채점
+              {sessionData.student.name} 학생 채점
             </h1>
             <p className="text-muted-foreground">
-              제출일: {new Date(submission.submittedAt).toLocaleString()}
+              제출일:{" "}
+              {new Date(sessionData.session.submitted_at).toLocaleString()}
             </p>
+            {sessionData.overallScore !== null && (
+              <p className="text-lg font-semibold mt-2">
+                전체 점수: {sessionData.overallScore}점
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-green-600">
@@ -233,9 +280,50 @@ export default function GradeStudentPage({
         </div>
       </div>
 
+      {/* Question Navigation */}
+      <div className="mb-6">
+        <div className="flex gap-2 flex-wrap">
+          {sessionData.exam.questions.map((question, idx) => (
+            <Button
+              key={question.id || idx}
+              variant={selectedQuestionIdx === idx ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedQuestionIdx(idx)}
+            >
+              문제 {idx + 1}
+              {sessionData.grades[idx] && (
+                <Badge
+                  variant="secondary"
+                  className="ml-2 bg-green-100 text-green-800"
+                >
+                  {sessionData.grades[idx]?.score || 0}점
+                </Badge>
+              )}
+            </Button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-3">
         {/* AI Conversations */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Question Prompt */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" />
+                문제 {selectedQuestionIdx + 1}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm whitespace-pre-wrap">
+                  {currentQuestion?.prompt || "문제를 불러올 수 없습니다."}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -247,52 +335,60 @@ export default function GradeStudentPage({
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4 max-h-96 overflow-y-auto">
-                {submission.aiConversations.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex gap-3 ${
-                      message.role === "user" ? "justify-end" : "justify-start"
-                    }`}
-                  >
+              {duringExamMessages.length > 0 ? (
+                <div className="space-y-4 max-h-96 overflow-y-auto">
+                  {duringExamMessages.map((message) => (
                     <div
-                      className={`flex gap-2 max-w-[80%] ${
+                      key={message.id}
+                      className={`flex gap-3 ${
                         message.role === "user"
-                          ? "flex-row-reverse"
-                          : "flex-row"
+                          ? "justify-end"
+                          : "justify-start"
                       }`}
                     >
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        className={`flex gap-2 max-w-[80%] ${
                           message.role === "user"
-                            ? "bg-blue-600"
-                            : "bg-gray-600"
+                            ? "flex-row-reverse"
+                            : "flex-row"
                         }`}
                       >
-                        {message.role === "user" ? (
-                          <User className="w-4 h-4 text-white" />
-                        ) : (
-                          <Bot className="w-4 h-4 text-white" />
-                        )}
-                      </div>
-                      <div
-                        className={`rounded-lg p-3 ${
-                          message.role === "user"
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-100 text-gray-900"
-                        }`}
-                      >
-                        <p className="text-sm whitespace-pre-wrap">
-                          {message.content}
-                        </p>
-                        <p className="text-xs mt-1 opacity-70">
-                          {new Date(message.timestamp).toLocaleTimeString()}
-                        </p>
+                        <div
+                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                            message.role === "user"
+                              ? "bg-blue-600"
+                              : "bg-gray-600"
+                          }`}
+                        >
+                          {message.role === "user" ? (
+                            <User className="w-4 h-4 text-white" />
+                          ) : (
+                            <Bot className="w-4 h-4 text-white" />
+                          )}
+                        </div>
+                        <div
+                          className={`rounded-lg p-3 ${
+                            message.role === "user"
+                              ? "bg-blue-600 text-white"
+                              : "bg-gray-100 text-gray-900"
+                          }`}
+                        >
+                          <p className="text-sm whitespace-pre-wrap">
+                            {message.content}
+                          </p>
+                          <p className="text-xs mt-1 opacity-70">
+                            {new Date(message.created_at).toLocaleTimeString()}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>AI와의 대화 기록이 없습니다.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -306,74 +402,51 @@ export default function GradeStudentPage({
               <CardDescription>학생이 제출한 최종 답안입니다</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <pre className="whitespace-pre-wrap text-sm text-gray-900">
-                  {submission.finalAnswer}
-                </pre>
-              </div>
+              {currentSubmission ? (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <pre className="whitespace-pre-wrap text-sm text-gray-900">
+                    {String(currentSubmission.answer || "답안이 없습니다.")}
+                  </pre>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>제출된 답안이 없습니다.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* AI Feedback Conversations */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-purple-600" />
-                AI 피드백 대화
-              </CardTitle>
-              <CardDescription>
-                학생이 최종 답안 제출 후 AI와 나눈 피드백 대화입니다
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4 max-h-96 overflow-y-auto">
-                {aiFeedbackConversations.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex gap-3 ${
-                      message.role === "user" ? "justify-end" : "justify-start"
-                    }`}
-                  >
-                    <div
-                      className={`flex gap-2 max-w-[80%] ${
-                        message.role === "user"
-                          ? "flex-row-reverse"
-                          : "flex-row"
-                      }`}
-                    >
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                          message.role === "user"
-                            ? "bg-purple-600"
-                            : "bg-indigo-600"
-                        }`}
-                      >
-                        {message.role === "user" ? (
-                          <User className="w-4 h-4 text-white" />
-                        ) : (
-                          <Bot className="w-4 h-4 text-white" />
-                        )}
-                      </div>
-                      <div
-                        className={`rounded-lg p-3 ${
-                          message.role === "user"
-                            ? "bg-purple-600 text-white"
-                            : "bg-indigo-100 text-gray-900"
-                        }`}
-                      >
-                        <p className="text-sm whitespace-pre-wrap">
-                          {message.content}
-                        </p>
-                        <p className="text-xs mt-1 opacity-70">
-                          {new Date(message.timestamp).toLocaleTimeString()}
-                        </p>
-                      </div>
+          {/* AI Feedback from submission */}
+          {currentSubmission?.ai_feedback && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-purple-600" />
+                  AI 피드백
+                </CardTitle>
+                <CardDescription>
+                  학생 답안에 대한 AI의 자동 피드백입니다
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="bg-indigo-50 rounded-lg p-4">
+                  <pre className="whitespace-pre-wrap text-sm text-gray-900">
+                    {JSON.stringify(currentSubmission.ai_feedback, null, 2)}
+                  </pre>
+                </div>
+                {currentSubmission.student_reply && (
+                  <div className="mt-4">
+                    <h4 className="font-semibold text-sm mb-2">학생 응답:</h4>
+                    <div className="bg-purple-50 rounded-lg p-4">
+                      <pre className="whitespace-pre-wrap text-sm text-gray-900">
+                        {currentSubmission.student_reply}
+                      </pre>
                     </div>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Grading Panel */}
@@ -382,10 +455,10 @@ export default function GradeStudentPage({
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Star className="w-5 h-5 text-yellow-600" />
-                채점 및 피드백
+                문제 {selectedQuestionIdx + 1} 채점
               </CardTitle>
               <CardDescription>
-                학생 답안에 대한 점수와 피드백을 입력하세요
+                이 문제에 대한 점수와 피드백을 입력하세요
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -400,8 +473,13 @@ export default function GradeStudentPage({
                     id="score"
                     min="0"
                     max="100"
-                    value={score}
-                    onChange={(e) => setScore(Number(e.target.value))}
+                    value={scores[selectedQuestionIdx] || 0}
+                    onChange={(e) =>
+                      setScores({
+                        ...scores,
+                        [selectedQuestionIdx]: Number(e.target.value),
+                      })
+                    }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 </div>
@@ -416,8 +494,13 @@ export default function GradeStudentPage({
                 </Label>
                 <Textarea
                   id="feedback"
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
+                  value={feedbacks[selectedQuestionIdx] || ""}
+                  onChange={(e) =>
+                    setFeedbacks({
+                      ...feedbacks,
+                      [selectedQuestionIdx]: e.target.value,
+                    })
+                  }
                   placeholder="학생의 답안에 대한 상세한 피드백을 입력하세요..."
                   className="mt-1 min-h-[120px] resize-none"
                 />
@@ -425,12 +508,18 @@ export default function GradeStudentPage({
 
               {/* Save Button */}
               <Button
-                onClick={handleSaveGrade}
+                onClick={() => handleSaveGrade(selectedQuestionIdx)}
                 disabled={saving}
                 className="w-full"
               >
-                {saving ? "저장 중..." : "채점 저장"}
+                {saving ? "저장 중..." : "문제 채점 저장"}
               </Button>
+
+              {sessionData.grades[selectedQuestionIdx] && (
+                <div className="text-sm text-green-600 text-center">
+                  ✓ 채점 완료됨
+                </div>
+              )}
             </CardContent>
           </Card>
 
