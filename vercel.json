@@ -4,28 +4,5 @@
       "maxDuration": 60,
       "memory": 1024
     }
-  },
-  "headers": [
-    {
-      "source": "/api/upload",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "POST, OPTIONS, GET"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization"
-        },
-        {
-          "key": "Allow",
-          "value": "POST, OPTIONS, GET"
-        }
-      ]
-    }
-  ]
+  }
 }
