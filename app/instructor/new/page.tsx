@@ -20,6 +20,7 @@ import { useUser } from "@clerk/nextjs";
 
 export default function CreateExam() {
   const router = useRouter();
+  const { user } = useUser();
   const [isLoading, setIsLoading] = useState(false);
   const [examData, setExamData] = useState({
     title: "",
@@ -384,79 +385,66 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
           });
 
           try {
-            // RLS 정책 문제 해결을 위해 서버 API 라우트 사용 (보안상 더 안전)
-            const formData = new FormData();
-            formData.append("file", file);
+            // 클라이언트에서 Supabase Storage로 직접 업로드 (Vercel 4MB 제한 우회)
+            const { createClient } = await import("@supabase/supabase-js");
+            
+            const supabase = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+            );
 
-            console.log(`[client] Uploading via server API (RLS bypass):`, {
+            // 안전한 파일명 생성
+            const timestamp = new Date().toISOString().slice(0, 10);
+            const randomId = crypto.randomUUID();
+            const fileExtension = file.name.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase() || 'bin';
+            const safeFileName = `${timestamp}_${randomId}.${fileExtension}`;
+            
+            // Storage 경로: instructor-{userId}/{safeFileName}
+            const storagePath = `instructor-${user?.id}/${safeFileName}`;
+
+            console.log(`[client] Direct upload to Supabase (bypass Vercel 4MB limit):`, {
               originalName: file.name,
+              storagePath: storagePath,
               fileSize: file.size,
               fileType: file.type,
             });
 
-            const uploadResponse = await fetch("/api/upload", {
-              method: "POST",
-              body: formData,
-            });
-
-            // 응답 검증 및 JSON 파싱
-            let result;
-            try {
-              result = await uploadResponse.json();
-            } catch (jsonError) {
-              console.error(`[client] JSON parse error for ${file.name}:`, {
-                status: uploadResponse.status,
-                statusText: uploadResponse.statusText,
-                jsonError:
-                  jsonError instanceof Error
-                    ? jsonError.message
-                    : String(jsonError),
+            const { data, error } = await supabase.storage
+              .from("exam-materials")
+              .upload(storagePath, file, {
+                contentType: file.type,
+                upsert: true,
               });
 
-              // 413 에러에 대한 특별한 메시지
-              if (uploadResponse.status === 413) {
+            if (error) {
+              console.error(`[client] Supabase upload error for ${file.name}:`, error);
+              
+              // RLS 정책 에러에 대한 특별한 메시지
+              if (error.message.includes("row-level security")) {
                 throw new Error(
-                  `${file.name}: 파일이 너무 큽니다 (${(
-                    file.size /
-                    1024 /
-                    1024
-                  ).toFixed(1)}MB). 25MB 이하의 파일만 업로드 가능합니다.`
+                  `${file.name}: Storage 권한 문제입니다. 관리자에게 문의하세요. (RLS 정책 확인 필요)`
                 );
               }
-
-              throw new Error(
-                `${file.name}: 서버 응답 파싱 실패 (${uploadResponse.status} ${uploadResponse.statusText})`
-              );
+              
+              throw new Error(`${file.name}: 업로드 실패 - ${error.message}`);
             }
 
-            if (!uploadResponse.ok || !result.ok) {
-              // 구조화된 에러 응답 처리
-              const errorCode = result.code || "UNKNOWN_ERROR";
-              const errorMessage = result.message || "업로드 실패";
-              const traceId = result.traceId || "N/A";
-
-              console.error(`[client] Upload failed for ${file.name}:`, {
-                code: errorCode,
-                message: errorMessage,
-                traceId: traceId,
-                details: result.details,
-                status: uploadResponse.status,
-              });
-
-              throw new Error(`${file.name}: ${errorMessage} [${errorCode}]`);
-            }
+            // 공개 URL 가져오기
+            const { data: urlData } = supabase.storage
+              .from("exam-materials")
+              .getPublicUrl(data.path);
 
             // 업로드 성공 로깅
-            console.log(`[client] Server upload successful for ${file.name}:`, {
-              originalName: result.meta?.originalName,
-              objectKey: result.objectKey,
-              url: result.url,
-              size: result.meta?.size,
-              mime: result.meta?.mime,
+            console.log(`[client] Direct upload successful for ${file.name}:`, {
+              originalName: file.name,
+              storagePath: data.path,
+              publicUrl: urlData.publicUrl,
+              fileSize: file.size,
+              fileType: file.type,
             });
 
-            // URL 반환
-            return result.url;
+            // 공개 URL 반환
+            return urlData.publicUrl;
           } catch (error) {
             console.error(
               `[client] Direct upload error for ${file.name}:`,
