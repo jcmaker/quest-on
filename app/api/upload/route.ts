@@ -36,6 +36,29 @@ function makeSafeObjectKey(originalName: string, extFallback = ".bin") {
   return `${ts}_${id}${ext}`;
 }
 
+// OPTIONS 요청 처리 (CORS preflight)
+export async function OPTIONS() {
+  return NextResponse.json(
+    {},
+    {
+      status: 200,
+      headers: {
+        Allow: "POST, OPTIONS",
+      },
+    }
+  );
+}
+
+// GET 요청에 대한 명확한 에러 처리
+export async function GET() {
+  return errorJson(
+    "METHOD_NOT_ALLOWED",
+    "GET 메서드는 지원하지 않습니다. POST 메서드를 사용하세요.",
+    { allowedMethods: ["POST", "OPTIONS"] },
+    405
+  );
+}
+
 export async function POST(request: NextRequest) {
   let objectKey: string | null = null;
 

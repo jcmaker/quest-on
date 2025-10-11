@@ -392,8 +392,25 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
               body: formData,
             });
 
-            // 표준화된 응답 처리
-            const result = await uploadResponse.json();
+            // 응답 검증 및 JSON 파싱 (에러 처리 강화)
+            let result;
+            try {
+              result = await uploadResponse.json();
+            } catch (jsonError) {
+              // JSON 파싱 실패 시 (405, 500 등의 비-JSON 응답)
+              console.error(`[client] JSON parse error for ${file.name}:`, {
+                status: uploadResponse.status,
+                statusText: uploadResponse.statusText,
+                jsonError:
+                  jsonError instanceof Error
+                    ? jsonError.message
+                    : String(jsonError),
+              });
+
+              throw new Error(
+                `${file.name}: 서버 응답 파싱 실패 (${uploadResponse.status} ${uploadResponse.statusText})`
+              );
+            }
 
             if (!uploadResponse.ok || !result.ok) {
               // 구조화된 에러 응답 처리
@@ -406,6 +423,7 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
                 message: errorMessage,
                 traceId: traceId,
                 details: result.details,
+                status: uploadResponse.status,
               });
 
               throw new Error(`${file.name}: ${errorMessage} [${errorCode}]`);
