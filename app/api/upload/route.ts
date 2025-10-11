@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
 import { randomUUID } from "crypto";
-import sharp from "sharp";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabase = createClient(
@@ -180,34 +179,9 @@ export async function POST(request: NextRequest) {
       userId: user.id,
     });
 
-    // Convert file to buffer and compress if needed
+    // Convert file to buffer (no compression - direct upload)
     const arrayBuffer = await file.arrayBuffer();
-    let buffer = Buffer.from(arrayBuffer);
-
-    // Compress images for AI processing (maintain text readability)
-    if (file.type.startsWith("image/")) {
-      try {
-        const compressedBuffer = await sharp(buffer)
-          .jpeg({ quality: 70, progressive: true }) // Good balance for AI text recognition
-          .png({ compressionLevel: 6, progressive: true })
-          .webp({ quality: 70 })
-          .toBuffer();
-
-        // Only use compressed version if it's significantly smaller
-        if (compressedBuffer.length < buffer.length * 0.8) {
-          buffer = Buffer.from(compressedBuffer.buffer as ArrayBuffer);
-          console.log(
-            `Image compressed: ${arrayBuffer.byteLength} → ${buffer.length} bytes`
-          );
-        }
-      } catch (compressionError) {
-        console.log(
-          "Image compression failed, using original:",
-          compressionError
-        );
-        // Continue with original buffer if compression fails
-      }
-    }
+    const buffer = Buffer.from(arrayBuffer);
 
     console.log("[upload] Uploading to Supabase:", {
       bucket: "exam-materials",

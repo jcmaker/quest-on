@@ -56,9 +56,6 @@
     "toast": "^0.5.4",
     "zod": "^3.25.76"
   },
-  "optionalDependencies": {
-    "sharp": "^0.34.4"
-  },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
