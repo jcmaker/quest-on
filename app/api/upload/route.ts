@@ -37,7 +37,11 @@ function makeSafeObjectKey(originalName: string, extFallback = ".bin") {
 }
 
 // OPTIONS 요청 처리 (CORS preflight)
-export async function OPTIONS() {
+export async function OPTIONS(request: NextRequest) {
+  console.log("[upload] OPTIONS request received:", {
+    url: request.url,
+    method: request.method,
+  });
   return NextResponse.json(
     {},
     {
@@ -50,7 +54,11 @@ export async function OPTIONS() {
 }
 
 // GET 요청에 대한 명확한 에러 처리
-export async function GET() {
+export async function GET(request: NextRequest) {
+  console.log("[upload] GET request received (NOT ALLOWED):", {
+    url: request.url,
+    method: request.method,
+  });
   return errorJson(
     "METHOD_NOT_ALLOWED",
     "GET 메서드는 지원하지 않습니다. POST 메서드를 사용하세요.",
@@ -63,7 +71,11 @@ export async function POST(request: NextRequest) {
   let objectKey: string | null = null;
 
   try {
-    console.log("[upload] start");
+    console.log("[upload] POST request received:", {
+      url: request.url,
+      method: request.method,
+      contentType: request.headers.get("content-type"),
+    });
 
     // 환경 변수 확인
     console.log("[upload] Environment check:", {

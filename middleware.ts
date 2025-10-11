@@ -13,6 +13,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/chat",
   "/api/feedback",
   "/api/admin/auth",
+  "/api/upload", // route 핸들러에서 자체 인증 체크
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);
