@@ -4,17 +4,24 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupText,
+  InputGroupTextarea,
+} from "@/components/ui/input-group";
+import { Separator } from "@/components/ui/separator";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@/components/ui/resizable";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
-import {
-  FileText,
-  MessageCircle,
-  AlertCircle,
-  Play,
-  Pause,
-} from "lucide-react";
+import { MessageCircle, ArrowUp, AlertCircle } from "lucide-react";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import ProgressBar from "@/components/ProgressBar";
 
@@ -47,7 +54,7 @@ interface DraftAnswer {
 export default function ExamPage() {
   const params = useParams();
   const router = useRouter();
-  const { user } = useUser();
+  const { user, isLoaded } = useUser();
   const examCode = params.code as string;
 
   const [exam, setExam] = useState<Exam | null>(null);
@@ -57,8 +64,6 @@ export default function ExamPage() {
     Array<{ type: "user" | "assistant"; message: string; timestamp: string }>
   >([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(0);
-  const [isTimerPaused, setIsTimerPaused] = useState(false);
   const [draftAnswers, setDraftAnswers] = useState<DraftAnswer[]>([]);
 
   const [examLoading, setExamLoading] = useState(true);
@@ -71,7 +76,7 @@ export default function ExamPage() {
   // Fetch exam data from database
   useEffect(() => {
     const fetchExam = async () => {
-      if (!examCode) return;
+      if (!examCode || !isLoaded) return;
 
       try {
         const response = await fetch("/api/supa", {
@@ -87,7 +92,6 @@ export default function ExamPage() {
           const result = await response.json();
           if (result.exam) {
             setExam(result.exam);
-            setTimeRemaining(result.exam.duration * 60);
 
             // Initialize draft answers
             const initialDrafts = result.exam.questions.map((q: Question) => ({
@@ -113,12 +117,14 @@ export default function ExamPage() {
     };
 
     fetchExam();
-  }, [examCode, router]);
+  }, [examCode, router, isLoaded]);
 
   // Create or get existing session
   const createOrGetSession = async (examId: string) => {
+    console.log("🔍 User state:", { user, isLoaded: !!user, userId: user?.id });
+
     if (!user) {
-      console.log("User not found, cannot create session");
+      console.log("❌ User not found, cannot create session");
       return;
     }
 
@@ -144,7 +150,7 @@ export default function ExamPage() {
 
       if (response.ok) {
         const result = await response.json();
-        console.log("Session creation result:", result);
+        console.log("🔍 Session creation result:", result);
 
         setSessionId(result.session.id);
 
@@ -158,7 +164,10 @@ export default function ExamPage() {
           console.log("📨 First message:", result.messages[0]);
           setChatHistory(result.messages);
         } else {
-          console.log("📨 No existing messages to restore");
+          console.log(
+            "📨 No existing messages to restore - messages array:",
+            result.messages
+          );
         }
       } else {
         const errorData = await response.json().catch(() => ({}));
@@ -168,39 +177,6 @@ export default function ExamPage() {
     } catch (error) {
       console.error("Error creating session:", error);
     }
-  };
-
-  // Timer countdown
-  useEffect(() => {
-    if (timeRemaining <= 0 || isTimerPaused) return;
-
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          // Auto-submit when time runs out
-          handleAutoSubmit();
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [timeRemaining, isTimerPaused]);
-
-  const handleAutoSubmit = async () => {
-    // Save all draft answers before auto-submit
-    await saveAllDrafts();
-
-    // Pass chat history to answer page via URL params
-    const chatHistoryParam = encodeURIComponent(JSON.stringify(chatHistory));
-    router.push(`/exam/${examCode}/answer?chatHistory=${chatHistoryParam}`);
-  };
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   const saveAllDrafts = async () => {
@@ -332,12 +308,31 @@ export default function ExamPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory]);
 
-  if (examLoading) {
+  if (!isLoaded || examLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-center space-y-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-          <p className="text-lg">시험을 불러오는 중...</p>
+          <p className="text-lg">
+            {!isLoaded ? "사용자 인증 중..." : "시험을 불러오는 중..."}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center space-y-4">
+          <AlertCircle className="w-16 h-16 text-destructive mx-auto" />
+          <h2 className="text-2xl font-bold">로그인이 필요합니다</h2>
+          <p className="text-muted-foreground">
+            시험을 보려면 먼저 로그인해주세요.
+          </p>
+          <Link href="/sign-in">
+            <Button>로그인하기</Button>
+          </Link>
         </div>
       </div>
     );
@@ -360,112 +355,59 @@ export default function ExamPage() {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Modern Header with Timer */}
+      {/* Top Header */}
       <div className="bg-background/95 backdrop-blur-sm border-b flex-shrink-0">
-        <div className="container mx-auto px-6 py-4">
+        <div className="container mx-auto px-6 py-2">
           <div className="grid grid-cols-3 items-center">
-            {/* Exam Info */}
-            <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-primary to-primary/80 rounded-xl flex items-center justify-center shadow-sm">
-                <FileText className="w-5 h-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-foreground line-clamp-1">
-                  {exam.title}
-                </h1>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-muted-foreground">
-                    시험 코드:
-                  </span>
-                  <code className="text-xs bg-muted/70 px-2 py-0.5 rounded font-mono">
-                    {exam.code}
-                  </code>
-                </div>
+            {/* Left: AI 시험 시스템 + 진행중 배지 */}
+            <div className="flex items-center space-x-3 justify-start">
+              <Image
+                src="/qlogo_icon.png"
+                alt="Quest-On"
+                width={120}
+                height={32}
+                className="h-8 w-auto"
+              />
+              <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                진행중
               </div>
             </div>
 
-            {/* Progress Bar */}
+            {/* Center: Progress Steps */}
             <div className="flex justify-center">
               <ProgressBar currentStep="exam" />
             </div>
 
-            {/* Navigation & Timer */}
-            <div className="flex items-center justify-end gap-6">
-              {/* Question Navigation */}
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    setCurrentQuestion((prev) => Math.max(0, prev - 1))
-                  }
-                  disabled={currentQuestion === 0}
-                >
-                  ← 이전
-                </Button>
-                <span className="text-sm text-muted-foreground">
-                  {currentQuestion + 1} / {exam.questions.length}
+            {/* Right: Profile Image */}
+            <div className="flex items-center justify-end">
+              <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary/80 rounded-full flex items-center justify-center">
+                <span className="text-sm font-medium text-primary-foreground">
+                  {user?.firstName?.charAt(0) ||
+                    user?.emailAddresses?.[0]?.emailAddress?.charAt(0) ||
+                    "U"}
                 </span>
-                <Button
-                  size="sm"
-                  className="bg-primary hover:bg-primary/90 text-white"
-                  onClick={async () => {
-                    await saveAllDrafts();
-                    router.push(
-                      `/exam/${examCode}/answer?startQuestion=${currentQuestion}`
-                    );
-                  }}
-                >
-                  답안 작성 →
-                </Button>
-              </div>
-
-              {/* Timer */}
-              <div className="text-right">
-                <div className="flex items-center gap-2 mb-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsTimerPaused(!isTimerPaused)}
-                    className="h-8 w-8 p-0 hover:bg-muted"
-                  >
-                    {isTimerPaused ? (
-                      <Play className="w-3 h-3" />
-                    ) : (
-                      <Pause className="w-3 h-3" />
-                    )}
-                  </Button>
-                  <span
-                    className={`text-lg font-mono font-bold px-3 py-1 rounded-full ${
-                      timeRemaining < 300
-                        ? "text-destructive bg-destructive/10"
-                        : timeRemaining < 600
-                        ? "text-yellow-600 bg-yellow-50"
-                        : "text-foreground bg-muted"
-                    }`}
-                  >
-                    {formatTime(timeRemaining)}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {isTimerPaused ? "일시정지됨" : "남은 시간"}
-                </p>
               </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Main Content - Flex Layout */}
-        <div className="flex-1 flex flex-col min-h-0">
-          {/* Problem Display - Compact */}
-          <div className="bg-background border-b p-4 flex-shrink-0">
-            <div className="container mx-auto max-w-4xl">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h2 className="text-lg font-semibold">
-                    문제 {currentQuestion + 1} / {exam.questions.length}
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
+      {/* Main Content - Resizable Layout */}
+      <div className="flex-1 min-h-0">
+        <ResizablePanelGroup direction="horizontal" className="h-full">
+          {/* Left Side - Exam Problem */}
+          <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
+            <div className="bg-background border-r flex flex-col h-full">
+              <div className="p-6">
+                <h2 className="text-xl font-bold mb-4">시험 문제</h2>
+
+                {/* Exam Info */}
+                <div className="flex items-center space-x-4 mb-6">
+                  <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                    {Math.floor(exam.duration)}분
+                  </div>
+                  <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                     {exam.questions[currentQuestion]?.type === "essay"
                       ? "서술형"
                       : exam.questions[currentQuestion]?.type === "short-answer"
@@ -473,217 +415,243 @@ export default function ExamPage() {
                       : exam.questions[currentQuestion]?.type ===
                         "multiple-choice"
                       ? "객관식"
-                      : exam.questions[currentQuestion]?.type}{" "}
-                    문제
-                  </p>
-                </div>
-              </div>
-              <div className="prose prose-sm max-w-none">
-                <p className="text-base leading-relaxed">
-                  {exam.questions[currentQuestion]?.text}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* AI Chat Section - Optimized Height */}
-          <div className="flex-1 flex flex-col min-h-0 mx-4 mb-4 bg-background overflow-hidden">
-            {/* Chat Header */}
-            <div className="flex items-center justify-between px-3 py-2 bg-muted/30 flex-shrink-0">
-              <div className="flex items-center space-x-2">
-                <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
-                  <MessageCircle className="w-3 h-3 text-primary-foreground" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-xs">AI 어시스턴트</h3>
-                  <p className="text-xs text-muted-foreground">
-                    문제 풀이 도움
-                  </p>
-                </div>
-              </div>
-              {chatHistory.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setChatHistory([]);
-                    setChatMessage("");
-                  }}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  새 대화
-                </Button>
-              )}
-            </div>
-
-            {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto px-60 py-2 pb-20 space-y-1">
-              {chatHistory.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center p-6">
-                  <div className="relative mb-4">
-                    <div className="w-16 h-16 bg-gradient-to-br from-primary to-primary/60 rounded-2xl flex items-center justify-center shadow-lg">
-                      <MessageCircle className="w-8 h-8 text-primary-foreground" />
-                    </div>
-                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-background"></div>
+                      : "문제"}
                   </div>
-                  <h4 className="font-semibold text-foreground mb-3 text-lg">
-                    AI 어시스턴트와 대화하세요
-                  </h4>
-                  <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
-                    문제에 대해 궁금한 점이 있으시면 물어보세요.
-                    <br />
-                    <span className="text-primary font-medium">
-                      실시간으로 답변해드립니다.
-                    </span>
-                  </p>
-                  <div className="mt-4 p-3 bg-primary/5 rounded-lg border border-primary/10">
-                    <p className="text-xs text-muted-foreground">
-                      💡 아래 입력창에 직접 메시지를 입력해보세요
+                </div>
+
+                {/* Question Number Badge */}
+                <div className="mb-4">
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                    문제 {currentQuestion + 1}
+                  </span>
+                </div>
+
+                {/* Question Content */}
+                <div className="space-y-4">
+                  <div className="bg-muted/50 p-4 rounded-lg">
+                    <h3 className="font-semibold mb-2">문제</h3>
+                    <p className="text-base leading-relaxed">
+                      {exam.questions[currentQuestion]?.text}
                     </p>
                   </div>
+
+                  {/* Requirements */}
+                  <div className="bg-muted/30 p-4 rounded-lg">
+                    <h4 className="font-semibold mb-2">요구사항</h4>
+                    <ul className="space-y-1 text-sm text-muted-foreground">
+                      <li>• 문제를 정확히 이해하고 답변하세요</li>
+                      <li>• 풀이 과정을 단계별로 명확히 작성하세요</li>
+                    </ul>
+                  </div>
                 </div>
-              ) : (
-                <>
-                  {chatHistory.map((msg, index) => (
-                    <div
-                      key={index}
-                      className={`flex ${
-                        msg.type === "user" ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      {msg.type === "user" ? (
-                        // 사용자 메시지 (개선된 스타일링)
-                        <div className="bg-primary text-primary-foreground rounded-2xl px-3 py-2 max-w-[55%] shadow-sm transition-all duration-200 hover:shadow-md">
-                          <div className="prose prose-sm max-w-none prose-invert">
-                            <p className="text-sm leading-relaxed mb-0 whitespace-pre-wrap">
-                              {msg.message}
-                            </p>
-                          </div>
-                          <p className="text-xs mt-1 opacity-70 text-primary-foreground/80">
-                            {new Date(msg.timestamp).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </p>
-                        </div>
-                      ) : (
-                        // AI 메시지 (새로운 마크다운 렌더러 사용)
-                        <AIMessageRenderer
-                          content={msg.message}
-                          timestamp={msg.timestamp}
-                        />
-                      )}
-                    </div>
-                  ))}
 
-                  {/* Enhanced Typing Indicator */}
-                  {isTyping && (
-                    <div className="flex justify-start">
-                      <div className="bg-muted/80 text-foreground border border-border/50 backdrop-blur-sm rounded-2xl px-4 py-3 max-w-[80%] shadow-sm">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex space-x-1">
-                            <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-                            <div
-                              className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                              style={{ animationDelay: "0.1s" }}
-                            ></div>
-                            <div
-                              className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                              style={{ animationDelay: "0.2s" }}
-                            ></div>
-                          </div>
-                          <span className="text-sm text-muted-foreground font-medium">
-                            AI가 응답을 작성 중...
-                          </span>
-                        </div>
-                        <p className="text-xs mt-2 opacity-70 text-muted-foreground">
-                          실시간으로 답변을 생성하고 있습니다
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* Error Message */}
-            {sessionError && (
-              <div className="px-4 py-3 bg-destructive/10">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-destructive">
-                    세션 연결에 문제가 있습니다.
-                  </p>
+                {/* Navigation */}
+                <div className="mt-6 flex items-center justify-between">
                   <Button
                     variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSessionError(false);
-                      if (exam) {
-                        createOrGetSession(exam.id);
-                      }
-                    }}
-                    className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                    onClick={() =>
+                      setCurrentQuestion((prev) => Math.max(0, prev - 1))
+                    }
+                    disabled={currentQuestion === 0}
                   >
-                    재시도
+                    ← 이전 문제
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    {currentQuestion + 1} / {exam.questions.length}
+                  </span>
+                  <Button
+                    onClick={async () => {
+                      await saveAllDrafts();
+                      router.push(
+                        `/exam/${examCode}/answer?startQuestion=${currentQuestion}`
+                      );
+                    }}
+                    className="bg-primary hover:bg-primary/90"
+                  >
+                    답안 작성 →
                   </Button>
                 </div>
               </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Chat Input - Fixed at Bottom */}
-      <div className="fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur-sm z-10">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex gap-3 items-end">
-            <div className="flex-1 relative">
-              <Input
-                placeholder="메시지를 입력하세요..."
-                value={chatMessage}
-                onChange={(e) => setChatMessage(e.target.value)}
-                onKeyPress={(e) =>
-                  e.key === "Enter" && !isLoading && sendChatMessage()
-                }
-                className="pr-12 border-2 focus:border-primary/50 bg-background/80 backdrop-blur-sm min-h-[44px] resize-none"
-                disabled={isLoading || sessionError}
-              />
-              {chatMessage && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setChatMessage("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 p-0 hover:bg-muted"
-                >
-                  ×
-                </Button>
-              )}
             </div>
-            <Button
-              onClick={sendChatMessage}
-              disabled={isLoading || !chatMessage.trim() || sessionError}
-              className="h-11 px-6 shadow-sm hover:shadow-md transition-shadow"
-            >
-              {isLoading ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-              ) : (
-                <>
-                  <span className="mr-1">전송</span>
-                  <span className="text-xs">↵</span>
-                </>
+          </ResizablePanel>
+
+          {/* Resizable Handle */}
+          <ResizableHandle withHandle />
+
+          {/* Right Side - AI Chat */}
+          <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
+            <div className="bg-background flex flex-col h-full">
+              <div className="px-6 py-2 border-b flex items-end">
+                <h2 className="text-xl font-bold">AI와 대화하기</h2>
+                <p className="text-sm text-muted-foreground ml-4">
+                  문제에 대해 자유롭게 질문하고 토론하세요
+                </p>
+              </div>
+
+              {/* Chat Messages */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 min-h-0">
+                {chatHistory.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                      <MessageCircle className="w-8 h-8 text-primary" />
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      안녕하세요! 시험을 시작하겠습니다. 문제를 읽고 자유롭게
+                      질문해주세요.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {chatHistory.map((msg, index) => (
+                      <div
+                        key={index}
+                        className={`flex ${
+                          msg.type === "user" ? "justify-end" : "justify-start"
+                        }`}
+                      >
+                        {msg.type === "user" ? (
+                          <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-[70%]">
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                              {msg.message}
+                            </p>
+                            <p className="text-xs mt-2 opacity-70">
+                              {new Date(msg.timestamp).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </p>
+                          </div>
+                        ) : (
+                          <AIMessageRenderer
+                            content={msg.message}
+                            timestamp={msg.timestamp}
+                          />
+                        )}
+                      </div>
+                    ))}
+
+                    {/* Typing Indicator */}
+                    {isTyping && (
+                      <div className="flex justify-start">
+                        <div className="bg-muted/80 rounded-2xl px-4 py-3 max-w-[70%]">
+                          <div className="flex items-center space-x-2">
+                            <div className="flex space-x-1">
+                              <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+                              <div
+                                className="w-2 h-2 bg-primary rounded-full animate-bounce"
+                                style={{ animationDelay: "0.1s" }}
+                              ></div>
+                              <div
+                                className="w-2 h-2 bg-primary rounded-full animate-bounce"
+                                style={{ animationDelay: "0.2s" }}
+                              ></div>
+                            </div>
+                            <span className="text-sm text-muted-foreground">
+                              AI가 응답을 작성 중...
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Error Message */}
+              {sessionError && (
+                <div className="px-6 py-3 bg-destructive/10 border-t">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-destructive">
+                      세션 연결에 문제가 있습니다.
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSessionError(false);
+                        if (exam) {
+                          createOrGetSession(exam.id);
+                        }
+                      }}
+                      className="text-destructive border-destructive/30 hover:bg-destructive/5"
+                    >
+                      재시도
+                    </Button>
+                  </div>
+                </div>
               )}
-            </Button>
-          </div>
-          <div className="flex items-center justify-between mt-2">
+
+              {/* Chat Input */}
+              <div className="p-4 bg-transparent">
+                <InputGroup>
+                  <InputGroupTextarea
+                    placeholder="AI에게 질문하기..."
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    onKeyPress={(e) =>
+                      e.key === "Enter" && !isLoading && sendChatMessage()
+                    }
+                    disabled={isLoading || sessionError}
+                  />
+                  <InputGroupAddon align="block-end">
+                    <InputGroupText className="text-xs text-muted-foreground">
+                      Enter 키로 전송 • 실시간 AI 도움
+                      {sessionError && (
+                        <p className="text-xs text-destructive">연결 오류</p>
+                      )}
+                    </InputGroupText>
+                    {/* <InputGroupButton
+                  variant="outline"
+                  className="rounded-full"
+                  size="icon-xs"
+                >
+                  <Plus />
+                </InputGroupButton> */}
+                    {/* <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <InputGroupButton variant="ghost">Auto</InputGroupButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    side="top"
+                    align="start"
+                    className="[--radius:0.95rem]"
+                  >
+                    <DropdownMenuItem>Auto</DropdownMenuItem>
+                    <DropdownMenuItem>Agent</DropdownMenuItem>
+                    <DropdownMenuItem>Manual</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu> */}
+                    <InputGroupText className="ml-auto">
+                      {chatMessage.length} chars
+                    </InputGroupText>
+                    <Separator orientation="vertical" className="!h-4" />
+                    <InputGroupButton
+                      variant="default"
+                      className="rounded-full"
+                      size="icon-xs"
+                      onClick={sendChatMessage}
+                      disabled={
+                        isLoading || !chatMessage.trim() || sessionError
+                      }
+                    >
+                      <ArrowUp />
+                      <span className="sr-only">Send</span>
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                </InputGroup>
+                {/* <div className="flex items-center justify-between mt-2">
             <p className="text-xs text-muted-foreground">
               Enter 키로 전송 • 실시간 AI 도움
             </p>
             {sessionError && (
               <p className="text-xs text-destructive">연결 오류</p>
             )}
-          </div>
-        </div>
+            </div> */}
+              </div>
+            </div>
+          </ResizablePanel>
+        </ResizablePanelGroup>
       </div>
     </div>
   );

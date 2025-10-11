@@ -404,15 +404,12 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
             // Storage 경로: instructor-{userId}/{safeFileName}
             const storagePath = `instructor-${user?.id}/${safeFileName}`;
 
-            console.log(
-              `[client] Attempting direct upload to Supabase:`,
-              {
-                originalName: file.name,
-                storagePath: storagePath,
-                fileSize: file.size,
-                fileType: file.type,
-              }
-            );
+            console.log(`[client] Attempting direct upload to Supabase:`, {
+              originalName: file.name,
+              storagePath: storagePath,
+              fileSize: file.size,
+              fileType: file.type,
+            });
 
             // 먼저 직접 업로드 시도
             const { data, error } = await supabase.storage
@@ -429,9 +426,14 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
               );
 
               // RLS 정책 에러인 경우 서버 API로 폴백
-              if (error.message.includes("row-level security") || error.message.includes("policy")) {
-                console.log(`[client] RLS policy error detected, falling back to server API for ${file.name}`);
-                
+              if (
+                error.message.includes("row-level security") ||
+                error.message.includes("policy")
+              ) {
+                console.log(
+                  `[client] RLS policy error detected, falling back to server API for ${file.name}`
+                );
+
                 // 서버 API로 폴백 (4MB 제한 있지만 작은 파일은 가능)
                 const formData = new FormData();
                 formData.append("file", file);
@@ -444,10 +446,16 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
                 if (!uploadResponse.ok) {
                   if (uploadResponse.status === 413) {
                     throw new Error(
-                      `${file.name}: 파일이 너무 큽니다 (${(file.size / 1024 / 1024).toFixed(1)}MB). RLS 정책 수정이 필요합니다.`
+                      `${file.name}: 파일이 너무 큽니다 (${(
+                        file.size /
+                        1024 /
+                        1024
+                      ).toFixed(1)}MB). RLS 정책 수정이 필요합니다.`
                     );
                   }
-                  throw new Error(`${file.name}: 서버 업로드 실패 (${uploadResponse.status})`);
+                  throw new Error(
+                    `${file.name}: 서버 업로드 실패 (${uploadResponse.status})`
+                  );
                 }
 
                 const result = await uploadResponse.json();
@@ -455,7 +463,9 @@ ${examData.instructions ? `- AI 설정: ${examData.instructions}` : ""}
                   throw new Error(`${file.name}: ${result.message}`);
                 }
 
-                console.log(`[client] Server upload successful for ${file.name}`);
+                console.log(
+                  `[client] Server upload successful for ${file.name}`
+                );
                 return result.url;
               }
 
