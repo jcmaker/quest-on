@@ -17,6 +17,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 import Link from "next/link";
 import Image from "next/image";
@@ -379,15 +380,35 @@ export default function ExamPage() {
               <ProgressBar currentStep="exam" />
             </div>
 
-            {/* Right: Profile Image */}
-            <div className="flex items-center justify-end">
-              <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary/80 rounded-full flex items-center justify-center">
-                <span className="text-sm font-medium text-primary-foreground">
+            {/* Right: Profile Image & Exit Button */}
+            <div className="flex items-center justify-end space-x-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (
+                    confirm(
+                      "정말로 시험을 그만두시겠습니까? 진행한 내용은 저장됩니다."
+                    )
+                  ) {
+                    router.push("/");
+                  }
+                }}
+                className="text-sm border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
+              >
+                그만두기
+              </Button>
+              <Avatar className="h-8 w-8">
+                <AvatarImage
+                  src={user?.imageUrl}
+                  alt={user?.fullName || "User"}
+                />
+                <AvatarFallback>
                   {user?.firstName?.charAt(0) ||
                     user?.emailAddresses?.[0]?.emailAddress?.charAt(0) ||
                     "U"}
-                </span>
-              </div>
+                </AvatarFallback>
+              </Avatar>
             </div>
           </div>
         </div>
@@ -480,12 +501,11 @@ export default function ExamPage() {
 
           {/* Right Side - AI Chat */}
           <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
-            <div className="bg-background flex flex-col h-full">
-              <div className="px-6 py-2 border-b flex items-end">
-                <h2 className="text-xl font-bold">AI와 대화하기</h2>
-                <p className="text-sm text-muted-foreground ml-4">
-                  문제에 대해 자유롭게 질문하고 토론하세요
-                </p>
+            <div className="bg-background flex flex-col h-full relative">
+              <div className="absolute top-3 left-6 z-10">
+                <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                  AI와 대화하기
+                </div>
               </div>
 
               {/* Chat Messages */}
@@ -583,8 +603,8 @@ export default function ExamPage() {
               )}
 
               {/* Chat Input */}
-              <div className="p-4 bg-transparent">
-                <InputGroup>
+              <div className="absolute bottom-4 left-4 right-4 z-10 flex justify-center">
+                <InputGroup className="bg-background">
                   <InputGroupTextarea
                     placeholder="AI에게 질문하기..."
                     value={chatMessage}
@@ -623,7 +643,7 @@ export default function ExamPage() {
                   </DropdownMenuContent>
                 </DropdownMenu> */}
                     <InputGroupText className="ml-auto">
-                      {chatMessage.length} chars
+                      {chatMessage.length} 글자
                     </InputGroupText>
                     <Separator orientation="vertical" className="!h-4" />
                     <InputGroupButton
