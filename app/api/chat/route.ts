@@ -87,6 +87,7 @@ export async function POST(request: NextRequest) {
       message,
       sessionId,
       questionId,
+      questionIdx, // Preferred: use question index
       examTitle: requestExamTitle,
       examCode: requestExamCode,
       examId,
@@ -418,11 +419,31 @@ ${
     }
 
     // 메시지 DB 저장 (유저 → AI)
-    // questionId를 안전한 정수로 변환 (PostgreSQL integer 범위: -2^31 ~ 2^31-1)
-    const safeQIdx = questionId
-      ? Math.abs(parseInt(questionId) % 2147483647)
-      : 0;
-    console.log("🔍 DEBUG: questionId =", questionId, "→ safeQIdx =", safeQIdx);
+    // Use questionIdx if available, otherwise fall back to questionId conversion
+    let safeQIdx: number;
+    if (questionIdx !== undefined && questionIdx !== null) {
+      safeQIdx = parseInt(String(questionIdx));
+      console.log(
+        "🔍 DEBUG: Using questionIdx =",
+        questionIdx,
+        "→ safeQIdx =",
+        safeQIdx
+      );
+    } else if (questionId) {
+      // Fallback: questionId를 안전한 정수로 변환 (PostgreSQL integer 범위: -2^31 ~ 2^31-1)
+      safeQIdx = Math.abs(parseInt(questionId) % 2147483647);
+      console.log(
+        "🔍 DEBUG: Using questionId =",
+        questionId,
+        "→ safeQIdx =",
+        safeQIdx
+      );
+    } else {
+      safeQIdx = 0;
+      console.log(
+        "🔍 DEBUG: No question identifier, using default safeQIdx = 0"
+      );
+    }
 
     const { error: userMessageError } = await supabase.from("messages").insert([
       {

@@ -124,6 +124,13 @@ export default function GradeStudentPage({
         }
 
         const data: SessionData = await response.json();
+
+        // Debug logging
+        console.log("📊 Fetched session data:", data);
+        console.log("📝 Exam questions:", data.exam?.questions);
+        console.log("💬 Messages:", data.messages);
+        console.log("📤 Submissions:", data.submissions);
+
         setSessionData(data);
 
         // Initialize scores and feedbacks from existing grades
@@ -229,11 +236,28 @@ export default function GradeStudentPage({
   }
 
   // Get current question data
-  const currentQuestion = sessionData.exam.questions[selectedQuestionIdx];
-  const currentSubmission = sessionData.submissions[selectedQuestionIdx] as
+  const currentQuestion = sessionData.exam?.questions?.[selectedQuestionIdx];
+  const currentSubmission = sessionData.submissions?.[selectedQuestionIdx] as
     | Submission
     | undefined;
-  const currentMessages = sessionData.messages[selectedQuestionIdx] || [];
+
+  // Try to get messages by both index and question.id (for backward compatibility)
+  let currentMessages = (sessionData.messages?.[selectedQuestionIdx] ||
+    []) as Conversation[];
+
+  // If no messages found by index, try using question.id
+  if (currentMessages.length === 0 && currentQuestion?.id) {
+    currentMessages = (sessionData.messages?.[currentQuestion.id] ||
+      []) as Conversation[];
+  }
+
+  // Debug logging for current data
+  console.log("🔍 Current question index:", selectedQuestionIdx);
+  console.log("❓ Current question:", currentQuestion);
+  console.log("❓ Current question ID:", currentQuestion?.id);
+  console.log("📤 Current submission:", currentSubmission);
+  console.log("💬 Current messages:", currentMessages);
+  console.log("💬 All messages keys:", Object.keys(sessionData.messages || {}));
 
   // Separate messages into AI conversations (before submission) and feedback conversations (after submission)
   const aiConversations = currentMessages.filter(
@@ -283,24 +307,29 @@ export default function GradeStudentPage({
       {/* Question Navigation */}
       <div className="mb-6">
         <div className="flex gap-2 flex-wrap">
-          {sessionData.exam.questions.map((question, idx) => (
-            <Button
-              key={question.id || idx}
-              variant={selectedQuestionIdx === idx ? "default" : "outline"}
-              size="sm"
-              onClick={() => setSelectedQuestionIdx(idx)}
-            >
-              문제 {idx + 1}
-              {sessionData.grades[idx] && (
-                <Badge
-                  variant="secondary"
-                  className="ml-2 bg-green-100 text-green-800"
-                >
-                  {sessionData.grades[idx]?.score || 0}점
-                </Badge>
-              )}
-            </Button>
-          ))}
+          {sessionData.exam?.questions &&
+          Array.isArray(sessionData.exam.questions) ? (
+            sessionData.exam.questions.map((question, idx) => (
+              <Button
+                key={question.id || idx}
+                variant={selectedQuestionIdx === idx ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedQuestionIdx(idx)}
+              >
+                문제 {idx + 1}
+                {sessionData.grades[idx] && (
+                  <Badge
+                    variant="secondary"
+                    className="ml-2 bg-green-100 text-green-800"
+                  >
+                    {sessionData.grades[idx]?.score || 0}점
+                  </Badge>
+                )}
+              </Button>
+            ))
+          ) : (
+            <div className="text-red-600">문제를 불러올 수 없습니다.</div>
+          )}
         </div>
       </div>
 
@@ -316,11 +345,28 @@ export default function GradeStudentPage({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <p className="text-sm whitespace-pre-wrap">
-                  {currentQuestion?.prompt || "문제를 불러올 수 없습니다."}
-                </p>
-              </div>
+              {currentQuestion ? (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <p className="text-sm whitespace-pre-wrap">
+                    {currentQuestion.prompt}
+                  </p>
+                  {currentQuestion.ai_context && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <p className="text-xs text-gray-600 mb-2">AI 컨텍스트:</p>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                        {currentQuestion.ai_context}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-red-600">
+                  <p>❌ 문제를 불러올 수 없습니다.</p>
+                  <p className="text-sm mt-2 text-gray-600">
+                    선택된 문제 인덱스: {selectedQuestionIdx}
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -431,19 +477,33 @@ export default function GradeStudentPage({
               <CardContent>
                 <div className="bg-indigo-50 rounded-lg p-4">
                   <pre className="whitespace-pre-wrap text-sm text-gray-900">
-                    {JSON.stringify(currentSubmission.ai_feedback, null, 2)}
+                    {typeof currentSubmission.ai_feedback === "string"
+                      ? currentSubmission.ai_feedback
+                      : JSON.stringify(currentSubmission.ai_feedback, null, 2)}
                   </pre>
                 </div>
-                {currentSubmission.student_reply && (
-                  <div className="mt-4">
-                    <h4 className="font-semibold text-sm mb-2">학생 응답:</h4>
-                    <div className="bg-purple-50 rounded-lg p-4">
-                      <pre className="whitespace-pre-wrap text-sm text-gray-900">
-                        {currentSubmission.student_reply}
-                      </pre>
-                    </div>
-                  </div>
-                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Student Reply to AI Feedback */}
+          {currentSubmission?.student_reply && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <User className="w-5 h-5 text-green-600" />
+                  학생의 반박 답변
+                </CardTitle>
+                <CardDescription>
+                  AI 피드백에 대한 학생의 응답입니다
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="bg-green-50 rounded-lg p-4">
+                  <pre className="whitespace-pre-wrap text-sm text-gray-900">
+                    {currentSubmission.student_reply}
+                  </pre>
+                </div>
               </CardContent>
             </Card>
           )}

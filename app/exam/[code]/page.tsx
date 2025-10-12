@@ -238,7 +238,8 @@ export default function ExamPage() {
         body: JSON.stringify({
           message: currentMessage,
           sessionId: actualSessionId,
-          questionId: exam?.questions[currentQuestion]?.id,
+          questionIdx: currentQuestion, // Use question index instead of ID
+          questionId: exam?.questions[currentQuestion]?.id, // Keep for backward compatibility
           examTitle: exam?.title,
           examCode: exam?.code,
           examId: exam?.id,

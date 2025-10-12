@@ -96,6 +96,28 @@ export async function GET(
       );
     }
 
+    // Normalize questions format (text -> prompt, core_ability -> ai_context)
+    if (exam.questions && Array.isArray(exam.questions)) {
+      exam.questions = exam.questions.map((q: Record<string, unknown>) => ({
+        id: q.id,
+        idx: q.idx,
+        type: q.type,
+        prompt: q.prompt || q.text, // Support both field names
+        ai_context: q.ai_context || q.core_ability, // Support both field names
+      }));
+    }
+
+    console.log("📝 Exam data:", {
+      id: exam.id,
+      title: exam.title,
+      questionsType: typeof exam.questions,
+      questionsIsArray: Array.isArray(exam.questions),
+      questionsLength: Array.isArray(exam.questions)
+        ? exam.questions.length
+        : 0,
+      questions: exam.questions,
+    });
+
     // Get submissions
     const { data: submissions, error: submissionsError } = await supabase
       .from("submissions")
@@ -116,6 +138,11 @@ export async function GET(
 
     if (submissionsError) {
       console.log("⚠️ Error fetching submissions:", submissionsError);
+    } else {
+      console.log("📤 Submissions fetched:", {
+        count: submissions?.length || 0,
+        submissions: submissions,
+      });
     }
 
     // Get messages
@@ -136,6 +163,11 @@ export async function GET(
 
     if (messagesError) {
       console.log("⚠️ Error fetching messages:", messagesError);
+    } else {
+      console.log("💬 Messages fetched:", {
+        count: messages?.length || 0,
+        messages: messages,
+      });
     }
 
     // Get grades
@@ -249,16 +281,47 @@ export async function GET(
           }
         }
 
-        if (!messagesByQuestion[qIdx]) {
-          messagesByQuestion[qIdx] = [];
-        }
-
-        (messagesByQuestion[qIdx] as Array<Record<string, unknown>>).push({
+        const messageData = {
           id: message.id,
           role: message.role,
           content: decompressedContent || message.content,
           created_at: message.created_at,
-        });
+        };
+
+        // Store by q_idx
+        if (!messagesByQuestion[qIdx]) {
+          messagesByQuestion[qIdx] = [];
+        }
+        (messagesByQuestion[qIdx] as Array<Record<string, unknown>>).push(
+          messageData
+        );
+
+        // Also try to map q_idx to question index for backward compatibility
+        // Find the question with matching id (considering the conversion formula)
+        if (exam.questions && Array.isArray(exam.questions)) {
+          const questionIndex = exam.questions.findIndex(
+            (q: { id?: string | number }) => {
+              if (!q.id) return false;
+              // Check if q_idx matches the converted question.id
+              const convertedId = Math.abs(parseInt(String(q.id)) % 2147483647);
+              return convertedId === qIdx || String(q.id) === String(qIdx);
+            }
+          );
+
+          if (questionIndex !== -1 && questionIndex !== qIdx) {
+            console.log(
+              `📍 Mapping message from q_idx ${qIdx} to question index ${questionIndex}`
+            );
+            if (!messagesByQuestion[questionIndex]) {
+              messagesByQuestion[questionIndex] = [];
+            }
+            (
+              messagesByQuestion[questionIndex] as Array<
+                Record<string, unknown>
+              >
+            ).push(messageData);
+          }
+        }
       });
 
       // Sort messages by created_at within each question
@@ -292,7 +355,7 @@ export async function GET(
       overallScore = Math.round(totalScore / questionCount);
     }
 
-    return NextResponse.json({
+    const responseData = {
       session: {
         id: session.id,
         exam_id: session.exam_id,
@@ -311,7 +374,16 @@ export async function GET(
       messages: messagesByQuestion,
       grades: gradesByQuestion,
       overallScore,
+    };
+
+    console.log("📦 Returning response data:", {
+      examQuestionsLength: exam.questions?.length || 0,
+      submissionsKeys: Object.keys(submissionsByQuestion),
+      messagesKeys: Object.keys(messagesByQuestion),
+      gradesKeys: Object.keys(gradesByQuestion),
     });
+
+    return NextResponse.json(responseData);
   } catch (error) {
     console.error("Get session for grading error:", error);
     return NextResponse.json(
