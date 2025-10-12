@@ -259,7 +259,38 @@ export default function AnswerSubmission() {
     };
 
     setChatMessages((prev) => [...prev, studentMessage]);
+    const replyContent = chatMessage; // 저장하기 전에 메시지 복사
     setChatMessage("");
+
+    // 학생의 반박 메시지를 데이터베이스에 저장
+    if (sessionId) {
+      try {
+        console.log("Saving student reply to database:", {
+          sessionId,
+          qIdx: startQuestion,
+          replyLength: replyContent.length,
+        });
+
+        const response = await fetch("/api/submission/reply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentReply: replyContent,
+            sessionId: sessionId,
+            qIdx: startQuestion,
+          }),
+        });
+
+        if (response.ok) {
+          console.log("Student reply saved successfully");
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Failed to save student reply:", errorData);
+        }
+      } catch (error) {
+        console.error("Error saving student reply:", error);
+      }
+    }
 
     // 학생 답변 즉시 "수고하셨습니다" 메시지 표시
     setTimeout(() => {
