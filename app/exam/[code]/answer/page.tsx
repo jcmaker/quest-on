@@ -264,6 +264,12 @@ export default function AnswerSubmission() {
   const startChatMode = () => {
     if (!feedback) return;
 
+    console.log("📝 Starting chat mode with:", {
+      sessionId,
+      startQuestion,
+      feedbackLength: feedback.length,
+    });
+
     // AI의 첫 피드백 메시지 추가
     const aiMessage = {
       type: "ai" as const,
@@ -290,10 +296,10 @@ export default function AnswerSubmission() {
     setChatMessage("");
     setIsTyping(true);
 
-    // 학생의 반박 메시지를 데이터베이스에 저장 (선택적)
+    // 학생의 반박 메시지를 데이터베이스에 저장
     if (sessionId && startQuestion !== undefined) {
       try {
-        console.log("Attempting to save student reply:", {
+        console.log("💾 Saving student reply to DB:", {
           sessionId,
           qIdx: startQuestion,
           replyLength: replyContent.length,
@@ -310,15 +316,26 @@ export default function AnswerSubmission() {
         });
 
         if (response.ok) {
-          console.log("Student reply saved successfully");
+          const result = await response.json();
+          console.log("✅ Student reply saved successfully:", result);
         } else {
-          // 에러가 발생해도 조용히 처리 (submission이 아직 생성되지 않았을 수 있음)
-          console.log("Note: Could not save student reply (this is okay)");
+          const errorData = await response.json().catch(() => ({}));
+          console.error("❌ Failed to save student reply:", {
+            status: response.status,
+            error: errorData,
+          });
         }
-      } catch {
-        // 에러가 발생해도 조용히 처리
-        console.log("Note: Could not save student reply (this is okay)");
+      } catch (error) {
+        console.error("❌ Error saving student reply:", error);
       }
+    } else {
+      console.warn(
+        "⚠️ Cannot save student reply - missing sessionId or startQuestion:",
+        {
+          sessionId,
+          startQuestion,
+        }
+      );
     }
 
     // 학생 답변 즉시 "수고하셨습니다" 메시지 표시
