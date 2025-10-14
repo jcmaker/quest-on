@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import { Label } from "@/components/ui/label";
 import {
   ResizablePanelGroup,
@@ -776,9 +777,10 @@ export default function AnswerSubmission() {
                   {/* Question Content */}
                   <div className="bg-muted/50 p-4 rounded-lg mb-6">
                     <h3 className="font-semibold mb-2">문제</h3>
-                    <p className="text-base leading-relaxed">
-                      {exam.questions[currentQuestion]?.text}
-                    </p>
+                    <RichTextViewer
+                      content={exam.questions[currentQuestion]?.text || ""}
+                      className="text-base leading-relaxed"
+                    />
                   </div>
                 </div>
 

@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import Link from "next/link";
@@ -347,9 +348,10 @@ export default function GradeStudentPage({
             <CardContent>
               {currentQuestion ? (
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <p className="text-sm whitespace-pre-wrap">
-                    {currentQuestion.prompt}
-                  </p>
+                  <RichTextViewer
+                    content={currentQuestion.prompt}
+                    className="text-sm"
+                  />
                   {currentQuestion.ai_context && (
                     <div className="mt-4 pt-4 border-t border-gray-200">
                       <p className="text-xs text-gray-600 mb-2">AI 컨텍스트:</p>

@@ -73,6 +73,13 @@
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+  --pm-radius: 14px;
+  --pm-border: 1px;
+  --pm-shadow: 0 1px 0 rgba(0, 0, 0, 0.03), 0 2px 24px rgba(0, 0, 0, 0.06);
+  --pm-muted-fg: hsl(215 16% 46%);
+  --pm-zebra: hsl(220 14% 96%);
+  --pm-table-border: hsl(220 10% 85%);
+  --pm-code-bg: hsl(220 16% 96%);
 }
 
 .dark {
@@ -124,6 +131,10 @@
   --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.1),
     0 8px 10px -1px hsl(0 0% 0% / 0.1);
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+  --pm-muted-fg: hsl(215 16% 66%);
+  --pm-zebra: hsl(220 14% 14%);
+  --pm-table-border: hsl(220 10% 28%);
+  --pm-code-bg: hsl(220 10% 18%);
 }
 
 @theme inline {
@@ -246,4 +257,325 @@
   100% {
     background-position: 0% 50%;
   }
+}
+/* ──────────────────────────────────────────────
+   Tiptap — Modern Minimal Look
+   - 더 넓은 라인하이트, 부드러운 라운드, 은은한 보더/섀도우
+   - 테이블: 라운드+zebra+hover, resize handle 개선
+   - placeholder, selection, code/blockquote, hr 정리
+   - Viewer(.rich-text-content)도 동일 톤으로 맞춤
+   ────────────────────────────────────────────── */
+
+/* ===== Editor Root ===== */
+.ProseMirror {
+  outline: none;
+  color: hsl(var(--foreground));
+  line-height: 1.75;
+  font-size: 0.975rem; /* 살짝 컴팩트 */
+}
+
+/* placeholder */
+.ProseMirror p.is-editor-empty:first-child::before {
+  color: var(--pm-muted-fg);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  letter-spacing: 0.01em;
+}
+
+/* 링크/선택/포커스 감도 */
+.ProseMirror a {
+  color: hsl(var(--primary));
+  text-underline-offset: 3px;
+  transition: color 0.15s ease;
+}
+.ProseMirror a:hover {
+  opacity: 0.9;
+}
+
+.ProseMirror ::selection {
+  background: color-mix(in oklab, hsl(var(--primary)) 28%, transparent);
+}
+
+/* 기본 블록 간격(리듬) */
+.ProseMirror p,
+.ProseMirror ul,
+.ProseMirror ol,
+.ProseMirror pre,
+.ProseMirror blockquote,
+.ProseMirror table,
+.ProseMirror h1,
+.ProseMirror h2,
+.ProseMirror h3 {
+  margin: 0.75rem 0;
+}
+
+/* 헤딩(톤 다운 + 리듬) */
+.ProseMirror h1 {
+  font-size: 1.75rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  margin: 1.2rem 0 0.9rem;
+}
+.ProseMirror h2 {
+  font-size: 1.35rem;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  margin: 1rem 0 0.75rem;
+}
+.ProseMirror h3 {
+  font-size: 1.15rem;
+  line-height: 1.4;
+  margin: 0.85rem 0 0.6rem;
+}
+
+/* 목록 */
+.ProseMirror ul,
+.ProseMirror ol {
+  padding-left: 1.8rem;
+}
+.ProseMirror ul {
+  list-style-type: disc;
+}
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+.ProseMirror li {
+  margin: 0.25rem 0;
+  display: list-item;
+}
+
+/* 코드/프리 */
+.ProseMirror code {
+  background: var(--pm-code-bg);
+  border: var(--pm-border) solid var(--pm-table-border);
+  padding: 0.15rem 0.35rem;
+  border-radius: 8px;
+  font-size: 0.92em;
+}
+.ProseMirror pre {
+  background: var(--pm-code-bg);
+  border: var(--pm-border) solid var(--pm-table-border);
+  border-radius: var(--pm-radius);
+  padding: 0.8rem 1rem;
+  overflow: auto;
+}
+
+/* 인용문 */
+.ProseMirror blockquote {
+  border-left: 4px solid hsl(var(--primary));
+  padding: 0.25rem 1rem;
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in oklab, hsl(var(--primary)) 5%, transparent);
+}
+
+/* 구분선 */
+.ProseMirror hr {
+  border: none;
+  border-top: var(--pm-border) solid var(--pm-table-border);
+  margin: 1.25rem 0;
+}
+
+/* 이미지와 임베드 */
+.ProseMirror img,
+.ProseMirror video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  box-shadow: var(--pm-shadow);
+}
+
+/* ===== Table (Editor) ===== */
+.ProseMirror table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 1rem 0;
+  border: var(--pm-border) solid var(--pm-table-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: hsl(var(--card));
+  box-shadow: var(--pm-shadow);
+}
+.ProseMirror table th,
+.ProseMirror table td {
+  min-width: 3em;
+  padding: 0.5rem 0.7rem;
+  border-right: var(--pm-border) solid var(--pm-table-border);
+  border-bottom: var(--pm-border) solid var(--pm-table-border);
+  vertical-align: top;
+  font-size: 0.95rem;
+}
+.ProseMirror table th {
+  font-weight: 600;
+  text-align: left;
+  background: hsl(217.2193 91.2195% 59.8039%) !important;
+  color: white !important;
+}
+.ProseMirror table td {
+  background: hsl(var(--card));
+}
+.ProseMirror table tr:last-child td {
+  border-bottom: 0;
+}
+.ProseMirror table tr td:last-child,
+.ProseMirror table tr th:last-child {
+  border-right: 0;
+}
+
+/* 선택/리사이즈 표시 */
+.ProseMirror table .selectedCell:after {
+  z-index: 2;
+  position: absolute;
+  content: "";
+  inset: 0;
+  background: color-mix(in oklab, hsl(var(--primary)) 20%, transparent);
+  pointer-events: none;
+  border-radius: 6px;
+}
+.ProseMirror table .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: hsl(var(--primary));
+  opacity: 0.6;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+/* ===== Dark tweaks (Editor) ===== */
+.dark .ProseMirror {
+  color: hsl(var(--foreground));
+}
+.dark .ProseMirror table {
+  background: hsl(var(--card));
+}
+.dark .ProseMirror table th {
+  background: hsl(217.2193 91.2195% 59.8039%) !important;
+  color: white !important;
+}
+.dark .ProseMirror table td {
+  background: hsl(var(--card));
+}
+.dark .ProseMirror code,
+.dark .ProseMirror pre {
+  background: var(--pm-code-bg);
+  border-color: var(--pm-table-border);
+}
+
+/* ===== Read-only Viewer ===== */
+.rich-text-content {
+  color: hsl(var(--foreground));
+  line-height: 1.8;
+  font-size: 1rem;
+}
+
+/* 뷰어 테이블: 에디터와 동일 톤 */
+.rich-text-content table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 1rem 0;
+  border: var(--pm-border) solid var(--pm-table-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: hsl(var(--card));
+  box-shadow: var(--pm-shadow);
+}
+.rich-text-content th,
+.rich-text-content td {
+  min-width: 3em;
+  padding: 0.5rem 0.7rem;
+  border-right: var(--pm-border) solid var(--pm-table-border);
+  border-bottom: var(--pm-border) solid var(--pm-table-border);
+  font-size: 0.95rem;
+}
+.rich-text-content th {
+  font-weight: 600;
+  text-align: left;
+  background: hsl(217.2193 91.2195% 59.8039%) !important;
+  color: white !important;
+}
+.rich-text-content td {
+  background: hsl(var(--card));
+}
+.rich-text-content tr:last-child td {
+  border-bottom: 0;
+}
+.rich-text-content tr td:last-child,
+.rich-text-content tr th:last-child {
+  border-right: 0;
+}
+
+/* 타이포 리듬 */
+.rich-text-content p {
+  margin: 0.7rem 0;
+}
+.rich-text-content h1 {
+  font-size: 1.9rem;
+  font-weight: 700;
+  margin: 1.2rem 0 0.8rem;
+}
+.rich-text-content h2 {
+  font-size: 1.45rem;
+  font-weight: 650;
+  margin: 1rem 0 0.7rem;
+}
+.rich-text-content h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0.8rem 0 0.6rem;
+}
+.rich-text-content ul,
+.rich-text-content ol {
+  margin: 0.5rem 0;
+  padding-left: 1.8rem;
+}
+.rich-text-content ul {
+  list-style-type: disc;
+}
+.rich-text-content ol {
+  list-style-type: decimal;
+}
+.rich-text-content li {
+  display: list-item;
+  margin: 0.25rem 0;
+}
+.rich-text-content strong {
+  font-weight: 700;
+}
+.rich-text-content em {
+  font-style: italic;
+}
+.rich-text-content u {
+  text-decoration: underline;
+}
+.rich-text-content blockquote {
+  border-left: 4px solid hsl(var(--primary));
+  padding: 0.25rem 1rem;
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in oklab, hsl(var(--primary)) 6%, transparent);
+}
+.rich-text-content hr {
+  border: none;
+  border-top: var(--pm-border) solid var(--pm-table-border);
+  margin: 1.25rem 0;
+}
+
+/* Dark (Viewer) */
+.dark .rich-text-content table {
+  background: hsl(var(--card));
+}
+.dark .rich-text-content table th {
+  background: hsl(217.2193 91.2195% 59.8039%) !important;
+  color: white !important;
+}
+.dark .rich-text-content table td {
+  background: hsl(var(--card));
 }

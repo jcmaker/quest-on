@@ -12,6 +12,7 @@ import {
   InputGroupTextarea,
 } from "@/components/ui/input-group";
 import { Separator } from "@/components/ui/separator";
+import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -421,7 +422,7 @@ export default function ExamPage() {
           {/* Left Side - Exam Problem */}
           <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
             <div className="bg-background border-r flex flex-col h-full">
-              <div className="p-6">
+              <div className="p-6 overflow-y-auto">
                 <h2 className="text-xl font-bold mb-4">시험 문제</h2>
 
                 {/* Exam Info */}
@@ -452,9 +453,10 @@ export default function ExamPage() {
                 <div className="space-y-4">
                   <div className="bg-muted/50 p-4 rounded-lg">
                     <h3 className="font-semibold mb-2">문제</h3>
-                    <p className="text-base leading-relaxed">
-                      {exam.questions[currentQuestion]?.text}
-                    </p>
+                    <RichTextViewer
+                      content={exam.questions[currentQuestion]?.text || ""}
+                      className="text-base leading-relaxed"
+                    />
                   </div>
 
                   {/* Requirements */}

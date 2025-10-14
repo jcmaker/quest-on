@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import Link from "next/link";
 import { Label } from "@/components/ui/label";
 
@@ -333,9 +334,10 @@ export default function ExamDetail({
                             : question.type}
                         </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        {question.text}
-                      </p>
+                      <RichTextViewer
+                        content={question.text}
+                        className="text-sm text-muted-foreground"
+                      />
                     </div>
                   ))
                 )}
