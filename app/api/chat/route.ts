@@ -18,6 +18,7 @@ async function getAIResponse(
   userMessage: string,
   temperature = 0.7
 ) {
+  const aiStartTime = Date.now();
   try {
     if (process.env.NODE_ENV === "development") {
       console.log(
@@ -35,6 +36,9 @@ async function getAIResponse(
       max_tokens: 300,
       temperature,
     });
+
+    const aiDuration = Date.now() - aiStartTime;
+    console.log(`⏱️  [PERFORMANCE] OpenAI API response time: ${aiDuration}ms`);
 
     if (process.env.NODE_ENV === "development") {
       console.log("OpenAI response received:", {
@@ -58,6 +62,7 @@ async function getAIResponse(
 }
 
 export async function POST(request: NextRequest) {
+  const requestStartTime = Date.now();
   try {
     const body = await request.json();
     console.log("Chat API received request:", body);
@@ -66,6 +71,15 @@ export async function POST(request: NextRequest) {
       body.sessionId,
       "| startsWith temp_ =",
       body.sessionId?.startsWith("temp_")
+    );
+
+    // 📊 사용자 활동 로그
+    console.log(
+      `👤 [USER_ACTIVITY] Student ${body.studentId || "unknown"} | Session ${
+        body.sessionId
+      } | Question ${body.questionIdx || body.questionId} | Exam ${
+        body.examCode || body.examId
+      }`
     );
 
     // 🧪 DB 연결 테스트
@@ -290,6 +304,14 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
         aiResponse.length
       );
 
+      const requestDuration = Date.now() - requestStartTime;
+      console.log(
+        `⏱️  [PERFORMANCE] Total request time (temp): ${requestDuration}ms`
+      );
+      console.log(
+        `✅ [SUCCESS] Chat request completed | Session: ${actualSessionId} | Q: ${questionId}`
+      );
+
       return NextResponse.json({
         response: aiResponse,
         timestamp: new Date().toISOString(),
@@ -505,6 +527,16 @@ ${
       console.log("Returning regular session response");
     }
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(
+      `⏱️  [PERFORMANCE] Total request time (regular): ${requestDuration}ms`
+    );
+    console.log(
+      `✅ [SUCCESS] Chat request completed | Session: ${actualSessionId} | Q: ${questionId} | Clarifications used: ${
+        (session.used_clarifications ?? 0) + 1
+      }`
+    );
+
     return NextResponse.json({
       response: aiResponse,
       timestamp: new Date().toISOString(),
@@ -512,7 +544,13 @@ ${
       questionId,
     });
   } catch (error) {
+    const requestDuration = Date.now() - requestStartTime;
     console.error("Chat API error:", error);
+    console.error(
+      `❌ [ERROR] Chat request failed after ${requestDuration}ms | Error: ${
+        (error as Error)?.message
+      }`
+    );
 
     // Ensure we always return a proper error response
     const errorMessage = (error as Error)?.message || "Unknown error occurred";

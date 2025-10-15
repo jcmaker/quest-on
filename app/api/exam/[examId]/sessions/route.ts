@@ -13,19 +13,32 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ examId: string }> }
 ) {
+  const requestStartTime = Date.now();
   try {
     const { examId } = await params;
+    console.log(`📊 [EXAM_SESSIONS] Request received | Exam: ${examId}`);
+
     const user = await currentUser();
 
     if (!user) {
+      console.error(
+        `❌ [AUTH] Unauthorized exam sessions access | Exam: ${examId}`
+      );
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
+      console.error(
+        `❌ [AUTH] Non-instructor access attempt | User: ${user.id} | Exam: ${examId}`
+      );
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+
+    console.log(
+      `✅ [AUTH] Instructor authenticated | User: ${user.id} | Exam: ${examId}`
+    );
 
     // Get exam to verify instructor owns it
     const { data: exam, error: examError } = await supabase
@@ -103,7 +116,10 @@ export async function GET(
           let decompressedAnswerData = null;
           let decompressedFeedbackData = null;
 
-          if (submission.compressed_answer_data && typeof submission.compressed_answer_data === 'string') {
+          if (
+            submission.compressed_answer_data &&
+            typeof submission.compressed_answer_data === "string"
+          ) {
             try {
               decompressedAnswerData = decompressData(
                 submission.compressed_answer_data
@@ -113,7 +129,10 @@ export async function GET(
             }
           }
 
-          if (submission.compressed_feedback_data && typeof submission.compressed_feedback_data === 'string') {
+          if (
+            submission.compressed_feedback_data &&
+            typeof submission.compressed_feedback_data === "string"
+          ) {
             try {
               decompressedFeedbackData = decompressData(
                 submission.compressed_feedback_data
@@ -137,7 +156,10 @@ export async function GET(
         session.messages?.map((message: Record<string, unknown>) => {
           let decompressedContent = null;
 
-          if (message.compressed_content && typeof message.compressed_content === 'string') {
+          if (
+            message.compressed_content &&
+            typeof message.compressed_content === "string"
+          ) {
             try {
               decompressedContent = decompressData(message.compressed_content);
             } catch (error) {
@@ -178,14 +200,18 @@ export async function GET(
 
       sessionCompressionStats.submissions.forEach((meta) => {
         const metaObj = meta as Record<string, unknown>;
-        sessionCompressionStats.totalOriginalSize += (metaObj.originalSize as number) || 0;
-        sessionCompressionStats.totalCompressedSize += (metaObj.compressedSize as number) || 0;
+        sessionCompressionStats.totalOriginalSize +=
+          (metaObj.originalSize as number) || 0;
+        sessionCompressionStats.totalCompressedSize +=
+          (metaObj.compressedSize as number) || 0;
       });
 
       sessionCompressionStats.messages.forEach((meta) => {
         const metaObj = meta as Record<string, unknown>;
-        sessionCompressionStats.totalOriginalSize += (metaObj.originalSize as number) || 0;
-        sessionCompressionStats.totalCompressedSize += (metaObj.compressedSize as number) || 0;
+        sessionCompressionStats.totalOriginalSize +=
+          (metaObj.originalSize as number) || 0;
+        sessionCompressionStats.totalCompressedSize +=
+          (metaObj.compressedSize as number) || 0;
       });
 
       return {
@@ -222,6 +248,18 @@ export async function GET(
       overallCompressionStats.totalOriginalSize -
       overallCompressionStats.totalCompressedSize;
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(
+      `⏱️  [PERFORMANCE] Exam sessions GET completed in ${requestDuration}ms`
+    );
+    console.log(
+      `✅ [SUCCESS] Exam sessions retrieved | Exam: ${exam.id} | Sessions: ${
+        sessions.length
+      } | Total space saved: ${(
+        overallCompressionStats.totalSpaceSaved / 1024
+      ).toFixed(2)}KB`
+    );
+
     return NextResponse.json({
       exam: {
         id: exam.id,
@@ -231,7 +269,13 @@ export async function GET(
       compressionStats: overallCompressionStats,
     });
   } catch (error) {
+    const requestDuration = Date.now() - requestStartTime;
     console.error("Get exam sessions error:", error);
+    console.error(
+      `❌ [ERROR] Exam sessions GET failed after ${requestDuration}ms | Error: ${
+        (error as Error)?.message
+      }`
+    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

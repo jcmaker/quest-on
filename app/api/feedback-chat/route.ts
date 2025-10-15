@@ -14,11 +14,21 @@ const supabase = createClient(
 );
 
 export async function POST(request: NextRequest) {
+  const requestStartTime = Date.now();
   try {
     const { message, examCode, questionId, conversationHistory, studentId } =
       await request.json();
 
+    console.log(
+      `📨 [FEEDBACK_CHAT] Request received | Student: ${
+        studentId || "unknown"
+      } | Exam: ${examCode} | Question: ${questionId}`
+    );
+
     if (!message || !examCode) {
+      console.error(
+        `❌ [VALIDATION] Missing required fields | examCode: ${!!examCode} | message: ${!!message}`
+      );
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -106,6 +116,7 @@ ${conversationContext}
 - 수학 식이 필요한 경우 LaTeX 형식 사용 ($...$ 또는 $$...$$)
 - 반드시 한국어로 응답하세요`;
 
+    const aiStartTime = Date.now();
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -115,6 +126,10 @@ ${conversationContext}
       max_tokens: 500,
       temperature: 0.3,
     });
+    const aiDuration = Date.now() - aiStartTime;
+    console.log(
+      `⏱️  [PERFORMANCE] Feedback OpenAI response time: ${aiDuration}ms`
+    );
 
     const response = completion.choices[0]?.message?.content;
 
@@ -206,6 +221,14 @@ ${conversationContext}
       }
     }
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(
+      `⏱️  [PERFORMANCE] Total feedback chat request time: ${requestDuration}ms`
+    );
+    console.log(
+      `✅ [SUCCESS] Feedback chat completed | Student: ${studentId} | Question: ${questionId}`
+    );
+
     return NextResponse.json({
       response,
       timestamp: new Date().toISOString(),
@@ -213,7 +236,13 @@ ${conversationContext}
       questionId,
     });
   } catch (error) {
+    const requestDuration = Date.now() - requestStartTime;
     console.error("Feedback chat API error:", error);
+    console.error(
+      `❌ [ERROR] Feedback chat failed after ${requestDuration}ms | Error: ${
+        (error as Error)?.message
+      }`
+    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

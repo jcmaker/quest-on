@@ -13,13 +13,23 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
+  const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
+    console.log(`🔍 [SESSION_GET] Request received | Session: ${sessionId}`);
+
     const user = await currentUser();
 
     if (!user) {
+      console.error(
+        `❌ [AUTH] Unauthorized session access attempt | Session: ${sessionId}`
+      );
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    console.log(
+      `✅ [AUTH] User authenticated | User: ${user.id} | Session: ${sessionId}`
+    );
 
     // Get session data with related submissions and messages
     const { data: session, error: sessionError } = await supabase
@@ -189,6 +199,14 @@ export async function GET(
     compressionStats.totalOriginalSize = compressionStats.totalOriginalSize;
     compressionStats.totalCompressedSize = compressionStats.totalCompressedSize;
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(
+      `⏱️  [PERFORMANCE] Session GET completed in ${requestDuration}ms`
+    );
+    console.log(
+      `✅ [SUCCESS] Session data retrieved | Session: ${sessionId} | Submissions: ${decompressedSubmissions.length} | Messages: ${decompressedMessages.length}`
+    );
+
     return NextResponse.json({
       session: {
         id: session.id,
@@ -209,7 +227,13 @@ export async function GET(
       compressionStats,
     });
   } catch (error) {
+    const requestDuration = Date.now() - requestStartTime;
     console.error("Get session error:", error);
+    console.error(
+      `❌ [ERROR] Session GET failed after ${requestDuration}ms | Error: ${
+        (error as Error)?.message
+      }`
+    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

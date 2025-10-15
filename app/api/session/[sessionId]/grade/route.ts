@@ -38,6 +38,7 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
+  const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
     console.log("🔍 Fetching session for grading:", sessionId);
@@ -383,9 +384,23 @@ export async function GET(
       gradesKeys: Object.keys(gradesByQuestion),
     });
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(
+      `⏱️  [PERFORMANCE] Session grading GET completed in ${requestDuration}ms`
+    );
+    console.log(
+      `✅ [SUCCESS] Grading data retrieved | Session: ${sessionId} | Exam: ${exam.code} | Student: ${session.student_id}`
+    );
+
     return NextResponse.json(responseData);
   } catch (error) {
+    const requestDuration = Date.now() - requestStartTime;
     console.error("Get session for grading error:", error);
+    console.error(
+      `❌ [ERROR] Session grading GET failed after ${requestDuration}ms | Error: ${
+        (error as Error)?.message
+      }`
+    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -398,11 +413,16 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
+  const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
     const user = await currentUser();
     const body = await request.json();
     const { questionIdx, score, comment } = body;
+
+    console.log(
+      `📊 [GRADING] Grade submission | Session: ${sessionId} | Question: ${questionIdx} | Score: ${score}`
+    );
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -483,12 +503,24 @@ export async function POST(
       result = data;
     }
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(`⏱️  [PERFORMANCE] Grade saved in ${requestDuration}ms`);
+    console.log(
+      `✅ [SUCCESS] Grade saved | Session: ${sessionId} | Question: ${questionIdx} | Score: ${score}`
+    );
+
     return NextResponse.json({
       success: true,
       grade: result,
     });
   } catch (error) {
+    const requestDuration = Date.now() - requestStartTime;
     console.error("Save grade error:", error);
+    console.error(
+      `❌ [ERROR] Grade save failed after ${requestDuration}ms | Error: ${
+        (error as Error)?.message
+      }`
+    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

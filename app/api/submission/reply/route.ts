@@ -8,6 +8,7 @@ const supabase = createClient(
 
 // Update submission with student reply using sessionId and qIdx
 export async function POST(request: NextRequest) {
+  const requestStartTime = Date.now();
   try {
     const body = await request.json();
     console.log("📨 Received request body:", {
@@ -16,6 +17,10 @@ export async function POST(request: NextRequest) {
       hasQIdx: body.qIdx !== undefined,
       studentReplyLength: body.studentReply?.length,
     });
+
+    console.log(
+      `📝 [SUBMISSION] Student reply attempt | Session: ${body.sessionId} | Question: ${body.qIdx}`
+    );
 
     const { studentReply, sessionId, qIdx } = body;
 
@@ -161,16 +166,28 @@ export async function POST(request: NextRequest) {
 
     console.log("Submission updated successfully:", data);
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(
+      `⏱️  [PERFORMANCE] Submission reply saved in ${requestDuration}ms`
+    );
+    console.log(
+      `✅ [SUCCESS] Student reply saved | Session: ${sessionId} | Question: ${qIdx} | Length: ${sanitizedReply.length} chars`
+    );
+
     return NextResponse.json({
       success: true,
       submission: data,
     });
   } catch (error) {
+    const requestDuration = Date.now() - requestStartTime;
     console.error("❌ Submission update error (caught exception):", {
       error,
       message: error instanceof Error ? error.message : "Unknown error",
       stack: error instanceof Error ? error.stack : undefined,
     });
+    console.error(
+      `❌ [ERROR] Submission reply failed after ${requestDuration}ms`
+    );
     return NextResponse.json(
       {
         error: "Internal server error",

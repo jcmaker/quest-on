@@ -11,9 +11,14 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ submissionId: string }> }
 ) {
+  const requestStartTime = Date.now();
   try {
     const { submissionId } = await params;
     const { studentReply, sessionId, qIdx } = await request.json();
+
+    console.log(
+      `📝 [SUBMISSION_PATCH] Update attempt | SubmissionId: ${submissionId} | Session: ${sessionId} | Question: ${qIdx}`
+    );
 
     if (!studentReply) {
       return NextResponse.json(
@@ -77,12 +82,26 @@ export async function PATCH(
 
     console.log("Submission updated successfully:", data);
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(
+      `⏱️  [PERFORMANCE] Submission PATCH completed in ${requestDuration}ms`
+    );
+    console.log(
+      `✅ [SUCCESS] Submission updated | SubmissionId: ${submissionId}`
+    );
+
     return NextResponse.json({
       success: true,
       submission: data,
     });
   } catch (error) {
+    const requestDuration = Date.now() - requestStartTime;
     console.error("Submission update error:", error);
+    console.error(
+      `❌ [ERROR] Submission PATCH failed after ${requestDuration}ms | Error: ${
+        (error as Error)?.message
+      }`
+    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
