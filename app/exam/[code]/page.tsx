@@ -18,15 +18,13 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
 import { MessageCircle, ArrowUp, AlertCircle } from "lucide-react";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
-import ProgressBar from "@/components/ProgressBar";
+import { ExamHeader } from "@/components/ExamHeader";
 
 interface Question {
   id: string;
@@ -390,62 +388,19 @@ export default function ExamPage() {
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Top Header */}
-      <div className="bg-background/95 backdrop-blur-sm border-b flex-shrink-0">
-        <div className="container mx-auto px-6 py-2">
-          <div className="grid grid-cols-3 items-center">
-            {/* Left: AI 시험 시스템 + 진행중 배지 */}
-            <div className="flex items-center space-x-3 justify-start">
-              <Image
-                src="/qlogo_icon.png"
-                alt="Quest-On"
-                width={120}
-                height={32}
-                className="h-8 w-auto"
-              />
-              <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-                진행중
-              </div>
-            </div>
-
-            {/* Center: Progress Steps */}
-            <div className="flex justify-center">
-              <ProgressBar currentStep="exam" />
-            </div>
-
-            {/* Right: Profile Image & Exit Button */}
-            <div className="flex items-center justify-end space-x-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (
-                    confirm(
-                      "정말로 시험을 그만두시겠습니까? 진행한 내용은 저장됩니다."
-                    )
-                  ) {
-                    router.push("/");
-                  }
-                }}
-                className="text-sm border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
-              >
-                그만두기
-              </Button>
-              <Avatar className="h-8 w-8">
-                <AvatarImage
-                  src={user?.imageUrl}
-                  alt={user?.fullName || "User"}
-                />
-                <AvatarFallback>
-                  {user?.firstName?.charAt(0) ||
-                    user?.emailAddresses?.[0]?.emailAddress?.charAt(0) ||
-                    "U"}
-                </AvatarFallback>
-              </Avatar>
-            </div>
-          </div>
-        </div>
-      </div>
+      <ExamHeader
+        examCode={examCode}
+        duration={exam?.duration || 60}
+        currentStep="exam"
+        user={user}
+        onExit={() => {
+          if (
+            confirm("정말로 시험을 그만두시겠습니까? 진행한 내용은 저장됩니다.")
+          ) {
+            router.push("/");
+          }
+        }}
+      />
 
       {/* Main Content - Resizable Layout */}
       <div className="flex-1 min-h-0">
