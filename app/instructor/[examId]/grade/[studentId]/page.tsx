@@ -17,6 +17,7 @@ import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import Link from "next/link";
+import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import {
   ArrowLeft,
   MessageSquare,
@@ -452,9 +453,12 @@ export default function GradeStudentPage({
             <CardContent>
               {currentSubmission ? (
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <pre className="whitespace-pre-wrap text-sm text-gray-900">
-                    {String(currentSubmission.answer || "답안이 없습니다.")}
-                  </pre>
+                  <RichTextViewer
+                    content={String(
+                      currentSubmission.answer || "답안이 없습니다."
+                    )}
+                    className="text-sm"
+                  />
                 </div>
               ) : (
                 <div className="text-center py-8 text-muted-foreground">
@@ -477,12 +481,44 @@ export default function GradeStudentPage({
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="bg-indigo-50 rounded-lg p-4">
-                  <pre className="whitespace-pre-wrap text-sm text-gray-900">
-                    {typeof currentSubmission.ai_feedback === "string"
-                      ? currentSubmission.ai_feedback
-                      : JSON.stringify(currentSubmission.ai_feedback, null, 2)}
-                  </pre>
+                <div className="space-y-2">
+                  <AIMessageRenderer
+                    content={(() => {
+                      if (typeof currentSubmission.ai_feedback === "string") {
+                        // JSON 문자열인지 확인
+                        try {
+                          const parsed = JSON.parse(
+                            currentSubmission.ai_feedback
+                          );
+                          return (
+                            parsed.feedback || currentSubmission.ai_feedback
+                          );
+                        } catch {
+                          // JSON이 아니면 그대로 반환
+                          return currentSubmission.ai_feedback;
+                        }
+                      } else if (
+                        typeof currentSubmission.ai_feedback === "object" &&
+                        currentSubmission.ai_feedback !== null
+                      ) {
+                        // 객체인 경우 feedback 속성 추출
+                        return (
+                          (
+                            currentSubmission.ai_feedback as {
+                              feedback?: string;
+                            }
+                          ).feedback ||
+                          JSON.stringify(currentSubmission.ai_feedback, null, 2)
+                        );
+                      }
+                      return String(currentSubmission.ai_feedback || "");
+                    })()}
+                    timestamp={
+                      (currentSubmission.decompressed?.feedbackData
+                        ?.timestamp as string) ||
+                      sessionData.session.submitted_at
+                    }
+                  />
                 </div>
               </CardContent>
             </Card>
@@ -502,9 +538,10 @@ export default function GradeStudentPage({
               </CardHeader>
               <CardContent>
                 <div className="bg-green-50 rounded-lg p-4">
-                  <pre className="whitespace-pre-wrap text-sm text-gray-900">
-                    {currentSubmission.student_reply}
-                  </pre>
+                  <RichTextViewer
+                    content={currentSubmission.student_reply}
+                    className="text-sm"
+                  />
                 </div>
               </CardContent>
             </Card>

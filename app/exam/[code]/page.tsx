@@ -19,6 +19,7 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Kbd, KbdGroup } from "@/components/ui/kbd";
 
 import Link from "next/link";
 import Image from "next/image";
@@ -63,7 +64,12 @@ export default function ExamPage() {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [chatMessage, setChatMessage] = useState("");
   const [chatHistory, setChatHistory] = useState<
-    Array<{ type: "user" | "assistant"; message: string; timestamp: string }>
+    Array<{
+      type: "user" | "assistant";
+      message: string;
+      timestamp: string;
+      qIdx: number;
+    }>
   >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [draftAnswers, setDraftAnswers] = useState<DraftAnswer[]>([]);
@@ -74,6 +80,11 @@ export default function ExamPage() {
   const [sessionError, setSessionError] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Filter chat history by current question
+  const currentQuestionChatHistory = chatHistory.filter(
+    (msg) => msg.qIdx === currentQuestion
+  );
 
   // Fetch exam data from database
   useEffect(() => {
@@ -156,7 +167,7 @@ export default function ExamPage() {
 
         setSessionId(result.session.id);
 
-        // Load existing chat history
+        // Load existing chat history with qIdx
         if (result.messages && result.messages.length > 0) {
           console.log(
             "📨 Restoring chat history:",
@@ -164,7 +175,23 @@ export default function ExamPage() {
             "messages"
           );
           console.log("📨 First message:", result.messages[0]);
-          setChatHistory(result.messages);
+
+          // Map messages to include qIdx from database
+          const messagesWithQIdx = result.messages.map(
+            (msg: {
+              type: "user" | "assistant";
+              message: string;
+              timestamp: string;
+              qIdx?: number;
+            }) => ({
+              type: msg.type,
+              message: msg.message,
+              timestamp: msg.timestamp,
+              qIdx: msg.qIdx || 0, // Default to 0 if not present
+            })
+          );
+
+          setChatHistory(messagesWithQIdx);
         } else {
           console.log(
             "📨 No existing messages to restore - messages array:",
@@ -217,6 +244,7 @@ export default function ExamPage() {
       type: "user" as const,
       message: chatMessage,
       timestamp: new Date().toISOString(),
+      qIdx: currentQuestion,
     };
     setChatHistory((prev) => [...prev, userMessage]);
     const currentMessage = chatMessage;
@@ -261,6 +289,7 @@ export default function ExamPage() {
           type: "assistant" as const,
           message: data.response,
           timestamp: new Date().toISOString(),
+          qIdx: currentQuestion,
         };
         setChatHistory((prev) => [...prev, assistantMessage]);
       } else {
@@ -287,6 +316,7 @@ export default function ExamPage() {
           type: "assistant" as const,
           message: errorMessage,
           timestamp: new Date().toISOString(),
+          qIdx: currentQuestion,
         };
         setChatHistory((prev) => [...prev, assistantMessage]);
       }
@@ -298,6 +328,7 @@ export default function ExamPage() {
         message:
           "네트워크 오류가 발생했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.",
         timestamp: new Date().toISOString(),
+        qIdx: currentQuestion,
       };
       setChatHistory((prev) => [...prev, errorMessage]);
     } finally {
@@ -309,7 +340,7 @@ export default function ExamPage() {
   // Auto scroll to bottom of chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatHistory]);
+  }, [currentQuestionChatHistory]);
 
   if (!isLoaded || examLoading) {
     return (
@@ -513,7 +544,7 @@ export default function ExamPage() {
 
               {/* Chat Messages */}
               <div className="flex-1 overflow-y-auto p-6 pb-48 space-y-4 min-h-0">
-                {chatHistory.length === 0 ? (
+                {currentQuestionChatHistory.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center">
                     <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
                       <MessageCircle className="w-8 h-8 text-primary" />
@@ -525,7 +556,7 @@ export default function ExamPage() {
                   </div>
                 ) : (
                   <>
-                    {chatHistory.map((msg, index) => (
+                    {currentQuestionChatHistory.map((msg, index) => (
                       <div
                         key={index}
                         className={`flex ${
@@ -612,16 +643,32 @@ export default function ExamPage() {
                     placeholder="AI에게 질문하기..."
                     value={chatMessage}
                     onChange={(e) => setChatMessage(e.target.value)}
-                    onKeyPress={(e) =>
-                      e.key === "Enter" && !isLoading && sendChatMessage()
-                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && !isLoading) {
+                        e.preventDefault();
+                        sendChatMessage();
+                      }
+                      // Shift+Enter will create a line break naturally
+                    }}
                     disabled={isLoading || sessionError}
                   />
                   <InputGroupAddon align="block-end">
-                    <InputGroupText className="text-xs text-muted-foreground">
-                      Enter 키로 전송 • 실시간 AI 도움
+                    <InputGroupText className="text-xs text-muted-foreground flex items-center gap-2">
+                      <span className="flex items-center gap-1">
+                        <Kbd>Enter</Kbd>
+                        <span>전송</span>
+                      </span>
+                      <span>•</span>
+                      <span className="flex items-center gap-1">
+                        <KbdGroup>
+                          <Kbd>Shift</Kbd>
+                          <span>+</span>
+                          <Kbd>Enter</Kbd>
+                        </KbdGroup>
+                        <span>줄바꿈</span>
+                      </span>
                       {sessionError && (
-                        <p className="text-xs text-destructive">연결 오류</p>
+                        <span className="text-destructive">• 연결 오류</span>
                       )}
                     </InputGroupText>
                     {/* <InputGroupButton

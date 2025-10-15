@@ -12,8 +12,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
+import { SimpleRichTextEditor } from "@/components/ui/simple-rich-text-editor";
 import { Label } from "@/components/ui/label";
 import {
   ResizablePanelGroup,
@@ -261,6 +261,20 @@ export default function AnswerSubmission() {
     );
   };
 
+  // Helper function to check if HTML content is empty
+  const isHtmlEmpty = (html: string): boolean => {
+    if (!html) return true;
+    // Remove HTML tags and check if there's any actual content
+    const textContent = html.replace(/<[^>]*>/g, "").trim();
+    return textContent.length === 0;
+  };
+
+  // Helper function to get text content length from HTML
+  const getTextLength = (html: string): number => {
+    if (!html) return 0;
+    return html.replace(/<[^>]*>/g, "").length;
+  };
+
   // 채팅 모드 시작 (피드백을 첫 메시지로)
   const startChatMode = () => {
     if (!feedback) return;
@@ -284,7 +298,7 @@ export default function AnswerSubmission() {
 
   // 채팅 메시지 전송
   const sendChatMessage = async () => {
-    if (!chatMessage.trim()) return;
+    if (isHtmlEmpty(chatMessage)) return;
 
     const studentMessage = {
       type: "student" as const,
@@ -298,6 +312,14 @@ export default function AnswerSubmission() {
     setIsTyping(true);
 
     // 학생의 반박 메시지를 데이터베이스에 저장
+    console.log("🔍 Checking conditions before saving:", {
+      hasSessionId: !!sessionId,
+      sessionId,
+      hasStartQuestion: startQuestion !== undefined,
+      startQuestion,
+      replyLength: replyContent.length,
+    });
+
     if (sessionId && startQuestion !== undefined) {
       try {
         console.log("💾 Saving student reply to DB:", {
@@ -306,25 +328,46 @@ export default function AnswerSubmission() {
           replyLength: replyContent.length,
         });
 
+        // Sanitize HTML before sending
+        const sanitizedReply = replyContent.replace(/\u0000/g, "");
+
+        console.log("📤 Sending student reply:", {
+          sessionId,
+          qIdx: startQuestion,
+          replyLength: sanitizedReply.length,
+          replyPreview: sanitizedReply.substring(0, 100),
+        });
+
         const response = await fetch("/api/submission/reply", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            studentReply: replyContent,
+            studentReply: sanitizedReply,
             sessionId: sessionId,
             qIdx: startQuestion,
           }),
         });
 
+        console.log("📥 Response status:", response.status);
+
         if (response.ok) {
           const result = await response.json();
           console.log("✅ Student reply saved successfully:", result);
         } else {
-          const errorData = await response.json().catch(() => ({}));
+          const errorText = await response.text();
           console.error("❌ Failed to save student reply:", {
             status: response.status,
-            error: errorData,
+            statusText: response.statusText,
+            errorText: errorText,
           });
+
+          // Try to parse as JSON
+          try {
+            const errorData = JSON.parse(errorText);
+            console.error("Parsed error data:", errorData);
+          } catch {
+            console.error("Could not parse error as JSON");
+          }
         }
       } catch (error) {
         console.error("❌ Error saving student reply:", error);
@@ -356,7 +399,9 @@ export default function AnswerSubmission() {
     if (!exam) return;
 
     // Check if all questions have answers
-    const unansweredQuestions = answers.filter((answer) => !answer.text.trim());
+    const unansweredQuestions = answers.filter((answer) =>
+      isHtmlEmpty(answer.text)
+    );
     if (unansweredQuestions.length > 0) {
       alert("모든 문제에 답안을 작성해주세요.");
       return;
@@ -655,21 +700,19 @@ export default function AnswerSubmission() {
                         </p>
                       </div>
 
-                      <Textarea
+                      <SimpleRichTextEditor
                         placeholder="피드백에 대한 답변을 작성하세요..."
                         value={chatMessage}
-                        onChange={(e) => setChatMessage(e.target.value)}
-                        className="min-h-[400px] text-base"
-                        disabled={isTyping}
+                        onChange={(value) => setChatMessage(value)}
                       />
 
                       <div className="flex items-center justify-between">
                         <p className="text-xs text-muted-foreground">
-                          {chatMessage.length} 글자
+                          {getTextLength(chatMessage)} 글자
                         </p>
                         <Button
                           onClick={sendChatMessage}
-                          disabled={isTyping || !chatMessage.trim()}
+                          disabled={isTyping || isHtmlEmpty(chatMessage)}
                           size="lg"
                           className="px-8"
                         >
@@ -867,19 +910,15 @@ export default function AnswerSubmission() {
             <div className="bg-background flex flex-col h-full">
               {/* Answer Writing Area */}
               <div className="flex-1 overflow-y-auto p-6">
-                {/* Answer Textarea */}
+                {/* Answer Editor */}
                 <div className="space-y-4 mb-12">
                   <Label className="text-base font-semibold">최종 답안</Label>
-                  <Textarea
+                  <SimpleRichTextEditor
                     placeholder="여기에 상세한 답안을 작성하세요..."
                     value={answers[currentQuestion]?.text || ""}
-                    onChange={(e) =>
-                      updateAnswer(
-                        exam.questions[currentQuestion].id,
-                        e.target.value
-                      )
+                    onChange={(value) =>
+                      updateAnswer(exam.questions[currentQuestion].id, value)
                     }
-                    className="min-h-[400px] text-base"
                   />
                 </div>
 
@@ -895,7 +934,7 @@ export default function AnswerSubmission() {
                     <Button
                       onClick={handleSubmit}
                       disabled={
-                        isSubmitting || answers.some((a) => !a.text.trim())
+                        isSubmitting || answers.some((a) => isHtmlEmpty(a.text))
                       }
                       className="w-full"
                       size="lg"

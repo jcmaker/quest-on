@@ -404,11 +404,12 @@ async function createOrGetSession(data: { examId: string; studentId: string }) {
 
       if (messagesError) throw messagesError;
 
-      // 프론트엔드가 기대하는 형식으로 변환
+      // 프론트엔드가 기대하는 형식으로 변환 (qIdx 포함)
       const formattedMessages = (messages || []).map((msg) => ({
         type: msg.role === "user" ? "user" : "assistant",
         message: msg.content,
         timestamp: msg.created_at,
+        qIdx: msg.q_idx || 0,
       }));
 
       console.log(

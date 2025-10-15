@@ -294,8 +294,11 @@
   opacity: 0.9;
 }
 
-.ProseMirror ::selection {
-  background: color-mix(in oklab, hsl(var(--primary)) 28%, transparent);
+.ProseMirror::selection {
+  background: var(--primary);
+}
+.ProseMirror::-moz-selection {
+  background: var(--primary);
 }
 
 /* 기본 블록 간격(리듬) */
@@ -450,7 +453,7 @@
 }
 
 /* ===== Dark tweaks (Editor) ===== */
-.dark .ProseMirror {
+/* .dark .ProseMirror {
   color: hsl(var(--foreground));
 }
 .dark .ProseMirror table {
@@ -467,7 +470,7 @@
 .dark .ProseMirror pre {
   background: var(--pm-code-bg);
   border-color: var(--pm-table-border);
-}
+} */
 
 /* ===== Read-only Viewer ===== */
 .rich-text-content {
@@ -569,7 +572,7 @@
 }
 
 /* Dark (Viewer) */
-.dark .rich-text-content table {
+/* .dark .rich-text-content table {
   background: hsl(var(--card));
 }
 .dark .rich-text-content table th {
@@ -578,4 +581,4 @@
 }
 .dark .rich-text-content table td {
   background: hsl(var(--card));
-}
+} */
