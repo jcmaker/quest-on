@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,9 +21,10 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable";
 
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, ArrowLeft, Save } from "lucide-react";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { ExamHeader } from "@/components/ExamHeader";
+import { Kbd } from "@/components/ui/kbd";
 
 interface Question {
   id: string;
@@ -49,6 +50,7 @@ interface Answer {
 export default function AnswerSubmission() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { user } = useUser();
 
   const examCode = params.code as string;
@@ -80,6 +82,211 @@ export default function AnswerSubmission() {
     Array<{ type: "user" | "assistant"; message: string; timestamp: string }>
   >([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Detect platform for keyboard shortcut display
+  const isMac =
+    typeof window !== "undefined" &&
+    navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+  const saveShortcut = isMac ? (
+    <>
+      <Kbd>⌘</Kbd>+<Kbd>S</Kbd>
+    </>
+  ) : (
+    <>
+      <Kbd>Ctrl</Kbd>+<Kbd>S</Kbd>
+    </>
+  );
+
+  // Manual save function
+  const manualSave = useCallback(async () => {
+    if (!sessionId || !exam) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save_draft_answers",
+          data: {
+            sessionId,
+            answers: answers.map((answer) => ({
+              questionId: answer.questionId,
+              text: answer.text?.replace(/\u0000/g, "") || "",
+            })),
+          },
+        }),
+      });
+
+      if (response.ok) {
+        setLastSaved(new Date().toLocaleTimeString());
+        console.log("Answers saved manually");
+      }
+    } catch (error) {
+      console.error("Error saving answers manually:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [sessionId, exam, answers]);
+
+  // Keyboard shortcut for manual save (Ctrl+S / Cmd+S)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+        event.preventDefault();
+        manualSave();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [manualSave]);
+
+  // Auto-save functionality
+  const autoSaveAnswers = useCallback(async () => {
+    if (!sessionId || !exam) return;
+
+    setIsSaving(true);
+    try {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "save_draft_answers",
+          data: {
+            sessionId,
+            answers: answers.map((answer) => ({
+              questionId: answer.questionId,
+              text: answer.text?.replace(/\u0000/g, "") || "",
+            })),
+          },
+        }),
+      });
+
+      if (response.ok) {
+        setLastSaved(new Date().toLocaleTimeString());
+        console.log("Answers auto-saved successfully");
+      }
+    } catch (error) {
+      console.error("Error auto-saving answers:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [sessionId, exam, answers]);
+
+  // Auto-save every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (answers.some((answer) => answer.text && !isHtmlEmpty(answer.text))) {
+        autoSaveAnswers();
+      }
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [autoSaveAnswers, answers]);
+
+  // Save to localStorage as backup
+  useEffect(() => {
+    if (exam) {
+      const saveData = {
+        examCode,
+        answers,
+        timestamp: new Date().toISOString(),
+      };
+      localStorage.setItem(
+        `exam_answers_${examCode}`,
+        JSON.stringify(saveData)
+      );
+    }
+  }, [answers, examCode, exam]);
+
+  // Load saved answers from localStorage on mount
+  useEffect(() => {
+    if (exam) {
+      const savedData = localStorage.getItem(`exam_answers_${examCode}`);
+      if (savedData) {
+        try {
+          const parsed = JSON.parse(savedData);
+          if (parsed.examCode === examCode && parsed.answers) {
+            // Only load from localStorage if we don't have server data yet
+            // This prevents overriding server data with potentially older localStorage data
+            if (!sessionId) {
+              setAnswers(parsed.answers);
+              console.log(
+                "Loaded saved answers from localStorage (no session yet)"
+              );
+            }
+          }
+        } catch (error) {
+          console.error("Error loading saved answers:", error);
+        }
+      }
+    }
+  }, [exam, examCode, sessionId]);
+
+  // Load saved answers from server when session is available
+  useEffect(() => {
+    const loadSavedAnswersFromServer = async () => {
+      if (!sessionId || !exam) return;
+
+      try {
+        console.log(
+          "Loading saved answers from server for session:",
+          sessionId
+        );
+
+        const response = await fetch("/api/supa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "get_session_submissions",
+            data: { sessionId },
+          }),
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log("Server submissions result:", result);
+
+          if (result.submissions && result.submissions.length > 0) {
+            // Convert server submissions to answers format
+            const serverAnswers = exam.questions.map((question, index) => {
+              const submission = result.submissions.find(
+                (sub: { q_idx: number; answer: string }) => sub.q_idx === index
+              );
+              return {
+                questionId: question.id,
+                text: submission?.answer || "",
+              };
+            });
+
+            setAnswers(serverAnswers);
+            console.log(
+              "Loaded saved answers from server:",
+              serverAnswers.length
+            );
+
+            // Update localStorage with server data
+            const saveData = {
+              examCode,
+              answers: serverAnswers,
+              timestamp: new Date().toISOString(),
+            };
+            localStorage.setItem(
+              `exam_answers_${examCode}`,
+              JSON.stringify(saveData)
+            );
+          }
+        }
+      } catch (error) {
+        console.error("Error loading saved answers from server:", error);
+      }
+    };
+
+    loadSavedAnswersFromServer();
+  }, [sessionId, exam, examCode]);
 
   // Handle startQuestion and chatHistory parameters from URL
   useEffect(() => {
@@ -257,6 +464,34 @@ export default function AnswerSubmission() {
         answer.questionId === questionId ? { ...answer, text } : answer
       )
     );
+  };
+
+  // Handle back to chat page
+  const handleBackToChat = async () => {
+    // Save current answers before going back
+    if (sessionId && exam) {
+      try {
+        await fetch("/api/supa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "save_draft_answers",
+            data: {
+              sessionId,
+              answers: answers.map((answer) => ({
+                questionId: answer.questionId,
+                text: answer.text?.replace(/\u0000/g, "") || "",
+              })),
+            },
+          }),
+        });
+      } catch (error) {
+        console.error("Error saving answers before going back:", error);
+      }
+    }
+
+    // Navigate back to chat page with current question
+    router.push(`/exam/${examCode}?startQuestion=${currentQuestion}`);
   };
 
   // Helper function to check if HTML content is empty
@@ -843,6 +1078,44 @@ export default function AnswerSubmission() {
             <div className="bg-background flex flex-col h-full">
               {/* Answer Writing Area */}
               <div className="flex-1 overflow-y-auto p-6">
+                {/* Back Button and Save Status */}
+                <div className="flex items-center justify-between mb-4">
+                  <Button
+                    variant="outline"
+                    onClick={handleBackToChat}
+                    className="flex items-center gap-2"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    채팅으로 돌아가기
+                  </Button>
+
+                  {/* Save Status Indicator */}
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    {isSaving ? (
+                      <div className="flex items-center gap-2">
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary"></div>
+                        <span>저장 중...</span>
+                      </div>
+                    ) : lastSaved ? (
+                      <div className="flex items-center gap-2">
+                        <Save className="w-3 h-3" />
+                        <span>마지막 저장: {lastSaved}</span>
+                        <span className="text-xs flex items-center gap-1">
+                          • {saveShortcut}로 수동 저장
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Save className="w-3 h-3" />
+                        <span>자동 저장 활성화</span>
+                        <span className="text-xs flex items-center gap-1">
+                          • {saveShortcut}로 수동 저장
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* Answer Editor */}
                 <div className="space-y-4 mb-12">
                   <Label className="text-base font-semibold">최종 답안</Label>

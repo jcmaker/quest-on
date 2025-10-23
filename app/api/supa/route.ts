@@ -32,6 +32,10 @@ export async function POST(request: NextRequest) {
         return await saveDraft(data);
       case "save_all_drafts":
         return await saveAllDrafts(data);
+      case "save_draft_answers":
+        return await saveDraftAnswers(data);
+      case "get_session_submissions":
+        return await getSessionSubmissions(data);
       case "get_session_messages":
         return await getSessionMessages(data);
       default:
@@ -539,6 +543,82 @@ async function saveAllDrafts(data: {
     console.error("Save all drafts error:", error);
     return NextResponse.json(
       { error: "Failed to save all drafts" },
+      { status: 500 }
+    );
+  }
+}
+
+async function saveDraftAnswers(data: {
+  sessionId: string;
+  answers: Array<{ questionId: string; text: string }>;
+}) {
+  try {
+    const results = [];
+
+    for (const answer of data.answers) {
+      if (answer.text.trim()) {
+        // Find the question index from the questionId
+        const { data: session } = await supabase
+          .from("sessions")
+          .select("exam_id")
+          .eq("id", data.sessionId)
+          .single();
+
+        if (session) {
+          const { data: exam } = await supabase
+            .from("exams")
+            .select("questions")
+            .eq("id", session.exam_id)
+            .single();
+
+          if (exam && exam.questions) {
+            const questions = exam.questions as Array<{ id: string }>;
+            const questionIndex = questions.findIndex(
+              (q) => q.id === answer.questionId
+            );
+
+            if (questionIndex !== -1) {
+              const result = await saveDraft({
+                sessionId: data.sessionId,
+                questionId: questionIndex.toString(),
+                answer: answer.text,
+              });
+
+              if (result.status === 200) {
+                const resultData = await result.json();
+                results.push(resultData.submission);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return NextResponse.json({ submissions: results });
+  } catch (error) {
+    console.error("Save draft answers error:", error);
+    return NextResponse.json(
+      { error: "Failed to save draft answers" },
+      { status: 500 }
+    );
+  }
+}
+
+async function getSessionSubmissions(data: { sessionId: string }) {
+  try {
+    const { data: submissions, error } = await supabase
+      .from("submissions")
+      .select("*")
+      .eq("session_id", data.sessionId)
+      .order("q_idx", { ascending: true });
+
+    if (error) throw error;
+
+    return NextResponse.json({ submissions: submissions || [] });
+  } catch (error) {
+    console.error("Get session submissions error:", error);
+    return NextResponse.json(
+      { error: "Failed to get session submissions" },
       { status: 500 }
     );
   }
