@@ -43,6 +43,7 @@
     "dropdown-menu": "^0.1.1",
     "init": "^0.1.2",
     "input": "^1.0.1",
+    "input-otp": "^1.4.2",
     "katex": "^0.16.22",
     "label": "^0.2.2",
     "lucide-react": "^0.541.0",

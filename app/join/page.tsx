@@ -9,8 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,9 +17,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
+import { REGEXP_ONLY_DIGITS_AND_CHARS } from "input-otp";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { FileText } from "lucide-react";
 
 export default function ExamCodeEntry() {
   const [examCode, setExamCode] = useState("");
@@ -31,7 +36,7 @@ export default function ExamCodeEntry() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!examCode.trim()) return;
+    if (examCode.length !== 6) return;
 
     // Show the instructions dialog
     setShowInstructions(true);
@@ -40,48 +45,52 @@ export default function ExamCodeEntry() {
   const handleConfirmAndNavigate = () => {
     setIsLoading(true);
     // Navigate to the exam page with the code
-    router.push(`/exam/${examCode.trim()}`);
+    router.push(`/exam/${examCode}`);
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
-      <div className="container mx-auto px-4 py-16">
-        <div className="text-center mb-16">
-          <h1 className="text-5xl font-bold text-gray-900 dark:text-white mb-6">
-            시험 코드 입력
-          </h1>
-          <p className="text-xl text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-            강사가 제공한 시험 코드를 입력하여 시험을 시작하세요
-          </p>
-        </div>
-
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
+      <div className="w-full max-w-4xl">
         <div className="max-w-md mx-auto">
-          <Card className="p-8">
-            <CardHeader className="text-center">
-              <CardTitle className="text-2xl">시험 코드</CardTitle>
-              <CardDescription>
-                시작하려면 고유한 시험 코드를 입력하세요
+          <Card className="shadow-xl border-0">
+            <CardHeader className="text-center pb-6">
+              <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
+                <FileText className="w-8 h-8 text-primary-foreground" />
+              </div>
+              <CardTitle className="text-2xl">시험 코드 입력</CardTitle>
+              <CardDescription className="text-base">
+                강사가 제공한 시험 코드를 입력하여 시험을 시작하세요
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="examCode">시험 코드</Label>
-                  <Input
-                    id="examCode"
-                    type="text"
-                    placeholder="시험 코드 입력 (예: MATH101)"
-                    value={examCode}
-                    onChange={(e) => setExamCode(e.target.value)}
-                    className="text-center text-lg font-mono"
-                    required
-                  />
+                <div className="space-y-2 mb-12">
+                  <div className="flex justify-center">
+                    <InputOTP
+                      maxLength={6}
+                      pattern={REGEXP_ONLY_DIGITS_AND_CHARS}
+                      value={examCode}
+                      onChange={(value) => setExamCode(value.toUpperCase())}
+                      className="gap-1"
+                    >
+                      <InputOTPGroup>
+                        <InputOTPSlot index={0} className="h-12 w-12 text-lg" />
+                        <InputOTPSlot index={1} className="h-12 w-12 text-lg" />
+                        <InputOTPSlot index={2} className="h-12 w-12 text-lg" />
+                        <InputOTPSlot index={3} className="h-12 w-12 text-lg" />
+                        <InputOTPSlot index={4} className="h-12 w-12 text-lg" />
+                        <InputOTPSlot index={5} className="h-12 w-12 text-lg" />
+                      </InputOTPGroup>
+                    </InputOTP>
+                  </div>
+                  <p className="text-sm text-muted-foreground text-center">
+                    영문자와 숫자만 입력 가능합니다 (예: MATH01)
+                  </p>
                 </div>
                 <Button
                   type="submit"
                   className="w-full"
-                  size="lg"
-                  disabled={isLoading || !examCode.trim()}
+                  disabled={isLoading || examCode.length !== 6}
                 >
                   {isLoading ? "입력 중..." : "시험 입장"}
                 </Button>
@@ -91,7 +100,7 @@ export default function ExamCodeEntry() {
         </div>
 
         <div className="text-center mt-8">
-          <p className="text-gray-600 dark:text-gray-300 mb-4">
+          <p className="text-muted-foreground mb-4">
             도움이 필요하신가요? 강사에게 문의하세요
           </p>
           <Link href="/">

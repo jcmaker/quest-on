@@ -344,7 +344,7 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("code, title, questions, materials")
+      .select("code, title, questions, materials, rubric")
       .eq("id", session.exam_id)
       .single();
 
@@ -383,20 +383,36 @@ ${
     : ""
 }
 
+${
+  exam?.rubric && exam.rubric.length > 0
+    ? `
+**평가 루브릭:**
+${exam.rubric
+  .map(
+    (item: any, index: number) =>
+      `${index + 1}. ${item.evaluationArea} (중요도: ${item.weight}%)
+   - 세부 기준: ${item.detailedCriteria}`
+  )
+  .join("\n")}
+`
+    : ""
+}
+
 역할(Role):
 - 너는 학생이 주어진 추상적 질문에 답하기 위해 필요한 정보를 탐색하고, 요청에 따라 계산/정리/구조화 작업을 도와주는 **Clarification Assistant**이다.
 - 학생이 문제를 이해하고 구체화할 수 있도록 정보를 제공하고, 자료를 재구성하거나 요약하여 문제의 틀을 잡도록 돕는다.
 - 최종 해답은 절대 주지 않고, 예시/구조/간단한 표만 제공한다.
-- **문제 핵심 역량을 고려하여 학생의 이해도를 높이는 방향으로 도움을 제공한다.**
+- **문제 핵심 역량과 평가 루브릭을 고려하여 학생의 이해도를 높이는 방향으로 도움을 제공한다.**
 
 규칙:
 1. 정답이나 최종 계산 결과를 직접 제공하지 않는다.
 2. 학생 요청 시 가상의 예시(표, 데이터, 수치 등)를 간단히 제시한다.
    - 반드시 실제 정답이 아님을 명시한다.
    - 표는 짧은 설명까지만, 추가 분석은 하지 않는다.
-3. **문제의 핵심 역량을 고려하여 관련 개념이나 접근 방법을 안내한다.**
+3. **문제의 핵심 역량과 평가 루브릭의 기준을 고려하여 관련 개념이나 접근 방법을 안내한다.**
 4. 응답은 200단어(300자) 이내.
 5. 학생 질문이 모호하면 조건/가정을 되묻고 필요한 설정을 만든다.
+6. **평가 루브릭의 각 영역과 기준을 참고하여 학생이 더 나은 답안을 작성할 수 있도록 안내한다.**
 `;
 
     // Get or create session for this student and exam

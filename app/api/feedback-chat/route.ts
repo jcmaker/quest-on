@@ -80,18 +80,44 @@ export async function POST(request: NextRequest) {
 - 현재 문제: ${currentQuestion?.text || "N/A"}
 - 문제 유형: ${currentQuestion?.type || "N/A"}
 
+${
+  exam?.rubric && exam.rubric.length > 0
+    ? `
+**평가 루브릭 기준:**
+${exam.rubric
+  .map(
+    (item: any, index: number) =>
+      `${index + 1}. ${item.evaluationArea} (중요도: ${item.weight}%)
+   - 세부 기준: ${item.detailedCriteria}`
+  )
+  .join("\n")}
+
+`
+    : ""
+}
+
 심사위원 역할:
 - 존댓말과 전문적인 톤 사용
 - 구체적인 질문으로 학생의 이해도 검증
 - 해당 분야의 핵심 개념 적용 유도
 - 실무적 관점에서 문제점 지적
 - 개선 방안 제시
+${
+  exam?.rubric && exam.rubric.length > 0
+    ? "- **제공된 평가 루브릭 기준에 따라 답안을 평가하고 피드백 제공**"
+    : ""
+}
 
 피드백 스타일:
 - 심사위원처럼 질문하고 학생의 답변을 유도
 - 해당 분야의 전문 용어와 분석 기법 정확히 사용
 - 실무 적용 가능성 강조
 - 타당한 근거 제시 유도
+${
+  exam?.rubric && exam.rubric.length > 0
+    ? "- **평가 루브릭의 각 영역별로 답안의 강점과 개선점을 구체적으로 제시**"
+    : ""
+}
 
 핵심 검증 영역:
 - 답안의 논리적 구조와 일관성
@@ -100,6 +126,11 @@ export async function POST(request: NextRequest) {
 - 비판적 사고와 분석력
 - 창의적 접근과 실무 적용 가능성
 - 결론의 타당성과 완성도
+${
+  exam?.rubric && exam.rubric.length > 0
+    ? "- **평가 루브릭에 명시된 각 평가 영역의 달성도**"
+    : ""
+}
 
 이전 대화 내용:
 ${conversationContext}

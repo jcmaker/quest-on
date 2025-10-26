@@ -66,6 +66,7 @@ async function createExam(data: {
   duration: number;
   questions: QuestionData[];
   materials?: string[];
+  rubric?: any[];
   status: string;
   created_at: string;
   updated_at: string;
@@ -101,6 +102,7 @@ async function createExam(data: {
       duration: data.duration,
       questions: data.questions,
       materials: data.materials || [],
+      rubric: data.rubric || [],
       status: data.status,
       instructor_id: user.id, // Clerk user ID (e.g., "user_31ihNg56wMaE27ft10H4eApjc1J")
       created_at: data.created_at,
