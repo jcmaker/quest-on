@@ -66,7 +66,11 @@ async function createExam(data: {
   duration: number;
   questions: QuestionData[];
   materials?: string[];
-  rubric?: any[];
+  rubric?: {
+    evaluationArea: string;
+    detailedCriteria: string;
+    weight: number;
+  }[];
   status: string;
   created_at: string;
   updated_at: string;

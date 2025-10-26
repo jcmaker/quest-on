@@ -86,7 +86,14 @@ ${
 **평가 루브릭 기준:**
 ${exam.rubric
   .map(
-    (item: any, index: number) =>
+    (
+      item: {
+        evaluationArea: string;
+        detailedCriteria: string;
+        weight: number;
+      },
+      index: number
+    ) =>
       `${index + 1}. ${item.evaluationArea} (중요도: ${item.weight}%)
    - 세부 기준: ${item.detailedCriteria}`
   )

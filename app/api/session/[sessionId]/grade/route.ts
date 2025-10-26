@@ -9,13 +9,6 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-interface ClerkUser {
-  id: string;
-  firstName?: string | null;
-  lastName?: string | null;
-  emailAddresses?: Array<{ emailAddress: string }>;
-}
-
 // Helper function to get user info from Clerk
 async function getUserInfo(clerkUserId: string): Promise<{
   name: string;

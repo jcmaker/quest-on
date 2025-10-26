@@ -30,7 +30,6 @@ export function ExamHeader({
 
   // Initialize timer
   useEffect(() => {
-    const timerKey = `exam_timer_${examCode}`;
     const startTimeKey = `exam_start_${examCode}`;
 
     // Check if there's an existing start time
@@ -80,33 +79,6 @@ export function ExamHeader({
   // Check if time is critical (15 minutes or less)
   const isTimeCritical = (seconds: number): boolean => {
     return seconds <= 15 * 60;
-  };
-
-  // Get step-specific badge
-  const getStepBadge = () => {
-    switch (currentStep) {
-      case "exam":
-        return (
-          <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-            <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
-            진행중
-          </div>
-        );
-      case "answer":
-        return (
-          <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300">
-            <div className="w-2 h-2 bg-orange-500 rounded-full mr-2"></div>
-            답안 작성
-          </div>
-        );
-      case "feedback":
-        return (
-          <div className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-            <div className="w-2 h-2 bg-blue-500 rounded-full mr-2"></div>
-            피드백 중
-          </div>
-        );
-    }
   };
 
   return (
