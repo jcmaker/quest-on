@@ -118,8 +118,8 @@ export default function CreateExam() {
   };
 
   const generateQuestionWithAI = async (questionId: string) => {
-    if (!examData.title || !examData.description) {
-      alert("시험 제목과 설명을 먼저 입력해주세요.");
+    if (!examData.title) {
+      alert("시험 제목을 먼저 입력해주세요.");
       return;
     }
 
@@ -142,7 +142,7 @@ export default function CreateExam() {
 
 시험 정보:
 - 제목: ${examData.title}
-- 설명: ${examData.description}
+${examData.description ? `- 설명: ${examData.description}` : ""}
 - 시간: ${examData.duration}분
 
 기존 문제:
@@ -150,11 +150,44 @@ ${currentQuestion.text}
 
 수정 요청: ${currentQuestion.aiCommand}
 
+${
+  rubric.length > 0
+    ? `\n평가 루브릭:
+${rubric
+  .map(
+    (item) =>
+      `- ${item.evaluationArea}: ${item.detailedCriteria} (비중: ${item.weight}%)`
+  )
+  .join("\n")}
+\n위 루브릭의 평가 기준에 맞는 문제를 만들어야 합니다.`
+    : ""
+}
+
+${
+  examData.materials.length > 0
+    ? `\n\n수업 자료 파일:
+${examData.materials
+  .map((file, index) => `${index + 1}. ${file.name}`)
+  .join("\n")}
+\n위 수업 자료 파일을 참고하여 문제를 만들어야 합니다.`
+    : ""
+}
+
 요구사항:
 1. 기존 문제를 바탕으로 사용자의 요청사항을 반영하여 수정하세요.
 2. 문제의 교육적 가치를 유지하면서 요청사항을 충족시키세요.
 3. 정답을 직접 제공하지 말고, 학생이 사고력을 발휘할 수 있도록 하세요.
 4. 수정된 문제의 핵심 역량을 함께 제안해주세요.
+${
+  rubric.length > 0
+    ? "5. 평가 루브릭의 기준을 반영하여 평가가 가능한 문제를 만들어주세요."
+    : ""
+}
+${
+  examData.materials.length > 0
+    ? "6. 수업 자료의 내용을 충실히 반영하여 실질적인 학습 내용을 다루어주세요."
+    : ""
+}
 
 응답 형식:
 문제: [수정된 문제 내용]
@@ -166,14 +199,47 @@ ${currentQuestion.text}
 
 시험 정보:
 - 제목: ${examData.title}
-- 설명: ${examData.description}
+${examData.description ? `- 설명: ${examData.description}` : ""}
 - 시간: ${examData.duration}분
+
+${
+  rubric.length > 0
+    ? `\n평가 루브릭:
+${rubric
+  .map(
+    (item) =>
+      `- ${item.evaluationArea}: ${item.detailedCriteria} (비중: ${item.weight}%)`
+  )
+  .join("\n")}
+\n위 루브릭의 평가 기준에 맞는 문제를 만들어야 합니다.`
+    : ""
+}
+
+${
+  examData.materials.length > 0
+    ? `\n\n수업 자료 파일:
+${examData.materials
+  .map((file, index) => `${index + 1}. ${file.name}`)
+  .join("\n")}
+\n위 수업 자료 파일을 참고하여 문제를 만들어야 합니다.`
+    : ""
+}
 
 요구사항:
 1. 시험의 난이도와 내용에 맞는 적절한 문제를 생성하세요.
 2. 문제는 명확하고 교육적으로 의미 있어야 합니다.
 3. 정답을 직접 제공하지 말고, 학생이 사고력을 발휘할 수 있도록 하세요.
 4. 문제의 핵심 역량을 함께 제안해주세요.
+${
+  rubric.length > 0
+    ? "5. 평가 루브릭의 기준을 반영하여 평가가 가능한 문제를 만들어주세요."
+    : ""
+}
+${
+  examData.materials.length > 0
+    ? "6. 수업 자료의 내용을 충실히 반영하여 실질적인 학습 내용을 다루어주세요."
+    : ""
+}
 
 응답 형식:
 문제: [생성된 문제 내용]
