@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -83,17 +82,6 @@ export default function StudentReportPage() {
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    if (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "student") {
-      router.push("/student");
-      return;
-    }
-
-    fetchReportData();
-  }, [isLoaded, isSignedIn, user, sessionId, router]);
-
   const fetchReportData = async () => {
     try {
       setLoading(true);
@@ -124,6 +112,18 @@ export default function StudentReportPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    if (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "student") {
+      router.push("/student");
+      return;
+    }
+
+    fetchReportData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn, user, sessionId, router]);
 
   const getScoreColor = (score: number) => {
     if (score >= 90) return "text-green-600 dark:text-green-400";

@@ -22,7 +22,6 @@ interface ExamCardProps {
 
 export function ExamCard({
   exam,
-  variant = "expanded",
   onCopyCode,
   onEdit,
   onDelete,

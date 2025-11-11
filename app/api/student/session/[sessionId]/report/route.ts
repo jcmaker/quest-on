@@ -179,7 +179,10 @@ export async function GET(
               submission.compressed_answer_data
             );
             if (decompressed && typeof decompressed === "object") {
-              answer = (decompressed as any).answer || answer;
+              const decompressedObj = decompressed as Record<string, unknown>;
+              answer = (typeof decompressedObj.answer === "string" 
+                ? decompressedObj.answer 
+                : answer) || answer;
             }
           } catch (error) {
             console.error("Error decompressing answer:", error);
