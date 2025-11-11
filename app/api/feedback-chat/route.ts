@@ -1,3 +1,9 @@
+/**
+ * 대화형 피드백 기능 (Conversational Feedback)
+ * - 현재 학생 최종 제출 흐름에서는 사용되지 않음
+ * - 향후 답안 제출 후 AI와의 대화형 피드백을 제공하기 위한 API 엔드포인트
+ * - 클라이언트에서 '/api/feedback-chat' 호출 시, 루브릭/문제 맥락 기반으로 응답 생성
+ */
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";

@@ -370,7 +370,34 @@ async function getInstructorExams() {
 
     if (error) throw error;
 
-    return NextResponse.json({ exams });
+    // Transform exams to include questionsCount and student_count
+    const examsWithCounts = await Promise.all(
+      (exams || []).map(async (exam) => {
+        // Calculate questionsCount from questions array
+        const questionsCount = Array.isArray(exam.questions)
+          ? exam.questions.length
+          : 0;
+
+        // Get student count by counting distinct student_ids for this exam
+        const { data: sessions, error: countError } = await supabase
+          .from("sessions")
+          .select("student_id")
+          .eq("exam_id", exam.id);
+
+        // Count distinct student_ids
+        const student_count = countError
+          ? 0
+          : new Set((sessions || []).map((s) => s.student_id)).size;
+
+        return {
+          ...exam,
+          questionsCount,
+          student_count,
+        };
+      })
+    );
+
+    return NextResponse.json({ exams: examsWithCounts });
   } catch (error) {
     console.error("Get instructor exams error:", error);
     return NextResponse.json({ error: "Failed to get exams" }, { status: 500 });

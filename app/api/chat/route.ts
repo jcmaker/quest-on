@@ -368,7 +368,6 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
     }
 
     const systemPrompt = `
-    
 ${
   requestExamTitle
     ? `학생이 시험: ${requestExamTitle} (코드: ${

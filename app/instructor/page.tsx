@@ -16,11 +16,8 @@ import {
   Plus,
   FileText,
   Calendar,
-  Eye,
-  Edit,
-  Copy,
-  Clock,
 } from "lucide-react";
+import { ExamCard } from "@/components/instructor/ExamCard";
 
 interface Question {
   id: string;
@@ -101,14 +98,6 @@ export default function InstructorHome() {
   const copyExamCode = (code: string) => {
     navigator.clipboard.writeText(code);
     // You could add a toast notification here
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("ko-KR", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
   };
 
   return (
@@ -323,66 +312,15 @@ export default function InstructorHome() {
                 ) : (
                   <div className="space-y-3">
                     {exams.slice(0, 5).map((exam) => (
-                      <div
+                      <ExamCard
                         key={exam.id}
-                        className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            <h4 className="font-semibold text-foreground">
-                              {exam.title}
-                            </h4>
-                            <Badge
-                              variant={
-                                exam.status === "published"
-                                  ? "default"
-                                  : "secondary"
-                              }
-                              className="text-xs"
-                            >
-                              {exam.status === "published"
-                                ? "게시됨"
-                                : "임시저장"}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center space-x-4 text-sm text-muted-foreground">
-                            <div className="flex items-center space-x-1">
-                              <Copy className="w-3 h-3" />
-                              <span className="font-mono">{exam.code}</span>
-                            </div>
-                            <div className="flex items-center space-x-1">
-                              <Clock className="w-3 h-3" />
-                              <span>{exam.duration}분</span>
-                            </div>
-                            <div className="flex items-center space-x-1">
-                              <Calendar className="w-3 h-3" />
-                              <span>{formatDate(exam.created_at)}</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => copyExamCode(exam.code)}
-                          >
-                            <Copy className="w-3 h-3 mr-1" />
-                            복사
-                          </Button>
-                          <Link href={`/instructor/${exam.id}`}>
-                            <Button variant="outline" size="sm">
-                              <Eye className="w-3 h-3 mr-1" />
-                              보기
-                            </Button>
-                          </Link>
-                          <Link href={`/instructor/${exam.id}`}>
-                            <Button variant="outline" size="sm">
-                              <Edit className="w-3 h-3 mr-1" />
-                              편집
-                            </Button>
-                          </Link>
-                        </div>
-                      </div>
+                        exam={exam}
+                        onCopyCode={copyExamCode}
+                        onEdit={(examId) =>
+                          router.push(`/instructor/${examId}`)
+                        }
+                        showStudentCount={false}
+                      />
                     ))}
                     {exams.length > 5 && (
                       <div className="text-center pt-4">

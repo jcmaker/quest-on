@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -26,7 +26,9 @@ import {
   User,
   Bot,
   Star,
+  RefreshCw,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 interface Conversation {
   id: string;
@@ -60,7 +62,40 @@ interface Grade {
   q_idx: number;
   score: number;
   comment?: string;
+  stage_grading?: {
+    chat?: { score: number; comment: string };
+    answer?: { score: number; comment: string };
+    feedback?: { score: number; comment: string };
+  };
 }
+
+type StageKey = "chat" | "answer" | "feedback";
+
+const stageOrder: StageKey[] = ["chat", "answer", "feedback"];
+
+const stageMeta: Record<
+  StageKey,
+  { label: string; description: string; icon: LucideIcon; accentClass: string }
+> = {
+  chat: {
+    label: "채팅 단계",
+    description: "학생과 AI의 상호작용을 평가하세요",
+    icon: MessageSquare,
+    accentClass: "text-blue-600",
+  },
+  answer: {
+    label: "최종 답안",
+    description: "학생이 제출한 답안을 평가하세요",
+    icon: FileText,
+    accentClass: "text-green-600",
+  },
+  feedback: {
+    label: "피드백 대응",
+    description: "AI 피드백 이후 학생의 반응을 평가하세요",
+    icon: CheckCircle,
+    accentClass: "text-purple-600",
+  },
+};
 
 interface SessionData {
   session: {
@@ -99,8 +134,15 @@ export default function GradeStudentPage({
   const [loading, setLoading] = useState(true);
   const [scores, setScores] = useState<Record<number, number>>({});
   const [feedbacks, setFeedbacks] = useState<Record<number, string>>({});
+  const [stageScores, setStageScores] = useState<
+    Record<number, Partial<Record<StageKey, number>>>
+  >({});
+  const [stageComments, setStageComments] = useState<
+    Record<number, Partial<Record<StageKey, string>>>
+  >({});
   const [saving, setSaving] = useState(false);
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
+  const [autoGrading, setAutoGrading] = useState(false);
 
   // Redirect non-instructors
   useEffect(() => {
@@ -111,6 +153,128 @@ export default function GradeStudentPage({
       redirect("/student");
     }
   }, [isLoaded, isSignedIn, user]);
+
+  const handleAutoGrade = useCallback(
+    async (forceRegrade: boolean = false) => {
+      try {
+        setAutoGrading(true);
+        const response = await fetch(
+          `/api/session/${resolvedParams.studentId}/grade`,
+          {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              forceRegrade,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({
+            error: "Failed to parse error response",
+          }));
+          if (errorData.skipped) {
+            // Already graded, skip silently
+            return;
+          }
+          throw new Error(
+            errorData.details ||
+              errorData.message ||
+              errorData.error ||
+              "Failed to auto-grade"
+          );
+        }
+
+        const result = await response.json();
+
+        if (result.skipped) {
+          alert("이미 채점이 완료되었습니다.");
+          return;
+        }
+
+        // Refresh data to get updated grades
+        const refreshResponse = await fetch(
+          `/api/session/${resolvedParams.studentId}/grade`
+        );
+        if (refreshResponse.ok) {
+          const data: SessionData = await refreshResponse.json();
+          setSessionData(data);
+
+          // Update scores and feedbacks
+          const updatedScores: Record<number, number> = {};
+          const updatedFeedbacks: Record<number, string> = {};
+          const updatedStageScores: Record<
+            number,
+            Partial<Record<StageKey, number>>
+          > = {};
+          const updatedStageComments: Record<
+            number,
+            Partial<Record<StageKey, string>>
+          > = {};
+
+          Object.entries(data.grades).forEach(([qIdx, grade]) => {
+            updatedScores[parseInt(qIdx)] = grade.score;
+            updatedFeedbacks[parseInt(qIdx)] = grade.comment || "";
+
+            // Load stage grading data
+            if (grade.stage_grading) {
+              const stageGrading = grade.stage_grading;
+              if (stageGrading.chat) {
+                updatedStageScores[parseInt(qIdx)] = {
+                  ...updatedStageScores[parseInt(qIdx)],
+                  chat: stageGrading.chat.score,
+                };
+                updatedStageComments[parseInt(qIdx)] = {
+                  ...updatedStageComments[parseInt(qIdx)],
+                  chat: stageGrading.chat.comment,
+                };
+              }
+              if (stageGrading.answer) {
+                updatedStageScores[parseInt(qIdx)] = {
+                  ...updatedStageScores[parseInt(qIdx)],
+                  answer: stageGrading.answer.score,
+                };
+                updatedStageComments[parseInt(qIdx)] = {
+                  ...updatedStageComments[parseInt(qIdx)],
+                  answer: stageGrading.answer.comment,
+                };
+              }
+              if (stageGrading.feedback) {
+                updatedStageScores[parseInt(qIdx)] = {
+                  ...updatedStageScores[parseInt(qIdx)],
+                  feedback: stageGrading.feedback.score,
+                };
+                updatedStageComments[parseInt(qIdx)] = {
+                  ...updatedStageComments[parseInt(qIdx)],
+                  feedback: stageGrading.feedback.comment,
+                };
+              }
+            }
+          });
+
+          setScores(updatedScores);
+          setFeedbacks(updatedFeedbacks);
+          setStageScores(updatedStageScores);
+          setStageComments(updatedStageComments);
+
+          const gradedCount = Object.keys(data.grades).length;
+          alert(`자동 채점이 완료되었습니다. (${gradedCount}문제)`);
+        }
+      } catch (error) {
+        console.error("Error auto-grading:", error);
+        alert(
+          `자동 채점 중 오류가 발생했습니다: ${
+            (error as Error)?.message || "알 수 없는 오류"
+          }`
+        );
+      } finally {
+        setAutoGrading(false);
+      }
+    },
+    [resolvedParams.studentId]
+  );
 
   useEffect(() => {
     const fetchSessionData = async () => {
@@ -138,14 +302,66 @@ export default function GradeStudentPage({
         // Initialize scores and feedbacks from existing grades
         const initialScores: Record<number, number> = {};
         const initialFeedbacks: Record<number, string> = {};
+        const initialStageScores: Record<
+          number,
+          Partial<Record<StageKey, number>>
+        > = {};
+        const initialStageComments: Record<
+          number,
+          Partial<Record<StageKey, string>>
+        > = {};
 
         Object.entries(data.grades).forEach(([qIdx, grade]) => {
           initialScores[parseInt(qIdx)] = grade.score;
           initialFeedbacks[parseInt(qIdx)] = grade.comment || "";
+
+          // Load stage grading data
+          if (grade.stage_grading) {
+            const stageGrading = grade.stage_grading;
+            if (stageGrading.chat) {
+              initialStageScores[parseInt(qIdx)] = {
+                ...initialStageScores[parseInt(qIdx)],
+                chat: stageGrading.chat.score,
+              };
+              initialStageComments[parseInt(qIdx)] = {
+                ...initialStageComments[parseInt(qIdx)],
+                chat: stageGrading.chat.comment,
+              };
+            }
+            if (stageGrading.answer) {
+              initialStageScores[parseInt(qIdx)] = {
+                ...initialStageScores[parseInt(qIdx)],
+                answer: stageGrading.answer.score,
+              };
+              initialStageComments[parseInt(qIdx)] = {
+                ...initialStageComments[parseInt(qIdx)],
+                answer: stageGrading.answer.comment,
+              };
+            }
+            if (stageGrading.feedback) {
+              initialStageScores[parseInt(qIdx)] = {
+                ...initialStageScores[parseInt(qIdx)],
+                feedback: stageGrading.feedback.score,
+              };
+              initialStageComments[parseInt(qIdx)] = {
+                ...initialStageComments[parseInt(qIdx)],
+                feedback: stageGrading.feedback.comment,
+              };
+            }
+          }
         });
 
         setScores(initialScores);
         setFeedbacks(initialFeedbacks);
+        setStageScores(initialStageScores);
+        setStageComments(initialStageComments);
+
+        // Auto-grade if no grades exist
+        const hasGrades = Object.keys(data.grades).length > 0;
+        if (!hasGrades) {
+          console.log("🤖 No grades found, starting auto-grading...");
+          handleAutoGrade(false);
+        }
       } catch (error) {
         console.error("Error fetching session data:", error);
       } finally {
@@ -154,7 +370,7 @@ export default function GradeStudentPage({
     };
 
     fetchSessionData();
-  }, [resolvedParams.studentId]);
+  }, [resolvedParams.studentId, handleAutoGrade]);
 
   const handleSaveGrade = async (questionIdx: number) => {
     try {
@@ -170,6 +386,26 @@ export default function GradeStudentPage({
             questionIdx,
             score: scores[questionIdx] || 0,
             comment: feedbacks[questionIdx] || "",
+            stageGrading: {
+              chat: stageScores[questionIdx]?.chat
+                ? {
+                    score: stageScores[questionIdx]?.chat || 0,
+                    comment: stageComments[questionIdx]?.chat || "",
+                  }
+                : undefined,
+              answer: stageScores[questionIdx]?.answer
+                ? {
+                    score: stageScores[questionIdx]?.answer || 0,
+                    comment: stageComments[questionIdx]?.answer || "",
+                  }
+                : undefined,
+              feedback: stageScores[questionIdx]?.feedback
+                ? {
+                    score: stageScores[questionIdx]?.feedback || 0,
+                    comment: stageComments[questionIdx]?.feedback || "",
+                  }
+                : undefined,
+            },
           }),
         }
       );
@@ -194,6 +430,26 @@ export default function GradeStudentPage({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleStageScoreChange = (stage: StageKey, value: number) => {
+    setStageScores((prev) => ({
+      ...prev,
+      [selectedQuestionIdx]: {
+        ...(prev[selectedQuestionIdx] || {}),
+        [stage]: value,
+      },
+    }));
+  };
+
+  const handleStageCommentChange = (stage: StageKey, value: string) => {
+    setStageComments((prev) => ({
+      ...prev,
+      [selectedQuestionIdx]: {
+        ...(prev[selectedQuestionIdx] || {}),
+        [stage]: value,
+      },
+    }));
   };
 
   // Show loading while auth is loading
@@ -281,6 +537,17 @@ export default function GradeStudentPage({
               시험으로 돌아가기
             </Button>
           </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleAutoGrade(true)}
+            disabled={autoGrading}
+          >
+            <RefreshCw
+              className={`w-4 h-4 mr-2 ${autoGrading ? "animate-spin" : ""}`}
+            />
+            {autoGrading ? "자동 채점 중..." : "자동 채점 다시 실행"}
+          </Button>
         </div>
         <div className="flex items-center justify-between">
           <div>
@@ -560,49 +827,125 @@ export default function GradeStudentPage({
                 이 문제에 대한 점수와 피드백을 입력하세요
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Score Input */}
-              <div>
-                <Label htmlFor="score" className="text-sm font-medium">
-                  점수 (0-100)
-                </Label>
-                <div className="mt-1">
-                  <input
-                    type="number"
-                    id="score"
-                    min="0"
-                    max="100"
-                    value={scores[selectedQuestionIdx] || 0}
-                    onChange={(e) =>
-                      setScores({
-                        ...scores,
-                        [selectedQuestionIdx]: Number(e.target.value),
-                      })
-                    }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                {stageOrder.map((stageKey) => {
+                  const stage = stageMeta[stageKey];
+                  const stageScore =
+                    stageScores[selectedQuestionIdx]?.[stageKey] ?? "";
+                  const stageComment =
+                    stageComments[selectedQuestionIdx]?.[stageKey] ?? "";
+
+                  return (
+                    <div
+                      key={stageKey}
+                      className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <stage.icon
+                          className={`h-5 w-5 ${stage.accentClass}`}
+                        />
+                        <div>
+                          <h4 className="text-sm font-semibold">
+                            {stage.label}
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            {stage.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div>
+                          <Label
+                            htmlFor={`${stageKey}-score-${selectedQuestionIdx}`}
+                            className="text-xs font-medium"
+                          >
+                            점수 (0-100)
+                          </Label>
+                          <input
+                            type="number"
+                            id={`${stageKey}-score-${selectedQuestionIdx}`}
+                            min="0"
+                            max="100"
+                            value={stageScore}
+                            onChange={(e) =>
+                              handleStageScoreChange(
+                                stageKey,
+                                Number.isNaN(Number(e.target.value))
+                                  ? 0
+                                  : Number(e.target.value)
+                              )
+                            }
+                            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <Label
+                            htmlFor={`${stageKey}-comment-${selectedQuestionIdx}`}
+                            className="text-xs font-medium"
+                          >
+                            상세 피드백
+                          </Label>
+                          <Textarea
+                            id={`${stageKey}-comment-${selectedQuestionIdx}`}
+                            value={stageComment}
+                            onChange={(e) =>
+                              handleStageCommentChange(stageKey, e.target.value)
+                            }
+                            placeholder="이 단계에 대한 평가 의견을 입력하세요..."
+                            className="mt-1 min-h-[100px] resize-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               <Separator />
 
-              {/* Feedback Input */}
-              <div>
-                <Label htmlFor="feedback" className="text-sm font-medium">
-                  피드백 및 평가
-                </Label>
-                <Textarea
-                  id="feedback"
-                  value={feedbacks[selectedQuestionIdx] || ""}
-                  onChange={(e) =>
-                    setFeedbacks({
-                      ...feedbacks,
-                      [selectedQuestionIdx]: e.target.value,
-                    })
-                  }
-                  placeholder="학생의 답안에 대한 상세한 피드백을 입력하세요..."
-                  className="mt-1 min-h-[120px] resize-none"
-                />
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="score" className="text-sm font-medium">
+                    종합 점수 (0-100)
+                  </Label>
+                  <div className="mt-1">
+                    <input
+                      type="number"
+                      id="score"
+                      min="0"
+                      max="100"
+                      value={scores[selectedQuestionIdx] || 0}
+                      onChange={(e) =>
+                        setScores({
+                          ...scores,
+                          [selectedQuestionIdx]: Number(e.target.value),
+                        })
+                      }
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="feedback" className="text-sm font-medium">
+                    종합 피드백
+                  </Label>
+                  <Textarea
+                    id="feedback"
+                    value={feedbacks[selectedQuestionIdx] || ""}
+                    onChange={(e) =>
+                      setFeedbacks({
+                        ...feedbacks,
+                        [selectedQuestionIdx]: e.target.value,
+                      })
+                    }
+                    placeholder="학생의 전체 답안에 대한 종합 피드백을 입력하세요..."
+                    className="mt-1 min-h-[120px] resize-none"
+                  />
+                </div>
               </div>
 
               {/* Save Button */}

@@ -1357,8 +1357,8 @@ ${
                           className="w-full p-2 border rounded-md"
                         >
                           <option value="essay">Problem Solving Type</option>
-                          <option value="short-answer" disabled>
-                            Type B
+                          <option value="short-answer">
+                            STEM Problem Type
                           </option>
                           <option value="multiple-choice" disabled>
                             Type C

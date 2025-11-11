@@ -12,15 +12,10 @@ import {
   FileText,
   Users,
   Plus,
-  Edit,
-  Eye,
-  Copy,
-  Trash2,
-  Calendar,
-  Clock,
   CheckCircle,
   AlertCircle,
 } from "lucide-react";
+import { ExamCard } from "@/components/instructor/ExamCard";
 
 interface Exam {
   id: string;
@@ -70,7 +65,13 @@ export default function ExamManagement() {
           const result = await response.json();
           setExams(result.exams || []);
         } else {
-          console.error("Failed to fetch exams");
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Failed to fetch exams", {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorData.error || "Unknown error",
+            details: errorData,
+          });
         }
       } catch (error) {
         console.error("Error fetching exams:", error);
@@ -82,30 +83,19 @@ export default function ExamManagement() {
     fetchExams();
   }, [isSignedIn, userRole]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "active":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "draft":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "completed":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
+  const handleDeleteExam = (examId: string) => {
+    // TODO: Implement delete functionality
+    console.log("Delete exam:", examId);
+    alert("삭제 기능은 곧 구현될 예정입니다.");
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "active":
-        return "진행중";
-      case "draft":
-        return "초안";
-      case "completed":
-        return "완료";
-      default:
-        return status;
-    }
+  const handleEditExam = (examId: string) => {
+    router.push(`/instructor/${examId}`);
+  };
+
+  const copyExamCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    // You could add a toast notification here
   };
 
   return (
@@ -251,68 +241,16 @@ export default function ExamManagement() {
                   </Link>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {exams.map((exam) => (
-                    <div
+                    <ExamCard
                       key={exam.id}
-                      className="flex items-center justify-between p-6 border rounded-xl hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <h3 className="text-lg font-semibold">
-                            {exam.title}
-                          </h3>
-                          <Badge className={getStatusColor(exam.status)}>
-                            {getStatusText(exam.status)}
-                          </Badge>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-muted-foreground">
-                          <div className="flex items-center space-x-1">
-                            <span className="font-mono bg-gray-100 px-2 py-1 rounded">
-                              {exam.code}
-                            </span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <Clock className="w-4 h-4" />
-                            <span>{exam.duration}분</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <Users className="w-4 h-4" />
-                            <span>{exam.student_count || 0}명 참여</span>
-                          </div>
-                          <div className="flex items-center space-x-1">
-                            <Calendar className="w-4 h-4" />
-                            <span>
-                              {new Date(exam.created_at).toLocaleDateString()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <Link href={`/instructor/${exam.id}`}>
-                          <Button variant="outline" size="sm">
-                            <Eye className="w-4 h-4 mr-1" />
-                            보기
-                          </Button>
-                        </Link>
-                        <Button variant="outline" size="sm">
-                          <Edit className="w-4 h-4 mr-1" />
-                          편집
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          <Copy className="w-4 h-4 mr-1" />
-                          복사
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 className="w-4 h-4 mr-1" />
-                          삭제
-                        </Button>
-                      </div>
-                    </div>
+                      exam={exam}
+                      onCopyCode={copyExamCode}
+                      onEdit={handleEditExam}
+                      onDelete={handleDeleteExam}
+                      showStudentCount={true}
+                    />
                   ))}
                 </div>
               )}
