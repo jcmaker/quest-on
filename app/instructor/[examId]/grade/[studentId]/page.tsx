@@ -3,32 +3,17 @@
 import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useState, useEffect, use, useCallback } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { RichTextViewer } from "@/components/ui/rich-text-viewer";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import Link from "next/link";
-import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
-import {
-  ArrowLeft,
-  MessageSquare,
-  FileText,
-  CheckCircle,
-  User,
-  Bot,
-  Star,
-  RefreshCw,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { GradeHeader } from "@/components/instructor/GradeHeader";
+import { QuestionNavigation } from "@/components/instructor/QuestionNavigation";
+import { QuestionPromptCard } from "@/components/instructor/QuestionPromptCard";
+import { AIConversationsCard } from "@/components/instructor/AIConversationsCard";
+import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
+import { AIFeedbackCard } from "@/components/instructor/AIFeedbackCard";
+import { StudentReplyCard } from "@/components/instructor/StudentReplyCard";
+import { GradingPanel } from "@/components/instructor/GradingPanel";
+import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
 
 interface Conversation {
   id: string;
@@ -70,32 +55,6 @@ interface Grade {
 }
 
 type StageKey = "chat" | "answer" | "feedback";
-
-const stageOrder: StageKey[] = ["chat", "answer", "feedback"];
-
-const stageMeta: Record<
-  StageKey,
-  { label: string; description: string; icon: LucideIcon; accentClass: string }
-> = {
-  chat: {
-    label: "채팅 단계",
-    description: "학생과 AI의 상호작용을 평가하세요",
-    icon: MessageSquare,
-    accentClass: "text-blue-600",
-  },
-  answer: {
-    label: "최종 답안",
-    description: "학생이 제출한 답안을 평가하세요",
-    icon: FileText,
-    accentClass: "text-green-600",
-  },
-  feedback: {
-    label: "피드백 대응",
-    description: "AI 피드백 이후 학생의 반응을 평가하세요",
-    icon: CheckCircle,
-    accentClass: "text-purple-600",
-  },
-};
 
 interface SessionData {
   session: {
@@ -528,467 +487,68 @@ export default function GradeStudentPage({
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center gap-4 mb-4">
-          <Link href={`/instructor/${resolvedParams.examId}`}>
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              시험으로 돌아가기
-            </Button>
-          </Link>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleAutoGrade(true)}
-            disabled={autoGrading}
-          >
-            <RefreshCw
-              className={`w-4 h-4 mr-2 ${autoGrading ? "animate-spin" : ""}`}
-            />
-            {autoGrading ? "자동 채점 중..." : "자동 채점 다시 실행"}
-          </Button>
-        </div>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">
-              {sessionData.student.name} 학생 채점
-            </h1>
-            <p className="text-muted-foreground">
-              제출일:{" "}
-              {new Date(sessionData.session.submitted_at).toLocaleString()}
-            </p>
-            {sessionData.overallScore !== null && (
-              <p className="text-lg font-semibold mt-2">
-                전체 점수: {sessionData.overallScore}점
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-green-600">
-              <CheckCircle className="w-4 h-4 mr-1" />
-              제출 완료
-            </Badge>
-          </div>
-        </div>
-      </div>
+      <GradeHeader
+        studentName={sessionData.student.name}
+        submittedAt={sessionData.session.submitted_at}
+        overallScore={sessionData.overallScore}
+        examId={resolvedParams.examId}
+        onAutoGrade={() => handleAutoGrade(true)}
+        autoGrading={autoGrading}
+      />
 
-      {/* Question Navigation */}
-      <div className="mb-6">
-        <div className="flex gap-2 flex-wrap">
-          {sessionData.exam?.questions &&
-          Array.isArray(sessionData.exam.questions) ? (
-            sessionData.exam.questions.map((question, idx) => (
-              <Button
-                key={question.id || idx}
-                variant={selectedQuestionIdx === idx ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedQuestionIdx(idx)}
-              >
-                문제 {idx + 1}
-                {sessionData.grades[idx] && (
-                  <Badge
-                    variant="secondary"
-                    className="ml-2 bg-green-100 text-green-800"
-                  >
-                    {sessionData.grades[idx]?.score || 0}점
-                  </Badge>
-                )}
-              </Button>
-            ))
-          ) : (
-            <div className="text-red-600">문제를 불러올 수 없습니다.</div>
-          )}
-        </div>
-      </div>
+      <QuestionNavigation
+        questions={sessionData.exam?.questions || []}
+        selectedQuestionIdx={selectedQuestionIdx}
+        onSelectQuestion={setSelectedQuestionIdx}
+        grades={sessionData.grades}
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* AI Conversations */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Question Prompt */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-600" />
-                문제 {selectedQuestionIdx + 1}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {currentQuestion ? (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <RichTextViewer
-                    content={currentQuestion.prompt}
-                    className="text-sm"
-                  />
-                  {currentQuestion.ai_context && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <p className="text-xs text-gray-600 mb-2">AI 컨텍스트:</p>
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">
-                        {currentQuestion.ai_context}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-red-600">
-                  <p>❌ 문제를 불러올 수 없습니다.</p>
-                  <p className="text-sm mt-2 text-gray-600">
-                    선택된 문제 인덱스: {selectedQuestionIdx}
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <QuestionPromptCard
+            question={currentQuestion}
+            questionNumber={selectedQuestionIdx + 1}
+          />
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-blue-600" />
-                AI와의 대화 기록
-              </CardTitle>
-              <CardDescription>
-                학생이 AI와 나눈 대화 내용입니다
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {duringExamMessages.length > 0 ? (
-                <div className="space-y-4 max-h-96 overflow-y-auto">
-                  {duringExamMessages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex gap-3 ${
-                        message.role === "user"
-                          ? "justify-end"
-                          : "justify-start"
-                      }`}
-                    >
-                      <div
-                        className={`flex gap-2 max-w-[80%] ${
-                          message.role === "user"
-                            ? "flex-row-reverse"
-                            : "flex-row"
-                        }`}
-                      >
-                        <div
-                          className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                            message.role === "user"
-                              ? "bg-blue-600"
-                              : "bg-gray-600"
-                          }`}
-                        >
-                          {message.role === "user" ? (
-                            <User className="w-4 h-4 text-white" />
-                          ) : (
-                            <Bot className="w-4 h-4 text-white" />
-                          )}
-                        </div>
-                        <div
-                          className={`rounded-lg p-3 ${
-                            message.role === "user"
-                              ? "bg-blue-600 text-white"
-                              : "bg-gray-100 text-gray-900"
-                          }`}
-                        >
-                          <p className="text-sm whitespace-pre-wrap">
-                            {message.content}
-                          </p>
-                          <p className="text-xs mt-1 opacity-70">
-                            {new Date(message.created_at).toLocaleTimeString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>AI와의 대화 기록이 없습니다.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <AIConversationsCard messages={duringExamMessages} />
 
-          {/* Final Answer */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-green-600" />
-                최종 답안
-              </CardTitle>
-              <CardDescription>학생이 제출한 최종 답안입니다</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {currentSubmission ? (
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <RichTextViewer
-                    content={String(
-                      currentSubmission.answer || "답안이 없습니다."
-                    )}
-                    className="text-sm"
-                  />
-                </div>
-              ) : (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>제출된 답안이 없습니다.</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <FinalAnswerCard submission={currentSubmission} />
 
-          {/* AI Feedback from submission */}
-          {currentSubmission?.ai_feedback && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="w-5 h-5 text-purple-600" />
-                  AI 피드백
-                </CardTitle>
-                <CardDescription>
-                  학생 답안에 대한 AI의 자동 피드백입니다
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <AIMessageRenderer
-                    content={(() => {
-                      if (typeof currentSubmission.ai_feedback === "string") {
-                        // JSON 문자열인지 확인
-                        try {
-                          const parsed = JSON.parse(
-                            currentSubmission.ai_feedback
-                          );
-                          return (
-                            parsed.feedback || currentSubmission.ai_feedback
-                          );
-                        } catch {
-                          // JSON이 아니면 그대로 반환
-                          return currentSubmission.ai_feedback;
-                        }
-                      } else if (
-                        typeof currentSubmission.ai_feedback === "object" &&
-                        currentSubmission.ai_feedback !== null
-                      ) {
-                        // 객체인 경우 feedback 속성 추출
-                        return (
-                          (
-                            currentSubmission.ai_feedback as {
-                              feedback?: string;
-                            }
-                          ).feedback ||
-                          JSON.stringify(currentSubmission.ai_feedback, null, 2)
-                        );
-                      }
-                      return String(currentSubmission.ai_feedback || "");
-                    })()}
-                    timestamp={
-                      (currentSubmission.decompressed?.feedbackData
-                        ?.timestamp as string) ||
-                      sessionData.session.submitted_at
-                    }
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <AIFeedbackCard
+            submission={currentSubmission}
+            submittedAt={sessionData.session.submitted_at}
+          />
 
-          {/* Student Reply to AI Feedback */}
-          {currentSubmission?.student_reply && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="w-5 h-5 text-green-600" />
-                  학생의 반박 답변
-                </CardTitle>
-                <CardDescription>
-                  AI 피드백에 대한 학생의 응답입니다
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="bg-green-50 rounded-lg p-4">
-                  <RichTextViewer
-                    content={currentSubmission.student_reply}
-                    className="text-sm"
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          <StudentReplyCard submission={currentSubmission} />
         </div>
 
-        {/* Grading Panel */}
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Star className="w-5 h-5 text-yellow-600" />
-                문제 {selectedQuestionIdx + 1} 채점
-              </CardTitle>
-              <CardDescription>
-                이 문제에 대한 점수와 피드백을 입력하세요
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-4">
-                {stageOrder.map((stageKey) => {
-                  const stage = stageMeta[stageKey];
-                  const stageScore =
-                    stageScores[selectedQuestionIdx]?.[stageKey] ?? "";
-                  const stageComment =
-                    stageComments[selectedQuestionIdx]?.[stageKey] ?? "";
+          <GradingPanel
+            questionNumber={selectedQuestionIdx + 1}
+            stageScores={stageScores[selectedQuestionIdx] || {}}
+            stageComments={stageComments[selectedQuestionIdx] || {}}
+            overallScore={scores[selectedQuestionIdx] || 0}
+            overallFeedback={feedbacks[selectedQuestionIdx] || ""}
+            isGraded={!!sessionData.grades[selectedQuestionIdx]}
+            saving={saving}
+            onStageScoreChange={handleStageScoreChange}
+            onStageCommentChange={handleStageCommentChange}
+            onOverallScoreChange={(value) =>
+              setScores({
+                ...scores,
+                [selectedQuestionIdx]: value,
+              })
+            }
+            onOverallFeedbackChange={(value) =>
+              setFeedbacks({
+                ...feedbacks,
+                [selectedQuestionIdx]: value,
+              })
+            }
+            onSave={() => handleSaveGrade(selectedQuestionIdx)}
+          />
 
-                  return (
-                    <div
-                      key={stageKey}
-                      className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4"
-                    >
-                      <div className="flex items-start gap-3">
-                        <stage.icon
-                          className={`h-5 w-5 ${stage.accentClass}`}
-                        />
-                        <div>
-                          <h4 className="text-sm font-semibold">
-                            {stage.label}
-                          </h4>
-                          <p className="text-xs text-muted-foreground">
-                            {stage.description}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <div>
-                          <Label
-                            htmlFor={`${stageKey}-score-${selectedQuestionIdx}`}
-                            className="text-xs font-medium"
-                          >
-                            점수 (0-100)
-                          </Label>
-                          <input
-                            type="number"
-                            id={`${stageKey}-score-${selectedQuestionIdx}`}
-                            min="0"
-                            max="100"
-                            value={stageScore}
-                            onChange={(e) =>
-                              handleStageScoreChange(
-                                stageKey,
-                                Number.isNaN(Number(e.target.value))
-                                  ? 0
-                                  : Number(e.target.value)
-                              )
-                            }
-                            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-
-                        <div className="md:col-span-2">
-                          <Label
-                            htmlFor={`${stageKey}-comment-${selectedQuestionIdx}`}
-                            className="text-xs font-medium"
-                          >
-                            상세 피드백
-                          </Label>
-                          <Textarea
-                            id={`${stageKey}-comment-${selectedQuestionIdx}`}
-                            value={stageComment}
-                            onChange={(e) =>
-                              handleStageCommentChange(stageKey, e.target.value)
-                            }
-                            placeholder="이 단계에 대한 평가 의견을 입력하세요..."
-                            className="mt-1 min-h-[100px] resize-none"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <Separator />
-
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="score" className="text-sm font-medium">
-                    종합 점수 (0-100)
-                  </Label>
-                  <div className="mt-1">
-                    <input
-                      type="number"
-                      id="score"
-                      min="0"
-                      max="100"
-                      value={scores[selectedQuestionIdx] || 0}
-                      onChange={(e) =>
-                        setScores({
-                          ...scores,
-                          [selectedQuestionIdx]: Number(e.target.value),
-                        })
-                      }
-                      className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="feedback" className="text-sm font-medium">
-                    종합 피드백
-                  </Label>
-                  <Textarea
-                    id="feedback"
-                    value={feedbacks[selectedQuestionIdx] || ""}
-                    onChange={(e) =>
-                      setFeedbacks({
-                        ...feedbacks,
-                        [selectedQuestionIdx]: e.target.value,
-                      })
-                    }
-                    placeholder="학생의 전체 답안에 대한 종합 피드백을 입력하세요..."
-                    className="mt-1 min-h-[120px] resize-none"
-                  />
-                </div>
-              </div>
-
-              {/* Save Button */}
-              <Button
-                onClick={() => handleSaveGrade(selectedQuestionIdx)}
-                disabled={saving}
-                className="w-full"
-              >
-                {saving ? "저장 중..." : "문제 채점 저장"}
-              </Button>
-
-              {sessionData.grades[selectedQuestionIdx] && (
-                <div className="text-sm text-green-600 text-center">
-                  ✓ 채점 완료됨
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">빠른 작업</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full justify-start"
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                답안 PDF 다운로드
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full justify-start"
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
-                학생에게 메시지
-              </Button>
-            </CardContent>
-          </Card>
+          <QuickActionsCard />
         </div>
       </div>
     </div>
