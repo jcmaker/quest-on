@@ -97,7 +97,7 @@ export function RichTextEditor({
           variant="ghost"
           size="sm"
           onClick={() => editor.chain().focus().toggleBold().run()}
-          className={editor.isActive("bold") ? "bg-gray-200" : ""}
+          className={editor.isActive("bold") ? "bg-blue-200 dark:bg-blue-900/50" : ""}
         >
           <Bold className="h-4 w-4" />
         </Button>
@@ -106,7 +106,7 @@ export function RichTextEditor({
           variant="ghost"
           size="sm"
           onClick={() => editor.chain().focus().toggleItalic().run()}
-          className={editor.isActive("italic") ? "bg-gray-200" : ""}
+          className={editor.isActive("italic") ? "bg-blue-200 dark:bg-blue-900/50" : ""}
         >
           <Italic className="h-4 w-4" />
         </Button>
@@ -115,7 +115,7 @@ export function RichTextEditor({
           variant="ghost"
           size="sm"
           onClick={() => editor.chain().focus().toggleUnderline().run()}
-          className={editor.isActive("underline") ? "bg-gray-200" : ""}
+          className={editor.isActive("underline") ? "bg-blue-200 dark:bg-blue-900/50" : ""}
         >
           <UnderlineIcon className="h-4 w-4" />
         </Button>
@@ -131,7 +131,7 @@ export function RichTextEditor({
             editor.chain().focus().toggleHeading({ level: 1 }).run()
           }
           className={
-            editor.isActive("heading", { level: 1 }) ? "bg-gray-200" : ""
+            editor.isActive("heading", { level: 1 }) ? "bg-blue-200 dark:bg-blue-900/50" : ""
           }
         >
           <Heading1 className="h-4 w-4" />
@@ -144,7 +144,7 @@ export function RichTextEditor({
             editor.chain().focus().toggleHeading({ level: 2 }).run()
           }
           className={
-            editor.isActive("heading", { level: 2 }) ? "bg-gray-200" : ""
+            editor.isActive("heading", { level: 2 }) ? "bg-blue-200 dark:bg-blue-900/50" : ""
           }
         >
           <Heading2 className="h-4 w-4" />
@@ -157,7 +157,7 @@ export function RichTextEditor({
             editor.chain().focus().toggleHeading({ level: 3 }).run()
           }
           className={
-            editor.isActive("heading", { level: 3 }) ? "bg-gray-200" : ""
+            editor.isActive("heading", { level: 3 }) ? "bg-blue-200 dark:bg-blue-900/50" : ""
           }
         >
           <Heading3 className="h-4 w-4" />
@@ -171,7 +171,7 @@ export function RichTextEditor({
           variant="ghost"
           size="sm"
           onClick={() => editor.chain().focus().toggleBulletList().run()}
-          className={editor.isActive("bulletList") ? "bg-gray-200" : ""}
+          className={editor.isActive("bulletList") ? "bg-blue-200 dark:bg-blue-900/50" : ""}
         >
           <List className="h-4 w-4" />
         </Button>
@@ -180,7 +180,7 @@ export function RichTextEditor({
           variant="ghost"
           size="sm"
           onClick={() => editor.chain().focus().toggleOrderedList().run()}
-          className={editor.isActive("orderedList") ? "bg-gray-200" : ""}
+          className={editor.isActive("orderedList") ? "bg-blue-200 dark:bg-blue-900/50" : ""}
         >
           <ListOrdered className="h-4 w-4" />
         </Button>
@@ -194,7 +194,7 @@ export function RichTextEditor({
           size="sm"
           onClick={() => editor.chain().focus().setTextAlign("left").run()}
           className={
-            editor.isActive({ textAlign: "left" }) ? "bg-gray-200" : ""
+            editor.isActive({ textAlign: "left" }) ? "bg-blue-200 dark:bg-blue-900/50" : ""
           }
         >
           <AlignLeft className="h-4 w-4" />
@@ -205,7 +205,7 @@ export function RichTextEditor({
           size="sm"
           onClick={() => editor.chain().focus().setTextAlign("center").run()}
           className={
-            editor.isActive({ textAlign: "center" }) ? "bg-gray-200" : ""
+            editor.isActive({ textAlign: "center" }) ? "bg-blue-200 dark:bg-blue-900/50" : ""
           }
         >
           <AlignCenter className="h-4 w-4" />
@@ -216,7 +216,7 @@ export function RichTextEditor({
           size="sm"
           onClick={() => editor.chain().focus().setTextAlign("right").run()}
           className={
-            editor.isActive({ textAlign: "right" }) ? "bg-gray-200" : ""
+            editor.isActive({ textAlign: "right" }) ? "bg-blue-200 dark:bg-blue-900/50" : ""
           }
         >
           <AlignRight className="h-4 w-4" />
@@ -227,7 +227,7 @@ export function RichTextEditor({
           size="sm"
           onClick={() => editor.chain().focus().setTextAlign("justify").run()}
           className={
-            editor.isActive({ textAlign: "justify" }) ? "bg-gray-200" : ""
+            editor.isActive({ textAlign: "justify" }) ? "bg-blue-200 dark:bg-blue-900/50" : ""
           }
         >
           <AlignJustify className="h-4 w-4" />

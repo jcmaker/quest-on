@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { QuestionEditor } from "./QuestionEditor";
 import type { Question } from "./QuestionEditor";
 
@@ -29,9 +30,16 @@ export function QuestionsList({
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle>문제</CardTitle>
-            <CardDescription>시험에 문제를 추가하세요</CardDescription>
+          <div className="flex items-center gap-3">
+            <div>
+              <CardTitle>문제</CardTitle>
+              <CardDescription>시험에 문제를 추가하세요</CardDescription>
+            </div>
+            {questions.length > 0 && (
+              <Badge variant="secondary" className="ml-2 text-sm">
+                총 {questions.length}개
+              </Badge>
+            )}
           </div>
           <Button
             type="button"
@@ -40,6 +48,7 @@ export function QuestionsList({
               onAdd();
             }}
           >
+            <Plus className="h-4 w-4 mr-2" />
             문제 추가
           </Button>
         </div>
@@ -51,16 +60,17 @@ export function QuestionsList({
             <p>&quot;문제 추가&quot;를 클릭하여 시작하세요!</p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {questions.map((question, index) => (
-              <QuestionEditor
-                key={question.id}
-                question={question}
-                index={index}
-                onUpdate={onUpdate}
-                onRemove={onRemove}
-                onGenerateAI={onGenerateAI}
-              />
+              <div key={question.id} className="relative">
+                <QuestionEditor
+                  question={question}
+                  index={index}
+                  onUpdate={onUpdate}
+                  onRemove={onRemove}
+                  onGenerateAI={onGenerateAI}
+                />
+              </div>
             ))}
           </div>
         )}

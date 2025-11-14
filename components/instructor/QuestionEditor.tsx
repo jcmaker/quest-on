@@ -3,8 +3,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Hash } from "lucide-react";
 
 export interface Question {
   id: string;
@@ -34,9 +35,22 @@ export function QuestionEditor({
   onGenerateAI,
 }: QuestionEditorProps) {
   return (
-    <div className="border rounded-lg p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold">문제 {index + 1}</h3>
+    <div className="border rounded-lg p-5 bg-card shadow-sm relative overflow-hidden">
+      {/* 문제 번호 인디케이터 */}
+      <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary/60"></div>
+      
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <Badge 
+            variant="default" 
+            className="text-base font-semibold px-3 py-1 h-8 flex items-center gap-1.5"
+          >
+            <Hash className="h-4 w-4" />
+            {index + 1}
+          </Badge>
+          <div className="h-6 w-px bg-border"></div>
+          <span className="text-sm text-muted-foreground">문제 출제 중</span>
+        </div>
         <Button
           type="button"
           variant="outline"
@@ -45,6 +59,7 @@ export function QuestionEditor({
             e.preventDefault();
             onRemove(question.id);
           }}
+          className="text-destructive hover:text-destructive hover:bg-destructive/10"
         >
           삭제
         </Button>
