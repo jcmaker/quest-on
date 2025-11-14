@@ -6,13 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   GraduationCap,
   BookOpen,
   // Users,
   // BarChart3,
-  Settings,
   Plus,
   FileText,
   Calendar,
@@ -43,6 +42,8 @@ export default function InstructorHome() {
   const { isSignedIn, isLoaded, user } = useUser();
   const [exams, setExams] = useState<Exam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [displayedCount, setDisplayedCount] = useState(5);
+  const observerTarget = useRef<HTMLDivElement>(null);
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
@@ -68,6 +69,34 @@ export default function InstructorHome() {
       fetchExams();
     }
   }, [isLoaded, isSignedIn, userRole]);
+
+  // Reset displayed count when exams change
+  useEffect(() => {
+    setDisplayedCount(5);
+  }, [exams]);
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && displayedCount < exams.length) {
+          setDisplayedCount((prev) => Math.min(prev + 5, exams.length));
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
+      }
+    };
+  }, [displayedCount, exams.length]);
 
   const fetchExams = async () => {
     try {
@@ -151,10 +180,6 @@ export default function InstructorHome() {
                 >
                   강사 모드
                 </Badge>
-                <Button variant="outline" size="sm">
-                  <Settings className="w-4 h-4 mr-2" />
-                  설정
-                </Button>
               </div>
             </div>
           </div>
@@ -311,7 +336,7 @@ export default function InstructorHome() {
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {exams.slice(0, 5).map((exam) => (
+                    {exams.slice(0, displayedCount).map((exam) => (
                       <ExamCard
                         key={exam.id}
                         exam={exam}
@@ -322,13 +347,20 @@ export default function InstructorHome() {
                         showStudentCount={false}
                       />
                     ))}
-                    {exams.length > 5 && (
+                    {/* {exams.length > 5 && (
                       <div className="text-center pt-4">
                         <Link href="/instructor/exams">
                           <Button variant="outline">
                             더 많은 시험 보기 ({exams.length - 5}개 더)
                           </Button>
                         </Link>
+                      </div>
+                    )} */}
+                    {displayedCount < exams.length && (
+                      <div ref={observerTarget} className="py-4">
+                        <div className="flex items-center justify-center">
+                          <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
+                        </div>
                       </div>
                     )}
                   </div>
