@@ -797,7 +797,7 @@ ${
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="description">설명</Label>
+            <Label htmlFor="description">전달 사항</Label>
             <Textarea
               id="description"
               value={examData.description}
@@ -807,7 +807,7 @@ ${
                   description: e.target.value,
                 }))
               }
-              placeholder="시험에 대한 설명을 입력하세요..."
+              placeholder="전달 사항을 입력하세요..."
               rows={3}
             />
           </div>
