@@ -205,8 +205,8 @@ export default function InstructorHome() {
           </Card>
 
           {/* Quick Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {/* <Link href="/instructor/new">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+            <Link href="/instructor/new">
               <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
                 <CardContent className="p-6 text-center">
                   <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
@@ -222,21 +222,21 @@ export default function InstructorHome() {
               </Card>
             </Link>
 
-            <Link href="/instructor/exams">
+            <Link href="/instructor/drive">
               <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
                 <CardContent className="p-6 text-center">
                   <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
                     <FileText className="w-6 h-6 text-primary-foreground" />
                   </div>
                   <h3 className="font-semibold text-foreground mb-2">
-                    시험 관리
+                    내 드라이브
                   </h3>
                   <p className="text-sm text-muted-foreground">
-                    기존 시험 편집 및 관리
+                    폴더와 시험을 관리하세요
                   </p>
                 </CardContent>
               </Card>
-            </Link> */}
+            </Link>
 
             {/* <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
               <CardContent className="p-6 text-center">

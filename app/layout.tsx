@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Quest-On - Modern Learning Platform",
+  title: "Quest-On",
   description:
     "Connect instructors and students in an engaging, interactive learning environment",
   icons: {

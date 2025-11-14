@@ -38,6 +38,20 @@ export async function POST(request: NextRequest) {
         return await getSessionSubmissions(data);
       case "get_session_messages":
         return await getSessionMessages(data);
+      case "create_folder":
+        return await createFolder(data);
+      case "get_folder_contents":
+        return await getFolderContents(data);
+      case "get_breadcrumb":
+        return await getBreadcrumb(data);
+      case "move_node":
+        return await moveNode(data);
+      case "update_node":
+        return await updateNode(data);
+      case "delete_node":
+        return await deleteNode(data);
+      case "get_instructor_drive":
+        return await getInstructorDrive();
       default:
         return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     }
@@ -74,6 +88,7 @@ async function createExam(data: {
   status: string;
   created_at: string;
   updated_at: string;
+  parent_folder_id?: string | null;
 }) {
   try {
     // Get current user
@@ -127,7 +142,55 @@ async function createExam(data: {
       );
     }
 
-    return NextResponse.json({ exam });
+    // Create exam node in exam_nodes table
+    // parent_id는 data에서 받거나 null (루트에 배치)
+    const parentId = data.parent_folder_id || null;
+
+    // Get the maximum sort_order for this parent folder
+    let sortQuery = supabase
+      .from("exam_nodes")
+      .select("sort_order")
+      .eq("instructor_id", user.id);
+
+    // Handle null parent_id (root level)
+    if (parentId === null) {
+      sortQuery = sortQuery.is("parent_id", null);
+    } else {
+      sortQuery = sortQuery.eq("parent_id", parentId);
+    }
+
+    const { data: existingNodes } = await sortQuery
+      .order("sort_order", { ascending: false })
+      .limit(1);
+
+    const nextSortOrder =
+      existingNodes && existingNodes.length > 0
+        ? existingNodes[0].sort_order + 1
+        : 0;
+
+    // Create exam node
+    const { data: examNode, error: nodeError } = await supabase
+      .from("exam_nodes")
+      .insert([
+        {
+          instructor_id: user.id,
+          parent_id: parentId,
+          kind: "exam",
+          name: data.title,
+          exam_id: exam.id,
+          sort_order: nextSortOrder,
+        },
+      ])
+      .select()
+      .single();
+
+    if (nodeError) {
+      console.error("Failed to create exam node:", nodeError);
+      // Exam is created but node creation failed - this is not critical
+      // but we should log it
+    }
+
+    return NextResponse.json({ exam, examNode });
   } catch (error) {
     console.error("Create exam error:", error);
     return NextResponse.json(
@@ -672,6 +735,367 @@ async function getSessionMessages(data: { sessionId: string }) {
     console.error("Get session messages error:", error);
     return NextResponse.json(
       { error: "Failed to get session messages" },
+      { status: 500 }
+    );
+  }
+}
+
+// ========== Exam Nodes (Folder/Drive) Functions ==========
+
+async function createFolder(data: { name: string; parent_id?: string | null }) {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return NextResponse.json(
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
+    // Get the maximum sort_order for this parent folder
+    const parentId = data.parent_id || null;
+    let sortQuery = supabase
+      .from("exam_nodes")
+      .select("sort_order")
+      .eq("instructor_id", user.id);
+
+    // Handle null parent_id (root level)
+    if (parentId === null) {
+      sortQuery = sortQuery.is("parent_id", null);
+    } else {
+      sortQuery = sortQuery.eq("parent_id", parentId);
+    }
+
+    const { data: existingNodes } = await sortQuery
+      .order("sort_order", { ascending: false })
+      .limit(1);
+
+    const nextSortOrder =
+      existingNodes && existingNodes.length > 0
+        ? existingNodes[0].sort_order + 1
+        : 0;
+
+    const { data: folder, error } = await supabase
+      .from("exam_nodes")
+      .insert([
+        {
+          instructor_id: user.id,
+          parent_id: data.parent_id || null,
+          kind: "folder",
+          name: data.name,
+          sort_order: nextSortOrder,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ folder });
+  } catch (error) {
+    console.error("Create folder error:", error);
+    return NextResponse.json(
+      { error: "Failed to create folder" },
+      { status: 500 }
+    );
+  }
+}
+
+async function getFolderContents(data: { folder_id?: string | null }) {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return NextResponse.json(
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
+    const parentId = data.folder_id || null;
+
+    // Build query
+    let query = supabase
+      .from("exam_nodes")
+      .select(
+        `
+        *,
+        exams (
+          id,
+          title,
+          code,
+          description,
+          duration,
+          status,
+          created_at,
+          updated_at
+        )
+      `
+      )
+      .eq("instructor_id", user.id);
+
+    // Handle null parent_id (root level)
+    if (parentId === null) {
+      query = query.is("parent_id", null);
+    } else {
+      query = query.eq("parent_id", parentId);
+    }
+
+    // Apply ordering
+    const { data: nodes, error } = await query
+      .order("kind", { ascending: false }) // folders first
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Supabase query error:", error);
+      throw error;
+    }
+
+    return NextResponse.json({ nodes: nodes || [] });
+  } catch (error) {
+    console.error("Get folder contents error:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json(
+      {
+        error: "Failed to get folder contents",
+        details: errorMessage,
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function getBreadcrumb(data: { folder_id: string }) {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Use recursive CTE to get all parent folders
+    const { data: rpcData, error } = await supabase.rpc("get_breadcrumb_path", {
+      folder_id: data.folder_id,
+    });
+
+    if (error) {
+      // If RPC doesn't exist, use a simpler approach with multiple queries
+      const breadcrumb: Array<{ id: string; name: string }> = [];
+      let currentId: string | null = data.folder_id;
+
+      while (currentId) {
+        const { data: node, error: nodeError } = await supabase
+          .from("exam_nodes")
+          .select("id, name, parent_id")
+          .eq("id", currentId)
+          .eq("instructor_id", user.id)
+          .single();
+
+        if (nodeError || !node) break;
+
+        breadcrumb.unshift({ id: node.id, name: node.name });
+        currentId = node.parent_id as string | null;
+      }
+
+      return NextResponse.json({ breadcrumb });
+    }
+
+    return NextResponse.json({ breadcrumb: rpcData || [] });
+  } catch (error) {
+    console.error("Get breadcrumb error:", error);
+    return NextResponse.json(
+      { error: "Failed to get breadcrumb" },
+      { status: 500 }
+    );
+  }
+}
+
+async function moveNode(data: {
+  node_id: string;
+  new_parent_id?: string | null;
+  new_sort_order?: number;
+}) {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return NextResponse.json(
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (data.new_parent_id !== undefined) {
+      updateData.parent_id = data.new_parent_id;
+    }
+    if (data.new_sort_order !== undefined) {
+      updateData.sort_order = data.new_sort_order;
+    }
+
+    const { data: node, error } = await supabase
+      .from("exam_nodes")
+      .update(updateData)
+      .eq("id", data.node_id)
+      .eq("instructor_id", user.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ node });
+  } catch (error) {
+    console.error("Move node error:", error);
+    return NextResponse.json({ error: "Failed to move node" }, { status: 500 });
+  }
+}
+
+async function updateNode(data: { node_id: string; name?: string }) {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return NextResponse.json(
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
+    const updateData: Record<string, unknown> = {};
+    if (data.name !== undefined) {
+      updateData.name = data.name;
+    }
+
+    const { data: node, error } = await supabase
+      .from("exam_nodes")
+      .update(updateData)
+      .eq("id", data.node_id)
+      .eq("instructor_id", user.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // If this is an exam node, also update the exam title
+    if (node.kind === "exam" && node.exam_id && data.name) {
+      await supabase
+        .from("exams")
+        .update({ title: data.name })
+        .eq("id", node.exam_id)
+        .eq("instructor_id", user.id);
+    }
+
+    return NextResponse.json({ node });
+  } catch (error) {
+    console.error("Update node error:", error);
+    return NextResponse.json(
+      { error: "Failed to update node" },
+      { status: 500 }
+    );
+  }
+}
+
+async function deleteNode(data: { node_id: string }) {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return NextResponse.json(
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
+    // Get the node first to check if it's a folder
+    const { data: node, error: fetchError } = await supabase
+      .from("exam_nodes")
+      .select("kind, exam_id")
+      .eq("id", data.node_id)
+      .eq("instructor_id", user.id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    // If it's a folder, check if it has children
+    if (node.kind === "folder") {
+      const { data: children, error: childrenError } = await supabase
+        .from("exam_nodes")
+        .select("id")
+        .eq("parent_id", data.node_id)
+        .eq("instructor_id", user.id);
+
+      if (childrenError) throw childrenError;
+
+      if (children && children.length > 0) {
+        return NextResponse.json(
+          { error: "Cannot delete folder with contents" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Delete the node (CASCADE will handle exam deletion if needed)
+    const { error: deleteError } = await supabase
+      .from("exam_nodes")
+      .delete()
+      .eq("id", data.node_id)
+      .eq("instructor_id", user.id);
+
+    if (deleteError) throw deleteError;
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Delete node error:", error);
+    return NextResponse.json(
+      { error: "Failed to delete node" },
+      { status: 500 }
+    );
+  }
+}
+
+async function getInstructorDrive() {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return NextResponse.json(
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
+    // Get root level nodes (parent_id is null)
+    return await getFolderContents({ folder_id: null });
+  } catch (error) {
+    console.error("Get instructor drive error:", error);
+    return NextResponse.json(
+      { error: "Failed to get instructor drive" },
       { status: 500 }
     );
   }

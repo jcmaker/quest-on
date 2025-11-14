@@ -743,8 +743,8 @@ ${
       const result = await response.json();
       console.log("Exam created successfully:", result);
 
-      // Redirect to exam management page
-      router.push("/instructor/exams");
+      // Redirect to drive page
+      router.push("/instructor/drive");
     } catch (error) {
       console.error("Error creating exam:", error);
       alert("시험 생성 중 오류가 발생했습니다. 다시 시도해주세요.");
