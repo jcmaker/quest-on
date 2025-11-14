@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import {
   GraduationCap,
   BookOpen,
-  Users,
+  // Users,
   // BarChart3,
   Settings,
   Plus,
@@ -181,7 +181,7 @@ export default function InstructorHome() {
 
           {/* Quick Actions */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <Link href="/instructor/new">
+            {/* <Link href="/instructor/new">
               <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
                 <CardContent className="p-6 text-center">
                   <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
@@ -211,9 +211,9 @@ export default function InstructorHome() {
                   </p>
                 </CardContent>
               </Card>
-            </Link>
+            </Link> */}
 
-            <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
+            {/* <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
               <CardContent className="p-6 text-center">
                 <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
                   <Users className="w-6 h-6 text-primary-foreground" />
@@ -225,7 +225,7 @@ export default function InstructorHome() {
                   학생 성적 및 진행상황 확인
                 </p>
               </CardContent>
-            </Card>
+            </Card> */}
 
             {/* <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
               <CardContent className="p-6 text-center">
