@@ -2,11 +2,10 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { SignedIn, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Folder,
   FileText,
@@ -14,9 +13,13 @@ import {
   ChevronRight,
   Home,
   MoreVertical,
-  Edit,
+  // Edit,
   Trash2,
   FolderPlus,
+  Search,
+  LayoutGrid,
+  List,
+  Copy,
 } from "lucide-react";
 import {
   Dialog,
@@ -25,7 +28,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +49,7 @@ interface ExamNode {
   exam_id: string | null;
   created_at: string;
   updated_at: string;
+  student_count?: number;
   exams?: {
     id: string;
     title: string;
@@ -77,8 +80,333 @@ export default function InstructorDrive() {
   const [draggedNode, setDraggedNode] = useState<ExamNode | null>(null);
   const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
+
+  const filteredNodes = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return nodes;
+    }
+    const query = searchQuery.toLowerCase();
+    return nodes.filter((node) => node.name.toLowerCase().includes(query));
+  }, [nodes, searchQuery]);
+
+  const folderNodes = useMemo(
+    () => filteredNodes.filter((node) => node.kind === "folder"),
+    [filteredNodes]
+  );
+
+  const examNodes = useMemo(
+    () => filteredNodes.filter((node) => node.kind === "exam"),
+    [filteredNodes]
+  );
+
+  const isFiltering = searchQuery.trim().length > 0;
+  const hasResults = filteredNodes.length > 0;
+  const searchPlaceholder =
+    currentFolderId === null ? "드라이브 검색" : "이 폴더에서 검색";
+
+  const formatDate = (dateString: string) => {
+    try {
+      return new Intl.DateTimeFormat("ko-KR", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }).format(new Date(dateString));
+    } catch {
+      return "";
+    }
+  };
+
+  const getDragHandlers = (node: ExamNode) => ({
+    draggable: !isMoving,
+    onDragStart: (e: React.DragEvent) => handleDragStart(e, node),
+    onDragEnd: handleDragEnd,
+    onDragOver: (e: React.DragEvent) => handleDragOver(e, node),
+    onDragLeave: handleDragLeave,
+    onDrop: (e: React.DragEvent) => handleDrop(e, node),
+  });
+
+  const renderNodeActions = (node: ExamNode) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreVertical className="w-4 h-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {node.kind === "exam" && node.exams?.code && (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCopyExamCode(node.exams?.code);
+            }}
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            코드 복사
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteNode(node);
+          }}
+          className="text-destructive"
+        >
+          <Trash2 className="w-4 h-4 mr-2" />
+          삭제
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const renderNodeStatus = (node: ExamNode) => {
+    if (node.kind !== "exam" || !node.exams) {
+      return null;
+    }
+
+    const statusLabel =
+      node.exams.status === "active"
+        ? "활성"
+        : node.exams.status === "draft"
+        ? "초안"
+        : "완료";
+
+    if (node.exams.status === "draft") {
+      // 초안 뱃지는 임시 비활성화
+      return null;
+    }
+
+    const badgeClasses =
+      node.exams.status === "active"
+        ? "bg-emerald-100 text-emerald-700"
+        : "bg-slate-200 text-slate-700";
+
+    return (
+      <span
+        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${badgeClasses}`}
+      >
+        {statusLabel}
+      </span>
+    );
+  };
+
+  const getViewButtonClasses = (mode: "grid" | "list") =>
+    [
+      "h-8 w-8 rounded-full border border-transparent transition-colors",
+      "text-muted-foreground",
+      viewMode === mode
+        ? "bg-primary text-primary-foreground shadow-sm"
+        : "hover:bg-muted/70",
+    ].join(" ");
+
+  const renderStudentCount = (node: ExamNode) => {
+    if (node.kind !== "exam") {
+      return null;
+    }
+    const studentCount = node.student_count ?? 0;
+    return (
+      <span className="text-xs text-muted-foreground">
+        학생 {studentCount}명
+      </span>
+    );
+  };
+
+  const renderGridNode = (node: ExamNode) => {
+    const dragHandlers = getDragHandlers(node);
+    const isDragSource = draggedNode?.id === node.id;
+    const isDragTarget = dragOverNodeId === node.id && node.kind === "folder";
+    const statusBadge = renderNodeStatus(node);
+    const isFolder = node.kind === "folder";
+    const iconWrapperClasses = isFolder
+      ? "from-blue-100 to-blue-50 text-blue-500"
+      : "from-slate-100 to-slate-50 text-slate-500";
+
+    return (
+      <Card
+        key={node.id}
+        {...dragHandlers}
+        className={`flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm transition-all duration-200 group ${
+          isDragSource ? "opacity-50 scale-95 cursor-grabbing" : "cursor-grab"
+        } ${isDragTarget ? "ring-2 ring-primary ring-offset-2" : ""} ${
+          isMoving ? "pointer-events-none opacity-60" : ""
+        } ${node.kind === "exam" && draggedNode ? "cursor-not-allowed" : ""}`}
+      >
+        <button
+          type="button"
+          className="flex flex-1 flex-col text-left"
+          onClick={() => {
+            if (isMoving) return;
+            if (isFolder) {
+              handleFolderClick(node.id);
+            } else if (node.exam_id) {
+              router.push(`/instructor/${node.exam_id}`);
+            }
+          }}
+        >
+          <div
+            className={`flex flex-1 items-center justify-center bg-gradient-to-b ${iconWrapperClasses} p-10`}
+          >
+            {isFolder ? (
+              <Folder
+                className={`h-16 w-16 ${isDragSource ? "animate-pulse" : ""}`}
+                strokeWidth={1.5}
+              />
+            ) : (
+              <FileText
+                className={`h-16 w-16 ${isDragSource ? "animate-pulse" : ""}`}
+                strokeWidth={1.5}
+              />
+            )}
+          </div>
+          <CardContent className="flex flex-col gap-2 border-t border-border/50 bg-background/80 px-5 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-base font-medium text-foreground truncate">
+                  {node.name}
+                </h3>
+                <div className="mt-1 space-y-0.5">
+                  <p className="text-xs text-muted-foreground truncate">
+                    {isFolder
+                      ? `폴더 · ${formatDate(node.updated_at)}`
+                      : `${node.exams?.code || ""}`}
+                  </p>
+                  {!isFolder && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      생성 {formatDate(node.created_at)}
+                    </p>
+                  )}
+                </div>
+              </div>
+              {renderNodeActions(node)}
+            </div>
+            {!isFolder && (
+              <div className="flex items-center justify-between">
+                <div>{statusBadge}</div>
+                {renderStudentCount(node)}
+              </div>
+            )}
+          </CardContent>
+        </button>
+      </Card>
+    );
+  };
+
+  const renderListNode = (node: ExamNode) => {
+    const dragHandlers = getDragHandlers(node);
+    const isDragSource = draggedNode?.id === node.id;
+    const isDragTarget = dragOverNodeId === node.id && node.kind === "folder";
+    const statusBadge = renderNodeStatus(node);
+
+    return (
+      <div
+        key={node.id}
+        {...dragHandlers}
+        className={`group flex items-center justify-between rounded-xl border border-border/60 bg-card/60 px-4 py-3 transition ${
+          isDragSource ? "opacity-50 cursor-grabbing" : "cursor-grab"
+        } ${isDragTarget ? "ring-2 ring-primary bg-primary/5" : ""} ${
+          isMoving ? "pointer-events-none opacity-60" : ""
+        }`}
+      >
+        <div
+          className="flex items-center gap-4 flex-1"
+          onClick={() => {
+            if (isMoving) return;
+            if (node.kind === "folder") {
+              handleFolderClick(node.id);
+            } else if (node.exam_id) {
+              router.push(`/instructor/${node.exam_id}`);
+            }
+          }}
+        >
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background/80">
+            {node.kind === "folder" ? (
+              <Folder
+                className={`w-5 h-5 text-primary ${
+                  isDragSource ? "animate-pulse" : ""
+                }`}
+              />
+            ) : (
+              <FileText
+                className={`w-5 h-5 text-blue-500 ${
+                  isDragSource ? "animate-pulse" : ""
+                }`}
+              />
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="font-medium text-sm text-foreground truncate">
+              {node.name}
+            </p>
+            {node.kind === "folder" ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>{formatDate(node.updated_at)}</span>
+                <span>· 폴더</span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {node.exams?.code && <span>{node.exams.code}</span>}
+                <span>· 생성 {formatDate(node.created_at)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {statusBadge && (
+            <span className="hidden sm:inline-flex">{statusBadge}</span>
+          )}
+          {renderStudentCount(node)}
+          {renderNodeActions(node)}
+        </div>
+      </div>
+    );
+  };
+
+  const renderSection = (
+    title: string,
+    nodesList: ExamNode[],
+    options: { emptyLabel: string; emptyFilteredLabel: string }
+  ) => {
+    const emptyMessage = isFiltering
+      ? options.emptyFilteredLabel
+      : options.emptyLabel;
+
+    const content =
+      nodesList.length > 0 ? (
+        viewMode === "grid" ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {nodesList.map((node) => renderGridNode(node))}
+          </div>
+        ) : (
+          <div className="space-y-2">{nodesList.map(renderListNode)}</div>
+        )
+      ) : (
+        <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-card/40 py-6 text-center text-sm text-muted-foreground">
+          {emptyMessage}
+        </div>
+      );
+
+    return (
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {title}
+          </p>
+          <span className="text-xs text-muted-foreground">
+            {nodesList.length}개
+          </span>
+        </div>
+        {content}
+      </div>
+    );
+  };
 
   useEffect(() => {
     if (isLoaded && isSignedIn && userRole === "instructor") {
@@ -111,9 +439,7 @@ export default function InstructorDrive() {
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error("Failed to load folder contents:", errorData);
-        toast.error(
-          errorData.error || "폴더 내용을 불러오는데 실패했습니다."
-        );
+        toast.error(errorData.error || "폴더 내용을 불러오는데 실패했습니다.");
       }
     } catch (error) {
       console.error("Error loading folder contents:", error);
@@ -184,9 +510,26 @@ export default function InstructorDrive() {
     }
   };
 
-  const handleDeleteNode = async (nodeId: string, nodeName: string) => {
-    if (!confirm(`"${nodeName}"을(를) 삭제하시겠습니까?`)) {
-      return;
+  const handleDeleteNode = async (node: ExamNode) => {
+    if (node.kind === "exam" && node.exams?.code) {
+      const input = prompt(
+        `"${node.name}" 시험을 삭제하려면 시험 코드를 입력하세요.`
+      );
+      if (input === null) {
+        return;
+      }
+      if (input.trim() !== node.exams.code) {
+        toast.error("시험 코드가 일치하지 않습니다.");
+        return;
+      }
+    } else {
+      if (
+        !confirm(
+          `"${node.name}"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`
+        )
+      ) {
+        return;
+      }
     }
 
     try {
@@ -197,7 +540,7 @@ export default function InstructorDrive() {
         },
         body: JSON.stringify({
           action: "delete_node",
-          data: { node_id: nodeId },
+          data: { node_id: node.id },
         }),
       });
 
@@ -220,6 +563,20 @@ export default function InstructorDrive() {
 
   const handleBreadcrumbClick = (folderId: string | null) => {
     setCurrentFolderId(folderId);
+  };
+
+  const handleCopyExamCode = async (code?: string) => {
+    if (!code) {
+      toast.error("시험 코드가 없습니다.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      toast.success("시험 코드가 복사되었습니다.");
+    } catch (error) {
+      console.error("Copy exam code error:", error);
+      toast.error("시험 코드를 복사하지 못했습니다.");
+    }
   };
 
   const handleDragStart = (e: React.DragEvent, node: ExamNode) => {
@@ -250,7 +607,11 @@ export default function InstructorDrive() {
     }
 
     // 자기 자신이나 같은 위치로는 드롭 불가
-    if (!draggedNode || draggedNode.id === node.id || draggedNode.parent_id === node.id) {
+    if (
+      !draggedNode ||
+      draggedNode.id === node.id ||
+      draggedNode.parent_id === node.id
+    ) {
       return;
     }
 
@@ -275,7 +636,11 @@ export default function InstructorDrive() {
     }
 
     // 자기 자신이나 같은 위치로는 드롭 불가
-    if (!draggedNode || draggedNode.id === targetNode.id || draggedNode.parent_id === targetNode.id) {
+    if (
+      !draggedNode ||
+      draggedNode.id === targetNode.id ||
+      draggedNode.parent_id === targetNode.id
+    ) {
       return;
     }
 
@@ -305,7 +670,9 @@ export default function InstructorDrive() {
       });
 
       if (response.ok) {
-        toast.success(`"${draggedNode.name}"이(가) "${targetNode.name}" 폴더로 이동되었습니다.`);
+        toast.success(
+          `"${draggedNode.name}"이(가) "${targetNode.name}" 폴더로 이동되었습니다.`
+        );
         loadFolderContents(currentFolderId);
       } else {
         const errorData = await response.json();
@@ -368,6 +735,11 @@ export default function InstructorDrive() {
     }
   };
 
+  const rootDragProps = {
+    onDragOver: handleRootDragOver,
+    onDrop: handleRootDrop,
+  };
+
   if (!isLoaded) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -400,65 +772,17 @@ export default function InstructorDrive() {
                   <Folder className="w-6 h-6 text-primary-foreground" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-bold text-foreground">내 드라이브</h1>
+                  <h1 className="text-2xl font-bold text-foreground">
+                    내 드라이브
+                  </h1>
                   <p className="text-sm text-muted-foreground">
                     시험과 폴더를 관리하세요
                   </p>
                 </div>
               </div>
-              <div className="flex items-center space-x-3">
-                <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <FolderPlus className="w-4 h-4 mr-2" />
-                      폴더 만들기
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>새 폴더 만들기</DialogTitle>
-                      <DialogDescription>
-                        폴더 이름을 입력해주세요.
-                      </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="folder-name">폴더 이름</Label>
-                        <Input
-                          id="folder-name"
-                          value={newFolderName}
-                          onChange={(e) => setNewFolderName(e.target.value)}
-                          placeholder="예: 2025-1학기"
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              handleCreateFolder();
-                            }
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button
-                        variant="outline"
-                        onClick={() => setIsCreateFolderOpen(false)}
-                      >
-                        취소
-                      </Button>
-                      <Button
-                        onClick={handleCreateFolder}
-                        disabled={isCreatingFolder || !newFolderName.trim()}
-                      >
-                        {isCreatingFolder ? "생성 중..." : "생성"}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-                <Link href="/instructor/new">
-                  <Button>
-                    <Plus className="w-4 h-4 mr-2" />
-                    새 시험 만들기
-                  </Button>
-                </Link>
+              <div className="text-right text-sm text-muted-foreground">
+                폴더를 만들어 시험을 정리하고, 드래그 앤 드롭으로 빠르게
+                이동하세요.
               </div>
             </div>
           </div>
@@ -475,7 +799,7 @@ export default function InstructorDrive() {
               <Home className="w-4 h-4 mr-1" />
               루트
             </button>
-            {breadcrumb.map((item, index) => (
+            {breadcrumb.map((item) => (
               <div key={item.id} className="flex items-center space-x-2">
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 <button
@@ -488,159 +812,162 @@ export default function InstructorDrive() {
             ))}
           </div>
 
-          {/* Folder/Exam List */}
-          <div
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
-            onDragOver={handleRootDragOver}
-            onDrop={handleRootDrop}
-          >
-            {isLoading ? (
-              <div className="col-span-full flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
-              </div>
-            ) : nodes.length === 0 ? (
-              <div className="col-span-full text-center py-12 border-2 border-dashed border-muted-foreground/20 rounded-lg">
-                <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-4">
-                  이 폴더가 비어있습니다.
-                </p>
-                <div className="flex items-center justify-center space-x-2">
-                  <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <FolderPlus className="w-4 h-4 mr-2" />
-                        폴더 만들기
+          <section className="space-y-4">
+            <div className="bg-card/80 border border-border rounded-2xl p-4 shadow-sm">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                <div className="flex items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button className="gap-2 bg-primary text-primary-foreground">
+                        <Plus className="w-4 h-4" />새 항목
                       </Button>
-                    </DialogTrigger>
-                  </Dialog>
-                  <Link href="/instructor/new">
-                    <Button size="sm">
-                      <Plus className="w-4 h-4 mr-2" />
-                      시험 만들기
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48">
+                      <DropdownMenuItem
+                        onSelect={() => setIsCreateFolderOpen(true)}
+                      >
+                        <FolderPlus className="w-4 h-4 mr-2" />새 폴더
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => router.push("/instructor/new")}
+                      >
+                        <FileText className="w-4 h-4 mr-2" />새 시험
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Link href="/instructor/exams">
+                    <Button variant="outline" className="gap-2">
+                      <FileText className="w-4 h-4" />
+                      시험 관리
                     </Button>
                   </Link>
                 </div>
+                <div className="flex flex-1 flex-wrap items-center gap-3 min-w-[260px]">
+                  <div className="relative flex-1 min-w-[220px]">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder={searchPlaceholder}
+                      className="pl-9"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1 rounded-full border border-border bg-background/90 p-1 shadow-sm">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className={getViewButtonClasses("grid")}
+                      onClick={() => setViewMode("grid")}
+                      aria-pressed={viewMode === "grid"}
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className={getViewButtonClasses("list")}
+                      onClick={() => setViewMode("list")}
+                      aria-pressed={viewMode === "list"}
+                    >
+                      <List className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent"></div>
+              </div>
+            ) : !hasResults ? (
+              <div className="text-center py-16 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-card/40">
+                <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground mb-2">
+                  {isFiltering
+                    ? "검색 결과가 없습니다."
+                    : "이 폴더가 비어있습니다."}
+                </p>
+                <p className="text-sm text-muted-foreground mb-6">
+                  {isFiltering
+                    ? "다른 검색어를 시도해보세요."
+                    : "새 폴더를 만들거나 시험을 생성해보세요."}
+                </p>
+                {!isFiltering && (
+                  <div className="flex items-center justify-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsCreateFolderOpen(true)}
+                    >
+                      <FolderPlus className="w-4 h-4 mr-2" />
+                      폴더 만들기
+                    </Button>
+                    <Link href="/instructor/new">
+                      <Button size="sm">
+                        <Plus className="w-4 h-4 mr-2" />
+                        시험 만들기
+                      </Button>
+                    </Link>
+                  </div>
+                )}
               </div>
             ) : (
-              nodes.map((node) => (
-                <Card
-                  key={node.id}
-                  draggable={!isMoving}
-                  onDragStart={(e) => handleDragStart(e, node)}
-                  onDragEnd={handleDragEnd}
-                  onDragOver={(e) => handleDragOver(e, node)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, node)}
-                  className={`border-0 shadow-lg hover:shadow-xl transition-all duration-200 group ${
-                    draggedNode?.id === node.id
-                      ? "opacity-50 scale-95 cursor-grabbing"
-                      : "cursor-grab active:cursor-grabbing"
-                  } ${
-                    dragOverNodeId === node.id && node.kind === "folder"
-                      ? "ring-2 ring-primary ring-offset-2 bg-primary/10 scale-105"
-                      : ""
-                  } ${
-                    isMoving ? "pointer-events-none opacity-60" : ""
-                  } ${
-                    node.kind === "exam" && draggedNode
-                      ? "cursor-not-allowed"
-                      : ""
-                  }`}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div
-                        className="flex-1"
-                        onClick={() => {
-                          if (isMoving) return;
-                          if (node.kind === "folder") {
-                            handleFolderClick(node.id);
-                          } else if (node.exam_id) {
-                            router.push(`/instructor/${node.exam_id}`);
-                          }
-                        }}
-                      >
-                        <div className="flex items-center space-x-3 mb-2">
-                          {node.kind === "folder" ? (
-                            <Folder
-                              className={`w-8 h-8 text-primary ${
-                                draggedNode?.id === node.id
-                                  ? "animate-pulse"
-                                  : ""
-                              }`}
-                            />
-                          ) : (
-                            <FileText
-                              className={`w-8 h-8 text-blue-500 ${
-                                draggedNode?.id === node.id
-                                  ? "animate-pulse"
-                                  : ""
-                              }`}
-                            />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-foreground truncate">
-                              {node.name}
-                            </h3>
-                            {node.kind === "exam" && node.exams && (
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {node.exams.code}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        {node.kind === "exam" && node.exams && (
-                          <div className="flex items-center space-x-2 mt-2">
-                            <Badge
-                              variant={
-                                node.exams.status === "active"
-                                  ? "default"
-                                  : "secondary"
-                              }
-                              className="text-xs"
-                            >
-                              {node.exams.status === "active"
-                                ? "활성"
-                                : node.exams.status === "draft"
-                                ? "초안"
-                                : "완료"}
-                            </Badge>
-                          </div>
-                        )}
-                      </div>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteNode(node.id, node.name);
-                            }}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            삭제
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
+              <div className="space-y-10" {...rootDragProps}>
+                {renderSection("폴더", folderNodes, {
+                  emptyLabel: "이 폴더에는 아직 하위 폴더가 없습니다.",
+                  emptyFilteredLabel: "검색 조건에 맞는 폴더가 없습니다.",
+                })}
+                {renderSection("시험", examNodes, {
+                  emptyLabel: "이 폴더에 있는 시험이 없습니다.",
+                  emptyFilteredLabel: "검색 조건에 맞는 시험이 없습니다.",
+                })}
+              </div>
             )}
-          </div>
+          </section>
         </main>
+
+        <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>새 폴더 만들기</DialogTitle>
+              <DialogDescription>폴더 이름을 입력해주세요.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="folder-name">폴더 이름</Label>
+                <Input
+                  id="folder-name"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder="예: 2025-1학기"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      handleCreateFolder();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setIsCreateFolderOpen(false)}
+              >
+                취소
+              </Button>
+              <Button
+                onClick={handleCreateFolder}
+                disabled={isCreatingFolder || !newFolderName.trim()}
+              >
+                {isCreatingFolder ? "생성 중..." : "생성"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </SignedIn>
   );
 }
-

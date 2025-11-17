@@ -861,7 +861,47 @@ async function getFolderContents(data: { folder_id?: string | null }) {
       throw error;
     }
 
-    return NextResponse.json({ nodes: nodes || [] });
+    let nodesWithCounts = nodes || [];
+
+    const examNodes = nodesWithCounts.filter(
+      (node) => node.kind === "exam" && node.exam_id
+    );
+
+    if (examNodes.length > 0) {
+      const examIds = examNodes.map((node) => node.exam_id);
+      const { data: sessionsData, error: sessionsError } = await supabase
+        .from("sessions")
+        .select("exam_id, student_id")
+        .in("exam_id", examIds as string[]);
+
+      if (sessionsError) {
+        console.error("Session count query error:", sessionsError);
+      } else if (sessionsData) {
+        const studentCountMap = sessionsData.reduce<
+          Record<string, Set<string>>
+        >((acc, session) => {
+          if (!session.exam_id || !session.student_id) return acc;
+          if (!acc[session.exam_id]) {
+            acc[session.exam_id] = new Set();
+          }
+          acc[session.exam_id].add(session.student_id);
+          return acc;
+        }, {});
+
+        nodesWithCounts = nodesWithCounts.map((node) => {
+          if (node.kind === "exam" && node.exam_id) {
+            const countSet = studentCountMap[node.exam_id];
+            return {
+              ...node,
+              student_count: countSet ? countSet.size : 0,
+            };
+          }
+          return node;
+        });
+      }
+    }
+
+    return NextResponse.json({ nodes: nodesWithCounts });
   } catch (error) {
     console.error("Get folder contents error:", error);
     const errorMessage =
