@@ -233,14 +233,13 @@ export default function InstructorDrive() {
       <Card
         key={node.id}
         {...dragHandlers}
-        className={`flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm transition-all duration-200 group ${
+        className={`relative flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm transition-all duration-200 group ${
           isDragSource ? "opacity-50 scale-95 cursor-grabbing" : "cursor-grab"
         } ${isDragTarget ? "ring-2 ring-primary ring-offset-2" : ""} ${
           isMoving ? "pointer-events-none opacity-60" : ""
         } ${node.kind === "exam" && draggedNode ? "cursor-not-allowed" : ""}`}
       >
-        <button
-          type="button"
+        <div
           className="flex flex-1 flex-col text-left"
           onClick={() => {
             if (isMoving) return;
@@ -268,7 +267,7 @@ export default function InstructorDrive() {
           </div>
           <CardContent className="flex flex-col gap-2 border-t border-border/50 bg-background/80 px-5 py-4">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <h3 className="text-base font-medium text-foreground truncate">
                   {node.name}
                 </h3>
@@ -285,7 +284,6 @@ export default function InstructorDrive() {
                   )}
                 </div>
               </div>
-              {renderNodeActions(node)}
             </div>
             {!isFolder && (
               <div className="flex items-center justify-between">
@@ -294,7 +292,13 @@ export default function InstructorDrive() {
               </div>
             )}
           </CardContent>
-        </button>
+        </div>
+        <div
+          className="absolute right-2 top-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {renderNodeActions(node)}
+        </div>
       </Card>
     );
   };

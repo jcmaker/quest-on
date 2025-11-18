@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
+import { createClerkClient } from "@clerk/nextjs/server";
 import OpenAI from "openai";
 
 // Initialize Supabase client
@@ -9,6 +10,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+// Initialize Clerk client
+const clerk = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY!,
+});
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -20,15 +26,36 @@ async function getUserInfo(clerkUserId: string): Promise<{
   email: string;
 } | null> {
   try {
-    // In a real app, you would fetch this from Clerk API
-    // For now, we'll return a placeholder
+    const user = await clerk.users.getUser(clerkUserId);
+    
+    // Get user name from firstName/lastName or fullName
+    let name = "";
+    if (user.firstName && user.lastName) {
+      name = `${user.firstName} ${user.lastName}`;
+    } else if (user.firstName) {
+      name = user.firstName;
+    } else if (user.lastName) {
+      name = user.lastName;
+    } else if (user.fullName) {
+      name = user.fullName;
+    } else {
+      // Fallback to email or ID
+      name = user.emailAddresses[0]?.emailAddress || `Student ${clerkUserId.slice(0, 8)}`;
+    }
+    
+    const email = user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
+    
+    return {
+      name,
+      email,
+    };
+  } catch (error) {
+    console.error("Error fetching user info from Clerk:", error);
+    // Fallback to placeholder
     return {
       name: `Student ${clerkUserId.slice(0, 8)}`,
       email: `${clerkUserId}@example.com`,
     };
-  } catch (error) {
-    console.error("Error fetching user info:", error);
-    return null;
   }
 }
 

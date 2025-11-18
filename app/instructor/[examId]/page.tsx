@@ -120,10 +120,21 @@ export default function ExamDetail({
               const sessionId =
                 typeof session.id === "string" ? session.id : "";
               const submittedAt = session.submitted_at ?? null;
+              
+              // Get student name from session data (already fetched from Clerk)
+              const studentName = 
+                typeof session.student_name === "string"
+                  ? session.student_name
+                  : `Student ${studentId.slice(0, 8)}`;
+              const studentEmail =
+                typeof session.student_email === "string"
+                  ? session.student_email
+                  : `${studentId}@example.com`;
+              
               return {
                 id: sessionId, // Use session ID for routing to grade page
-                name: `Student ${studentId.slice(0, 8)}`, // Generate name from ID
-                email: `${studentId}@example.com`,
+                name: studentName,
+                email: studentEmail,
                 status: submittedAt ? "completed" : "in-progress",
                 submittedAt: submittedAt,
               };

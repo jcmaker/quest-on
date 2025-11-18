@@ -2,12 +2,57 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
+import { createClerkClient } from "@clerk/nextjs/server";
 
 // Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+// Initialize Clerk client
+const clerk = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY!,
+});
+
+// Helper function to get user info from Clerk
+async function getUserInfo(clerkUserId: string): Promise<{
+  name: string;
+  email: string;
+} | null> {
+  try {
+    const user = await clerk.users.getUser(clerkUserId);
+    
+    // Get user name from firstName/lastName or fullName
+    let name = "";
+    if (user.firstName && user.lastName) {
+      name = `${user.firstName} ${user.lastName}`;
+    } else if (user.firstName) {
+      name = user.firstName;
+    } else if (user.lastName) {
+      name = user.lastName;
+    } else if (user.fullName) {
+      name = user.fullName;
+    } else {
+      // Fallback to email or ID
+      name = user.emailAddresses[0]?.emailAddress || `Student ${clerkUserId.slice(0, 8)}`;
+    }
+    
+    const email = user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
+    
+    return {
+      name,
+      email,
+    };
+  } catch (error) {
+    console.error("Error fetching user info from Clerk:", error);
+    // Fallback to placeholder
+    return {
+      name: `Student ${clerkUserId.slice(0, 8)}`,
+      email: `${clerkUserId}@example.com`,
+    };
+  }
+}
 
 export async function GET(
   request: NextRequest,
@@ -95,6 +140,20 @@ export async function GET(
     if (sessionsError) {
       throw sessionsError;
     }
+
+    // Get unique student IDs
+    const uniqueStudentIds = [...new Set(sessions.map((s) => s.student_id))];
+    
+    // Fetch student info for all students in parallel
+    const studentInfoMap = new Map<string, { name: string; email: string }>();
+    await Promise.all(
+      uniqueStudentIds.map(async (studentId) => {
+        const info = await getUserInfo(studentId);
+        if (info) {
+          studentInfoMap.set(studentId, info);
+        }
+      })
+    );
 
     // Process sessions and decompress data
     const processedSessions = sessions.map((session) => {
@@ -214,9 +273,17 @@ export async function GET(
           (metaObj.compressedSize as number) || 0;
       });
 
+      // Get student info from map
+      const studentInfo = studentInfoMap.get(session.student_id) || {
+        name: `Student ${session.student_id.slice(0, 8)}`,
+        email: `${session.student_id}@example.com`,
+      };
+
       return {
         id: session.id,
         student_id: session.student_id,
+        student_name: studentInfo.name,
+        student_email: studentInfo.email,
         submitted_at: session.submitted_at,
         used_clarifications: session.used_clarifications,
         created_at: session.created_at,
