@@ -9,10 +9,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import {
   BookOpen,
   User,
@@ -26,6 +27,9 @@ import {
   TrendingUp,
   Plus,
   Copy,
+  Search,
+  X,
+  ListFilterIcon,
 } from "lucide-react";
 import { UserMenu } from "@/components/auth/UserMenu";
 
@@ -50,6 +54,21 @@ export default function StudentDashboard() {
   const { isSignedIn, isLoaded, user } = useUser();
   const [sessions, setSessions] = useState<ExamSession[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filter, setFilter] = useState<
+    "all" | "graded" | "pending" | "in-progress"
+  >("all");
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [overallStats, setOverallStats] = useState<{
+    totalSessions: number;
+    completedSessions: number;
+    inProgressSessions: number;
+    overallAverageScore: number | null;
+  } | null>(null);
+  const observerTarget = useRef<HTMLDivElement>(null);
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
@@ -69,30 +88,95 @@ export default function StudentDashboard() {
     }
   }, [isLoaded, isSignedIn, userRole, user, router]);
 
+  const fetchSessions = useCallback(
+    async (pageNum: number, reset: boolean = false) => {
+      try {
+        if (reset) {
+          setIsLoading(true);
+        } else {
+          setIsLoadingMore(true);
+        }
+
+        const response = await fetch(
+          `/api/student/sessions?page=${pageNum}&limit=10`
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          if (reset) {
+            setSessions(data.sessions || []);
+          } else {
+            setSessions((prev) => [...prev, ...(data.sessions || [])]);
+          }
+          setHasMore(data.pagination?.hasMore || false);
+          setTotalCount(data.pagination?.total || 0);
+          setPage(pageNum);
+        } else {
+          console.error("Failed to fetch sessions");
+        }
+      } catch (error) {
+        console.error("Error fetching sessions:", error);
+      } finally {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      }
+    },
+    []
+  );
+
+  const fetchOverallStats = async () => {
+    try {
+      const response = await fetch("/api/student/sessions/stats");
+      if (response.ok) {
+        const data = await response.json();
+        setOverallStats(data);
+      }
+    } catch (error) {
+      console.error("Error fetching overall stats:", error);
+    }
+  };
+
   // Fetch sessions when user is loaded
   useEffect(() => {
     if (isLoaded && isSignedIn && userRole === "student") {
-      fetchSessions();
+      fetchSessions(1, true);
+      fetchOverallStats();
     }
-  }, [isLoaded, isSignedIn, userRole]);
+  }, [isLoaded, isSignedIn, userRole, fetchSessions]);
 
-  const fetchSessions = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch("/api/student/sessions");
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    if (searchQuery.trim() || filter !== "all") return; // 검색 중이거나 필터 적용 중일 때는 observer 비활성화
+    if (!hasMore || isLoadingMore || isLoading) return; // 로딩 중이거나 더 이상 데이터가 없으면 observer 비활성화
 
-      if (response.ok) {
-        const data = await response.json();
-        setSessions(data.sessions || []);
-      } else {
-        console.error("Failed to fetch sessions");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          fetchSessions(page + 1, false);
+        }
+      },
+      { threshold: 0.1, rootMargin: "100px" }
+    );
+
+    const currentTarget = observerTarget.current;
+    if (currentTarget) {
+      observer.observe(currentTarget);
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget);
       }
-    } catch (error) {
-      console.error("Error fetching sessions:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    };
+  }, [
+    hasMore,
+    isLoadingMore,
+    isLoading,
+    page,
+    searchQuery,
+    filter,
+    fetchSessions,
+  ]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -143,19 +227,35 @@ export default function StudentDashboard() {
     (session) => session.status === "in-progress"
   );
 
-  // Calculate average score using averageScore from sessions (which is already percentage)
-  const scoredSessions = completedSessions.filter(
-    (s) => s.averageScore !== null
-  );
-  const overallAverageScore =
-    scoredSessions.length > 0
-      ? Math.round(
-          scoredSessions.reduce(
-            (sum, session) => sum + (session.averageScore || 0),
-            0
-          ) / scoredSessions.length
-        )
-      : null;
+  // Filter sessions based on search query and filter
+  const filteredSessions = sessions.filter((session) => {
+    // Apply filter
+    if (filter === "graded") {
+      if (session.status !== "completed" || !session.isGraded) return false;
+    } else if (filter === "pending") {
+      if (session.status !== "completed" || session.isGraded) return false;
+    } else if (filter === "in-progress") {
+      if (session.status !== "in-progress") return false;
+    }
+    // filter === "all"일 때는 모든 세션 통과
+
+    // Apply search query
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      session.examTitle.toLowerCase().includes(query) ||
+      session.examCode.toLowerCase().includes(query)
+    );
+  });
+
+  // Use overall stats if available, otherwise calculate from loaded sessions
+  const displayTotalCount =
+    overallStats?.totalSessions || totalCount || sessions.length;
+  const displayCompletedCount =
+    overallStats?.completedSessions || completedSessions.length;
+  const displayInProgressCount =
+    overallStats?.inProgressSessions || inProgressSessions.length;
+  const overallAverageScore = overallStats?.overallAverageScore ?? null;
 
   return (
     <div className="min-h-screen bg-background">
@@ -253,7 +353,15 @@ export default function StudentDashboard() {
               </Card>
             </Link>
 
-            <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
+            <Card
+              className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group"
+              onClick={() => {
+                document.getElementById("exam-history")?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }}
+            >
               <CardContent className="p-6 text-center">
                 <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
                   <FileText className="w-6 h-6 text-primary-foreground" />
@@ -276,10 +384,10 @@ export default function StudentDashboard() {
                 <FileText className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{sessions.length}</div>
+                <div className="text-2xl font-bold">{displayTotalCount}</div>
                 <p className="text-xs text-muted-foreground">
-                  {completedSessions.length}개 완료, {inProgressSessions.length}
-                  개 진행 중
+                  {displayCompletedCount}개 완료, {displayInProgressCount}개
+                  진행 중
                 </p>
               </CardContent>
             </Card>
@@ -301,7 +409,8 @@ export default function StudentDashboard() {
                     : "평가 대기"}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {scoredSessions.length}개 시험 기준
+                  {overallStats?.completedSessions || displayCompletedCount}개
+                  시험 기준
                 </p>
               </CardContent>
             </Card>
@@ -314,11 +423,11 @@ export default function StudentDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {completedSessions.length}
+                  {displayCompletedCount}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {inProgressSessions.length > 0
-                    ? `${inProgressSessions.length}개 진행 중`
+                  {displayInProgressCount > 0
+                    ? `${displayInProgressCount}개 진행 중`
                     : "모든 시험 완료"}
                 </p>
               </CardContent>
@@ -326,21 +435,86 @@ export default function StudentDashboard() {
           </div>
 
           {/* Exam History */}
-          <Card className="border-0 shadow-xl">
+          <Card id="exam-history" className="border-0 shadow-xl">
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center space-x-2">
-                    <BookOpen className="w-5 h-5 text-primary" />
-                    <span>시험 기록</span>
-                  </CardTitle>
-                  <CardDescription className="mt-2">
-                    시험에서의 성과 및 진행 상황
-                  </CardDescription>
+              <div className="flex flex-col space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center space-x-2">
+                      <BookOpen className="w-5 h-5 text-primary" />
+                      <span>시험 기록</span>
+                    </CardTitle>
+                    <CardDescription className="mt-2">
+                      시험에서의 성과 및 진행 상황
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                    <Calendar className="w-4 h-4" />
+                    <span>
+                      {searchQuery.trim() || filter !== "all"
+                        ? `${filteredSessions.length}개 표시됨 / 총 ${displayTotalCount}개`
+                        : `총 ${displayTotalCount}개의 시험`}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                  <Calendar className="w-4 h-4" />
-                  <span>총 {sessions.length}개의 시험</span>
+                {/* Filter Tabs */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                  <ListFilterIcon className="w-4 h-4" />
+                  <Button
+                    variant={filter === "all" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFilter("all")}
+                    className="shrink-0"
+                  >
+                    전체
+                  </Button>
+                  <Button
+                    variant={filter === "graded" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFilter("graded")}
+                    className="shrink-0"
+                  >
+                    평가 완료
+                  </Button>
+                  <Button
+                    variant={filter === "pending" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFilter("pending")}
+                    className="shrink-0"
+                  >
+                    평가 대기중
+                  </Button>
+                  <Button
+                    variant={filter === "in-progress" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setFilter("in-progress")}
+                    className="shrink-0"
+                  >
+                    진행 중
+                  </Button>
+                </div>
+                {/* Search Input */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="시험 제목 또는 코드로 검색..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-9"
+                  />
+                  {(searchQuery || filter !== "all") && (
+                    <button
+                      onClick={() => {
+                        setSearchQuery("");
+                        setFilter("all");
+                      }}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      title="필터 및 검색 초기화"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             </CardHeader>
@@ -364,9 +538,23 @@ export default function StudentDashboard() {
                     </Button>
                   </Link>
                 </div>
+              ) : filteredSessions.length === 0 ? (
+                <div className="text-center py-8 border-2 border-dashed border-muted-foreground/20 rounded-lg">
+                  <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground mb-2">
+                    검색 결과가 없습니다.
+                  </p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    다른 검색어를 시도해보세요.
+                  </p>
+                  <Button variant="outline" onClick={() => setSearchQuery("")}>
+                    <X className="w-4 h-4 mr-2" />
+                    검색 초기화
+                  </Button>
+                </div>
               ) : (
                 <div className="space-y-3">
-                  {sessions.map((session) => (
+                  {filteredSessions.map((session) => (
                     <div
                       key={session.id}
                       className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
@@ -465,6 +653,28 @@ export default function StudentDashboard() {
                       </div>
                     </div>
                   ))}
+                  {/* Infinite scroll observer target */}
+                  {!searchQuery.trim() && filter === "all" && (
+                    <div ref={observerTarget} className="h-4" />
+                  )}
+                  {/* Loading more indicator */}
+                  {isLoadingMore && !searchQuery.trim() && filter === "all" && (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
+                      <span className="ml-2 text-sm text-muted-foreground">
+                        더 불러오는 중...
+                      </span>
+                    </div>
+                  )}
+                  {/* End of list indicator */}
+                  {!hasMore &&
+                    !searchQuery.trim() &&
+                    filter === "all" &&
+                    sessions.length > 0 && (
+                      <div className="text-center py-4 text-sm text-muted-foreground">
+                        모든 시험을 불러왔습니다.
+                      </div>
+                    )}
                 </div>
               )}
             </CardContent>

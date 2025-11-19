@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
 
@@ -8,7 +8,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function GET() {
+const ITEMS_PER_PAGE = 10;
+
+export async function GET(request: NextRequest) {
   try {
     const user = await currentUser();
 
@@ -25,12 +27,29 @@ export async function GET() {
       );
     }
 
-    // Get all sessions for this student
+    // Get pagination parameters
+    const searchParams = request.nextUrl.searchParams;
+    const page = parseInt(searchParams.get("page") || "1", 10);
+    const limit = parseInt(searchParams.get("limit") || String(ITEMS_PER_PAGE), 10);
+    const offset = (page - 1) * limit;
+
+    // Get total count for pagination
+    const { count: totalCount, error: countError } = await supabase
+      .from("sessions")
+      .select("*", { count: "exact", head: true })
+      .eq("student_id", user.id);
+
+    if (countError) {
+      console.error("Error counting sessions:", countError);
+    }
+
+    // Get paginated sessions for this student
     const { data: sessions, error: sessionsError } = await supabase
       .from("sessions")
       .select("id, exam_id, submitted_at, created_at")
       .eq("student_id", user.id)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (sessionsError) {
       console.error("Error fetching student sessions:", sessionsError);
@@ -118,7 +137,17 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json({ sessions: sessionsWithDetails });
+    const hasMore = totalCount ? offset + limit < totalCount : false;
+
+    return NextResponse.json({ 
+      sessions: sessionsWithDetails,
+      pagination: {
+        page,
+        limit,
+        total: totalCount || 0,
+        hasMore,
+      }
+    });
   } catch (error) {
     console.error("Get student sessions error:", error);
     return NextResponse.json(

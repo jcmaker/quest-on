@@ -12,7 +12,7 @@ export function CustomSignIn() {
         <div className="w-full max-w-md space-y-8">
           <div className="space-y-2">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              다시 오신 것을 환영합니다
+              Quest-On에 오신 것을 환영합니다
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
               Quest-On 계정에 로그인하세요
