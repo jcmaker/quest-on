@@ -1,18 +1,41 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useUser, SignInButton, SignUpButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/auth/UserMenu";
 import Link from "next/link";
 import Image from "next/image";
 import { GraduationCap, Users, FilePlus, UserPlus } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export function Header() {
   const { isSignedIn, isLoaded, user } = useUser();
+  const pathname = usePathname();
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
   const hasRole = Boolean(user?.unsafeMetadata?.role);
+
+  const isLinkActive = (href: string) => {
+    if (href === "/instructor") {
+      return pathname.startsWith("/instructor") && !pathname.startsWith("/instructor/new");
+    } else if (href === "/student") {
+      return pathname.startsWith("/student");
+    } else if (href === "/join") {
+      return pathname.startsWith("/join");
+    }
+    return pathname.startsWith(href);
+  };
+
+  const getLinkClassName = (isActive: boolean) => {
+    return cn(
+      "flex items-center space-x-2 text-sm font-medium transition-colors",
+      isActive
+        ? "text-primary font-bold"
+        : "text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+    );
+  };
 
   return (
     <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:bg-gray-950/95 dark:border-gray-800">
@@ -45,14 +68,16 @@ export function Header() {
               <>
                 <Link
                   href="/instructor"
-                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
+                  className={getLinkClassName(isLinkActive("/instructor"))}
+                  aria-current={isLinkActive("/instructor") ? "page" : undefined}
                 >
                   <Users className="h-4 w-4" />
                   <span>대시보드</span>
                 </Link>
                 <Link
                   href="/instructor/new"
-                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
+                  className={getLinkClassName(isLinkActive("/instructor/new"))}
+                  aria-current={isLinkActive("/instructor/new") ? "page" : undefined}
                 >
                   <FilePlus className="h-4 w-4" />
                   <span>시험 만들기</span>
@@ -63,14 +88,16 @@ export function Header() {
               <>
                 <Link
                   href="/student"
-                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
+                  className={getLinkClassName(isLinkActive("/student"))}
+                  aria-current={isLinkActive("/student") ? "page" : undefined}
                 >
                   <GraduationCap className="h-4 w-4" />
                   <span>내 시험</span>
                 </Link>
                 <Link
                   href="/join"
-                  className="flex items-center space-x-2 text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
+                  className={getLinkClassName(isLinkActive("/join"))}
+                  aria-current={isLinkActive("/join") ? "page" : undefined}
                 >
                   <UserPlus className="h-4 w-4" />
                   <span>시험 참여</span>
