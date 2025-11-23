@@ -8,6 +8,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { HelpCircle } from "lucide-react";
 
 interface ExamInfoFormProps {
   title: string;
@@ -37,7 +43,20 @@ export function ExamInfoForm({
       <CardContent className="space-y-4">
         <div className="grid md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="title">시험 제목</Label>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="title">시험 제목</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    시험의 제목을 입력하세요. 예: "국제경영론 25-1 중간고사"와 같이
+                    과목명과 시험 정보를 포함하면 좋습니다.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <Input
               id="title"
               value={title}
@@ -47,7 +66,20 @@ export function ExamInfoForm({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="code">시험 코드</Label>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="code">시험 코드</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    학생들이 시험에 접속할 때 사용하는 고유 코드입니다. 자동으로
+                    생성되며, 재생성 버튼을 눌러 변경할 수 있습니다.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
             <div className="flex gap-2">
               <Input
                 id="code"
@@ -66,7 +98,21 @@ export function ExamInfoForm({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="duration">시험 시간</Label>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="duration">시험 시간</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-xs">
+                  학생들이 시험을 치르는 데 주어지는 시간을 설정하세요. 슬라이더를
+                  조절하거나 빠른 선택 버튼을 사용할 수 있습니다. 최소 15분부터 최대
+                  480분(8시간)까지 설정 가능합니다.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <div className="space-y-3">
             <div className="flex items-center gap-4">
               <span className="text-sm text-gray-600 min-w-[60px]">

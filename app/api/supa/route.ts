@@ -76,14 +76,12 @@ interface QuestionData {
 async function createExam(data: {
   title: string;
   code: string;
-  description: string;
   duration: number;
   questions: QuestionData[];
   materials?: string[];
   rubric?: {
     evaluationArea: string;
     detailedCriteria: string;
-    weight: number;
   }[];
   status: string;
   created_at: string;
@@ -117,7 +115,7 @@ async function createExam(data: {
     const examData = {
       title: data.title,
       code: data.code,
-      description: data.description,
+      description: null, // description 필드는 nullable이므로 null로 설정
       duration: data.duration,
       questions: data.questions,
       materials: data.materials || [],

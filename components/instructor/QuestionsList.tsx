@@ -16,7 +16,6 @@ interface QuestionsListProps {
   onAdd: () => void;
   onUpdate: (id: string, field: keyof Question, value: string | boolean) => void;
   onRemove: (id: string) => void;
-  onGenerateAI: (id: string) => void;
 }
 
 export function QuestionsList({
@@ -24,7 +23,6 @@ export function QuestionsList({
   onAdd,
   onUpdate,
   onRemove,
-  onGenerateAI,
 }: QuestionsListProps) {
   return (
     <Card>
@@ -68,7 +66,6 @@ export function QuestionsList({
                   index={index}
                   onUpdate={onUpdate}
                   onRemove={onRemove}
-                  onGenerateAI={onGenerateAI}
                 />
               </div>
             ))}

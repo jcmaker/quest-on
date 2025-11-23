@@ -11,19 +11,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, HelpCircle } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export interface RubricItem {
   id: string;
   evaluationArea: string;
   detailedCriteria: string;
-  weight: number;
 }
 
 interface RubricTableProps {
   rubric: RubricItem[];
   onAdd: () => void;
-  onUpdate: (id: string, field: keyof RubricItem, value: string | number) => void;
+  onUpdate: (id: string, field: keyof RubricItem, value: string) => void;
   onRemove: (id: string) => void;
 }
 
@@ -38,7 +42,22 @@ export function RubricTable({
       <Separator />
       <div className="space-y-4">
         <div>
-          <Label htmlFor="rubric">평가 루브릭</Label>
+          <div className="flex items-center gap-2 mb-2">
+            <Label htmlFor="rubric">평가 루브릭</Label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-xs">
+                  학생 답안을 평가할 때 사용할 기준을 설정하세요. 평가 영역(예:
+                  문제 해결 능력, 창의적 사고), 세부 사항(구체적인 평가 기준)을
+                  입력하면 됩니다. AI가 이 루브릭을 참고하여 문제를 생성하고 답안을
+                  평가합니다.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
           <p className="text-sm text-muted-foreground">
             AI 답변과 시험 평가에 사용될 평가 기준을 설정하세요
           </p>
@@ -64,13 +83,37 @@ export function RubricTable({
               <TableHeader className="bg-gray-50">
                 <TableRow>
                   <TableHead className="w-[200px] font-semibold text-gray-700">
-                    평가 영역
+                    <div className="flex items-center gap-2">
+                      평가 영역
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">
+                            평가할 영역의 이름을 입력하세요. 예: "문제 해결 능력",
+                            "창의적 사고", "논리적 분석" 등
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </TableHead>
                   <TableHead className="font-semibold text-gray-700">
-                    세부 사항
-                  </TableHead>
-                  <TableHead className="w-[120px] text-center font-semibold text-gray-700">
-                    중요도 비율
+                    <div className="flex items-center gap-2">
+                      세부 사항
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="max-w-xs">
+                            해당 평가 영역에 대한 구체적인 평가 기준을 입력하세요.
+                            예: "문제를 정확히 파악하고, 체계적인 해결 방법을
+                            제시하며, 논리적으로 설명할 수 있는가?"
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
                   </TableHead>
                   <TableHead className="w-[80px] text-center font-semibold text-gray-700">
                     작업
@@ -103,29 +146,6 @@ export function RubricTable({
                         rows={3}
                         className="w-full h-16 resize-none border-gray-200 focus:border-blue-500 focus:ring-blue-500"
                       />
-                    </TableCell>
-                    <TableCell className="py-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="5"
-                            value={item.weight}
-                            onChange={(e) =>
-                              onUpdate(item.id, "weight", parseInt(e.target.value))
-                            }
-                            className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-                          />
-                          <span className="text-sm font-medium min-w-[40px] text-center">
-                            {item.weight}%
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-500 text-center">
-                          비율이 자동으로 조정됩니다
-                        </div>
-                      </div>
                     </TableCell>
                     <TableCell className="py-4 text-center">
                       <Button

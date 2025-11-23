@@ -2,6 +2,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { HelpCircle } from "lucide-react";
 
 interface FileUploadProps {
   files: File[];
@@ -36,7 +42,21 @@ export function FileUpload({
     <>
       <Separator />
       <div className="space-y-2">
-        <Label htmlFor="materials">수업 자료</Label>
+        <div className="flex items-center gap-2">
+          <Label htmlFor="materials">수업 자료</Label>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="max-w-xs">
+                시험 문제 작성을 위한 수업 자료를 업로드하세요. PDF, PPT, 워드,
+                이미지 파일을 지원하며, 최대 50MB까지 업로드 가능합니다. AI가 이
+                자료를 참고하여 문제를 생성합니다.
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
         <div className="space-y-2">
           <div className="">
             <Input
