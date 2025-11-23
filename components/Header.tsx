@@ -19,7 +19,10 @@ export function Header() {
 
   const isLinkActive = (href: string) => {
     if (href === "/instructor") {
-      return pathname.startsWith("/instructor") && !pathname.startsWith("/instructor/new");
+      return (
+        pathname.startsWith("/instructor") &&
+        !pathname.startsWith("/instructor/new")
+      );
     } else if (href === "/student") {
       return pathname.startsWith("/student");
     } else if (href === "/join") {
@@ -69,7 +72,9 @@ export function Header() {
                 <Link
                   href="/instructor"
                   className={getLinkClassName(isLinkActive("/instructor"))}
-                  aria-current={isLinkActive("/instructor") ? "page" : undefined}
+                  aria-current={
+                    isLinkActive("/instructor") ? "page" : undefined
+                  }
                 >
                   <Users className="h-4 w-4" />
                   <span>대시보드</span>
@@ -77,7 +82,9 @@ export function Header() {
                 <Link
                   href="/instructor/new"
                   className={getLinkClassName(isLinkActive("/instructor/new"))}
-                  aria-current={isLinkActive("/instructor/new") ? "page" : undefined}
+                  aria-current={
+                    isLinkActive("/instructor/new") ? "page" : undefined
+                  }
                 >
                   <FilePlus className="h-4 w-4" />
                   <span>시험 만들기</span>
