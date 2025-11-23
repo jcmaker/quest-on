@@ -1,16 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
@@ -21,7 +16,9 @@ import {
   MessageCircle,
   Award,
   TrendingUp,
+  Download,
 } from "lucide-react";
+import { ReportCardTemplate } from "@/components/report/ReportCardTemplate";
 
 interface Question {
   id: string;
@@ -47,6 +44,14 @@ interface Grade {
   comment?: string;
 }
 
+interface AISummary {
+  sentiment?: "positive" | "negative" | "neutral";
+  summary?: string;
+  strengths?: string[];
+  weaknesses?: string[];
+  keyQuotes?: string[];
+}
+
 interface ReportData {
   session: {
     id: string;
@@ -61,6 +66,7 @@ interface ReportData {
     title: string;
     code: string;
     questions: Question[];
+    description?: string;
   };
   submissions: Record<number, Submission>;
   messages: Record<
@@ -69,6 +75,7 @@ interface ReportData {
   >;
   grades: Record<number, Grade>;
   overallScore: number | null;
+  aiSummary?: AISummary;
 }
 
 export default function StudentReportPage() {
@@ -76,11 +83,13 @@ export default function StudentReportPage() {
   const router = useRouter();
   const { user, isLoaded, isSignedIn } = useUser();
   const sessionId = params.sessionId as string;
+  const reportTemplateRef = useRef<HTMLDivElement>(null);
 
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   const fetchReportData = async () => {
     try {
@@ -130,6 +139,120 @@ export default function StudentReportPage() {
     if (score >= 80) return "text-blue-600 dark:text-blue-400";
     if (score >= 70) return "text-yellow-600 dark:text-yellow-400";
     return "text-red-600 dark:text-red-400";
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!reportTemplateRef.current || !reportData) return;
+
+    try {
+      setDownloading(true);
+
+      // Dynamically import libraries to avoid SSR issues
+      const html2canvas = (await import("html2canvas")).default;
+      const jsPDF = (await import("jspdf")).default;
+
+      // Wait a bit to ensure styles are loaded
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const canvas = await html2canvas(reportTemplateRef.current, {
+        scale: 2,
+        logging: false,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        foreignObjectRendering: false, // Disable foreignObject rendering which may cause lab() issues
+        onclone: (clonedDoc) => {
+          // Remove all stylesheets before html2canvas processes them
+          try {
+            const styleSheets = Array.from(clonedDoc.styleSheets);
+            styleSheets.forEach((sheet) => {
+              try {
+                if (sheet.ownerNode && sheet.ownerNode.parentNode) {
+                  sheet.ownerNode.parentNode.removeChild(sheet.ownerNode);
+                }
+              } catch (e) {
+                // Ignore cross-origin or other errors
+              }
+            });
+          } catch (e) {
+            // Ignore errors
+          }
+
+          // Convert all computed styles to inline RGB
+          const clonedElement = clonedDoc.querySelector(
+            `[data-pdf-template="true"]`
+          ) as HTMLElement;
+
+          if (clonedElement && clonedDoc.defaultView) {
+            const allElements = [
+              clonedElement,
+              ...clonedElement.querySelectorAll("*"),
+            ];
+            allElements.forEach((el) => {
+              const htmlEl = el as HTMLElement;
+              try {
+                const computedStyle =
+                  clonedDoc.defaultView!.getComputedStyle(htmlEl);
+
+                // Get computed RGB values and set as inline styles
+                const bgColor = computedStyle.backgroundColor;
+                const color = computedStyle.color;
+                const borderColor = computedStyle.borderColor;
+
+                if (
+                  bgColor &&
+                  !bgColor.includes("lab") &&
+                  bgColor !== "rgba(0, 0, 0, 0)" &&
+                  bgColor !== "transparent"
+                ) {
+                  htmlEl.style.backgroundColor = bgColor;
+                }
+                if (color && !color.includes("lab")) {
+                  htmlEl.style.color = color;
+                }
+                if (
+                  borderColor &&
+                  !borderColor.includes("lab") &&
+                  borderColor !== "rgba(0, 0, 0, 0)" &&
+                  borderColor !== "transparent"
+                ) {
+                  htmlEl.style.borderColor = borderColor;
+                }
+              } catch (e) {
+                // Ignore errors
+              }
+            });
+          }
+        },
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+      const imgWidth = 210;
+      const pageHeight = 295;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const filename = `${reportData.exam.title}_${
+        user?.fullName || "학생"
+      }_리포트카드.pdf`;
+      pdf.save(filename);
+    } catch (error) {
+      console.error("Error downloading PDF:", error);
+      alert("PDF 생성 중 오류가 발생했습니다.");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   if (!isLoaded || loading) {
@@ -205,13 +328,33 @@ export default function StudentReportPage() {
               </div>
             )}
           </div>
-          <Badge
-            variant="outline"
-            className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
-          >
-            <CheckCircle className="w-4 h-4 mr-1" />
-            평가 완료
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleDownloadPDF}
+              disabled={downloading}
+            >
+              {downloading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  생성 중...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4 mr-2" />
+                  리포트 카드 다운로드
+                </>
+              )}
+            </Button>
+            <Badge
+              variant="outline"
+              className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
+            >
+              <CheckCircle className="w-4 h-4 mr-1" />
+              평가 완료
+            </Badge>
+          </div>
         </div>
       </div>
 
@@ -415,6 +558,22 @@ export default function StudentReportPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Hidden Report Card Template for PDF Generation */}
+      <div style={{ position: "absolute", left: "-9999px", top: 0 }}>
+        <ReportCardTemplate
+          ref={reportTemplateRef}
+          examTitle={reportData.exam.title}
+          examCode={reportData.exam.code}
+          examDescription={reportData.exam.description}
+          studentName={user?.fullName || "학생"}
+          submittedAt={reportData.session.submitted_at}
+          overallScore={reportData.overallScore}
+          questions={reportData.exam.questions}
+          grades={reportData.grades}
+          aiSummary={reportData.aiSummary}
+        />
       </div>
     </div>
   );

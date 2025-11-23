@@ -589,7 +589,47 @@ export default function GradeStudentPage({
             onSave={() => handleSaveGrade(selectedQuestionIdx)}
           />
 
-          <QuickActionsCard />
+          <QuickActionsCard
+            sessionId={sessionData.session.id}
+            isGraded={
+              Object.keys(sessionData.grades || {}).length > 0 &&
+              sessionData.overallScore !== null
+            }
+            reportData={
+              sessionData
+                ? {
+                    exam: {
+                      title: sessionData.exam.title,
+                      code: sessionData.exam.code,
+                      questions: sessionData.exam.questions.map((q) => ({
+                        id: q.id,
+                        idx: q.idx,
+                        type: q.type,
+                        prompt: q.prompt,
+                      })),
+                      description: undefined, // Not available in SessionData
+                    },
+                    session: {
+                      submitted_at: sessionData.session.submitted_at,
+                    },
+                    grades: Object.fromEntries(
+                      Object.entries(sessionData.grades).map(([key, grade]) => [
+                        parseInt(key),
+                        {
+                          id: grade.id,
+                          q_idx: grade.q_idx,
+                          score: grade.score,
+                          comment: grade.comment,
+                        },
+                      ])
+                    ),
+                    overallScore: sessionData.overallScore,
+                    studentName: sessionData.student.name,
+                    aiSummary: undefined, // Can be fetched separately if needed
+                  }
+                : undefined
+            }
+          />
         </div>
       </div>
     </div>
