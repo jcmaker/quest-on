@@ -91,8 +91,8 @@ export function RubricTable({
                         </TooltipTrigger>
                         <TooltipContent>
                           <p className="max-w-xs">
-                            평가할 영역의 이름을 입력하세요. 예: "문제 해결 능력",
-                            "창의적 사고", "논리적 분석" 등
+                            평가할 영역의 이름을 입력하세요. 예: &quot;문제 해결 능력&quot;,
+                            &quot;창의적 사고&quot;, &quot;논리적 분석&quot; 등
                           </p>
                         </TooltipContent>
                       </Tooltip>
@@ -108,8 +108,8 @@ export function RubricTable({
                         <TooltipContent>
                           <p className="max-w-xs">
                             해당 평가 영역에 대한 구체적인 평가 기준을 입력하세요.
-                            예: "문제를 정확히 파악하고, 체계적인 해결 방법을
-                            제시하며, 논리적으로 설명할 수 있는가?"
+                            예: &quot;문제를 정확히 파악하고, 체계적인 해결 방법을
+                            제시하며, 논리적으로 설명할 수 있는가?&quot;
                           </p>
                         </TooltipContent>
                       </Tooltip>

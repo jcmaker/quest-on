@@ -51,7 +51,7 @@ export function ExamInfoForm({
                 </TooltipTrigger>
                 <TooltipContent>
                   <p className="max-w-xs">
-                    시험의 제목을 입력하세요. 예: "국제경영론 25-1 중간고사"와 같이
+                    시험의 제목을 입력하세요. 예: &quot;국제경영론 25-1 중간고사&quot;와 같이
                     과목명과 시험 정보를 포함하면 좋습니다.
                   </p>
                 </TooltipContent>

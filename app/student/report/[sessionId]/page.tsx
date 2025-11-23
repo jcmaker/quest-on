@@ -169,11 +169,11 @@ export default function StudentReportPage() {
                 if (sheet.ownerNode && sheet.ownerNode.parentNode) {
                   sheet.ownerNode.parentNode.removeChild(sheet.ownerNode);
                 }
-              } catch (e) {
+                } catch {
                 // Ignore cross-origin or other errors
               }
             });
-          } catch (e) {
+          } catch {
             // Ignore errors
           }
 
@@ -217,7 +217,7 @@ export default function StudentReportPage() {
                 ) {
                   htmlEl.style.borderColor = borderColor;
                 }
-              } catch (e) {
+              } catch {
                 // Ignore errors
               }
             });

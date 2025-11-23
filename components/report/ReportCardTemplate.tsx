@@ -421,7 +421,7 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
                           margin: 0,
                         }}
                       >
-                        "{stripHtml(quote)}"
+                        &quot;{stripHtml(quote)}&quot;
                       </p>
                     </div>
                   ))}

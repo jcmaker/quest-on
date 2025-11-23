@@ -122,8 +122,8 @@ export function QuestionEditor({
               </TooltipTrigger>
               <TooltipContent>
                 <p className="max-w-xs">
-                  이 문제를 통해 평가하고자 하는 핵심 역량을 입력하세요. 예: "비판적
-                  사고 능력", "문제 해결 능력", "논리적 추론 능력" 등.
+                  이 문제를 통해 평가하고자 하는 핵심 역량을 입력하세요. 예: &quot;비판적
+                  사고 능력&quot;, &quot;문제 해결 능력&quot;, &quot;논리적 추론 능력&quot; 등.
                 </p>
               </TooltipContent>
             </Tooltip>

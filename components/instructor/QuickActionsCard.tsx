@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { FileText, MessageSquare, Download } from "lucide-react";
+import { MessageSquare, Download } from "lucide-react";
 import { ReportCardTemplate } from "@/components/report/ReportCardTemplate";
 
 interface ReportData {
@@ -147,7 +147,7 @@ export function QuickActionsCard({
                 if (borderColor && !borderColor.includes("lab") && borderColor !== "rgba(0, 0, 0, 0)" && borderColor !== "transparent") {
                   htmlEl.style.borderColor = borderColor;
                 }
-              } catch (e) {
+              } catch {
                 // Ignore errors
               }
             });
