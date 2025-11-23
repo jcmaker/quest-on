@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model exam_nodes {
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  instructor_id    String
+  parent_id        String?      @db.Uuid
+  kind             String
+  name             String
+  sort_order       Int          @default(0)
+  exam_id          String?      @db.Uuid
+  created_at       DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?    @default(now()) @db.Timestamptz(6)
+  exams            exams?       @relation(fields: [exam_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  exam_nodes       exam_nodes?  @relation("exam_nodesToexam_nodes", fields: [parent_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  other_exam_nodes exam_nodes[] @relation("exam_nodesToexam_nodes")
+
+  @@index([exam_id], map: "idx_exam_nodes_exam_id")
+  @@index([instructor_id], map: "idx_exam_nodes_instructor_id")
+  @@index([kind], map: "idx_exam_nodes_kind")
+  @@index([parent_id], map: "idx_exam_nodes_parent_id")
+  @@index([parent_id, sort_order], map: "idx_exam_nodes_sort_order")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model exams {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title         String
+  code          String       @unique
+  description   String?
+  duration      Int
+  questions     Json
+  status        String?      @default("draft")
+  instructor_id String
+  student_count Int?         @default(0)
+  created_at    DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime?    @default(now()) @db.Timestamptz(6)
+  materials     Json?        @default("[]")
+  rubric        Json?        @default("[]")
+  exam_nodes    exam_nodes[]
+
+  @@index([code], map: "idx_exams_code")
+  @@index([instructor_id], map: "idx_exams_instructor_id")
+  @@index([rubric], map: "idx_exams_rubric", type: Gin)
+}
+
+model grades {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  session_id    String   @db.Uuid
+  q_idx         Int
+  score         Int
+  comment       String?
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+  stage_grading Json?
+  sessions      sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model messages {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  session_id           String   @db.Uuid
+  q_idx                Int
+  role                 String
+  content              String
+  created_at           DateTime @default(now()) @db.Timestamptz(6)
+  compressed_content   String?
+  compression_metadata Json?    @default("{}")
+  sessions             sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model questions {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  exam_id    String   @db.Uuid
+  idx        Int
+  type       String
+  prompt     String
+  ai_context String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sessions {
+  id                      String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  exam_id                 String        @db.Uuid
+  student_id              String
+  used_clarifications     Int           @default(0)
+  created_at              DateTime      @default(now()) @db.Timestamptz(6)
+  submitted_at            DateTime?     @db.Timestamptz(6)
+  compressed_session_data String?
+  compression_metadata    Json?         @default("{}")
+  grades                  grades[]
+  messages                messages[]
+  submissions             submissions[]
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model submissions {
+  id                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  session_id               String   @db.Uuid
+  q_idx                    Int
+  answer                   String
+  ai_feedback              Json?
+  student_reply            String?
+  created_at               DateTime @default(now()) @db.Timestamptz(6)
+  compressed_answer_data   String?
+  compressed_feedback_data String?
+  compression_metadata     Json?    @default("{}")
+  sessions                 sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}

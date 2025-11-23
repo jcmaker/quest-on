@@ -1,0 +1,172 @@
+"use client";
+
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Sparkles, ThumbsUp, ThumbsDown, Minus, Quote } from "lucide-react";
+
+export interface SummaryData {
+  sentiment: "positive" | "negative" | "neutral";
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  keyQuotes?: string[];
+}
+
+interface AIOverallSummaryProps {
+  summary: SummaryData | null;
+  loading: boolean;
+  onGenerate: () => void;
+}
+
+export function AIOverallSummary({
+  summary,
+  loading,
+  onGenerate,
+}: AIOverallSummaryProps) {
+  if (!summary && !loading) {
+    return (
+      <Card className="bg-muted/30 border-dashed">
+        <CardContent className="flex flex-col items-center justify-center py-8 text-center">
+          <Sparkles className="w-10 h-10 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-semibold mb-2">AI 종합 평가 요약</h3>
+          <p className="text-muted-foreground mb-6 max-w-sm">
+            전체 답안을 분석하여 학생의 강점과 개선점을 요약해드립니다.
+          </p>
+          <Button onClick={onGenerate}>평가 요약 생성하기</Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-primary" />
+            AI 종합 평가 분석 중...
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4 animate-pulse">
+            <div className="h-4 bg-muted rounded w-3/4"></div>
+            <div className="h-4 bg-muted rounded w-full"></div>
+            <div className="h-4 bg-muted rounded w-5/6"></div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!summary) return null;
+
+  const sentimentColor =
+    summary.sentiment === "positive"
+      ? "text-green-600 bg-green-50 border-green-200"
+      : summary.sentiment === "negative"
+      ? "text-red-600 bg-red-50 border-red-200"
+      : "text-gray-600 bg-gray-50 border-gray-200";
+
+  const SentimentIcon =
+    summary.sentiment === "positive"
+      ? ThumbsUp
+      : summary.sentiment === "negative"
+      ? ThumbsDown
+      : Minus;
+
+  return (
+    <Card className="overflow-hidden border-2 border-primary/10">
+      <CardHeader className="bg-muted/30 pb-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Sparkles className="w-5 h-5 text-purple-600" />
+            AI 종합 평가
+          </CardTitle>
+          <div
+            className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${sentimentColor}`}
+          >
+            <SentimentIcon className="w-4 h-4" />
+            <span className="uppercase">
+              {summary.sentiment === "positive"
+                ? "긍정적"
+                : summary.sentiment === "negative"
+                ? "부정적"
+                : "중립적"}
+            </span>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="pt-6 grid gap-6 md:grid-cols-2">
+        <div className="space-y-6">
+          <div>
+            <h4 className="font-semibold mb-2 text-sm text-muted-foreground uppercase tracking-wider">
+              종합 의견
+            </h4>
+            <p className="text-base leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+              {summary.summary}
+            </p>
+          </div>
+
+          {summary.keyQuotes && summary.keyQuotes.length > 0 && (
+            <div className="bg-yellow-50/50 p-4 rounded-lg border border-yellow-100">
+              <h4 className="font-semibold text-yellow-700 mb-3 flex items-center gap-2 text-sm">
+                <Quote className="w-4 h-4" /> 핵심 인용구 (Highlight)
+              </h4>
+              <ul className="space-y-3">
+                {summary.keyQuotes.map((quote, i) => (
+                  <li key={i} className="relative pl-4 italic text-gray-700">
+                    <span className="absolute left-0 top-0 text-yellow-400 text-xl font-serif">
+                      &quot;
+                    </span>
+                    {quote}
+                    <span className="text-yellow-400 text-xl font-serif ml-1">
+                      &quot;
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="pt-2">
+            <Button variant="outline" size="sm" onClick={onGenerate}>
+              <Sparkles className="w-3 h-3 mr-2" />
+              다시 분석하기
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100">
+            <h4 className="font-semibold text-blue-700 mb-3 flex items-center gap-2">
+              <ThumbsUp className="w-4 h-4" /> 강점
+            </h4>
+            <ul className="space-y-2 text-sm">
+              {summary.strengths.map((item, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-blue-400 mt-1">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="bg-orange-50/50 p-4 rounded-lg border border-orange-100">
+            <h4 className="font-semibold text-orange-700 mb-3 flex items-center gap-2">
+              <ThumbsDown className="w-4 h-4" /> 개선점
+            </h4>
+            <ul className="space-y-2 text-sm">
+              {summary.weaknesses.map((item, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-orange-400 mt-1">•</span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+

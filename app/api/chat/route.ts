@@ -53,7 +53,8 @@ async function getAIResponse(
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages,
-      max_tokens: 600,
+      // 여기 나중에 꼭 막아야 할곳 아니면 you broke
+      // max_tokens: 600,
       temperature,
     });
 

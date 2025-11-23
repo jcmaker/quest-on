@@ -81,6 +81,8 @@ interface SessionData {
   overallScore: number | null;
 }
 
+import { AIOverallSummary, SummaryData } from "@/components/instructor/AIOverallSummary";
+
 export default function GradeStudentPage({
   params,
 }: {
@@ -102,6 +104,8 @@ export default function GradeStudentPage({
   const [saving, setSaving] = useState(false);
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
   const [autoGrading, setAutoGrading] = useState(false);
+  const [overallSummary, setOverallSummary] = useState<SummaryData | null>(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   // Redirect non-instructors
   useEffect(() => {
@@ -411,6 +415,35 @@ export default function GradeStudentPage({
     }));
   };
 
+  const handleGenerateSummary = async () => {
+    if (!sessionData?.session?.id) return;
+    
+    try {
+      setSummaryLoading(true);
+      const response = await fetch("/api/instructor/generate-summary", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId: sessionData.session.id,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate summary");
+      }
+
+      const data = await response.json();
+      setOverallSummary(data.summary);
+    } catch (error) {
+      console.error("Error generating summary:", error);
+      alert("요약 생성 중 오류가 발생했습니다.");
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
   // Show loading while auth is loading
   if (!isLoaded) {
     return (
@@ -495,6 +528,14 @@ export default function GradeStudentPage({
         onAutoGrade={() => handleAutoGrade(true)}
         autoGrading={autoGrading}
       />
+
+      <div className="mb-6">
+        <AIOverallSummary
+          summary={overallSummary}
+          loading={summaryLoading}
+          onGenerate={handleGenerateSummary}
+        />
+      </div>
 
       <QuestionNavigation
         questions={sessionData.exam?.questions || []}

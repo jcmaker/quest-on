@@ -678,10 +678,10 @@ export default function AnswerSubmission() {
         setFeedback(data.feedback);
         setIsSubmitted(true);
 
-        // 바로 채팅 모드로 전환
-        setTimeout(() => {
-          startChatMode();
-        }, 1000); // 1초 후에 자동으로 채팅 모드 시작
+        // 바로 채팅 모드로 전환 -> 주석 처리
+        // setTimeout(() => {
+        //   startChatMode();
+        // }, 1000); // 1초 후에 자동으로 채팅 모드 시작
       } else {
         const errorData = await response.json().catch(() => ({}));
         console.error("Submission failed:", errorData);
@@ -778,22 +778,30 @@ export default function AnswerSubmission() {
                   답안이 성공적으로 제출되었습니다!
                 </CardTitle>
                 <CardDescription>
-                  이제 AI 피드백 테스트를 시작할 수 있습니다.
+                  수고하셨습니다. 시험이 종료되었습니다.
+                  {/* 이제 AI 피드백 테스트를 시작할 수 있습니다. */}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="text-center">
                   <p className="text-muted-foreground mb-4">
-                    AI가 답안을 분석하여 피드백을 제공합니다.
+                    제출이 완료되었습니다.
+                    {/* AI가 답안을 분석하여 피드백을 제공합니다.
                     <br />
-                    질문을 통해 더 깊이 있는 학습을 할 수 있습니다.
+                    질문을 통해 더 깊이 있는 학습을 할 수 있습니다. */}
                   </p>
                   <Button
+                    onClick={() => router.push("/student")}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    메인으로 돌아가기
+                  </Button>
+                  {/* <Button
                     onClick={startChatMode}
                     className="bg-blue-600 hover:bg-blue-700"
                   >
                     Feedback 테스트
-                  </Button>
+                  </Button> */}
                 </div>
               </CardContent>
             </Card>

@@ -81,7 +81,7 @@ export function GradingPanel({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-4">
+        {/* <div className="space-y-4">
           {stageOrder.map((stageKey) => {
             const stage = stageMeta[stageKey];
             const stageScore = stageScores[stageKey] ?? "";
@@ -151,7 +151,7 @@ export function GradingPanel({
           })}
         </div>
 
-        <Separator />
+        <Separator /> */}
 
         <div className="space-y-4">
           <div>
@@ -204,4 +204,3 @@ export function GradingPanel({
     </Card>
   );
 }
-
