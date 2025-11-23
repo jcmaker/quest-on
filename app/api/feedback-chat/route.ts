@@ -5,13 +5,9 @@
  * - 클라이언트에서 '/api/feedback-chat' 호출 시, 루브릭/문제 맥락 기반으로 응답 생성
  */
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
 import { compressData } from "@/lib/compression";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 // Supabase 서버 전용 클라이언트
 const supabase = createClient(
@@ -162,13 +158,12 @@ ${conversationContext}
 
     const aiStartTime = Date.now();
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: AI_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message },
       ],
       max_tokens: 500,
-      temperature: 0.3,
     });
     const aiDuration = Date.now() - aiStartTime;
     console.log(

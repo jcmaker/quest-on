@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
 import { createClerkClient } from "@clerk/nextjs/server";
-import OpenAI from "openai";
+import { openai, AI_MODEL } from "@/lib/openai";
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -14,10 +14,6 @@ const supabase = createClient(
 // Initialize Clerk client
 const clerk = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY!,
-});
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
 });
 
 // Helper function to get user info from Clerk
@@ -872,12 +868,11 @@ ${questionMessages
 위 정보를 바탕으로 루브릭 기준에 따라 채팅 단계의 점수와 피드백을 제공해주세요.`;
 
           const chatCompletion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: AI_MODEL,
             messages: [
               { role: "system", content: chatSystemPrompt },
               { role: "user", content: chatUserPrompt },
             ],
-            temperature: 0.3,
             response_format: { type: "json_object" },
           });
 
@@ -946,12 +941,11 @@ ${submission.answer || "답안이 없습니다."}
 위 정보를 바탕으로 루브릭 기준에 따라 답안의 점수와 피드백을 제공해주세요.`;
 
           const answerCompletion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: AI_MODEL,
             messages: [
               { role: "system", content: answerSystemPrompt },
               { role: "user", content: answerUserPrompt },
             ],
-            temperature: 0.3,
             response_format: { type: "json_object" },
           });
 
@@ -1028,12 +1022,11 @@ ${submission.student_reply}
 위 정보를 바탕으로 루브릭 기준에 따라 피드백 대응 단계의 점수와 피드백을 제공해주세요.`;
 
           const feedbackCompletion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+            model: AI_MODEL,
             messages: [
               { role: "system", content: feedbackSystemPrompt },
               { role: "user", content: feedbackUserPrompt },
             ],
-            temperature: 0.3,
             response_format: { type: "json_object" },
           });
 

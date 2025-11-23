@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import { compressData } from "@/lib/compression";
+import { openai, AI_MODEL } from "@/lib/openai";
 
 // Helper function to sanitize text for JSON storage
 function sanitizeText(text: string): string {
@@ -42,10 +43,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export async function POST(request: NextRequest) {
   try {
@@ -156,13 +153,12 @@ ${answersText}
 심사위원처럼 2-3개의 핵심 질문을 제기하고, 학생의 답변을 유도하는 Q&A 형식으로 피드백해주세요.`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: AI_MODEL,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       max_tokens: 1000,
-      temperature: 0.7,
     });
 
     const feedback =

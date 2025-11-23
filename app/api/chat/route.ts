@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 // Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
 const supabase = createClient(
@@ -51,11 +47,10 @@ async function getAIResponse(
     messages.push({ role: "user", content: userMessage });
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: AI_MODEL,
       messages,
       // 여기 나중에 꼭 막아야 할곳 아니면 you broke
       // max_tokens: 600,
-      temperature,
     });
 
     const aiDuration = Date.now() - aiStartTime;
