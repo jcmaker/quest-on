@@ -169,7 +169,7 @@ export default function StudentReportPage() {
                 if (sheet.ownerNode && sheet.ownerNode.parentNode) {
                   sheet.ownerNode.parentNode.removeChild(sheet.ownerNode);
                 }
-                } catch {
+              } catch {
                 // Ignore cross-origin or other errors
               }
             });

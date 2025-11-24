@@ -1,14 +1,9 @@
 "use client";
 
 import { useState, useRef } from "react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, Download } from "lucide-react";
+import { Download } from "lucide-react";
 import { ReportCardTemplate } from "@/components/report/ReportCardTemplate";
 
 interface ReportData {
@@ -26,12 +21,15 @@ interface ReportData {
   session: {
     submitted_at: string;
   };
-  grades: Record<number, {
-    id: string;
-    q_idx: number;
-    score: number;
-    comment?: string;
-  }>;
+  grades: Record<
+    number,
+    {
+      id: string;
+      q_idx: number;
+      score: number;
+      comment?: string;
+    }
+  >;
   overallScore: number | null;
   studentName: string;
   aiSummary?: {
@@ -73,7 +71,9 @@ export function QuickActionsCard({
       // Use provided data or fetch if not available
       let dataToUse = reportData;
       if (!dataToUse) {
-        const response = await fetch(`/api/student/session/${sessionId}/report`);
+        const response = await fetch(
+          `/api/student/session/${sessionId}/report`
+        );
         if (!response.ok) {
           throw new Error("리포트 데이터를 불러올 수 없습니다.");
         }
@@ -113,38 +113,52 @@ export function QuickActionsCard({
                 }
               } catch (e) {
                 // Ignore cross-origin or other errors
+                console.error(e);
               }
             });
           } catch (e) {
             // Ignore errors
+            console.error(e);
           }
 
           // Convert all computed styles to inline RGB
           const clonedElement = clonedDoc.querySelector(
             `[data-pdf-template="true"]`
           ) as HTMLElement;
-          
+
           if (clonedElement && clonedDoc.defaultView) {
-            const allElements = [clonedElement, ...clonedElement.querySelectorAll("*")];
+            const allElements = [
+              clonedElement,
+              ...clonedElement.querySelectorAll("*"),
+            ];
             allElements.forEach((el) => {
               const htmlEl = el as HTMLElement;
               try {
-                const computedStyle = clonedDoc.defaultView!.getComputedStyle(
-                  htmlEl
-                );
-                
+                const computedStyle =
+                  clonedDoc.defaultView!.getComputedStyle(htmlEl);
+
                 // Get computed RGB values and set as inline styles
                 const bgColor = computedStyle.backgroundColor;
                 const color = computedStyle.color;
                 const borderColor = computedStyle.borderColor;
-                
-                if (bgColor && !bgColor.includes("lab") && bgColor !== "rgba(0, 0, 0, 0)" && bgColor !== "transparent") {
+
+                if (
+                  bgColor &&
+                  !bgColor.includes("lab") &&
+                  bgColor !== "rgba(0, 0, 0, 0)" &&
+                  bgColor !== "transparent"
+                ) {
                   htmlEl.style.backgroundColor = bgColor;
                 }
                 if (color && !color.includes("lab")) {
                   htmlEl.style.color = color;
                 }
-                if (borderColor && !borderColor.includes("lab") && borderColor !== "rgba(0, 0, 0, 0)" && borderColor !== "transparent") {
+                if (
+                  borderColor &&
+                  !borderColor.includes("lab") &&
+                  borderColor !== "rgba(0, 0, 0, 0)" &&
+                  borderColor !== "transparent"
+                ) {
                   htmlEl.style.borderColor = borderColor;
                 }
               } catch {
@@ -173,7 +187,9 @@ export function QuickActionsCard({
         heightLeft -= pageHeight;
       }
 
-      const filename = `${dataToUse.exam.title || "시험"}_${dataToUse.studentName || "학생"}_리포트카드.pdf`;
+      const filename = `${dataToUse.exam.title || "시험"}_${
+        dataToUse.studentName || "학생"
+      }_리포트카드.pdf`;
       pdf.save(filename);
     } catch (error) {
       console.error("Error downloading PDF:", error);
@@ -213,10 +229,10 @@ export function QuickActionsCard({
               </>
             )}
           </Button>
-          <Button variant="outline" size="sm" className="w-full justify-start">
+          {/* <Button variant="outline" size="sm" className="w-full justify-start">
             <MessageSquare className="w-4 h-4 mr-2" />
             학생에게 메시지
-          </Button>
+          </Button> */}
         </CardContent>
       </Card>
 
@@ -227,9 +243,13 @@ export function QuickActionsCard({
             ref={reportTemplateRef}
             examTitle={(reportData || providedReportData)!.exam.title}
             examCode={(reportData || providedReportData)!.exam.code}
-            examDescription={(reportData || providedReportData)!.exam.description}
+            examDescription={
+              (reportData || providedReportData)!.exam.description
+            }
             studentName={(reportData || providedReportData)!.studentName}
-            submittedAt={(reportData || providedReportData)!.session.submitted_at}
+            submittedAt={
+              (reportData || providedReportData)!.session.submitted_at
+            }
             overallScore={(reportData || providedReportData)!.overallScore}
             questions={(reportData || providedReportData)!.exam.questions}
             grades={(reportData || providedReportData)!.grades}
@@ -240,4 +260,3 @@ export function QuickActionsCard({
     </>
   );
 }
-
