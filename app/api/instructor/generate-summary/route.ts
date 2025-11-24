@@ -142,6 +142,17 @@ JSON 형식으로 응답해주세요:
 
     const result = JSON.parse(completion.choices[0].message.content || "{}");
 
+    // Save summary to database
+    const { error: updateError } = await supabase
+      .from("sessions")
+      .update({ ai_summary: result })
+      .eq("id", sessionId);
+
+    if (updateError) {
+      console.error("Error saving summary to database:", updateError);
+      // Don't fail the request, just log the error
+    }
+
     return NextResponse.json({ summary: result });
   } catch (error: unknown) {
     console.error("Summary generation error:", error);

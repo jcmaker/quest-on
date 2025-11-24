@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Sparkles, ThumbsUp, ThumbsDown, Minus, Quote } from "lucide-react";
+import { Sparkles, Minus, Quote, Plus } from "lucide-react";
 
 export interface SummaryData {
   sentiment: "positive" | "negative" | "neutral";
@@ -60,20 +60,6 @@ export function AIOverallSummary({
 
   if (!summary) return null;
 
-  const sentimentColor =
-    summary.sentiment === "positive"
-      ? "text-green-600 bg-green-50 border-green-200"
-      : summary.sentiment === "negative"
-      ? "text-red-600 bg-red-50 border-red-200"
-      : "text-gray-600 bg-gray-50 border-gray-200";
-
-  const SentimentIcon =
-    summary.sentiment === "positive"
-      ? ThumbsUp
-      : summary.sentiment === "negative"
-      ? ThumbsDown
-      : Minus;
-
   return (
     <Card className="overflow-hidden border-2 border-primary/10">
       <CardHeader className="bg-muted/30 pb-4">
@@ -82,18 +68,6 @@ export function AIOverallSummary({
             <Sparkles className="w-5 h-5 text-purple-600" />
             AI 종합 평가
           </CardTitle>
-          <div
-            className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium border ${sentimentColor}`}
-          >
-            <SentimentIcon className="w-4 h-4" />
-            <span className="uppercase">
-              {summary.sentiment === "positive"
-                ? "긍정적"
-                : summary.sentiment === "negative"
-                ? "부정적"
-                : "중립적"}
-            </span>
-          </div>
         </div>
       </CardHeader>
       <CardContent className="pt-6 grid gap-6 md:grid-cols-2">
@@ -139,7 +113,7 @@ export function AIOverallSummary({
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100">
             <h4 className="font-semibold text-blue-700 mb-3 flex items-center gap-2">
-              <ThumbsUp className="w-4 h-4" /> 강점
+              <Plus className="w-4 h-4" /> 강점
             </h4>
             <ul className="space-y-2 text-sm">
               {summary.strengths.map((item, i) => (
@@ -153,7 +127,7 @@ export function AIOverallSummary({
 
           <div className="bg-orange-50/50 p-4 rounded-lg border border-orange-100">
             <h4 className="font-semibold text-orange-700 mb-3 flex items-center gap-2">
-              <ThumbsDown className="w-4 h-4" /> 개선점
+              <Minus className="w-4 h-4" /> 개선점
             </h4>
             <ul className="space-y-2 text-sm">
               {summary.weaknesses.map((item, i) => (

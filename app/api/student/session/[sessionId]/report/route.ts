@@ -284,6 +284,7 @@ export async function GET(
       messages: messagesByQuestion,
       grades: gradesByQuestion,
       overallScore,
+      aiSummary: session.ai_summary || null,
     });
   } catch (error) {
     console.error("Get student report error:", error);

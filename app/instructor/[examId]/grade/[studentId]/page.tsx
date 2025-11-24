@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { redirect } from "next/navigation";
@@ -64,6 +65,7 @@ interface SessionData {
     submitted_at: string;
     used_clarifications: number;
     created_at: string;
+    ai_summary?: SummaryData;
   };
   exam: {
     id: string;
@@ -81,7 +83,10 @@ interface SessionData {
   overallScore: number | null;
 }
 
-import { AIOverallSummary, SummaryData } from "@/components/instructor/AIOverallSummary";
+import {
+  AIOverallSummary,
+  SummaryData,
+} from "@/components/instructor/AIOverallSummary";
 
 export default function GradeStudentPage({
   params,
@@ -104,7 +109,9 @@ export default function GradeStudentPage({
   const [saving, setSaving] = useState(false);
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
   const [autoGrading, setAutoGrading] = useState(false);
-  const [overallSummary, setOverallSummary] = useState<SummaryData | null>(null);
+  const [overallSummary, setOverallSummary] = useState<SummaryData | null>(
+    null
+  );
   const [summaryLoading, setSummaryLoading] = useState(false);
 
   // Redirect non-instructors
@@ -116,6 +123,36 @@ export default function GradeStudentPage({
       redirect("/student");
     }
   }, [isLoaded, isSignedIn, user]);
+
+  const handleGenerateSummary = async (targetSessionId?: string) => {
+    const idToUse = targetSessionId || sessionData?.session?.id;
+    if (!idToUse) return;
+
+    try {
+      setSummaryLoading(true);
+      const response = await fetch("/api/instructor/generate-summary", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sessionId: idToUse,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to generate summary");
+      }
+
+      const data = await response.json();
+      setOverallSummary(data.summary);
+    } catch (error) {
+      console.error("Error generating summary:", error);
+      alert("요약 생성 중 오류가 발생했습니다.");
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
 
   const handleAutoGrade = useCallback(
     async (forceRegrade: boolean = false) => {
@@ -261,6 +298,7 @@ export default function GradeStudentPage({
         console.log("📤 Submissions:", data.submissions);
 
         setSessionData(data);
+        setOverallSummary(data.session.ai_summary || null);
 
         // Initialize scores and feedbacks from existing grades
         const initialScores: Record<number, number> = {};
@@ -322,8 +360,13 @@ export default function GradeStudentPage({
         // Auto-grade if no grades exist
         const hasGrades = Object.keys(data.grades).length > 0;
         if (!hasGrades) {
-          console.log("🤖 No grades found, starting auto-grading...");
-          handleAutoGrade(false);
+          // console.log("🤖 No grades found, starting auto-grading...");
+          //           handleAutoGrade(false);
+        }
+
+        // Initial AI Summary generation if not exists
+        if (!data.session.ai_summary) {
+          handleGenerateSummary(data.session.id);
         }
       } catch (error) {
         console.error("Error fetching session data:", error);
@@ -413,35 +456,6 @@ export default function GradeStudentPage({
         [stage]: value,
       },
     }));
-  };
-
-  const handleGenerateSummary = async () => {
-    if (!sessionData?.session?.id) return;
-    
-    try {
-      setSummaryLoading(true);
-      const response = await fetch("/api/instructor/generate-summary", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sessionId: sessionData.session.id,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to generate summary");
-      }
-
-      const data = await response.json();
-      setOverallSummary(data.summary);
-    } catch (error) {
-      console.error("Error generating summary:", error);
-      alert("요약 생성 중 오류가 발생했습니다.");
-    } finally {
-      setSummaryLoading(false);
-    }
   };
 
   // Show loading while auth is loading

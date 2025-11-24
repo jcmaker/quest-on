@@ -397,6 +397,7 @@ export async function GET(
       messages: messagesByQuestion,
       grades: gradesByQuestion,
       overallScore,
+      aiSummary: session.ai_summary || null,
     };
 
     console.log("📦 Returning response data:", {
