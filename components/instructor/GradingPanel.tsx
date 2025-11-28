@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Star, MessageSquare, FileText, CheckCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useState, useEffect } from "react";
 
 type StageKey = "chat" | "answer" | "feedback";
 
@@ -69,6 +70,14 @@ export function GradingPanel({
   onOverallFeedbackChange,
   onSave,
 }: GradingPanelProps) {
+  // 입력 중에는 문자열로 관리하여 "020" 같은 문제 방지
+  const [scoreInput, setScoreInput] = useState<string>(overallScore.toString());
+  
+  // overallScore가 외부에서 변경되면 (예: 다른 문제로 이동) input 값 업데이트
+  useEffect(() => {
+    setScoreInput(overallScore.toString());
+  }, [overallScore]);
+
   return (
     <Card>
       <CardHeader>
@@ -164,14 +173,65 @@ export function GradingPanel({
                 id="score"
                 min="0"
                 max="100"
-                value={overallScore}
-                onChange={(e) =>
-                  onOverallScoreChange(
-                    Number.isNaN(Number(e.target.value))
-                      ? 0
-                      : Number(e.target.value)
-                  )
-                }
+                value={scoreInput}
+                onFocus={(e) => {
+                  // 값이 0일 때만 전체 선택하여 쉽게 삭제되도록 함
+                  if (scoreInput === "0") {
+                    e.target.select();
+                  }
+                }}
+                onChange={(e) => {
+                  let value = e.target.value;
+                  
+                  // 빈 문자열 허용 (입력 중)
+                  if (value === "") {
+                    setScoreInput("");
+                    return;
+                  }
+                  
+                  // 숫자가 아닌 문자는 무시
+                  if (!/^\d*$/.test(value)) {
+                    return;
+                  }
+                  
+                  // "020", "002" 같은 경우를 방지: 0으로 시작하는 여러 자리 숫자는 첫 번째 0 제거
+                  // 단, "0" 자체는 허용
+                  if (value.length > 1 && value.startsWith("0")) {
+                    value = value.replace(/^0+/, "") || "0";
+                  }
+                  
+                  // 입력 중에는 문자열로 유지
+                  setScoreInput(value);
+                  
+                  // 숫자로 변환하여 범위 체크 및 부모 컴포넌트에 전달
+                  const numValue = Number(value);
+                  if (!Number.isNaN(numValue)) {
+                    // 0-100 범위로 제한
+                    const clampedValue = Math.max(0, Math.min(100, numValue));
+                    onOverallScoreChange(clampedValue);
+                    
+                    // 클램핑된 값이 원래 값과 다르면 input 업데이트
+                    if (clampedValue !== numValue) {
+                      setScoreInput(clampedValue.toString());
+                    }
+                  }
+                }}
+                onBlur={(e) => {
+                  const value = e.target.value;
+                  
+                  // blur 시 빈 값이거나 유효하지 않은 값이면 0으로 설정
+                  if (value === "" || Number.isNaN(Number(value))) {
+                    setScoreInput("0");
+                    onOverallScoreChange(0);
+                    return;
+                  }
+                  
+                  const numValue = Number(value);
+                  // 0-100 범위로 제한하고 정규화
+                  const clampedValue = Math.max(0, Math.min(100, numValue));
+                  setScoreInput(clampedValue.toString());
+                  onOverallScoreChange(clampedValue);
+                }}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
