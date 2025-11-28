@@ -89,7 +89,7 @@ export default function ExamManagement() {
   };
 
   const handleEditExam = (examId: string) => {
-    router.push(`/instructor/${examId}`);
+    router.push(`/instructor/${examId}/edit`);
   };
 
   const copyExamCode = (code: string) => {

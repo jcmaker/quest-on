@@ -394,7 +394,7 @@ async function getExamById(data: { id: string }) {
     const { data: exam, error } = await supabase
       .from("exams")
       .select(
-        "id, title, code, description, duration, questions, materials, status, instructor_id, created_at, updated_at"
+        "id, title, code, description, duration, questions, materials, rubric, status, instructor_id, created_at, updated_at"
       )
       .eq("id", data.id)
       .eq("instructor_id", user.id) // Only allow instructors to view their own exams

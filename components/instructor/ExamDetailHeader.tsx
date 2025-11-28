@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 interface ExamDetailHeaderProps {
   title: string;
   code: string;
+  examId: string;
 }
 
-export function ExamDetailHeader({ title, code }: ExamDetailHeaderProps) {
+export function ExamDetailHeader({ title, code, examId }: ExamDetailHeaderProps) {
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between">
@@ -20,7 +21,9 @@ export function ExamDetailHeader({ title, code }: ExamDetailHeaderProps) {
           <Link href="/instructor">
             <Button variant="outline">대시보드로 돌아가기</Button>
           </Link>
-          <Button>시험 편집</Button>
+          <Link href={`/instructor/${examId}/edit`}>
+            <Button>시험 편집</Button>
+          </Link>
         </div>
       </div>
     </div>

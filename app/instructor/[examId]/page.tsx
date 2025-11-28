@@ -211,7 +211,7 @@ export default function ExamDetail({
 
   return (
     <div className="container mx-auto p-6">
-      <ExamDetailHeader title={exam.title} code={exam.code} />
+      <ExamDetailHeader title={exam.title} code={exam.code} examId={exam.id} />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
@@ -230,7 +230,7 @@ export default function ExamDetail({
             examId={exam.id}
           />
 
-          <ExamQuickActionsCard />
+          <ExamQuickActionsCard examCode={exam.code} />
         </div>
       </div>
     </div>

@@ -342,7 +342,7 @@ export default function InstructorHome() {
                         exam={exam}
                         onCopyCode={copyExamCode}
                         onEdit={(examId) =>
-                          router.push(`/instructor/${examId}`)
+                          router.push(`/instructor/${examId}/edit`)
                         }
                         showStudentCount={false}
                       />

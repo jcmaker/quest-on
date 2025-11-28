@@ -22,6 +22,8 @@ interface FileUploadProps {
   onDragAreaClick: () => void;
   onRemoveFile: (index: number) => void;
   getFileIcon: (fileName: string) => string;
+  existingFiles?: Array<{ url: string; name: string; index: number }>;
+  onRemoveExistingFile?: (index: number) => void;
 }
 
 export function FileUpload({
@@ -37,6 +39,8 @@ export function FileUpload({
   onDragAreaClick,
   onRemoveFile,
   getFileIcon,
+  existingFiles = [],
+  onRemoveExistingFile,
 }: FileUploadProps) {
   return (
     <>
@@ -97,7 +101,7 @@ export function FileUpload({
             {!canAddMoreFiles && " - 용량 초과로 추가 불가"}
           </span>
 
-          {files.length > 0 && (
+          {(existingFiles.length > 0 || files.length > 0) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-sm font-medium">업로드된 파일:</Label>
@@ -106,6 +110,32 @@ export function FileUpload({
                 </span>
               </div>
               <div className="space-y-1">
+                {/* 기존 파일들 */}
+                {existingFiles.map((file) => (
+                  <div
+                    key={file.index}
+                    className="flex items-center justify-between p-2 rounded-md bg-blue-50 border border-blue-200"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{getFileIcon(file.name)}</span>
+                      <span className="text-sm font-medium">{file.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        (기존 파일)
+                      </span>
+                    </div>
+                    {onRemoveExistingFile && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onRemoveExistingFile(file.index)}
+                      >
+                        ✕
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {/* 새로 추가된 파일들 */}
                 {files.map((file, index) => {
                   const isDisabled = disabledFiles.has(index);
                   return (
