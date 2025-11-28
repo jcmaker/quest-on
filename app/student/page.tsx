@@ -72,6 +72,8 @@ export default function StudentDashboard() {
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
+  const [profileChecked, setProfileChecked] = useState(false);
+  const [isCheckingProfile, setIsCheckingProfile] = useState(false);
 
   // Redirect non-students or users without role
   useEffect(() => {
@@ -84,9 +86,78 @@ export default function StudentDashboard() {
       // Role이 student가 아닌 경우 instructor 페이지로 리다이렉트
       if (userRole !== "student") {
         router.push("/instructor");
+        return;
       }
     }
   }, [isLoaded, isSignedIn, userRole, user, router]);
+
+  // Check if profile exists for students
+  useEffect(() => {
+    const checkProfile = async () => {
+      // 이미 체크했거나 체크 중이면 스킵
+      if (profileChecked || isCheckingProfile) return;
+
+      // 학생이고 로그인된 상태에서만 체크
+      if (isLoaded && isSignedIn && userRole === "student") {
+        setIsCheckingProfile(true);
+        try {
+          console.log(
+            "[Profile Check] Checking profile for student:",
+            user?.id
+          );
+          const response = await fetch("/api/student/profile");
+          console.log("[Profile Check] Response status:", response.status);
+
+          if (response.ok) {
+            const data = await response.json();
+            console.log("[Profile Check] Profile data:", data);
+
+            if (!data.profile) {
+              // 프로필이 없으면 프로필 설정 페이지로 리다이렉트
+              console.log(
+                "[Profile Check] No profile found, redirecting to setup"
+              );
+              router.replace("/student/profile-setup");
+              return;
+            } else {
+              console.log("[Profile Check] Profile exists, continuing");
+            }
+          } else if (response.status === 403) {
+            // 학생이 아닌 경우 (이미 위에서 처리되지만 안전장치)
+            console.log(
+              "[Profile Check] Not a student, redirecting to instructor"
+            );
+            router.replace("/instructor");
+            return;
+          } else {
+            // 에러 응답의 상세 정보 확인
+            const errorData = await response.json().catch(() => ({}));
+            console.error(
+              "[Profile Check] Unexpected response:",
+              response.status,
+              errorData
+            );
+          }
+        } catch (error) {
+          console.error("[Profile Check] Error checking profile:", error);
+          // 에러 발생 시에도 체크 완료로 표시하여 무한 루프 방지
+        } finally {
+          setProfileChecked(true);
+          setIsCheckingProfile(false);
+        }
+      }
+    };
+
+    checkProfile();
+  }, [
+    isLoaded,
+    isSignedIn,
+    userRole,
+    profileChecked,
+    isCheckingProfile,
+    router,
+    user,
+  ]);
 
   const fetchSessions = useCallback(
     async (pageNum: number, reset: boolean = false) => {
@@ -136,13 +207,26 @@ export default function StudentDashboard() {
     }
   };
 
-  // Fetch sessions when user is loaded
+  // Fetch sessions when user is loaded and profile is checked
   useEffect(() => {
-    if (isLoaded && isSignedIn && userRole === "student") {
+    if (
+      isLoaded &&
+      isSignedIn &&
+      userRole === "student" &&
+      profileChecked &&
+      !isCheckingProfile
+    ) {
       fetchSessions(1, true);
       fetchOverallStats();
     }
-  }, [isLoaded, isSignedIn, userRole, fetchSessions]);
+  }, [
+    isLoaded,
+    isSignedIn,
+    userRole,
+    profileChecked,
+    isCheckingProfile,
+    fetchSessions,
+  ]);
 
   // Intersection Observer for infinite scroll
   useEffect(() => {
@@ -256,6 +340,15 @@ export default function StudentDashboard() {
   const displayInProgressCount =
     overallStats?.inProgressSessions || inProgressSessions.length;
   const overallAverageScore = overallStats?.overallAverageScore ?? null;
+
+  // 프로필 체크 중이면 로딩 표시
+  if (isLoaded && isSignedIn && userRole === "student" && isCheckingProfile) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

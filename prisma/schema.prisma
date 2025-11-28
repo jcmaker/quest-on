@@ -119,3 +119,16 @@ model submissions {
   compression_metadata     Json?    @default("{}")
   sessions                 sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
+
+/// Student profile information
+model student_profiles {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  student_id String   @unique // Clerk user ID
+  name       String   // 학생 이름
+  student_number String // 학번
+  school     String   // 학교명
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([student_id], map: "idx_student_profiles_student_id")
+}

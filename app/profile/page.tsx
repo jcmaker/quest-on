@@ -11,19 +11,58 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Mail, Calendar, Shield } from "lucide-react";
+import { User, Mail, Calendar, Shield, GraduationCap, Hash } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+
+interface StudentProfile {
+  id: string;
+  student_id: string;
+  name: string;
+  student_number: string;
+  school: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export default function ProfilePage() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
 
   useEffect(() => {
     if (isLoaded && !user) {
       router.push("/sign-in");
     }
   }, [isLoaded, user, router]);
+
+  // Load student profile if user is a student
+  useEffect(() => {
+    const loadStudentProfile = async () => {
+      if (isLoaded && user) {
+        const userRole = (user?.unsafeMetadata?.role as string) || "student";
+        if (userRole === "student") {
+          setIsLoadingProfile(true);
+          try {
+            const response = await fetch("/api/student/profile");
+            if (response.ok) {
+              const data = await response.json();
+              if (data.profile) {
+                setStudentProfile(data.profile);
+              }
+            }
+          } catch (error) {
+            console.error("Error loading student profile:", error);
+          } finally {
+            setIsLoadingProfile(false);
+          }
+        }
+      }
+    };
+
+    loadStudentProfile();
+  }, [isLoaded, user]);
 
   if (!isLoaded) {
     return (
@@ -133,6 +172,68 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
+
+              {/* Student Profile Information */}
+              {userRole === "student" && (
+                <div className="pt-4 border-t">
+                  <h3 className="text-lg font-semibold mb-4">학생 정보</h3>
+                  {isLoadingProfile ? (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
+                    </div>
+                  ) : studentProfile ? (
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                          <User className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">이름</p>
+                          <p className="font-medium">
+                            {studentProfile.name || "미입력"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                          <Hash className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">학번</p>
+                          <p className="font-medium">
+                            {studentProfile.student_number || "미입력"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-3 md:col-span-2">
+                        <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                          <GraduationCap className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <p className="text-sm text-muted-foreground">학교</p>
+                          <p className="font-medium">
+                            {studentProfile.school || "미입력"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-muted-foreground mb-4">
+                        프로필 정보가 없습니다.
+                      </p>
+                      <Button
+                        onClick={() => router.push("/student/profile-setup")}
+                        variant="outline"
+                      >
+                        프로필 설정하기
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

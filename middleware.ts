@@ -14,6 +14,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/feedback",
   "/api/admin/auth",
   "/api/upload", // route 핸들러에서 자체 인증 체크
+  "/api/universities/search", // 학교 검색 API
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);
