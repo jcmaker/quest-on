@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
 import { prisma } from "@/lib/prisma";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 // 프로필 조회
 export async function GET() {

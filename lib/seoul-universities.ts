@@ -40,7 +40,13 @@ export async function loadUniversities(): Promise<UniversitySearchResult[]> {
   try {
     // JSON 파일을 직접 import (resolveJsonModule이 true이므로 가능)
     const data = await import("@/seoul-uni.json");
-    const universities: SeoulUniversity[] = (data as any).DATA;
+    // JSON 파일의 타입 정의
+    interface SeoulUniJson {
+      DESCRIPTION: Record<string, string>;
+      DATA: SeoulUniversity[];
+    }
+    const jsonData = data as unknown as SeoulUniJson;
+    const universities: SeoulUniversity[] = jsonData.DATA;
 
     universitiesCache = universities
       .filter((uni) => uni.state === "기존") // 기존 학교만 필터링
