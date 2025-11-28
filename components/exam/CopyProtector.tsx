@@ -5,7 +5,7 @@ import React from "react";
 interface CopyProtectorProps {
   children: React.ReactNode;
   className?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export function CopyProtector({ children, className, metadata }: CopyProtectorProps) {

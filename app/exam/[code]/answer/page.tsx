@@ -509,26 +509,6 @@ export default function AnswerSubmission() {
     return html.replace(/<[^>]*>/g, "").length;
   };
 
-  // 채팅 모드 시작 (피드백을 첫 메시지로)
-  const startChatMode = () => {
-    if (!feedback) return;
-
-    console.log("📝 Starting chat mode with:", {
-      sessionId,
-      startQuestion,
-      feedbackLength: feedback.length,
-    });
-
-    // AI의 첫 피드백 메시지 추가
-    const aiMessage = {
-      type: "ai" as const,
-      content: feedback,
-      timestamp: new Date().toISOString(),
-    };
-
-    setChatMessages([aiMessage]);
-    setIsChatMode(true);
-  };
 
   // 채팅 메시지 전송
   const sendChatMessage = async () => {
