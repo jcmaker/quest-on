@@ -12,6 +12,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { HelpCircle } from "lucide-react";
 import { ExamInfoForm } from "@/components/instructor/ExamInfoForm";
 import { FileUpload } from "@/components/instructor/FileUpload";
@@ -26,6 +34,8 @@ export default function CreateExam() {
   const router = useRouter();
   const { user } = useUser();
   const [isLoading, setIsLoading] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [createdExamCode, setCreatedExamCode] = useState("");
   const [examData, setExamData] = useState({
     title: "",
     duration: 60,
@@ -501,8 +511,9 @@ export default function CreateExam() {
       const result = await response.json();
       console.log("Exam created successfully:", result);
 
-      // Redirect to drive page
-      router.push("/instructor/drive");
+      // Show dialog with exam code instead of redirecting
+      setCreatedExamCode(examData.code);
+      setIsDialogOpen(true);
     } catch (error) {
       console.error("Error creating exam:", error);
       alert("시험 생성 중 오류가 발생했습니다. 다시 시도해주세요.");
@@ -604,10 +615,56 @@ export default function CreateExam() {
                 : ""
             }
           >
-            {isLoading ? "만들기 중..." : "시험 만들기"}
+            {isLoading ? "출제 중..." : "출제하기"}
           </Button>
         </div>
       </form>
+
+      {/* 출제 완료 Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>출제 완료</DialogTitle>
+            <DialogDescription>
+              시험이 성공적으로 출제되었습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">시험 코드</Label>
+              <div className="flex items-center gap-2">
+                <code className="px-4 py-2 bg-muted rounded-md font-mono text-lg font-semibold">
+                  {createdExamCode}
+                </code>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(createdExamCode);
+                    toast.success("시험 코드가 복사되었습니다.");
+                  }}
+                >
+                  복사
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground mt-2">
+                이 코드를 학생들에게 공유하세요.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                setIsDialogOpen(false);
+                router.push("/instructor/drive");
+              }}
+            >
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

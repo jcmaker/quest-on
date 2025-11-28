@@ -862,11 +862,9 @@ async function getFolderContents(data: { folder_id?: string | null }) {
       query = query.eq("parent_id", parentId);
     }
 
-    // Apply ordering
+    // Apply ordering - 최신순으로 정렬
     const { data: nodes, error } = await query
-      .order("kind", { ascending: false }) // folders first
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
+      .order("updated_at", { ascending: false }); // 최근 수정된 것이 먼저
 
     if (error) {
       console.error("Supabase query error:", {

@@ -93,15 +93,25 @@ export default function InstructorDrive() {
     return nodes.filter((node) => node.name.toLowerCase().includes(query));
   }, [nodes, searchQuery]);
 
-  const folderNodes = useMemo(
-    () => filteredNodes.filter((node) => node.kind === "folder"),
-    [filteredNodes]
-  );
+  const folderNodes = useMemo(() => {
+    const folders = filteredNodes.filter((node) => node.kind === "folder");
+    // 최신순으로 정렬 (updated_at 기준 내림차순)
+    return folders.sort((a, b) => {
+      const dateA = new Date(a.updated_at).getTime();
+      const dateB = new Date(b.updated_at).getTime();
+      return dateB - dateA; // 최신이 먼저
+    });
+  }, [filteredNodes]);
 
-  const examNodes = useMemo(
-    () => filteredNodes.filter((node) => node.kind === "exam"),
-    [filteredNodes]
-  );
+  const examNodes = useMemo(() => {
+    const exams = filteredNodes.filter((node) => node.kind === "exam");
+    // 최신순으로 정렬 (updated_at 기준 내림차순)
+    return exams.sort((a, b) => {
+      const dateA = new Date(a.updated_at).getTime();
+      const dateB = new Date(b.updated_at).getTime();
+      return dateB - dateA; // 최신이 먼저
+    });
+  }, [filteredNodes]);
 
   const isFiltering = searchQuery.trim().length > 0;
   const hasResults = filteredNodes.length > 0;
