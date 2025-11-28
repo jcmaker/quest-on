@@ -24,6 +24,7 @@ import {
 import { MessageCircle, ArrowLeft, Save } from "lucide-react";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { ExamHeader } from "@/components/ExamHeader";
+import { CopyProtector } from "@/components/exam/CopyProtector";
 import { Kbd } from "@/components/ui/kbd";
 
 interface Question {
@@ -695,6 +696,41 @@ export default function AnswerSubmission() {
     }
   };
 
+  // Handle paste event for logging
+  const handlePaste = useCallback(async (e: ClipboardEvent) => {
+    const clipboard = e.clipboardData;
+    if (!clipboard) return;
+
+    const text = clipboard.getData("text/plain");
+    const isInternal = clipboard.types.includes("application/x-queston-internal");
+
+    if (isInternal) {
+      console.log("%c[Paste Check] ✅ Internal Copy Detected", "color: green; font-weight: bold; font-size: 12px;");
+      console.log("Source: Internal content");
+    } else {
+      console.warn("%c[Paste Check] ⚠️ External Copy Detected", "color: red; font-weight: bold; font-size: 12px;");
+      console.warn("Source: External clipboard");
+    }
+    console.log("Content Length:", text.length);
+
+    // Log to server
+    try {
+      await fetch("/api/log/paste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          length: text.length,
+          isInternal,
+          ts: Date.now(),
+          examCode,
+          questionId: exam?.questions[currentQuestion]?.id,
+        }),
+      });
+    } catch (err) {
+      console.error("Failed to log paste event", err);
+    }
+  }, [examCode, exam, currentQuestion]);
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -817,7 +853,7 @@ export default function AnswerSubmission() {
         <ExamHeader
           examCode={examCode}
           duration={exam?.duration || 60}
-          currentStep="feedback"
+          currentStep="answer"
           user={user}
         />
 
@@ -996,58 +1032,73 @@ export default function AnswerSubmission() {
                   {/* Question Content */}
                   <div className="bg-muted/50 p-4 rounded-lg mb-6">
                     <h3 className="font-semibold mb-2">문제</h3>
-                    <RichTextViewer
-                      content={exam.questions[currentQuestion]?.text || ""}
-                      className="text-base leading-relaxed"
-                    />
+                    <CopyProtector>
+                      <RichTextViewer
+                        content={exam.questions[currentQuestion]?.text || ""}
+                        className="text-base leading-relaxed"
+                      />
+                    </CopyProtector>
                   </div>
                 </div>
 
                 {/* Chat History Section */}
-                {loadedChatHistory.length > 0 && (
-                  <div className="border-t pt-6">
-                    <div className="mb-4">
-                      <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
-                        AI와 나눈 대화
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      {loadedChatHistory.map((msg, index) => (
-                        <div
-                          key={index}
-                          className={`flex ${
-                            msg.type === "user"
-                              ? "justify-end"
-                              : "justify-start"
-                          }`}
-                        >
-                          {msg.type === "user" ? (
-                            <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-[80%]">
-                              <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                                {msg.message}
-                              </p>
-                              <p className="text-xs mt-2 opacity-70">
-                                {new Date(msg.timestamp).toLocaleTimeString(
-                                  [],
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  }
-                                )}
-                              </p>
-                            </div>
-                          ) : (
-                            <AIMessageRenderer
-                              content={msg.message}
-                              timestamp={msg.timestamp}
-                            />
-                          )}
-                        </div>
-                      ))}
+                <div className="border-t pt-6">
+                  <div className="mb-4">
+                    <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
+                      AI와 나눈 대화
                     </div>
                   </div>
-                )}
+
+                  {loadedChatHistory.length > 0 ? (
+                    <CopyProtector>
+                      <div className="space-y-4">
+                        {loadedChatHistory.map((msg, index) => (
+                          <div
+                            key={index}
+                            className={`flex ${
+                              msg.type === "user"
+                                ? "justify-end"
+                                : "justify-start"
+                            }`}
+                          >
+                            {msg.type === "user" ? (
+                              <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-[80%]">
+                                <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                                  {msg.message}
+                                </p>
+                                <p className="text-xs mt-2 opacity-70">
+                                  {new Date(msg.timestamp).toLocaleTimeString(
+                                    [],
+                                    {
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    }
+                                  )}
+                                </p>
+                              </div>
+                            ) : (
+                              <AIMessageRenderer
+                                content={msg.message}
+                                timestamp={msg.timestamp}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </CopyProtector>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mb-3">
+                        <MessageCircle className="w-6 h-6 text-purple-600" />
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        아직 AI와 나눈 대화가 없습니다.
+                        <br />
+                        채팅 페이지에서 AI와 대화를 시작해보세요.
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 {/* Navigation */}
                 <div className="flex items-center justify-between pt-6 border-t">
@@ -1133,6 +1184,7 @@ export default function AnswerSubmission() {
                     onChange={(value) =>
                       updateAnswer(exam.questions[currentQuestion].id, value)
                     }
+                    onPaste={handlePaste}
                   />
                 </div>
 

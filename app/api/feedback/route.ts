@@ -158,7 +158,7 @@ ${answersText}
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-      max_tokens: 1000,
+      max_completion_tokens: 1000,
     });
 
     const feedback =

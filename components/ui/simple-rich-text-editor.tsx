@@ -23,6 +23,7 @@ interface SimpleRichTextEditorProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  onPaste?: (e: ClipboardEvent) => void;
 }
 
 export function SimpleRichTextEditor({
@@ -30,6 +31,7 @@ export function SimpleRichTextEditor({
   onChange,
   placeholder = "여기에 입력하세요...",
   className = "",
+  onPaste,
 }: SimpleRichTextEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -49,6 +51,12 @@ export function SimpleRichTextEditor({
     editorProps: {
       attributes: {
         class: "focus:outline-none min-h-[400px] p-4",
+      },
+      handlePaste: (view, event) => {
+        if (onPaste) {
+          onPaste(event);
+        }
+        return false; // Default paste behavior
       },
     },
   });

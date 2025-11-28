@@ -18,6 +18,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import { CopyProtector } from "@/components/exam/CopyProtector";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 
 import Link from "next/link";
@@ -439,10 +440,12 @@ export default function ExamPage() {
                 <div className="space-y-4">
                   <div className="bg-muted/50 p-4 rounded-lg">
                     <h3 className="font-semibold mb-2">문제</h3>
-                    <RichTextViewer
-                      content={exam.questions[currentQuestion]?.text || ""}
-                      className="text-base leading-relaxed"
-                    />
+                    <CopyProtector>
+                      <RichTextViewer
+                        content={exam.questions[currentQuestion]?.text || ""}
+                        className="text-base leading-relaxed"
+                      />
+                    </CopyProtector>
                   </div>
 
                   {/* Requirements */}
@@ -498,72 +501,79 @@ export default function ExamPage() {
               </div>
 
               {/* Chat Messages */}
-              <div className="flex-1 overflow-y-auto p-6 pb-48 space-y-4 min-h-0">
-                {currentQuestionChatHistory.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center">
-                    <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                      <MessageCircle className="w-8 h-8 text-primary" />
-                    </div>
-                    <p className="text-sm text-muted-foreground">
-                      안녕하세요! 시험을 시작하겠습니다. 문제를 읽고 자유롭게
-                      질문해주세요.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {currentQuestionChatHistory.map((msg, index) => (
-                      <div
-                        key={index}
-                        className={`flex ${
-                          msg.type === "user" ? "justify-end" : "justify-start"
-                        }`}
-                      >
-                        {msg.type === "user" ? (
-                          <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-[70%]">
-                            <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                              {msg.message}
-                            </p>
-                            <p className="text-xs mt-2 opacity-70">
-                              {new Date(msg.timestamp).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </p>
-                          </div>
-                        ) : (
-                          <AIMessageRenderer
-                            content={msg.message}
-                            timestamp={msg.timestamp}
-                          />
-                        )}
+              <div className="flex-1 overflow-y-auto p-6 pb-48 space-y-6 min-h-0">
+                <CopyProtector className="min-h-full flex flex-col gap-6">
+                  {currentQuestionChatHistory.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center my-auto">
+                      <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                        <MessageCircle className="w-8 h-8 text-primary" />
                       </div>
-                    ))}
-
-                    {/* Typing Indicator */}
-                    {isTyping && (
-                      <div className="flex justify-start">
-                        <div className="bg-muted/80 rounded-2xl px-4 py-3 max-w-[70%]">
-                          <div className="flex items-center space-x-2">
-                            <div className="flex space-x-1">
-                              <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-                              <div
-                                className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                                style={{ animationDelay: "0.1s" }}
-                              ></div>
-                              <div
-                                className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                                style={{ animationDelay: "0.2s" }}
-                              ></div>
+                      <p className="text-sm text-muted-foreground">
+                        안녕하세요! 시험을 시작하겠습니다. 문제를 읽고 자유롭게
+                        질문해주세요.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {currentQuestionChatHistory.map((msg, index) => (
+                        <div
+                          key={index}
+                          className={`flex ${
+                            msg.type === "user"
+                              ? "justify-end"
+                              : "justify-start"
+                          }`}
+                        >
+                          {msg.type === "user" ? (
+                            <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-[70%] shadow-sm">
+                              <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                                {msg.message}
+                              </p>
+                              <p className="text-xs mt-2 opacity-70 text-right">
+                                {new Date(msg.timestamp).toLocaleTimeString(
+                                  [],
+                                  {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  }
+                                )}
+                              </p>
                             </div>
-                            <span className="text-sm text-muted-foreground">
-                              AI가 응답을 작성 중...
-                            </span>
+                          ) : (
+                            <AIMessageRenderer
+                              content={msg.message}
+                              timestamp={msg.timestamp}
+                            />
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Typing Indicator */}
+                      {isTyping && (
+                        <div className="flex justify-start">
+                          <div className="bg-muted/80 rounded-2xl px-4 py-3 max-w-[70%] shadow-sm">
+                            <div className="flex items-center space-x-2">
+                              <div className="flex space-x-1">
+                                <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+                                <div
+                                  className="w-2 h-2 bg-primary rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.1s" }}
+                                ></div>
+                                <div
+                                  className="w-2 h-2 bg-primary rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.2s" }}
+                                ></div>
+                              </div>
+                              <span className="text-sm text-muted-foreground">
+                                AI가 응답을 작성 중...
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </>
-                )}
+                      )}
+                    </>
+                  )}
+                </CopyProtector>
                 <div ref={chatEndRef} />
               </div>
 

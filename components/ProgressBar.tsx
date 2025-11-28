@@ -1,10 +1,10 @@
 "use client";
 
 import React from "react";
-import { Check, FileText, MessageCircle, Brain } from "lucide-react";
+import { Check, FileText, Brain } from "lucide-react";
 
 interface ProgressBarProps {
-  currentStep: "exam" | "answer" | "feedback";
+  currentStep: "exam" | "answer";
 }
 
 const ProgressBar: React.FC<ProgressBarProps> = ({ currentStep }) => {
@@ -20,12 +20,6 @@ const ProgressBar: React.FC<ProgressBarProps> = ({ currentStep }) => {
       label: "최종답안",
       icon: FileText,
       description: "답안 작성 및 제출",
-    },
-    {
-      id: "feedback" as const,
-      label: "피드백",
-      icon: MessageCircle,
-      description: "AI 피드백 및 Q&A",
     },
   ];
 

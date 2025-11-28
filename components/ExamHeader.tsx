@@ -9,7 +9,7 @@ import ProgressBar from "@/components/ProgressBar";
 interface ExamHeaderProps {
   examCode: string;
   duration: number; // in minutes
-  currentStep: "exam" | "answer" | "feedback";
+  currentStep: "exam" | "answer";
   user?: {
     imageUrl?: string;
     fullName?: string | null;

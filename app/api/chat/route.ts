@@ -12,7 +12,6 @@ const supabase = createClient(
 async function getAIResponse(
   systemPrompt: string,
   userMessage: string,
-  temperature = 0.7,
   conversationHistory: Array<{
     role: "user" | "assistant";
     content: string;
@@ -290,7 +289,6 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
         const aiResponse = await getAIResponse(
           tempSystemPrompt,
           message,
-          0.2,
           conversationHistory
         );
 
@@ -376,7 +374,7 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
         });
       } else {
         // 임시 세션이지만 DB에 저장할 수 없는 경우 (examId나 studentId가 없는 경우)
-        const aiResponse = await getAIResponse(tempSystemPrompt, message, 0.2);
+        const aiResponse = await getAIResponse(tempSystemPrompt, message);
 
         // Ensure we have a valid response
         if (
@@ -627,7 +625,6 @@ ${exam.rubric
     const aiResponse = await getAIResponse(
       systemPrompt,
       message,
-      0.2,
       conversationHistory
     );
 

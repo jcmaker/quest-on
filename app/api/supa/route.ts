@@ -4,12 +4,26 @@ import { currentUser } from "@clerk/nextjs/server";
 import { compressData } from "@/lib/compression";
 
 // Initialize Supabase client with service role key for server-side operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error("Missing Supabase environment variables:", {
+    hasUrl: !!supabaseUrl,
+    hasKey: !!supabaseKey,
+  });
+}
+
+const supabase = createClient(supabaseUrl || "", supabaseKey || "");
 
 export async function POST(request: NextRequest) {
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.json(
+      { error: "Server configuration error: Missing Supabase credentials" },
+      { status: 500 }
+    );
+  }
+
   try {
     const { action, data } = await request.json();
 
@@ -855,7 +869,12 @@ async function getFolderContents(data: { folder_id?: string | null }) {
       .order("created_at", { ascending: true });
 
     if (error) {
-      console.error("Supabase query error:", error);
+      console.error("Supabase query error:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      });
       throw error;
     }
 
