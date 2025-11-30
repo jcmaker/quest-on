@@ -3,15 +3,9 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +14,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { HelpCircle } from "lucide-react";
 import { ExamInfoForm } from "@/components/instructor/ExamInfoForm";
 import { FileUpload } from "@/components/instructor/FileUpload";
 import {
@@ -100,7 +93,6 @@ export default function CreateExam() {
     return false;
   };
 
-
   // 페이지 진입 시 자동으로 시험 코드 생성
   useEffect(() => {
     generateExamCode();
@@ -113,6 +105,14 @@ export default function CreateExam() {
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/csv",
+      "application/csv",
+      "application/x-hwp",
+      "application/haansofthwp",
+      "application/vnd.hancom.hwp",
+      "application/vnd.hancom.hwpx",
       "image/jpeg",
       "image/png",
       "image/gif",
@@ -121,9 +121,32 @@ export default function CreateExam() {
 
     const maxSize = 50 * 1024 * 1024; // 50MB (will be compressed)
 
-    if (!allowedTypes.includes(file.type)) {
+    // 파일 확장자로도 체크 (MIME 타입이 없는 경우 대비)
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    const allowedExtensions = [
+      "pdf",
+      "ppt",
+      "pptx",
+      "doc",
+      "docx",
+      "xls",
+      "xlsx",
+      "csv",
+      "hwp",
+      "hwpx",
+      "jpg",
+      "jpeg",
+      "png",
+      "gif",
+      "webp",
+    ];
+
+    if (
+      !allowedTypes.includes(file.type) &&
+      !allowedExtensions.includes(extension || "")
+    ) {
       alert(
-        "지원되지 않는 파일 형식입니다. PDF, PPT, 워드, 이미지 파일만 업로드 가능합니다."
+        "지원되지 않는 파일 형식입니다. PPT, PDF, 워드, 엑셀, 한글, 이미지 파일만 업로드 가능합니다."
       );
       return false;
     }
@@ -160,6 +183,11 @@ export default function CreateExam() {
       ...prev,
       materials: newMaterials,
     }));
+
+    // 새로 추가된 파일들에 대해 텍스트 추출
+    validFiles.forEach((file) => {
+      extractTextFromFile(file);
+    });
 
     // Reset input
     e.target.value = "";
@@ -206,6 +234,11 @@ export default function CreateExam() {
       ...prev,
       materials: newMaterials,
     }));
+
+    // 새로 추가된 파일들에 대해 텍스트 추출
+    validFiles.forEach((file) => {
+      extractTextFromFile(file);
+    });
   };
 
   const handleDragAreaClick = () => {
@@ -226,6 +259,111 @@ export default function CreateExam() {
     }));
   };
 
+  // 파일에서 텍스트 추출
+  const extractTextFromFile = async (file: File) => {
+    // 텍스트 추출 가능한 파일 형식인지 확인
+    const extension = file.name.split(".").pop()?.toLowerCase() || "";
+    const textExtractableExtensions = ["pdf", "docx", "pptx", "csv"];
+
+    if (!textExtractableExtensions.includes(extension)) {
+      return; // 텍스트 추출 불가능한 파일은 건너뛰기
+    }
+
+    // 콘솔에 텍스트 추출 시작 로그
+    console.log(`[extract-text] 텍스트 추출 시작: ${file.name}`);
+
+    try {
+      // 파일을 FormData로 업로드
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const uploadResponse = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("파일 업로드 실패");
+      }
+
+      const uploadResult = await uploadResponse.json();
+      if (!uploadResult.ok || !uploadResult.url) {
+        throw new Error("파일 업로드 실패");
+      }
+
+      // 텍스트 추출 API 호출
+      const extractResponse = await fetch("/api/extract-text", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fileUrl: uploadResult.url,
+          fileName: file.name,
+          mimeType: file.type,
+        }),
+      });
+
+      if (!extractResponse.ok) {
+        // 응답이 JSON이 아닐 수 있으므로 텍스트로 먼저 확인
+        let text = "";
+        try {
+          text = await extractResponse.text();
+        } catch (textError) {
+          console.error(`[extract-text] 응답 텍스트 읽기 실패:`, textError);
+          throw new Error(
+            `텍스트 추출 실패 (${extractResponse.status}): 응답을 읽을 수 없습니다.`
+          );
+        }
+
+        let errorData: { error?: string; message?: string } = {};
+        try {
+          if (text) {
+            errorData = JSON.parse(text);
+          } else {
+            errorData = { error: "서버에서 에러 응답을 반환하지 않았습니다." };
+          }
+        } catch (parseError) {
+          // JSON 파싱 실패 시 원본 텍스트 사용
+          console.error(`[extract-text] JSON 파싱 실패:`, {
+            status: extractResponse.status,
+            statusText: extractResponse.statusText,
+            text: text.substring(0, 200),
+            parseError,
+          });
+          errorData = {
+            error: `서버 오류 (${extractResponse.status}): ${
+              text || "응답 본문이 비어있습니다"
+            }`,
+            message: text || "응답 본문이 비어있습니다",
+          };
+        }
+
+        const errorMessage =
+          errorData.error || errorData.message || "텍스트 추출 실패";
+        console.error(`[extract-text] API 에러:`, {
+          errorData,
+          status: extractResponse.status,
+          statusText: extractResponse.statusText,
+          hasError: !!errorData.error,
+          hasMessage: !!errorData.message,
+        });
+        throw new Error(errorMessage);
+      }
+
+      const extractResult = await extractResponse.json();
+
+      // 추출된 텍스트를 콘솔에만 로그로 출력
+      console.log(`[extract-text] 추출된 텍스트 (${file.name}):`, {
+        fileName: file.name,
+        textLength: extractResult.text?.length || 0,
+        text: extractResult.text || "",
+      });
+    } catch (error) {
+      console.error(`[extract-text] 텍스트 추출 실패 (${file.name}):`, error);
+    }
+  };
+
   const getFileIcon = (fileName: string) => {
     const extension = fileName.split(".").pop()?.toLowerCase();
     switch (extension) {
@@ -237,6 +375,12 @@ export default function CreateExam() {
       case "doc":
       case "docx":
         return "📝";
+      case "xls":
+      case "xlsx":
+        return "📈";
+      case "hwp":
+      case "hwpx":
+        return "📋";
       case "jpg":
       case "jpeg":
       case "png":
@@ -563,7 +707,6 @@ export default function CreateExam() {
           }
           onGenerateCode={generateExamCode}
         />
-
 
         <FileUpload
           files={examData.materials}

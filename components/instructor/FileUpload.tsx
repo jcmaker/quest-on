@@ -54,8 +54,8 @@ export function FileUpload({
             </TooltipTrigger>
             <TooltipContent>
               <p className="max-w-xs">
-                시험 문제 작성을 위한 수업 자료를 업로드하세요. PDF, PPT, 워드,
-                이미지 파일을 지원하며, 최대 50MB까지 업로드 가능합니다. AI가 이
+                시험 문제 작성을 위한 수업 자료를 업로드하세요. PPT, PDF, 워드,
+                엑셀, 한글, 이미지 파일을 지원하며, 최대 50MB까지 업로드 가능합니다. AI가 이
                 자료를 참고하여 문제를 생성합니다.
               </p>
             </TooltipContent>
@@ -67,7 +67,7 @@ export function FileUpload({
               id="materials"
               type="file"
               multiple
-              accept=".pdf,.ppt,.pptx,.doc,.docx,.jpg,.jpeg,.png,.gif,.webp"
+              accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.csv,.hwp,.hwpx,.jpg,.jpeg,.png,.gif,.webp"
               onChange={onFileSelect}
               className="hidden"
               disabled={!canAddMoreFiles}
@@ -92,12 +92,12 @@ export function FileUpload({
                     ? "파일을 여기에 놓으세요"
                     : "파일을 드래그하거나 클릭하여 선택"}
                 </div>
-                <div className="text-xs">PDF, PPT, 워드, 이미지 파일</div>
+                <div className="text-xs">PPT, PDF, 워드, 엑셀, CSV, 한글, 이미지 파일</div>
               </div>
             </div>
           </div>
           <span className="text-sm text-muted-foreground">
-            PDF, PPT, 워드, 이미지 파일 (최대 50MB, 자동 압축)
+            PPT, PDF, 워드, 엑셀, CSV, 한글, 이미지 파일 (최대 50MB, 자동 압축)
             {!canAddMoreFiles && " - 용량 초과로 추가 불가"}
           </span>
 

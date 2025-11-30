@@ -143,6 +143,12 @@ export default function EditExam({
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/x-hwp",
+      "application/haansofthwp",
+      "application/vnd.hancom.hwp",
+      "application/vnd.hancom.hwpx",
       "image/jpeg",
       "image/png",
       "image/gif",
@@ -151,9 +157,31 @@ export default function EditExam({
 
     const maxSize = 50 * 1024 * 1024; // 50MB
 
-    if (!allowedTypes.includes(file.type)) {
+    // 파일 확장자로도 체크 (MIME 타입이 없는 경우 대비)
+    const extension = file.name.split(".").pop()?.toLowerCase();
+    const allowedExtensions = [
+      "pdf",
+      "ppt",
+      "pptx",
+      "doc",
+      "docx",
+      "xls",
+      "xlsx",
+      "hwp",
+      "hwpx",
+      "jpg",
+      "jpeg",
+      "png",
+      "gif",
+      "webp",
+    ];
+
+    if (
+      !allowedTypes.includes(file.type) &&
+      !allowedExtensions.includes(extension || "")
+    ) {
       alert(
-        "지원되지 않는 파일 형식입니다. PDF, PPT, 워드, 이미지 파일만 업로드 가능합니다."
+        "지원되지 않는 파일 형식입니다. PPT, PDF, 워드, 엑셀, 한글, 이미지 파일만 업로드 가능합니다."
       );
       return false;
     }
@@ -269,6 +297,12 @@ export default function EditExam({
       case "doc":
       case "docx":
         return "📝";
+      case "xls":
+      case "xlsx":
+        return "📈";
+      case "hwp":
+      case "hwpx":
+        return "📋";
       case "jpg":
       case "jpeg":
       case "png":
