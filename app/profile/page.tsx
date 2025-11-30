@@ -11,7 +11,14 @@ import {
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { User, Mail, Calendar, Shield, GraduationCap, Hash } from "lucide-react";
+import {
+  User,
+  Mail,
+  Calendar,
+  Shield,
+  GraduationCap,
+  Hash,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -28,7 +35,9 @@ interface StudentProfile {
 export default function ProfilePage() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
-  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(
+    null
+  );
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
 
   useEffect(() => {
@@ -284,10 +293,7 @@ export default function ProfilePage() {
 
           {/* Actions */}
           <div className="flex justify-end space-x-4">
-            <Button
-              variant="outline"
-              onClick={() => router.back()}
-            >
+            <Button variant="outline" onClick={() => router.back()}>
               돌아가기
             </Button>
             {userRole === "instructor" && (
@@ -306,4 +312,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-

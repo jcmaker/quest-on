@@ -5,7 +5,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+// import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 
@@ -55,13 +55,12 @@ export function QuestionsListCard({ questions }: QuestionsListCardProps) {
             ))
           )}
         </div>
-        <div className="mt-4">
+        {/* <div className="mt-4">
           <Button variant="outline" size="sm">
             문제 추가
           </Button>
-        </div>
+        </div> */}
       </CardContent>
     </Card>
   );
 }
-

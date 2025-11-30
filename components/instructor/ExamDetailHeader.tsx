@@ -7,7 +7,11 @@ interface ExamDetailHeaderProps {
   examId: string;
 }
 
-export function ExamDetailHeader({ title, code, examId }: ExamDetailHeaderProps) {
+export function ExamDetailHeader({
+  title,
+  code,
+  examId,
+}: ExamDetailHeaderProps) {
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between">
@@ -29,4 +33,3 @@ export function ExamDetailHeader({ title, code, examId }: ExamDetailHeaderProps)
     </div>
   );
 }
-

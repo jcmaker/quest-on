@@ -43,7 +43,7 @@ export function RubricTable({
       <div className="space-y-4">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <Label htmlFor="rubric">평가 루브릭</Label>
+            <Label htmlFor="rubric">평가 기준</Label>
             <Tooltip>
               <TooltipTrigger asChild>
                 <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
@@ -52,8 +52,8 @@ export function RubricTable({
                 <p className="max-w-xs">
                   학생 답안을 평가할 때 사용할 기준을 설정하세요. 평가 영역(예:
                   문제 해결 능력, 창의적 사고), 세부 사항(구체적인 평가 기준)을
-                  입력하면 됩니다. AI가 이 루브릭을 참고하여 문제를 생성하고 답안을
-                  평가합니다.
+                  입력하면 됩니다. AI가 이 루브릭을 참고하여 문제를 생성하고
+                  답안을 평가합니다.
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -91,8 +91,9 @@ export function RubricTable({
                         </TooltipTrigger>
                         <TooltipContent>
                           <p className="max-w-xs">
-                            평가할 영역의 이름을 입력하세요. 예: &quot;문제 해결 능력&quot;,
-                            &quot;창의적 사고&quot;, &quot;논리적 분석&quot; 등
+                            평가할 영역의 이름을 입력하세요. 예: &quot;문제 해결
+                            능력&quot;, &quot;창의적 사고&quot;, &quot;논리적
+                            분석&quot; 등
                           </p>
                         </TooltipContent>
                       </Tooltip>
@@ -107,9 +108,10 @@ export function RubricTable({
                         </TooltipTrigger>
                         <TooltipContent>
                           <p className="max-w-xs">
-                            해당 평가 영역에 대한 구체적인 평가 기준을 입력하세요.
-                            예: &quot;문제를 정확히 파악하고, 체계적인 해결 방법을
-                            제시하며, 논리적으로 설명할 수 있는가?&quot;
+                            해당 평가 영역에 대한 구체적인 평가 기준을
+                            입력하세요. 예: &quot;문제를 정확히 파악하고,
+                            체계적인 해결 방법을 제시하며, 논리적으로 설명할 수
+                            있는가?&quot;
                           </p>
                         </TooltipContent>
                       </Tooltip>
@@ -186,4 +188,3 @@ export function RubricTable({
     </>
   );
 }
-

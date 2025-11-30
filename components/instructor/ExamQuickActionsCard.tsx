@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Copy } from "lucide-react";
 import { toast } from "sonner";
@@ -31,11 +26,7 @@ export function ExamQuickActionsCard({ examCode }: ExamQuickActionsCardProps) {
         <CardTitle>빠른 작업</CardTitle>
       </CardHeader>
       <CardContent>
-        <Button
-          className="w-full"
-          variant="outline"
-          onClick={handleCopyCode}
-        >
+        <Button className="w-full" variant="outline" onClick={handleCopyCode}>
           <Copy className="w-4 h-4 mr-2" />
           시험 코드 복사
         </Button>
@@ -43,4 +34,3 @@ export function ExamQuickActionsCard({ examCode }: ExamQuickActionsCardProps) {
     </Card>
   );
 }
-
