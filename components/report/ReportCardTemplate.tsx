@@ -106,6 +106,7 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
             paddingBottom: "24px",
           }}
         >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/qlogo_icon.png"
             alt="Logo"

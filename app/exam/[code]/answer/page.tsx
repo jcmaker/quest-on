@@ -74,7 +74,7 @@ export default function AnswerSubmission() {
   >([]);
   const [chatMessage, setChatMessage] = useState("");
 
-  const [isChatMode, setIsChatMode] = useState(false);
+  const [isChatMode] = useState(false);
   const [conversationEnded, setConversationEnded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

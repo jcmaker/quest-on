@@ -8,38 +8,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
-import { Star, MessageSquare, FileText, CheckCircle } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import { Star } from "lucide-react";
 import { useState, useEffect } from "react";
 
 type StageKey = "chat" | "answer" | "feedback";
-
-const stageOrder: StageKey[] = ["chat", "answer", "feedback"];
-
-const stageMeta: Record<
-  StageKey,
-  { label: string; description: string; icon: LucideIcon; accentClass: string }
-> = {
-  chat: {
-    label: "채팅 단계",
-    description: "학생과 AI의 상호작용을 평가하세요",
-    icon: MessageSquare,
-    accentClass: "text-blue-600",
-  },
-  answer: {
-    label: "최종 답안",
-    description: "학생이 제출한 답안을 평가하세요",
-    icon: FileText,
-    accentClass: "text-green-600",
-  },
-  feedback: {
-    label: "피드백 대응",
-    description: "AI 피드백 이후 학생의 반응을 평가하세요",
-    icon: CheckCircle,
-    accentClass: "text-purple-600",
-  },
-};
 
 interface GradingPanelProps {
   questionNumber: number;
@@ -58,14 +30,14 @@ interface GradingPanelProps {
 
 export function GradingPanel({
   questionNumber,
-  stageScores,
-  stageComments,
+  // stageScores,
+  // stageComments,
   overallScore,
   overallFeedback,
   isGraded,
   saving,
-  onStageScoreChange,
-  onStageCommentChange,
+  // onStageScoreChange,
+  // onStageCommentChange,
   onOverallScoreChange,
   onOverallFeedbackChange,
   onSave,

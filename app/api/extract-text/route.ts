@@ -9,6 +9,7 @@ import AdmZip from "adm-zip";
 
 // pdf2json을 사용하여 PDF 텍스트 추출 (Node.js 전용)
 // pdf-parse와 pdfjs-dist는 DOMMatrix 등 브라우저 API를 사용하여 Node.js에서 실패함
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let PDFParser: any = null;
 
 async function getPDFParser() {
@@ -46,20 +47,24 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
       const textParts: string[] = [];
       
       // 텍스트 추출 이벤트 핸들러
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       pdfParser.on("pdfParser_dataError", (errData: any) => {
         console.error("[extract-text] PDF 파싱 에러:", errData);
         reject(new Error(`PDF 파싱 실패: ${errData.parserError || "알 수 없는 오류"}`));
       });
       
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
         try {
           // 모든 페이지에서 텍스트 추출
           if (pdfData.Pages && Array.isArray(pdfData.Pages)) {
             for (const page of pdfData.Pages) {
               if (page.Texts && Array.isArray(page.Texts)) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const pageTexts = page.Texts.map((textObj: any) => {
                   // R 배열에서 텍스트 추출
                   if (textObj.R && Array.isArray(textObj.R)) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return textObj.R.map((r: any) => r.T || "").join("");
                   }
                   return "";
@@ -242,6 +247,10 @@ async function extractTextFromFile(
 }
 
 export async function POST(request: NextRequest) {
+  let fileUrl: string | undefined;
+  let fileName: string | undefined;
+  let mimeType: string | undefined;
+
   try {
     // 인증 확인
     const user = await currentUser();
@@ -262,7 +271,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { fileUrl, fileName, mimeType } = body;
+    ({ fileUrl, fileName, mimeType } = body);
 
     if (!fileUrl) {
       return NextResponse.json(
