@@ -10,7 +10,6 @@ import { ExamDetailHeader } from "@/components/instructor/ExamDetailHeader";
 import { ExamDetailsCard } from "@/components/instructor/ExamDetailsCard";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
 import { StudentProgressCard } from "@/components/instructor/StudentProgressCard";
-import { ExamQuickActionsCard } from "@/components/instructor/ExamQuickActionsCard";
 
 interface Exam {
   id: string;
@@ -37,6 +36,8 @@ interface Student {
   status: "not-started" | "in-progress" | "completed";
   score?: number;
   submittedAt?: string;
+  student_number?: string;
+  school?: string;
 }
 
 export default function ExamDetail({
@@ -111,35 +112,123 @@ export default function ExamDetail({
 
         if (sessionsResponse.ok) {
           const sessionsResult = await sessionsResponse.json();
-          students = sessionsResult.sessions.map(
+
+          // 학생별로 세션을 그룹화
+          const sessionsByStudent = new Map<
+            string,
+            Array<Record<string, unknown>>
+          >();
+
+          sessionsResult.sessions.forEach(
             (session: Record<string, unknown>) => {
               const studentId =
                 typeof session.student_id === "string"
                   ? session.student_id
                   : "";
+
+              if (!sessionsByStudent.has(studentId)) {
+                sessionsByStudent.set(studentId, []);
+              }
+              sessionsByStudent.get(studentId)?.push(session);
+            }
+          );
+
+          // 각 학생별로 최적의 세션 선택
+          students = Array.from(sessionsByStudent.entries()).map(
+            ([studentId, sessions]) => {
+              // 제출된 세션이 있으면 제출된 세션을 우선 선택 (최신 제출 순)
+              const submittedSessions = sessions
+                .filter((s) => s.submitted_at != null)
+                .sort((a, b) => {
+                  const aDate = a.submitted_at
+                    ? new Date(a.submitted_at as string).getTime()
+                    : 0;
+                  const bDate = b.submitted_at
+                    ? new Date(b.submitted_at as string).getTime()
+                    : 0;
+                  return bDate - aDate; // 최신 제출이 먼저
+                });
+
+              // 제출된 세션이 없으면 최신 세션 선택
+              const unsubmittedSessions = sessions
+                .filter((s) => s.submitted_at == null)
+                .sort((a, b) => {
+                  const aDate = a.created_at
+                    ? new Date(a.created_at as string).getTime()
+                    : 0;
+                  const bDate = b.created_at
+                    ? new Date(b.created_at as string).getTime()
+                    : 0;
+                  return bDate - aDate; // 최신 생성이 먼저
+                });
+
+              // 우선순위: 제출된 세션 > 최신 미제출 세션
+              const selectedSession =
+                submittedSessions.length > 0
+                  ? submittedSessions[0]
+                  : unsubmittedSessions.length > 0
+                  ? unsubmittedSessions[0]
+                  : sessions[0]; // 폴백
+
               const sessionId =
-                typeof session.id === "string" ? session.id : "";
-              const submittedAt = session.submitted_at ?? null;
+                typeof selectedSession.id === "string"
+                  ? selectedSession.id
+                  : "";
+              const submittedAt =
+                selectedSession.submitted_at != null
+                  ? typeof selectedSession.submitted_at === "string"
+                    ? selectedSession.submitted_at
+                    : String(selectedSession.submitted_at)
+                  : undefined;
 
               // Get student name from session data (already fetched from Clerk)
               const studentName =
-                typeof session.student_name === "string"
-                  ? session.student_name
+                typeof selectedSession.student_name === "string"
+                  ? selectedSession.student_name
                   : `Student ${studentId.slice(0, 8)}`;
               const studentEmail =
-                typeof session.student_email === "string"
-                  ? session.student_email
+                typeof selectedSession.student_email === "string"
+                  ? selectedSession.student_email
                   : `${studentId}@example.com`;
+
+              const createdAt =
+                selectedSession.created_at != null
+                  ? typeof selectedSession.created_at === "string"
+                    ? selectedSession.created_at
+                    : String(selectedSession.created_at)
+                  : undefined;
 
               return {
                 id: sessionId, // Use session ID for routing to grade page
                 name: studentName,
                 email: studentEmail,
                 status: submittedAt ? "completed" : "in-progress",
-                submittedAt: submittedAt,
+                submittedAt: submittedAt as string | undefined,
+                createdAt: createdAt as string | undefined,
+                student_number:
+                  typeof selectedSession.student_number === "string"
+                    ? selectedSession.student_number
+                    : undefined,
+                school:
+                  typeof selectedSession.student_school === "string"
+                    ? selectedSession.student_school
+                    : undefined,
               };
             }
           );
+
+          // 학생 목록 정렬: 제출 완료한 학생 먼저, 그 다음 진행 중인 학생
+          students.sort((a, b) => {
+            // 제출 완료한 학생을 먼저
+            if (a.status === "completed" && b.status !== "completed") {
+              return -1;
+            }
+            if (a.status !== "completed" && b.status === "completed") {
+              return 1;
+            }
+            // 같은 상태면 이름순으로 정렬
+            return a.name.localeCompare(b.name);
+          });
         }
 
         setExam({
@@ -218,6 +307,7 @@ export default function ExamDetail({
             description={exam.description}
             duration={exam.duration}
             createdAt={exam.createdAt}
+            examCode={exam.code}
           />
 
           <QuestionsListCard questions={exam.questions} />
@@ -225,8 +315,6 @@ export default function ExamDetail({
 
         <div className="space-y-6">
           <StudentProgressCard students={exam.students} examId={exam.id} />
-
-          <ExamQuickActionsCard examCode={exam.code} />
         </div>
       </div>
     </div>

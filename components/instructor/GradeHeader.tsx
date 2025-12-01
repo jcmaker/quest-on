@@ -10,6 +10,8 @@ interface GradeHeaderProps {
   examId: string;
   onAutoGrade: () => void;
   autoGrading: boolean;
+  studentNumber?: string;
+  school?: string;
 }
 
 export function GradeHeader({
@@ -19,6 +21,8 @@ export function GradeHeader({
   examId,
   onAutoGrade,
   autoGrading,
+  studentNumber,
+  school,
 }: GradeHeaderProps) {
   return (
     <div className="mb-8">
@@ -44,9 +48,15 @@ export function GradeHeader({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">{studentName} 학생 채점</h1>
-          <p className="text-muted-foreground">
-            제출일: {new Date(submittedAt).toLocaleString()}
-          </p>
+          <div className="text-muted-foreground space-y-1 mt-2">
+            <p>제출일: {new Date(submittedAt).toLocaleString()}</p>
+            {studentNumber && (
+              <p>학번: {studentNumber}</p>
+            )}
+            {school && (
+              <p>학교: {school}</p>
+            )}
+          </div>
           {overallScore !== null && (
             <p className="text-lg font-semibold mt-2">
               전체 점수: {overallScore}점

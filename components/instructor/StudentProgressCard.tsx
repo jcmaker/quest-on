@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Card,
   CardContent,
@@ -7,15 +9,21 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileText } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { FileText, Activity } from "lucide-react";
+import { StudentLiveMonitoring } from "./StudentLiveMonitoring";
+import { useState, useEffect } from "react";
 
 interface Student {
-  id: string;
+  id: string; // session ID
   name: string;
   email: string;
   status: "not-started" | "in-progress" | "completed";
   score?: number;
   submittedAt?: string;
+  createdAt?: string;
+  student_number?: string;
+  school?: string;
 }
 
 interface StudentProgressCardProps {
@@ -36,68 +44,217 @@ const getStudentStatusColor = (status: string) => {
   }
 };
 
+// 경과 시간을 계산하고 포맷하는 컴포넌트
+function ElapsedTime({ createdAt }: { createdAt: string | undefined }) {
+  const [elapsedTime, setElapsedTime] = useState<string>("");
+
+  useEffect(() => {
+    if (!createdAt) {
+      setElapsedTime("");
+      return;
+    }
+
+    const updateElapsedTime = () => {
+      const startTime = new Date(createdAt).getTime();
+      const now = Date.now();
+      const diffMs = now - startTime;
+
+      if (diffMs < 0) {
+        setElapsedTime("방금 전");
+        return;
+      }
+
+      const diffSeconds = Math.floor(diffMs / 1000);
+      const diffMinutes = Math.floor(diffSeconds / 60);
+      const diffHours = Math.floor(diffMinutes / 60);
+      const diffDays = Math.floor(diffHours / 24);
+
+      if (diffDays > 0) {
+        setElapsedTime(`${diffDays}일 ${diffHours % 24}시간`);
+      } else if (diffHours > 0) {
+        setElapsedTime(`${diffHours}시간 ${diffMinutes % 60}분`);
+      } else if (diffMinutes > 0) {
+        setElapsedTime(`${diffMinutes}분`);
+      } else {
+        setElapsedTime("방금 전");
+      }
+    };
+
+    // 즉시 업데이트
+    updateElapsedTime();
+
+    // 페이지가 보일 때만 업데이트
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        updateElapsedTime();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // 30초마다 업데이트 (실시간성 향상)
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        updateElapsedTime();
+      }
+    }, 30000);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [createdAt]);
+
+  if (!elapsedTime) return null;
+
+  return <span>시작한 지: {elapsedTime}</span>;
+}
+
 export function StudentProgressCard({
   students,
   examId,
 }: StudentProgressCardProps) {
+  const [monitoringSessionId, setMonitoringSessionId] = useState<string | null>(
+    null
+  );
+  const [monitoringStudent, setMonitoringStudent] = useState<Student | null>(
+    null
+  );
+
+  const handleLiveMonitoring = (student: Student) => {
+    setMonitoringStudent(student);
+    setMonitoringSessionId(student.id);
+  };
+
+  const handleCloseMonitoring = () => {
+    setMonitoringSessionId(null);
+    setMonitoringStudent(null);
+  };
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>학생 진행 상황 ({students.length})</CardTitle>
-        <CardDescription>학생 참여도와 점수 모니터링</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
-          {students.map((student) => (
-            <div key={student.id} className="border rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <h4 className="font-medium">{student.name}</h4>
-                  <p className="text-sm text-muted-foreground">
-                    {student.email}
-                  </p>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>학생 진행 상황 ({students.length})</CardTitle>
+          <CardDescription>학생 참여도와 점수 모니터링</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="border rounded-md divide-y">
+            {students.map((student) => (
+              <div
+                key={student.id}
+                className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4 hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-start gap-4">
+                  <Avatar className="h-10 w-10 border">
+                    <AvatarFallback className="bg-primary/10 text-primary font-medium">
+                      {student.name.slice(-2)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-medium leading-none">
+                        {student.name}
+                      </h4>
+                      <Badge
+                        variant="secondary"
+                        className={`text-xs font-normal ${getStudentStatusColor(
+                          student.status
+                        )}`}
+                      >
+                        {student.status === "in-progress" && (
+                          <span className="relative flex h-2 w-2 mr-1.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-600 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-600"></span>
+                          </span>
+                        )}
+                        {student.status === "completed"
+                          ? "완료"
+                          : student.status === "in-progress"
+                          ? "진행 중"
+                          : "시작 안함"}
+                      </Badge>
+                    </div>
+                    <div className="text-sm text-muted-foreground mt-1">
+                      {student.email}
+                    </div>
+                    {(student.student_number || student.school) && (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                        {student.student_number && (
+                          <span>{student.student_number}</span>
+                        )}
+                        {student.student_number && student.school && (
+                          <span className="text-muted-foreground/50">•</span>
+                        )}
+                        {student.school && <span>{student.school}</span>}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge className={getStudentStatusColor(student.status)}>
-                    {student.status === "completed"
-                      ? "완료"
-                      : student.status === "in-progress"
-                      ? "진행 중"
-                      : "시작 안함"}
-                  </Badge>
-                  {student.status === "completed" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-blue-600 border-blue-600 hover:bg-blue-50"
-                      onClick={() =>
-                        (window.location.href = `/instructor/${examId}/grade/${student.id}`)
-                      }
-                    >
-                      <FileText className="w-4 h-4 mr-1" />
-                      채점하기
-                    </Button>
-                  )}
+
+                <div className="flex items-center gap-4 self-end sm:self-auto">
+                  <div className="text-right min-w-[100px]">
+                    {student.status === "completed" &&
+                      student.score !== undefined && (
+                        <div className="flex flex-col items-end">
+                          <span className="font-medium">{student.score}%</span>
+                          <span className="text-xs text-muted-foreground">
+                            {student.submittedAt}
+                          </span>
+                        </div>
+                      )}
+                    {student.status === "in-progress" && student.createdAt && (
+                      <div className="text-xs text-muted-foreground">
+                        <ElapsedTime createdAt={student.createdAt} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {student.status === "in-progress" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-green-600 border-green-600 hover:bg-green-50 h-8"
+                        onClick={() => handleLiveMonitoring(student)}
+                      >
+                        <Activity className="w-3.5 h-3.5 mr-1" />
+                        모니터링
+                      </Button>
+                    )}
+                    {student.status === "completed" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-blue-600 border-blue-600 hover:bg-blue-50 h-8"
+                        onClick={() =>
+                          (window.location.href = `/instructor/${examId}/grade/${student.id}`)
+                        }
+                      >
+                        <FileText className="w-3.5 h-3.5 mr-1" />
+                        채점
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
-              {student.score && (
-                <div className="flex items-center justify-between text-sm">
-                  <span>점수: {student.score}%</span>
-                  <span className="text-muted-foreground">
-                    제출: {student.submittedAt}
-                  </span>
-                </div>
-              )}
-              {student.status === "in-progress" && (
-                <div className="text-sm text-muted-foreground">
-                  시작한 지: 00시간 17분
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {monitoringStudent && monitoringSessionId && (
+        <StudentLiveMonitoring
+          open={monitoringSessionId !== null}
+          onOpenChange={(open) => {
+            if (!open) handleCloseMonitoring();
+          }}
+          sessionId={monitoringSessionId}
+          studentName={monitoringStudent.name}
+          studentNumber={monitoringStudent.student_number}
+          school={monitoringStudent.school}
+        />
+      )}
+    </>
   );
 }
-

@@ -222,8 +222,23 @@ export async function GET(
 
     console.log("✅ Instructor verified");
 
-    // Get student info
-    const studentInfo = await getUserInfo(session.student_id);
+    // Get student info from Clerk
+    const clerkStudentInfo = await getUserInfo(session.student_id);
+    
+    // Get student profile from database
+    const { data: studentProfile } = await supabase
+      .from("student_profiles")
+      .select("name, student_number, school")
+      .eq("student_id", session.student_id)
+      .single();
+    
+    // Merge Clerk info with profile info (prefer profile name if available)
+    const studentInfo = {
+      name: studentProfile?.name || clerkStudentInfo?.name || `Student ${session.student_id.slice(0, 8)}`,
+      email: clerkStudentInfo?.email || `${session.student_id}@example.com`,
+      student_number: studentProfile?.student_number,
+      school: studentProfile?.school,
+    };
 
     // Decompress session data if available
     let decompressedSessionData = null;
@@ -389,10 +404,7 @@ export async function GET(
         decompressed: decompressedSessionData,
       },
       exam: exam,
-      student: studentInfo || {
-        name: `Student ${session.student_id.slice(0, 8)}`,
-        email: "N/A",
-      },
+      student: studentInfo,
       submissions: submissionsByQuestion,
       messages: messagesByQuestion,
       grades: gradesByQuestion,

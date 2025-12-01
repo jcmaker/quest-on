@@ -76,6 +76,8 @@ interface SessionData {
   student: {
     name: string;
     email: string;
+    student_number?: string;
+    school?: string;
   };
   submissions: Record<string, Submission>;
   messages: Record<string, Conversation[]>;
@@ -541,6 +543,8 @@ export default function GradeStudentPage({
         examId={resolvedParams.examId}
         onAutoGrade={() => handleAutoGrade(true)}
         autoGrading={autoGrading}
+        studentNumber={sessionData.student.student_number}
+        school={sessionData.student.school}
       />
 
       <div className="mb-6">

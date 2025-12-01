@@ -144,13 +144,38 @@ export async function GET(
     // Get unique student IDs
     const uniqueStudentIds = [...new Set(sessions.map((s) => s.student_id))];
     
-    // Fetch student info for all students in parallel
-    const studentInfoMap = new Map<string, { name: string; email: string }>();
+    // Fetch student profiles from database
+    const { data: studentProfiles } = await supabase
+      .from("student_profiles")
+      .select("student_id, name, student_number, school")
+      .in("student_id", uniqueStudentIds);
+    
+    // Create a map of student profiles by student_id
+    const studentProfileMap = new Map<string, { name: string; student_number: string; school: string }>();
+    if (studentProfiles) {
+      studentProfiles.forEach((profile) => {
+        studentProfileMap.set(profile.student_id, {
+          name: profile.name,
+          student_number: profile.student_number,
+          school: profile.school,
+        });
+      });
+    }
+    
+    // Fetch student info for all students in parallel (for email)
+    const studentInfoMap = new Map<string, { name: string; email: string; student_number?: string; school?: string }>();
     await Promise.all(
       uniqueStudentIds.map(async (studentId) => {
         const info = await getUserInfo(studentId);
+        const profile = studentProfileMap.get(studentId);
+        
         if (info) {
-          studentInfoMap.set(studentId, info);
+          studentInfoMap.set(studentId, {
+            name: profile?.name || info.name,
+            email: info.email,
+            student_number: profile?.student_number,
+            school: profile?.school,
+          });
         }
       })
     );
@@ -277,6 +302,8 @@ export async function GET(
       const studentInfo = studentInfoMap.get(session.student_id) || {
         name: `Student ${session.student_id.slice(0, 8)}`,
         email: `${session.student_id}@example.com`,
+        student_number: undefined,
+        school: undefined,
       };
 
       return {
@@ -284,6 +311,8 @@ export async function GET(
         student_id: session.student_id,
         student_name: studentInfo.name,
         student_email: studentInfo.email,
+        student_number: studentInfo.student_number,
+        student_school: studentInfo.school,
         submitted_at: session.submitted_at,
         used_clarifications: session.used_clarifications,
         created_at: session.created_at,
