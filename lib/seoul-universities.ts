@@ -111,56 +111,88 @@ function getInitials(text: string): string {
 // 학교명으로 검색 (초성 검색 지원)
 export async function searchUniversities(
   query: string,
-  limit: number = 10
+  limit?: number
 ): Promise<UniversitySearchResult[]> {
   const universities = await loadUniversities();
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
-    return universities.slice(0, limit);
+    return limit ? universities.slice(0, limit) : universities;
   }
 
   const lowerQuery = trimmedQuery.toLowerCase();
   const queryInitials = getInitials(trimmedQuery);
 
-  return universities
-    .filter((uni) => {
-      const searchableText = `${uni.name} ${uni.fullName} ${uni.address}`;
-      const lowerSearchableText = searchableText.toLowerCase();
-      const searchableInitials = getInitials(searchableText);
+  // 검색 결과를 우선순위별로 분류
+  const exactMatches: UniversitySearchResult[] = [];
+  const nameStartsWith: UniversitySearchResult[] = [];
+  const containsMatches: UniversitySearchResult[] = [];
+  const initialMatches: UniversitySearchResult[] = [];
 
-      // 1. 일반 텍스트 검색 (대소문자 무시) - 우선순위 1
-      if (lowerSearchableText.includes(lowerQuery)) {
-        return true;
+  universities.forEach((uni) => {
+    const searchableText = `${uni.name} ${uni.fullName} ${uni.address}`;
+    const lowerSearchableText = searchableText.toLowerCase();
+    const searchableInitials = getInitials(searchableText);
+
+    // 1. 정확한 일치 (이름 또는 fullName이 정확히 일치)
+    if (uni.name === trimmedQuery || uni.fullName === trimmedQuery) {
+      exactMatches.push(uni);
+      return;
+    }
+
+    // 2. 이름으로 시작하는 경우
+    if (uni.name.toLowerCase().startsWith(lowerQuery) || uni.fullName.toLowerCase().startsWith(lowerQuery)) {
+      nameStartsWith.push(uni);
+      return;
+    }
+
+    // 3. 일반 텍스트 검색 (포함)
+    if (lowerSearchableText.includes(lowerQuery)) {
+      containsMatches.push(uni);
+      return;
+    }
+
+    // 4. 초성만 입력한 경우 (예: 'ㅅ', 'ㅅㅇ')
+    if (/^[ㄱ-ㅎ]+$/.test(trimmedQuery)) {
+      if (searchableInitials.startsWith(queryInitials)) {
+        initialMatches.push(uni);
+        return;
       }
+    }
 
-      // 2. 초성만 입력한 경우 (예: 'ㅅ', 'ㅅㅇ')
-      if (/^[ㄱ-ㅎ]+$/.test(trimmedQuery)) {
-        // 초성으로 시작하는 학교 찾기
-        return searchableInitials.startsWith(queryInitials);
-      }
-
-      // 3. 한글 한 글자 입력 시 (예: '스', '서')
-      // 해당 글자의 초성으로 시작하는 학교 찾기
-      if (trimmedQuery.length === 1 && /[가-힣]/.test(trimmedQuery)) {
-        const firstCharInitial = queryInitials[0];
-        if (firstCharInitial && /[ㄱ-ㅎ]/.test(firstCharInitial)) {
-          return searchableInitials.startsWith(firstCharInitial);
+    // 5. 한글 한 글자 입력 시
+    if (trimmedQuery.length === 1 && /[가-힣]/.test(trimmedQuery)) {
+      const firstCharInitial = queryInitials[0];
+      if (firstCharInitial && /[ㄱ-ㅎ]/.test(firstCharInitial)) {
+        if (searchableInitials.startsWith(firstCharInitial)) {
+          initialMatches.push(uni);
+          return;
         }
       }
+    }
 
-      // 4. 여러 글자 입력 시 초성으로 시작하는지 확인
-      if (queryInitials && queryInitials.length > 0) {
-        const firstCharInitial = queryInitials[0];
-        if (firstCharInitial && /[ㄱ-ㅎ]/.test(firstCharInitial)) {
-          // 첫 글자 초성으로 시작하는 학교 찾기
-          return searchableInitials.startsWith(firstCharInitial);
+    // 6. 여러 글자 입력 시 초성으로 시작하는지 확인
+    if (queryInitials && queryInitials.length > 0) {
+      const firstCharInitial = queryInitials[0];
+      if (firstCharInitial && /[ㄱ-ㅎ]/.test(firstCharInitial)) {
+        if (searchableInitials.startsWith(firstCharInitial)) {
+          initialMatches.push(uni);
+          return;
         }
       }
+    }
+  });
 
-      return false;
-    })
-    .slice(0, limit);
+  // 우선순위대로 결과 합치기
+  const results = [
+    ...exactMatches,
+    ...nameStartsWith,
+    ...containsMatches,
+    ...initialMatches,
+  ];
+
+  // limit이 지정된 경우에만 제한 적용
+  return limit ? results.slice(0, limit) : results;
 }
 
 // 학교명으로 정확히 찾기

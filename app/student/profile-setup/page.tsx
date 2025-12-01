@@ -97,7 +97,7 @@ export default function ProfileSetupPage() {
         const response = await fetch(
           `/api/universities/search?q=${encodeURIComponent(
             schoolSearchQuery
-          )}&limit=10`
+          )}`
         );
         if (response.ok) {
           const data = await response.json();

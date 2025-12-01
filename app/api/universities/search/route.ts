@@ -5,7 +5,9 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get("q") || "";
-    const limit = parseInt(searchParams.get("limit") || "10", 10);
+    // limit 파라미터가 있으면 사용하고, 없으면 제한 없음 (또는 충분히 큰 값)
+    const limitParam = searchParams.get("limit");
+    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
 
     const results = await searchUniversities(query, limit);
 
