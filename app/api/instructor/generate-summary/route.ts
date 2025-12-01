@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
       ? exam.rubric
           .map(
             (r: Record<string, unknown>) =>
-              `- ${r.evaluationArea}: ${r.detailedCriteria} (배점: ${r.weight}%)`
+              `- ${r.evaluationArea}: ${r.detailedCriteria}`
           )
           .join("\n")
       : "별도의 루브릭 없음";

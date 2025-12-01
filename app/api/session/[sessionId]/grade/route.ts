@@ -814,17 +814,16 @@ export async function PUT(
 ${exam.rubric
   .map(
     (
-      item: {
-        evaluationArea: string;
-        detailedCriteria: string;
-        weight: number;
-      },
-      index: number
-    ) =>
-      `${index + 1}. ${item.evaluationArea} (중요도: ${item.weight}%)
-   - 세부 기준: ${item.detailedCriteria}`
-  )
-  .join("\n")}
+              item: {
+                evaluationArea: string;
+                detailedCriteria: string;
+              },
+              index: number
+            ) =>
+              `${index + 1}. ${item.evaluationArea}
+           - 세부 기준: ${item.detailedCriteria}`
+          )
+          .join("\n")}
 `
           : "";
 
