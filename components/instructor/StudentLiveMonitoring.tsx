@@ -8,13 +8,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { MessageSquare } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { createSupabaseClient } from "@/lib/supabase-client";
 import { decompressData } from "@/lib/compression";
+import { RealtimeChannel } from "@supabase/supabase-js";
 
 interface LiveMessage {
   id: string;
@@ -51,7 +51,7 @@ export function StudentLiveMonitoring({
   const [messages, setMessages] = useState<LiveMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const subscriptionRef = useRef<any>(null);
+  const subscriptionRef = useRef<RealtimeChannel | null>(null);
   const messagesMapRef = useRef<Map<string, LiveMessage>>(new Map());
 
   // localStorage에서 메시지 복원
