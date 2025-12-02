@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sparkles, Minus, Quote, Plus } from "lucide-react";
+import { LoadingMessage } from "@/components/ui/loading-message";
 
 export interface SummaryData {
   sentiment: "positive" | "negative" | "neutral";
@@ -44,14 +45,20 @@ export function AIOverallSummary({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            AI 종합 평가 분석 중...
+            AI 종합 평가 분석 중
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4 animate-pulse">
-            <div className="h-4 bg-muted rounded w-3/4"></div>
-            <div className="h-4 bg-muted rounded w-full"></div>
-            <div className="h-4 bg-muted rounded w-5/6"></div>
+          <div className="py-8">
+            <LoadingMessage
+              loading={loading}
+              messages={[
+                "학생의 답안을 전체적으로 검토하고 있습니다...",
+                "주요 강점과 개선점을 분석하고 있습니다...",
+                "답안에서 핵심 인용구를 추출하고 있습니다...",
+                "종합적인 평가 의견을 작성하고 있습니다...",
+              ]}
+            />
           </div>
         </CardContent>
       </Card>
@@ -102,12 +109,12 @@ export function AIOverallSummary({
             </div>
           )}
 
-          <div className="pt-2">
+          {/* <div className="pt-2">
             <Button variant="outline" size="sm" onClick={onGenerate}>
               <Sparkles className="w-3 h-3 mr-2" />
               다시 분석하기
             </Button>
-          </div>
+          </div> */}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

@@ -405,6 +405,10 @@ export default function EditExam({
       );
 
       if (activeMaterials.length > 0) {
+        let uploadedCount = 0;
+        const totalFiles = activeMaterials.length;
+        const loadingToast = toast.loading(`파일 업로드 중... (0/${totalFiles})`);
+
         const uploadPromises = activeMaterials.map(async (file) => {
           try {
             const { createClient } = await import("@supabase/supabase-js");
@@ -452,6 +456,11 @@ export default function EditExam({
                 if (!result.ok) {
                   throw new Error(`${file.name}: ${result.message}`);
                 }
+                
+                uploadedCount++;
+                toast.loading(`파일 업로드 중... (${uploadedCount}/${totalFiles})`, {
+                  id: loadingToast,
+                });
 
                 return result.url;
               }
@@ -463,6 +472,11 @@ export default function EditExam({
               .from("exam-materials")
               .getPublicUrl(data.path);
 
+            uploadedCount++;
+            toast.loading(`파일 업로드 중... (${uploadedCount}/${totalFiles})`, {
+              id: loadingToast,
+            });
+
             return urlData.publicUrl;
           } catch (error) {
             console.error(`Error uploading ${file.name}:`, error);
@@ -473,7 +487,9 @@ export default function EditExam({
         try {
           const newUrls = await Promise.all(uploadPromises);
           materialUrls = [...materialUrls, ...newUrls];
+          toast.dismiss(loadingToast);
         } catch (uploadError) {
+          toast.dismiss(loadingToast);
           const errorMessage =
             uploadError instanceof Error
               ? uploadError.message

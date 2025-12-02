@@ -8,8 +8,6 @@ interface GradeHeaderProps {
   submittedAt: string;
   overallScore: number | null;
   examId: string;
-  onAutoGrade: () => void;
-  autoGrading: boolean;
   studentNumber?: string;
   school?: string;
 }
@@ -19,8 +17,6 @@ export function GradeHeader({
   submittedAt,
   overallScore,
   examId,
-  onAutoGrade,
-  autoGrading,
   studentNumber,
   school,
 }: GradeHeaderProps) {
@@ -33,7 +29,7 @@ export function GradeHeader({
             시험으로 돌아가기
           </Button>
         </Link>
-        <Button
+        {/* <Button
           variant="outline"
           size="sm"
           onClick={onAutoGrade}
@@ -43,7 +39,7 @@ export function GradeHeader({
             className={`w-4 h-4 mr-2 ${autoGrading ? "animate-spin" : ""}`}
           />
           {autoGrading ? "자동 채점 중..." : "자동 채점 다시 실행"}
-        </Button>
+        </Button> */}
       </div>
       <div className="flex items-center justify-between">
         <div>

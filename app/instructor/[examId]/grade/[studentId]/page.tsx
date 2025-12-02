@@ -15,6 +15,7 @@ import { AIFeedbackCard } from "@/components/instructor/AIFeedbackCard";
 import { StudentReplyCard } from "@/components/instructor/StudentReplyCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
 import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
+import { toast } from "sonner";
 
 interface Conversation {
   id: string;
@@ -366,8 +367,9 @@ export default function GradeStudentPage({
           //           handleAutoGrade(false);
         }
 
-        // Initial AI Summary generation if not exists
-        if (!data.session.ai_summary) {
+        // Initial AI Summary generation if not exists and not loading
+        if (!data.session.ai_summary && !summaryLoading) {
+          // Directly call generate API
           handleGenerateSummary(data.session.id);
         }
       } catch (error) {
@@ -431,10 +433,10 @@ export default function GradeStudentPage({
         setSessionData(data);
       }
 
-      alert("채점이 저장되었습니다.");
+      toast.success("채점이 저장되었습니다.");
     } catch (error) {
       console.error("Error saving grade:", error);
-      alert("채점 저장 중 오류가 발생했습니다.");
+      toast.error("채점 저장 중 오류가 발생했습니다.");
     } finally {
       setSaving(false);
     }
@@ -541,8 +543,6 @@ export default function GradeStudentPage({
         submittedAt={sessionData.session.submitted_at}
         overallScore={sessionData.overallScore}
         examId={resolvedParams.examId}
-        onAutoGrade={() => handleAutoGrade(true)}
-        autoGrading={autoGrading}
         studentNumber={sessionData.student.student_number}
         school={sessionData.student.school}
       />
@@ -551,7 +551,6 @@ export default function GradeStudentPage({
         <AIOverallSummary
           summary={overallSummary}
           loading={summaryLoading}
-          onGenerate={handleGenerateSummary}
         />
       </div>
 
@@ -573,12 +572,14 @@ export default function GradeStudentPage({
 
           <FinalAnswerCard submission={currentSubmission} />
 
+          {/* Feedback session temporarily disabled
           <AIFeedbackCard
             submission={currentSubmission}
             submittedAt={sessionData.session.submitted_at}
           />
 
           <StudentReplyCard submission={currentSubmission} />
+          */}
         </div>
 
         <div className="space-y-6">

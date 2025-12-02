@@ -26,6 +26,7 @@ import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { ExamHeader } from "@/components/ExamHeader";
 import { CopyProtector } from "@/components/exam/CopyProtector";
 import { Kbd } from "@/components/ui/kbd";
+import { SubmissionOverlay, ChatLoadingIndicator } from "@/components/exam/ExamLoading";
 
 interface Question {
   id: string;
@@ -942,16 +943,16 @@ export default function AnswerSubmission() {
                           size="lg"
                           className="px-8"
                         >
-                          {isTyping ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
-                              처리 중...
-                            </>
-                          ) : (
-                            "제출하기"
-                          )}
+                          {isTyping ? "처리 중..." : "제출하기"}
                         </Button>
                       </div>
+                      
+                      {/* Reply Loading Indicator */}
+                      {isTyping && (
+                        <div className="mt-4 flex justify-start">
+                          <ChatLoadingIndicator isTyping={isTyping} />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -965,6 +966,7 @@ export default function AnswerSubmission() {
 
   return (
     <div className="h-screen flex flex-col bg-background">
+      <SubmissionOverlay isSubmitting={isSubmitting} />
       {/* Top Header */}
       <ExamHeader
         examCode={examCode}

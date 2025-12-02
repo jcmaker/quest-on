@@ -26,6 +26,7 @@ import { useUser } from "@clerk/nextjs";
 import { MessageCircle, ArrowUp, AlertCircle } from "lucide-react";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { ExamHeader } from "@/components/ExamHeader";
+import { ChatLoadingIndicator } from "@/components/exam/ExamLoading";
 
 interface Question {
   id: string;
@@ -549,28 +550,9 @@ export default function ExamPage() {
                       ))}
 
                       {/* Typing Indicator */}
-                      {isTyping && (
-                        <div className="flex justify-start">
-                          <div className="bg-muted/80 rounded-2xl px-4 py-3 max-w-[70%] shadow-sm">
-                            <div className="flex items-center space-x-2">
-                              <div className="flex space-x-1">
-                                <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
-                                <div
-                                  className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.1s" }}
-                                ></div>
-                                <div
-                                  className="w-2 h-2 bg-primary rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.2s" }}
-                                ></div>
-                              </div>
-                              <span className="text-sm text-muted-foreground">
-                                AI가 응답을 작성 중...
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                      <div className="flex justify-start">
+                        <ChatLoadingIndicator isTyping={isTyping} />
+                      </div>
                     </>
                   )}
                 </CopyProtector>
