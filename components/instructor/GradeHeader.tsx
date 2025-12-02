@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle } from "lucide-react";
 
 interface GradeHeaderProps {
   studentName: string;

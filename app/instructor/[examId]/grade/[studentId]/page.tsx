@@ -11,8 +11,6 @@ import { QuestionNavigation } from "@/components/instructor/QuestionNavigation";
 import { QuestionPromptCard } from "@/components/instructor/QuestionPromptCard";
 import { AIConversationsCard } from "@/components/instructor/AIConversationsCard";
 import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
-import { AIFeedbackCard } from "@/components/instructor/AIFeedbackCard";
-import { StudentReplyCard } from "@/components/instructor/StudentReplyCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
 import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
 import { toast } from "sonner";
@@ -111,7 +109,6 @@ export default function GradeStudentPage({
   >({});
   const [saving, setSaving] = useState(false);
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
-  const [autoGrading, setAutoGrading] = useState(false);
   const [overallSummary, setOverallSummary] = useState<SummaryData | null>(
     null
   );
@@ -156,128 +153,6 @@ export default function GradeStudentPage({
       setSummaryLoading(false);
     }
   };
-
-  const handleAutoGrade = useCallback(
-    async (forceRegrade: boolean = false) => {
-      try {
-        setAutoGrading(true);
-        const response = await fetch(
-          `/api/session/${resolvedParams.studentId}/grade`,
-          {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              forceRegrade,
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({
-            error: "Failed to parse error response",
-          }));
-          if (errorData.skipped) {
-            // Already graded, skip silently
-            return;
-          }
-          throw new Error(
-            errorData.details ||
-              errorData.message ||
-              errorData.error ||
-              "Failed to auto-grade"
-          );
-        }
-
-        const result = await response.json();
-
-        if (result.skipped) {
-          alert("이미 채점이 완료되었습니다.");
-          return;
-        }
-
-        // Refresh data to get updated grades
-        const refreshResponse = await fetch(
-          `/api/session/${resolvedParams.studentId}/grade`
-        );
-        if (refreshResponse.ok) {
-          const data: SessionData = await refreshResponse.json();
-          setSessionData(data);
-
-          // Update scores and feedbacks
-          const updatedScores: Record<number, number> = {};
-          const updatedFeedbacks: Record<number, string> = {};
-          const updatedStageScores: Record<
-            number,
-            Partial<Record<StageKey, number>>
-          > = {};
-          const updatedStageComments: Record<
-            number,
-            Partial<Record<StageKey, string>>
-          > = {};
-
-          Object.entries(data.grades).forEach(([qIdx, grade]) => {
-            updatedScores[parseInt(qIdx)] = grade.score;
-            updatedFeedbacks[parseInt(qIdx)] = grade.comment || "";
-
-            // Load stage grading data
-            if (grade.stage_grading) {
-              const stageGrading = grade.stage_grading;
-              if (stageGrading.chat) {
-                updatedStageScores[parseInt(qIdx)] = {
-                  ...updatedStageScores[parseInt(qIdx)],
-                  chat: stageGrading.chat.score,
-                };
-                updatedStageComments[parseInt(qIdx)] = {
-                  ...updatedStageComments[parseInt(qIdx)],
-                  chat: stageGrading.chat.comment,
-                };
-              }
-              if (stageGrading.answer) {
-                updatedStageScores[parseInt(qIdx)] = {
-                  ...updatedStageScores[parseInt(qIdx)],
-                  answer: stageGrading.answer.score,
-                };
-                updatedStageComments[parseInt(qIdx)] = {
-                  ...updatedStageComments[parseInt(qIdx)],
-                  answer: stageGrading.answer.comment,
-                };
-              }
-              if (stageGrading.feedback) {
-                updatedStageScores[parseInt(qIdx)] = {
-                  ...updatedStageScores[parseInt(qIdx)],
-                  feedback: stageGrading.feedback.score,
-                };
-                updatedStageComments[parseInt(qIdx)] = {
-                  ...updatedStageComments[parseInt(qIdx)],
-                  feedback: stageGrading.feedback.comment,
-                };
-              }
-            }
-          });
-
-          setScores(updatedScores);
-          setFeedbacks(updatedFeedbacks);
-          setStageScores(updatedStageScores);
-          setStageComments(updatedStageComments);
-
-          const gradedCount = Object.keys(data.grades).length;
-          alert(`자동 채점이 완료되었습니다. (${gradedCount}문제)`);
-        }
-      } catch (error) {
-        console.error("Error auto-grading:", error);
-        alert(
-          `자동 채점 중 오류가 발생했습니다: ${
-            (error as Error)?.message || "알 수 없는 오류"
-          }`
-        );
-      } finally {
-        setAutoGrading(false);
-      }
-    },
-    [resolvedParams.studentId]
-  );
 
   useEffect(() => {
     const fetchSessionData = async () => {
@@ -380,7 +255,7 @@ export default function GradeStudentPage({
     };
 
     fetchSessionData();
-  }, [resolvedParams.studentId, handleAutoGrade]);
+  }, [resolvedParams.studentId]);
 
   const handleSaveGrade = async (questionIdx: number) => {
     try {

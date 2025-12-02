@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sparkles, Minus, Quote, Plus } from "lucide-react";
 import { LoadingMessage } from "@/components/ui/loading-message";
@@ -16,13 +15,11 @@ export interface SummaryData {
 interface AIOverallSummaryProps {
   summary: SummaryData | null;
   loading: boolean;
-  onGenerate: () => void;
 }
 
 export function AIOverallSummary({
   summary,
   loading,
-  onGenerate,
 }: AIOverallSummaryProps) {
   if (!summary && !loading) {
     return (
@@ -33,7 +30,6 @@ export function AIOverallSummary({
           <p className="text-muted-foreground mb-6 max-w-sm">
             전체 답안을 분석하여 학생의 강점과 개선점을 요약해드립니다.
           </p>
-          <Button onClick={onGenerate}>평가 요약 생성하기</Button>
         </CardContent>
       </Card>
     );
