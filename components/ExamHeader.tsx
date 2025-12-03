@@ -122,7 +122,7 @@ export function ExamHeader({
 
           {/* Center: Progress Steps */}
           <div className="flex justify-center">
-            <ProgressBar currentStep={currentStep} />
+            {/* <ProgressBar currentStep={currentStep} /> */}
           </div>
 
           {/* Right: Exit Button (only on exam step) + Profile */}
