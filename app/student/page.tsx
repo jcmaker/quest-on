@@ -183,7 +183,21 @@ export default function StudentDashboard() {
           setTotalCount(data.pagination?.total || 0);
           setPage(pageNum);
         } else {
-          console.error("Failed to fetch sessions");
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Failed to fetch sessions:", {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorData,
+          });
+          
+          // Handle specific error cases
+          if (response.status === 401) {
+            console.error("Unauthorized - user may not be logged in");
+          } else if (response.status === 403) {
+            console.error("Forbidden - user may not be a student");
+          } else if (response.status === 500) {
+            console.error("Server error - check API route logs");
+          }
         }
       } catch (error) {
         console.error("Error fetching sessions:", error);

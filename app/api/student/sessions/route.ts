@@ -41,6 +41,7 @@ export async function GET(request: NextRequest) {
 
     if (countError) {
       console.error("Error counting sessions:", countError);
+      // Continue with count = 0 if counting fails
     }
 
     // Get paginated sessions for this student
@@ -57,7 +58,15 @@ export async function GET(request: NextRequest) {
     }
 
     if (!sessions || sessions.length === 0) {
-      return NextResponse.json({ sessions: [] });
+      return NextResponse.json({ 
+        sessions: [],
+        pagination: {
+          page,
+          limit,
+          total: totalCount || 0,
+          hasMore: false,
+        }
+      });
     }
 
     // Collect all unique exam_ids
