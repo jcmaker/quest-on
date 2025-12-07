@@ -47,7 +47,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
   }, [content]);
 
   return (
-    <div className="bg-muted/80 text-foreground border border-border/50 backdrop-blur-sm rounded-2xl px-3 py-2 max-w-[55%] shadow-sm transition-all duration-200 hover:shadow-md">
+    <div className="bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30">
       <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mb-2 prose-p:mb-3 prose-p:last:mb-0">
         {/* HTML 콘텐츠인지 확인하여 조건부 렌더링 */}
         {content.includes("<") &&

@@ -46,6 +46,7 @@ import {
   Save,
   FileText,
   ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { ExamHeader } from "@/components/ExamHeader";
@@ -81,6 +82,7 @@ interface DraftAnswer {
 }
 
 import { cn } from "@/lib/utils";
+import { getDeviceFingerprint } from "@/lib/device-fingerprint";
 
 export default function ExamPage() {
   const params = useParams();
@@ -111,8 +113,10 @@ export default function ExamPage() {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hasOpenedQuestion, setHasOpenedQuestion] = useState(true);
+  const [isQuestionVisible, setIsQuestionVisible] = useState(true);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Filter chat history by current question
   const currentQuestionChatHistory = chatHistory.filter(
@@ -146,7 +150,30 @@ export default function ExamPage() {
     const initExam = async () => {
       if (!examCode || !isLoaded || !user) return;
 
+      const deviceFingerprint = getDeviceFingerprint();
+
       try {
+        // Note: Clerk session revocation is optional
+        // The main protection is at the exam session level (checked in init_exam_session)
+        // Uncomment below if you want to also revoke other Clerk sessions:
+        /*
+        try {
+          const revokeResponse = await fetch(
+            "/api/auth/revoke-other-sessions",
+            {
+              method: "POST",
+            }
+          );
+          if (revokeResponse.ok) {
+            const revokeData = await revokeResponse.json();
+            console.log("[INIT_EXAM] Revoked other Clerk sessions:", revokeData);
+          }
+        } catch (revokeError) {
+          console.error("[INIT_EXAM] Error revoking Clerk sessions:", revokeError);
+          // Continue even if revocation fails
+        }
+        */
+
         const response = await fetch("/api/supa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -155,6 +182,7 @@ export default function ExamPage() {
             data: {
               examCode,
               studentId: user.id,
+              deviceFingerprint,
             },
           }),
         });
@@ -187,6 +215,21 @@ export default function ExamPage() {
             router.push("/join?error=exam_not_found");
           }
         } else {
+          const errorData = await response.json().catch(() => ({}));
+
+          // Handle concurrent access error
+          if (
+            response.status === 409 &&
+            errorData.error === "CONCURRENT_ACCESS_BLOCKED"
+          ) {
+            alert(
+              errorData.message ||
+                "이미 다른 기기에서 시험이 진행 중입니다. 동시 접속은 불가능합니다."
+            );
+            router.push("/");
+            return;
+          }
+
           router.push("/join?error=network_error");
         }
       } catch (error) {
@@ -199,6 +242,94 @@ export default function ExamPage() {
 
     initExam();
   }, [examCode, router, isLoaded, user]);
+
+  // Send heartbeat periodically and handle page unload
+  useEffect(() => {
+    if (!sessionId || !user || isSubmitted) return;
+
+    // Send heartbeat every 30 seconds
+    const sendHeartbeat = async () => {
+      try {
+        await fetch("/api/supa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "session_heartbeat",
+            data: {
+              sessionId,
+              studentId: user.id,
+            },
+          }),
+        });
+      } catch (error) {
+        console.error("Heartbeat error:", error);
+      }
+    };
+
+    // Send initial heartbeat
+    sendHeartbeat();
+
+    // Set up interval
+    heartbeatIntervalRef.current = setInterval(sendHeartbeat, 30000); // 30 seconds
+
+    // Deactivate session on page unload
+    const handleBeforeUnload = async () => {
+      // Use sendBeacon for reliable delivery on page unload
+      if (navigator.sendBeacon) {
+        const data = JSON.stringify({
+          action: "deactivate_session",
+          data: {
+            sessionId,
+            studentId: user.id,
+          },
+        });
+        navigator.sendBeacon("/api/supa", data);
+      } else {
+        // Fallback: try to send sync request (not ideal but better than nothing)
+        try {
+          await fetch("/api/supa", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "deactivate_session",
+              data: {
+                sessionId,
+                studentId: user.id,
+              },
+            }),
+            keepalive: true,
+          });
+        } catch (error) {
+          console.error("Failed to deactivate session on unload:", error);
+        }
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      if (heartbeatIntervalRef.current) {
+        clearInterval(heartbeatIntervalRef.current);
+      }
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+
+      // Deactivate session on component unmount (if not submitted)
+      if (!isSubmitted) {
+        fetch("/api/supa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "deactivate_session",
+            data: {
+              sessionId,
+              studentId: user.id,
+            },
+          }),
+          keepalive: true,
+        }).catch(console.error);
+      }
+    };
+  }, [sessionId, user, isSubmitted]);
 
   // Load saved answers from server when session is available
   useEffect(() => {
@@ -679,7 +810,7 @@ export default function ExamPage() {
               </div>
 
               {/* Chat Messages */}
-              <div className="flex-1 overflow-y-auto p-6 pb-48 space-y-6 min-h-0">
+              <div className="flex-1 overflow-y-auto hide-scrollbar p-6 pb-48 space-y-6 min-h-0">
                 <CopyProtector className="min-h-full flex flex-col gap-6">
                   {currentQuestionChatHistory.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center my-auto">
@@ -703,11 +834,11 @@ export default function ExamPage() {
                           }`}
                         >
                           {msg.type === "user" ? (
-                            <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-[70%] shadow-sm">
+                            <div className="bg-primary text-primary-foreground rounded-3xl rounded-tr-md px-5 py-3.5 max-w-[70%] shadow-lg shadow-primary/20 relative">
                               <p className="text-sm leading-relaxed whitespace-pre-wrap">
                                 {msg.message}
                               </p>
-                              <p className="text-xs mt-2 opacity-70 text-right">
+                              <p className="text-xs mt-2.5 opacity-80 text-right font-medium">
                                 {new Date(msg.timestamp).toLocaleTimeString(
                                   [],
                                   {
@@ -823,73 +954,29 @@ export default function ExamPage() {
               {/* Top Bar with Question Toggle */}
               <div className="border-b p-3 flex items-center justify-between bg-muted/20">
                 <div className="flex items-center gap-3">
-                  <Sheet
-                    defaultOpen={true}
-                    onOpenChange={(open) => {
-                      if (open && !hasOpenedQuestion) {
+                  <Button
+                    variant={hasOpenedQuestion ? "outline" : "default"}
+                    onClick={() => {
+                      setIsQuestionVisible(!isQuestionVisible);
+                      if (!hasOpenedQuestion) {
                         setHasOpenedQuestion(true);
                       }
                     }}
+                    className={cn(
+                      "gap-2 transition-all duration-500",
+                      !hasOpenedQuestion &&
+                        "animate-pulse ring-4 ring-blue-500/50 ring-offset-2 shadow-xl shadow-blue-200/50 font-bold scale-105",
+                      "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800 dark:hover:bg-blue-900/50"
+                    )}
                   >
-                    <SheetTrigger asChild>
-                      <Button
-                        variant={hasOpenedQuestion ? "outline" : "default"}
-                        className={cn(
-                          "gap-2 transition-all duration-500",
-                          !hasOpenedQuestion &&
-                            "animate-pulse ring-4 ring-blue-500/50 ring-offset-2 shadow-xl shadow-blue-200/50 font-bold scale-105",
-                          "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800 dark:hover:bg-blue-900/50"
-                        )}
-                      >
-                        <FileText className="w-4 h-4" />
-                        문제 보기
-                        <ChevronDown className="w-3 h-3 opacity-50" />
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent
-                      side="top"
-                      className="max-h-[85vh] overflow-y-auto"
-                    >
-                      <SheetHeader>
-                        <SheetTitle className="flex items-center gap-2">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            문제 {currentQuestion + 1}
-                          </span>
-                          <span className="text-lg">
-                            {exam.questions[currentQuestion]?.type === "essay"
-                              ? "서술형 문제"
-                              : "문제"}
-                          </span>
-                        </SheetTitle>
-                        <SheetDescription>
-                          배점: {exam.questions[currentQuestion]?.points}점
-                        </SheetDescription>
-                      </SheetHeader>
-
-                      <div className="py-6 space-y-6">
-                        {/* Question Content */}
-                        <div className="bg-muted/50 p-6 rounded-lg border">
-                          <CopyProtector>
-                            <RichTextViewer
-                              content={
-                                exam.questions[currentQuestion]?.text || ""
-                              }
-                              className="text-lg leading-relaxed"
-                            />
-                          </CopyProtector>
-                        </div>
-
-                        {/* Requirements */}
-                        <div className="bg-muted/30 p-4 rounded-lg">
-                          <h4 className="font-semibold mb-2">요구사항</h4>
-                          <ul className="space-y-1 text-sm text-muted-foreground">
-                            <li>• 문제를 정확히 이해하고 답변하세요</li>
-                            <li>• 풀이 과정을 단계별로 명확히 작성하세요</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </SheetContent>
-                  </Sheet>
+                    <FileText className="w-4 h-4" />
+                    {isQuestionVisible ? "문제 접기" : "문제 보기"}
+                    {isQuestionVisible ? (
+                      <ChevronUp className="w-3 h-3 opacity-50" />
+                    ) : (
+                      <ChevronDown className="w-3 h-3 opacity-50" />
+                    )}
+                  </Button>
                 </div>
 
                 {/* Navigation - Small version */}
@@ -922,7 +1009,49 @@ export default function ExamPage() {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4">
+              {/* Question Content - Toggleable */}
+              {isQuestionVisible && (
+                <div className="border-b bg-muted/30 overflow-y-auto hide-scrollbar max-h-[40vh]">
+                  <div className="p-4 space-y-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300">
+                          문제 {currentQuestion + 1}
+                        </span>
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {exam.questions[currentQuestion]?.type === "essay"
+                            ? "서술형 문제"
+                            : "문제"}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          배점: {exam.questions[currentQuestion]?.points}점
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Question Content */}
+                    <div className="bg-muted/50 p-4 rounded-lg border">
+                      <CopyProtector>
+                        <RichTextViewer
+                          content={exam.questions[currentQuestion]?.text || ""}
+                          className="text-base leading-relaxed"
+                        />
+                      </CopyProtector>
+                    </div>
+
+                    {/* Requirements */}
+                    <div className="bg-muted/30 p-3 rounded-lg">
+                      <h4 className="font-semibold mb-2 text-sm">요구사항</h4>
+                      <ul className="space-y-1 text-xs text-muted-foreground">
+                        <li>• 문제를 정확히 이해하고 답변하세요</li>
+                        <li>• 풀이 과정을 단계별로 명확히 작성하세요</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex-1 overflow-y-auto p-4 hide-scrollbar">
                 <div className="flex items-center justify-between mb-4">
                   <Label className="text-base font-semibold">답안 작성</Label>
 
