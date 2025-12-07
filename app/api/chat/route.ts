@@ -360,18 +360,27 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
     let dbCoreAbility = "";
     if (questionId && exam?.questions) {
       const questionIndex = parseInt(questionId);
+      
+      // Define a minimal type for the question object
+      interface QuestionType {
+        id: string;
+        core_ability?: string;
+        [key: string]: unknown;
+      }
+      
+      const questions = exam.questions as unknown as QuestionType[];
+
       // Check if questions is an array and index is valid
       if (
-        Array.isArray(exam.questions) &&
+        Array.isArray(questions) &&
         !isNaN(questionIndex) &&
-        exam.questions[questionIndex]
+        questions[questionIndex]
       ) {
-        // Use type assertion or check if core_ability exists
-        const q = exam.questions[questionIndex] as any;
+        const q = questions[questionIndex];
         dbCoreAbility = q.core_ability || "";
-      } else if (Array.isArray(exam.questions)) {
+      } else if (Array.isArray(questions)) {
         // Fallback: try to find by ID if questionId is a string ID not index
-        const q = (exam.questions as any[]).find((q) => q.id === questionId);
+        const q = questions.find((q) => q.id === questionId);
         if (q) {
           dbCoreAbility = q.core_ability || "";
         }

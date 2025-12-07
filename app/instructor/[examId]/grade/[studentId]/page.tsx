@@ -3,7 +3,8 @@
 
 import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { useState, useEffect, use, useCallback } from "react";
+import { useState, useEffect, use } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { GradeHeader } from "@/components/instructor/GradeHeader";
@@ -14,6 +15,10 @@ import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
 import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
 import { toast } from "sonner";
+import {
+  AIOverallSummary,
+  SummaryData,
+} from "@/components/instructor/AIOverallSummary";
 
 interface Conversation {
   id: string;
@@ -84,11 +89,6 @@ interface SessionData {
   overallScore: number | null;
 }
 
-import {
-  AIOverallSummary,
-  SummaryData,
-} from "@/components/instructor/AIOverallSummary";
-
 export default function GradeStudentPage({
   params,
 }: {
@@ -96,9 +96,8 @@ export default function GradeStudentPage({
 }) {
   const resolvedParams = use(params);
   const { isSignedIn, isLoaded, user } = useUser();
+  const queryClient = useQueryClient();
 
-  const [sessionData, setSessionData] = useState<SessionData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [scores, setScores] = useState<Record<number, number>>({});
   const [feedbacks, setFeedbacks] = useState<Record<number, string>>({});
   const [stageScores, setStageScores] = useState<
@@ -107,12 +106,12 @@ export default function GradeStudentPage({
   const [stageComments, setStageComments] = useState<
     Record<number, Partial<Record<StageKey, string>>>
   >({});
-  const [saving, setSaving] = useState(false);
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
+
+  // Use state for summary to combine DB data and fresh generation
   const [overallSummary, setOverallSummary] = useState<SummaryData | null>(
     null
   );
-  const [summaryLoading, setSummaryLoading] = useState(false);
 
   // Redirect non-instructors
   useEffect(() => {
@@ -124,19 +123,109 @@ export default function GradeStudentPage({
     }
   }, [isLoaded, isSignedIn, user]);
 
-  const handleGenerateSummary = async (targetSessionId?: string) => {
-    const idToUse = targetSessionId || sessionData?.session?.id;
-    if (!idToUse) return;
+  // Query for session data
+  const { data: sessionData, isLoading: loading } = useQuery({
+    queryKey: ["session-grade", resolvedParams.studentId],
+    queryFn: async () => {
+      // studentId is actually sessionId in the URL
+      const response = await fetch(
+        `/api/session/${resolvedParams.studentId}/grade`
+      );
 
-    try {
-      setSummaryLoading(true);
+      if (!response.ok) {
+        throw new Error("Failed to fetch session data");
+      }
+
+      const data: SessionData = await response.json();
+
+      // Debug logging
+      console.log("📊 Fetched session data:", data);
+
+      return data;
+    },
+    enabled: !!(
+      isLoaded &&
+      isSignedIn &&
+      (user?.unsafeMetadata?.role as string) === "instructor"
+    ),
+  });
+
+  // Effect to initialize state from sessionData
+  useEffect(() => {
+    if (sessionData) {
+      setOverallSummary(sessionData.session.ai_summary || null);
+
+      // Initialize scores and feedbacks from existing grades
+      const initialScores: Record<number, number> = {};
+      const initialFeedbacks: Record<number, string> = {};
+      const initialStageScores: Record<
+        number,
+        Partial<Record<StageKey, number>>
+      > = {};
+      const initialStageComments: Record<
+        number,
+        Partial<Record<StageKey, string>>
+      > = {};
+
+      Object.entries(sessionData.grades).forEach(([qIdx, grade]) => {
+        const typedGrade = grade as Grade;
+        initialScores[parseInt(qIdx)] = typedGrade.score;
+        initialFeedbacks[parseInt(qIdx)] = typedGrade.comment || "";
+
+        // Load stage grading data
+        if (typedGrade.stage_grading) {
+          const stageGrading = typedGrade.stage_grading;
+          if (stageGrading.chat) {
+            initialStageScores[parseInt(qIdx)] = {
+              ...initialStageScores[parseInt(qIdx)],
+              chat: stageGrading.chat.score,
+            };
+            initialStageComments[parseInt(qIdx)] = {
+              ...initialStageComments[parseInt(qIdx)],
+              chat: stageGrading.chat.comment,
+            };
+          }
+          if (stageGrading.answer) {
+            initialStageScores[parseInt(qIdx)] = {
+              ...initialStageScores[parseInt(qIdx)],
+              answer: stageGrading.answer.score,
+            };
+            initialStageComments[parseInt(qIdx)] = {
+              ...initialStageComments[parseInt(qIdx)],
+              answer: stageGrading.answer.comment,
+            };
+          }
+          if (stageGrading.feedback) {
+            initialStageScores[parseInt(qIdx)] = {
+              ...initialStageScores[parseInt(qIdx)],
+              feedback: stageGrading.feedback.score,
+            };
+            initialStageComments[parseInt(qIdx)] = {
+              ...initialStageComments[parseInt(qIdx)],
+              feedback: stageGrading.feedback.comment,
+            };
+          }
+        }
+      });
+
+      setScores(initialScores);
+      setFeedbacks(initialFeedbacks);
+      setStageScores(initialStageScores);
+      setStageComments(initialStageComments);
+    }
+  }, [sessionData]);
+
+  // Query for AI Summary (optimizing GPT API call)
+  const { data: generatedSummary, isLoading: summaryLoading } = useQuery({
+    queryKey: ["session-summary", sessionData?.session?.id],
+    queryFn: async () => {
       const response = await fetch("/api/instructor/generate-summary", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          sessionId: idToUse,
+          sessionId: sessionData?.session?.id,
         }),
       });
 
@@ -145,121 +234,23 @@ export default function GradeStudentPage({
       }
 
       const data = await response.json();
-      setOverallSummary(data.summary);
-    } catch (error) {
-      console.error("Error generating summary:", error);
-      alert("요약 생성 중 오류가 발생했습니다.");
-    } finally {
-      setSummaryLoading(false);
-    }
-  };
+      return data.summary as SummaryData;
+    },
+    // Only fetch if session loaded AND no summary in DB
+    enabled: !!sessionData?.session?.id && !sessionData?.session?.ai_summary,
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+  });
 
+  // Effect to update summary when generated
   useEffect(() => {
-    const fetchSessionData = async () => {
-      try {
-        setLoading(true);
-        // studentId is actually sessionId in the URL
-        const response = await fetch(
-          `/api/session/${resolvedParams.studentId}/grade`
-        );
+    if (generatedSummary) {
+      setOverallSummary(generatedSummary);
+    }
+  }, [generatedSummary]);
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch session data");
-        }
-
-        const data: SessionData = await response.json();
-
-        // Debug logging
-        console.log("📊 Fetched session data:", data);
-        console.log("📝 Exam questions:", data.exam?.questions);
-        console.log("💬 Messages:", data.messages);
-        console.log("📤 Submissions:", data.submissions);
-
-        setSessionData(data);
-        setOverallSummary(data.session.ai_summary || null);
-
-        // Initialize scores and feedbacks from existing grades
-        const initialScores: Record<number, number> = {};
-        const initialFeedbacks: Record<number, string> = {};
-        const initialStageScores: Record<
-          number,
-          Partial<Record<StageKey, number>>
-        > = {};
-        const initialStageComments: Record<
-          number,
-          Partial<Record<StageKey, string>>
-        > = {};
-
-        Object.entries(data.grades).forEach(([qIdx, grade]) => {
-          initialScores[parseInt(qIdx)] = grade.score;
-          initialFeedbacks[parseInt(qIdx)] = grade.comment || "";
-
-          // Load stage grading data
-          if (grade.stage_grading) {
-            const stageGrading = grade.stage_grading;
-            if (stageGrading.chat) {
-              initialStageScores[parseInt(qIdx)] = {
-                ...initialStageScores[parseInt(qIdx)],
-                chat: stageGrading.chat.score,
-              };
-              initialStageComments[parseInt(qIdx)] = {
-                ...initialStageComments[parseInt(qIdx)],
-                chat: stageGrading.chat.comment,
-              };
-            }
-            if (stageGrading.answer) {
-              initialStageScores[parseInt(qIdx)] = {
-                ...initialStageScores[parseInt(qIdx)],
-                answer: stageGrading.answer.score,
-              };
-              initialStageComments[parseInt(qIdx)] = {
-                ...initialStageComments[parseInt(qIdx)],
-                answer: stageGrading.answer.comment,
-              };
-            }
-            if (stageGrading.feedback) {
-              initialStageScores[parseInt(qIdx)] = {
-                ...initialStageScores[parseInt(qIdx)],
-                feedback: stageGrading.feedback.score,
-              };
-              initialStageComments[parseInt(qIdx)] = {
-                ...initialStageComments[parseInt(qIdx)],
-                feedback: stageGrading.feedback.comment,
-              };
-            }
-          }
-        });
-
-        setScores(initialScores);
-        setFeedbacks(initialFeedbacks);
-        setStageScores(initialStageScores);
-        setStageComments(initialStageComments);
-
-        // Auto-grade if no grades exist
-        const hasGrades = Object.keys(data.grades).length > 0;
-        if (!hasGrades) {
-          // console.log("🤖 No grades found, starting auto-grading...");
-          //           handleAutoGrade(false);
-        }
-
-        // Initial AI Summary generation if not exists and not loading
-        if (!data.session.ai_summary && !summaryLoading) {
-          // Directly call generate API
-          handleGenerateSummary(data.session.id);
-        }
-      } catch (error) {
-        console.error("Error fetching session data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchSessionData();
-  }, [resolvedParams.studentId]);
-
-  const handleSaveGrade = async (questionIdx: number) => {
-    try {
-      setSaving(true);
+  // Mutation for saving grades
+  const saveGradeMutation = useMutation({
+    mutationFn: async (questionIdx: number) => {
       const response = await fetch(
         `/api/session/${resolvedParams.studentId}/grade`,
         {
@@ -298,23 +289,23 @@ export default function GradeStudentPage({
       if (!response.ok) {
         throw new Error("Failed to save grade");
       }
-
-      // Refresh data to get updated overall score
-      const refreshResponse = await fetch(
-        `/api/session/${resolvedParams.studentId}/grade`
-      );
-      if (refreshResponse.ok) {
-        const data: SessionData = await refreshResponse.json();
-        setSessionData(data);
-      }
-
+      return response.json();
+    },
+    onSuccess: () => {
+      // Invalidate to refresh overall score
+      queryClient.invalidateQueries({
+        queryKey: ["session-grade", resolvedParams.studentId],
+      });
       toast.success("채점이 저장되었습니다.");
-    } catch (error) {
+    },
+    onError: (error: any) => {
       console.error("Error saving grade:", error);
       toast.error("채점 저장 중 오류가 발생했습니다.");
-    } finally {
-      setSaving(false);
-    }
+    },
+  });
+
+  const handleSaveGrade = (questionIdx: number) => {
+    saveGradeMutation.mutate(questionIdx);
   };
 
   const handleStageScoreChange = (stage: StageKey, value: number) => {
@@ -394,21 +385,12 @@ export default function GradeStudentPage({
       []) as Conversation[];
   }
 
-  // Debug logging for current data
-  console.log("🔍 Current question index:", selectedQuestionIdx);
-  console.log("❓ Current question:", currentQuestion);
-  console.log("❓ Current question ID:", currentQuestion?.id);
-  console.log("📤 Current submission:", currentSubmission);
-  console.log("💬 Current messages:", currentMessages);
-  console.log("💬 All messages keys:", Object.keys(sessionData.messages || {}));
-
   // Separate messages into AI conversations (before submission) and feedback conversations (after submission)
   const aiConversations = currentMessages.filter(
     (msg) => msg.role === "user" || msg.role === "ai"
   );
 
   // For now, we'll assume all messages are AI conversations during the exam
-  // In a real implementation, you might have a flag or timestamp to distinguish
   const duringExamMessages = aiConversations;
 
   return (
@@ -423,10 +405,7 @@ export default function GradeStudentPage({
       />
 
       <div className="mb-6">
-        <AIOverallSummary
-          summary={overallSummary}
-          loading={summaryLoading}
-        />
+        <AIOverallSummary summary={overallSummary} loading={summaryLoading} />
       </div>
 
       <QuestionNavigation
@@ -446,15 +425,6 @@ export default function GradeStudentPage({
           <AIConversationsCard messages={duringExamMessages} />
 
           <FinalAnswerCard submission={currentSubmission} />
-
-          {/* Feedback session temporarily disabled
-          <AIFeedbackCard
-            submission={currentSubmission}
-            submittedAt={sessionData.session.submitted_at}
-          />
-
-          <StudentReplyCard submission={currentSubmission} />
-          */}
         </div>
 
         <div className="space-y-6">
@@ -465,7 +435,7 @@ export default function GradeStudentPage({
             overallScore={scores[selectedQuestionIdx] || 0}
             overallFeedback={feedbacks[selectedQuestionIdx] || ""}
             isGraded={!!sessionData.grades[selectedQuestionIdx]}
-            saving={saving}
+            saving={saveGradeMutation.isPending}
             onStageScoreChange={handleStageScoreChange}
             onStageCommentChange={handleStageCommentChange}
             onOverallScoreChange={(value) =>
@@ -495,27 +465,32 @@ export default function GradeStudentPage({
                     exam: {
                       title: sessionData.exam.title,
                       code: sessionData.exam.code,
-                      questions: sessionData.exam.questions.map((q) => ({
-                        id: q.id,
-                        idx: q.idx,
-                        type: q.type,
-                        prompt: q.prompt,
-                      })),
+                      questions: sessionData.exam.questions.map(
+                        (q: Question) => ({
+                          id: q.id,
+                          idx: q.idx,
+                          type: q.type,
+                          prompt: q.prompt,
+                        })
+                      ),
                       description: undefined, // Not available in SessionData
                     },
                     session: {
                       submitted_at: sessionData.session.submitted_at,
                     },
                     grades: Object.fromEntries(
-                      Object.entries(sessionData.grades).map(([key, grade]) => [
-                        parseInt(key),
-                        {
-                          id: grade.id,
-                          q_idx: grade.q_idx,
-                          score: grade.score,
-                          comment: grade.comment,
-                        },
-                      ])
+                      Object.entries(sessionData.grades).map(([key, grade]) => {
+                        const typedGrade = grade as Grade;
+                        return [
+                          parseInt(key),
+                          {
+                            id: typedGrade.id,
+                            q_idx: typedGrade.q_idx,
+                            score: typedGrade.score,
+                            comment: typedGrade.comment,
+                          },
+                        ];
+                      })
                     ),
                     overallScore: sessionData.overallScore,
                     studentName: sessionData.student.name,
