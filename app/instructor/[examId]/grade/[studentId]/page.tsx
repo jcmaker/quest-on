@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { redirect } from "next/navigation";
@@ -298,7 +297,7 @@ export default function GradeStudentPage({
       });
       toast.success("채점이 저장되었습니다.");
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       console.error("Error saving grade:", error);
       toast.error("채점 저장 중 오류가 발생했습니다.");
     },
