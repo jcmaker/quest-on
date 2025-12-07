@@ -51,8 +51,9 @@ export function ExamInfoForm({
                 </TooltipTrigger>
                 <TooltipContent>
                   <p className="max-w-xs">
-                    시험의 제목을 입력하세요. 예: &quot;국제경영론 25-1 중간고사&quot;와 같이
-                    과목명과 시험 정보를 포함하면 좋습니다.
+                    시험의 제목을 입력하세요. 예: &quot;국제경영론 25-1
+                    중간고사&quot;와 같이 과목명과 시험 정보를 포함하면
+                    좋습니다.
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -86,7 +87,7 @@ export function ExamInfoForm({
                 value={code}
                 onChange={(e) => onCodeChange(e.target.value.toUpperCase())}
                 placeholder={code}
-                className="font-mono"
+                className="exam-code"
                 required
                 disabled
               />
@@ -106,9 +107,9 @@ export function ExamInfoForm({
               </TooltipTrigger>
               <TooltipContent>
                 <p className="max-w-xs">
-                  학생들이 시험을 치르는 데 주어지는 시간을 설정하세요. 슬라이더를
-                  조절하거나 빠른 선택 버튼을 사용할 수 있습니다. 최소 15분부터 최대
-                  480분(8시간)까지 설정 가능합니다.
+                  학생들이 시험을 치르는 데 주어지는 시간을 설정하세요.
+                  슬라이더를 조절하거나 빠른 선택 버튼을 사용할 수 있습니다.
+                  최소 15분부터 최대 480분(8시간)까지 설정 가능합니다.
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -148,4 +149,3 @@ export function ExamInfoForm({
     </Card>
   );
 }
-

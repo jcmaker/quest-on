@@ -77,6 +77,14 @@ export default function StudentDashboard() {
   const [profileChecked, setProfileChecked] = useState(false);
   const [isCheckingProfile, setIsCheckingProfile] = useState(false);
 
+  // Scroll to top on mount and when pathname changes
+  useEffect(() => {
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+  }, []);
+
   // Redirect non-students or users without role
   useEffect(() => {
     if (isLoaded && isSignedIn) {
@@ -596,7 +604,7 @@ export default function StudentDashboard() {
                         <div className="flex items-center space-x-4 text-sm text-muted-foreground">
                           <div className="flex items-center space-x-1">
                             <Copy className="w-3 h-3" />
-                            <span className="font-mono">
+                            <span className="exam-code">
                               {session.examCode}
                             </span>
                           </div>

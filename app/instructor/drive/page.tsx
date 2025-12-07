@@ -283,9 +283,13 @@ export default function InstructorDrive() {
                 </h3>
                 <div className="mt-1 space-y-0.5">
                   <p className="text-xs text-muted-foreground truncate">
-                    {isFolder
-                      ? `폴더 · ${formatDate(node.updated_at)}`
-                      : `${node.exams?.code || ""}`}
+                    {isFolder ? (
+                      `폴더 · ${formatDate(node.updated_at)}`
+                    ) : (
+                      <span className="exam-code">
+                        {node.exams?.code || ""}
+                      </span>
+                    )}
                   </p>
                   {!isFolder && (
                     <p className="text-xs text-muted-foreground truncate">
@@ -366,7 +370,9 @@ export default function InstructorDrive() {
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                {node.exams?.code && <span>{node.exams.code}</span>}
+                {node.exams?.code && (
+                  <span className="exam-code">{node.exams.code}</span>
+                )}
                 <span>· 생성 {formatDate(node.created_at)}</span>
               </div>
             )}

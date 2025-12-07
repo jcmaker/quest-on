@@ -537,7 +537,7 @@ export default function StudentReportPage() {
             <CardContent className="space-y-2 text-sm">
               <div>
                 <span className="text-muted-foreground">시험 코드:</span>
-                <span className="ml-2 font-mono">{reportData.exam.code}</span>
+                <span className="ml-2 exam-code">{reportData.exam.code}</span>
               </div>
               <div>
                 <span className="text-muted-foreground">제출 일시:</span>

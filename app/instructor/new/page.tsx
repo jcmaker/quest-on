@@ -786,7 +786,7 @@ export default function CreateExam() {
             <div className="space-y-2">
               <Label className="text-sm font-medium">시험 코드</Label>
               <div className="flex items-center gap-2">
-                <code className="px-4 py-2 bg-muted rounded-md font-mono text-lg font-semibold">
+                <code className="px-4 py-2 bg-muted rounded-md exam-code text-lg font-semibold">
                   {createdExamCode}
                 </code>
                 <Button

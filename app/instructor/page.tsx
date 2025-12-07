@@ -48,6 +48,14 @@ export default function InstructorHome() {
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
+  // Scroll to top on mount and when pathname changes
+  useEffect(() => {
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    });
+  }, []);
+
   // Redirect non-instructors or users without role
   useEffect(() => {
     if (isLoaded && isSignedIn) {

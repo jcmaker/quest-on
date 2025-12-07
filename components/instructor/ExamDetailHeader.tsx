@@ -18,7 +18,7 @@ export function ExamDetailHeader({
         <div>
           <h1 className="text-3xl font-bold">{title}</h1>
           <p className="text-muted-foreground">
-            시험 코드: <span className="font-mono">{code}</span>
+            시험 코드: <span className="exam-code">{code}</span>
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -65,7 +65,7 @@ export function ExamCard({
         <div className="flex items-center space-x-4 text-sm text-muted-foreground">
           <div className="flex items-center space-x-1">
             <Copy className={iconSize} />
-            <span className="font-mono">{exam.code}</span>
+            <span className="exam-code">{exam.code}</span>
           </div>
           <div className="flex items-center space-x-1">
             <Clock className={iconSize} />

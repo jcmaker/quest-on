@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Copy } from "lucide-react";
@@ -59,7 +54,7 @@ export function ExamDetailsCard({
         <div>
           <Label className="font-medium">시험 코드</Label>
           <div className="flex items-center gap-2 mt-1">
-            <p className="text-sm text-muted-foreground font-mono">
+            <p className="text-sm text-muted-foreground exam-code">
               {examCode}
             </p>
             <Button
@@ -77,4 +72,3 @@ export function ExamDetailsCard({
     </Card>
   );
 }
-
