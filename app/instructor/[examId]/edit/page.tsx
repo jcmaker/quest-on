@@ -36,6 +36,7 @@ export default function EditExam({
   const [isDragOver, setIsDragOver] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [rubric, setRubric] = useState<RubricItem[]>([]);
+  const [isRubricPublic, setIsRubricPublic] = useState(false);
 
   // 기존 시험 데이터 불러오기
   useEffect(() => {
@@ -81,6 +82,7 @@ export default function EditExam({
                 },
               ]
         );
+        setIsRubricPublic(exam.rubric_public || false);
       } catch (error) {
         console.error("Error fetching exam:", error);
         toast.error("시험 데이터를 불러오는 중 오류가 발생했습니다.");
@@ -407,7 +409,9 @@ export default function EditExam({
       if (activeMaterials.length > 0) {
         let uploadedCount = 0;
         const totalFiles = activeMaterials.length;
-        const loadingToast = toast.loading(`파일 업로드 중... (0/${totalFiles})`);
+        const loadingToast = toast.loading(
+          `파일 업로드 중... (0/${totalFiles})`
+        );
 
         const uploadPromises = activeMaterials.map(async (file) => {
           try {
@@ -456,11 +460,14 @@ export default function EditExam({
                 if (!result.ok) {
                   throw new Error(`${file.name}: ${result.message}`);
                 }
-                
+
                 uploadedCount++;
-                toast.loading(`파일 업로드 중... (${uploadedCount}/${totalFiles})`, {
-                  id: loadingToast,
-                });
+                toast.loading(
+                  `파일 업로드 중... (${uploadedCount}/${totalFiles})`,
+                  {
+                    id: loadingToast,
+                  }
+                );
 
                 return result.url;
               }
@@ -473,9 +480,12 @@ export default function EditExam({
               .getPublicUrl(data.path);
 
             uploadedCount++;
-            toast.loading(`파일 업로드 중... (${uploadedCount}/${totalFiles})`, {
-              id: loadingToast,
-            });
+            toast.loading(
+              `파일 업로드 중... (${uploadedCount}/${totalFiles})`,
+              {
+                id: loadingToast,
+              }
+            );
 
             return urlData.publicUrl;
           } catch (error) {
@@ -507,6 +517,7 @@ export default function EditExam({
         duration: examData.duration,
         questions: questions,
         rubric: rubric,
+        rubric_public: isRubricPublic,
         materials: materialUrls,
         updated_at: new Date().toISOString(),
       };
@@ -627,6 +638,8 @@ export default function EditExam({
           onAdd={addRubricItem}
           onUpdate={updateRubricItem}
           onRemove={removeRubricItem}
+          isPublic={isRubricPublic}
+          onPublicChange={setIsRubricPublic}
         />
 
         <QuestionsList
@@ -664,4 +677,3 @@ export default function EditExam({
     </div>
   );
 }
-

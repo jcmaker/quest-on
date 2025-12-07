@@ -48,6 +48,7 @@ export default function CreateExam() {
       detailedCriteria: "",
     },
   ]);
+  const [isRubricPublic, setIsRubricPublic] = useState(false);
 
   const generateExamCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -446,7 +447,18 @@ export default function CreateExam() {
   };
 
   const createExamMutation = useMutation({
-    mutationFn: async (examDataForDB: any) => {
+    mutationFn: async (examDataForDB: {
+      title: string;
+      code: string;
+      duration: number;
+      questions: Question[];
+      rubric: RubricItem[];
+      rubric_public: boolean;
+      materials: string[];
+      status: string;
+      created_at: string;
+      updated_at: string;
+    }) => {
       const response = await fetch("/api/supa", {
         method: "POST",
         headers: {
@@ -655,6 +667,7 @@ export default function CreateExam() {
         duration: examData.duration,
         questions: questions,
         rubric: rubric, // 루브릭 데이터 추가
+        rubric_public: isRubricPublic, // 루브릭 공개 여부
         materials: materialUrls, // Array of file URLs
         status: "draft", // Start as draft
         created_at: new Date().toISOString(),
@@ -738,6 +751,8 @@ export default function CreateExam() {
           onAdd={addRubricItem}
           onUpdate={updateRubricItem}
           onRemove={removeRubricItem}
+          isPublic={isRubricPublic}
+          onPublicChange={setIsRubricPublic}
         />
 
         <QuestionsList

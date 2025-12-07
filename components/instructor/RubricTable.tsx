@@ -2,6 +2,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -29,6 +30,8 @@ interface RubricTableProps {
   onAdd: () => void;
   onUpdate: (id: string, field: keyof RubricItem, value: string) => void;
   onRemove: (id: string) => void;
+  isPublic?: boolean;
+  onPublicChange?: (isPublic: boolean) => void;
 }
 
 export function RubricTable({
@@ -36,27 +39,57 @@ export function RubricTable({
   onAdd,
   onUpdate,
   onRemove,
+  isPublic = false,
+  onPublicChange,
 }: RubricTableProps) {
   return (
     <>
       <Separator />
       <div className="space-y-4">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <Label htmlFor="rubric">평가 기준</Label>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="max-w-xs">
-                  학생 답안을 평가할 때 사용할 기준을 설정하세요. 평가 영역(예:
-                  문제 해결 능력, 창의적 사고), 세부 사항(구체적인 평가 기준)을
-                  입력하면 됩니다. AI가 이 루브릭을 참고하여 문제를 생성하고
-                  답안을 평가합니다.
-                </p>
-              </TooltipContent>
-            </Tooltip>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="rubric">평가 기준</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    학생 답안을 평가할 때 사용할 기준을 설정하세요. 평가
+                    영역(예: 문제 해결 능력, 창의적 사고), 세부 사항(구체적인
+                    평가 기준)을 입력하면 됩니다. AI가 이 루브릭을 참고하여
+                    문제를 생성하고 답안을 평가합니다.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            {onPublicChange && (
+              <div className="flex items-center gap-2">
+                <Label
+                  htmlFor="rubric-public"
+                  className="text-sm font-normal cursor-pointer"
+                >
+                  평가 기준 공개
+                </Label>
+                <Switch
+                  id="rubric-public"
+                  checked={isPublic}
+                  onCheckedChange={onPublicChange}
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">
+                      공개하면 학생이 시험을 볼 때 문제 아래에 평가
+                      기준(루브릭)이 표시됩니다.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
             AI 답변과 시험 평가에 사용될 평가 기준을 설정하세요

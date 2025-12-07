@@ -54,6 +54,10 @@ export async function POST(request: NextRequest) {
         return await getSessionSubmissions(data);
       case "get_session_messages":
         return await getSessionMessages(data);
+      case "session_heartbeat":
+        return await sessionHeartbeat(data);
+      case "deactivate_session":
+        return await deactivateSession(data);
       case "create_folder":
         return await createFolder(data);
       case "get_folder_contents":
@@ -99,6 +103,7 @@ async function createExam(data: {
     evaluationArea: string;
     detailedCriteria: string;
   }[];
+  rubric_public?: boolean;
   status: string;
   created_at: string;
   updated_at: string;
@@ -136,6 +141,7 @@ async function createExam(data: {
       questions: data.questions,
       materials: data.materials || [],
       rubric: data.rubric || [],
+      rubric_public: data.rubric_public || false,
       status: data.status,
       instructor_id: user.id, // Clerk user ID (e.g., "user_31ihNg56wMaE27ft10H4eApjc1J")
       created_at: data.created_at,
@@ -262,13 +268,14 @@ async function submitExam(data: {
 
     const compressedSessionData = compressData(sessionData);
 
-    // Update session with compressed data
+    // Update session with compressed data and deactivate
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .update({
         compressed_session_data: compressedSessionData.data,
         compression_metadata: compressedSessionData.metadata,
         submitted_at: new Date().toISOString(),
+        is_active: false, // Deactivate session on submission
       })
       .eq("id", data.sessionId)
       .select()
@@ -396,7 +403,7 @@ async function getExamById(data: { id: string }) {
     const { data: exam, error } = await supabase
       .from("exams")
       .select(
-        "id, title, code, description, duration, questions, materials, rubric, status, instructor_id, created_at, updated_at"
+        "id, title, code, description, duration, questions, materials, rubric, rubric_public, status, instructor_id, created_at, updated_at"
       )
       .eq("id", data.id)
       .eq("instructor_id", user.id) // Only allow instructors to view their own exams
@@ -568,8 +575,18 @@ async function createOrGetSession(data: { examId: string; studentId: string }) {
 }
 
 // Optimized function to fetch exam AND session in one go
-async function initExamSession(data: { examCode: string; studentId: string }) {
+async function initExamSession(data: {
+  examCode: string;
+  studentId: string;
+  deviceFingerprint?: string;
+}) {
   try {
+    console.log("[INIT_EXAM_SESSION] Starting session init:", {
+      examCode: data.examCode,
+      studentId: data.studentId,
+      hasDeviceFingerprint: !!data.deviceFingerprint,
+    });
+
     // 1. Fetch Exam by Code
     const { data: exam, error: examError } = await supabase
       .from("exams")
@@ -581,7 +598,90 @@ async function initExamSession(data: { examCode: string; studentId: string }) {
       return NextResponse.json({ error: "Exam not found" }, { status: 404 });
     }
 
-    // 2. Create or Get Session
+    // 2. Check for active session (prevent concurrent access)
+    const { data: activeSessions, error: activeCheckError } = await supabase
+      .from("sessions")
+      .select("*")
+      .eq("exam_id", exam.id)
+      .eq("student_id", data.studentId)
+      .eq("is_active", true)
+      .is("submitted_at", null);
+
+    if (activeCheckError) throw activeCheckError;
+
+    console.log(
+      "[INIT_EXAM_SESSION] Active sessions found:",
+      activeSessions?.length || 0
+    );
+
+    // If there's an active session and it's not from the same device, block access
+    if (activeSessions && activeSessions.length > 0) {
+      const activeSession = activeSessions[0];
+      console.log("[INIT_EXAM_SESSION] Active session details:", {
+        sessionId: activeSession.id,
+        deviceFingerprint: activeSession.device_fingerprint,
+        incomingFingerprint: data.deviceFingerprint,
+        lastHeartbeat: activeSession.last_heartbeat_at,
+      });
+
+      // Check if it's from the same device (if device fingerprint is provided)
+      if (data.deviceFingerprint && activeSession.device_fingerprint) {
+        if (activeSession.device_fingerprint !== data.deviceFingerprint) {
+          // Different device trying to access - block it
+          console.log(
+            "[INIT_EXAM_SESSION] ❌ BLOCKED: Different device detected"
+          );
+          return NextResponse.json(
+            {
+              error: "CONCURRENT_ACCESS_BLOCKED",
+              message:
+                "이미 다른 기기에서 시험이 진행 중입니다. 동시 접속은 불가능합니다.",
+              activeSessionId: activeSession.id,
+            },
+            { status: 409 }
+          );
+        }
+        // Same device - allow reconnection
+        console.log(
+          "[INIT_EXAM_SESSION] ✅ Same device - allowing reconnection"
+        );
+      } else {
+        // No device fingerprint, but active session exists - block for safety
+        // Check if last heartbeat was recent (within 5 minutes)
+        const lastHeartbeat = activeSession.last_heartbeat_at
+          ? new Date(activeSession.last_heartbeat_at).getTime()
+          : 0;
+        const now = Date.now();
+        const fiveMinutes = 5 * 60 * 1000;
+
+        if (now - lastHeartbeat < fiveMinutes) {
+          // Active session exists and is recent - block
+          console.log(
+            "[INIT_EXAM_SESSION] ❌ BLOCKED: Recent active session without device fingerprint"
+          );
+          return NextResponse.json(
+            {
+              error: "CONCURRENT_ACCESS_BLOCKED",
+              message:
+                "이미 다른 기기에서 시험이 진행 중입니다. 동시 접속은 불가능합니다.",
+              activeSessionId: activeSession.id,
+            },
+            { status: 409 }
+          );
+        } else {
+          // Last heartbeat is old, consider session stale - deactivate it
+          console.log(
+            "[INIT_EXAM_SESSION] ⚠️ Stale session detected - deactivating"
+          );
+          await supabase
+            .from("sessions")
+            .update({ is_active: false })
+            .eq("id", activeSession.id);
+        }
+      }
+    }
+
+    // 3. Get all existing sessions (for finding the most recent one)
     const { data: existingSessions, error: checkError } = await supabase
       .from("sessions")
       .select("*")
@@ -591,15 +691,67 @@ async function initExamSession(data: { examCode: string; studentId: string }) {
 
     if (checkError) throw checkError;
 
-    const existingSession =
+    let existingSession: (typeof existingSessions)[0] | null =
       existingSessions && existingSessions.length > 0
         ? existingSessions[0]
         : null;
 
-    let session = existingSession;
-    let messages: any[] = [];
+    console.log(
+      "[INIT_EXAM_SESSION] Existing session found:",
+      !!existingSession
+    );
 
-    if (existingSession) {
+    // IMPORTANT: If existing session exists but has different device fingerprint,
+    // don't reuse it - this prevents device switching
+    if (existingSession && !existingSession.submitted_at) {
+      if (
+        data.deviceFingerprint &&
+        existingSession.device_fingerprint &&
+        existingSession.device_fingerprint !== data.deviceFingerprint
+      ) {
+        console.log(
+          "[INIT_EXAM_SESSION] ⚠️ Existing session from different device - not reusing"
+        );
+        // Don't use this session, will create a new one
+        // But first, deactivate the old one to prevent confusion
+        await supabase
+          .from("sessions")
+          .update({ is_active: false })
+          .eq("id", existingSession.id);
+        existingSession = null;
+      }
+    }
+
+    let session = existingSession;
+    let messages: Array<{
+      type: "user" | "assistant";
+      message: string;
+      timestamp: string;
+      qIdx: number;
+    }> = [];
+    const now = new Date().toISOString();
+
+    if (existingSession && !existingSession.submitted_at) {
+      // Activate existing session (only if same device or no device info)
+      console.log(
+        "[INIT_EXAM_SESSION] Activating existing session:",
+        existingSession.id
+      );
+      const { data: updatedSession, error: updateError } = await supabase
+        .from("sessions")
+        .update({
+          is_active: true,
+          last_heartbeat_at: now,
+          device_fingerprint:
+            data.deviceFingerprint || existingSession.device_fingerprint,
+        })
+        .eq("id", existingSession.id)
+        .select()
+        .single();
+
+      if (updateError) throw updateError;
+      session = updatedSession;
+
       // Get messages for existing session
       const { data: sessionMessages } = await supabase
         .from("messages")
@@ -614,7 +766,8 @@ async function initExamSession(data: { examCode: string; studentId: string }) {
         qIdx: msg.q_idx || 0,
       }));
     } else {
-      // Create new session
+      // Create new session and activate it
+      console.log("[INIT_EXAM_SESSION] Creating new session");
       const { data: newSession, error: createError } = await supabase
         .from("sessions")
         .insert([
@@ -622,7 +775,10 @@ async function initExamSession(data: { examCode: string; studentId: string }) {
             exam_id: exam.id,
             student_id: data.studentId,
             used_clarifications: 0,
-            created_at: new Date().toISOString(),
+            is_active: true,
+            last_heartbeat_at: now,
+            device_fingerprint: data.deviceFingerprint || null,
+            created_at: now,
           },
         ])
         .select()
@@ -630,11 +786,12 @@ async function initExamSession(data: { examCode: string; studentId: string }) {
 
       if (createError) throw createError;
       session = newSession;
+      console.log("[INIT_EXAM_SESSION] ✅ New session created:", newSession.id);
     }
 
     return NextResponse.json({ exam, session, messages });
   } catch (error) {
-    console.error("Init exam session error:", error);
+    console.error("[INIT_EXAM_SESSION] ❌ Error:", error);
     return NextResponse.json(
       { error: "Failed to initialize exam session" },
       { status: 500 }
@@ -1203,6 +1360,90 @@ async function deleteNode(data: { node_id: string }) {
     console.error("Delete node error:", error);
     return NextResponse.json(
       { error: "Failed to delete node" },
+      { status: 500 }
+    );
+  }
+}
+
+async function sessionHeartbeat(data: {
+  sessionId: string;
+  studentId: string;
+}) {
+  try {
+    // Verify the session belongs to the student
+    const { data: session, error: sessionError } = await supabase
+      .from("sessions")
+      .select("id, student_id, is_active, submitted_at")
+      .eq("id", data.sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+
+    if (session.student_id !== data.studentId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    }
+
+    // Only update heartbeat if session is active and not submitted
+    if (session.is_active && !session.submitted_at) {
+      const { error: updateError } = await supabase
+        .from("sessions")
+        .update({ last_heartbeat_at: new Date().toISOString() })
+        .eq("id", data.sessionId);
+
+      if (updateError) throw updateError;
+
+      return NextResponse.json({ success: true });
+    } else {
+      // Session is not active or already submitted
+      return NextResponse.json(
+        { error: "Session is not active" },
+        { status: 400 }
+      );
+    }
+  } catch (error) {
+    console.error("Session heartbeat error:", error);
+    return NextResponse.json(
+      { error: "Failed to update heartbeat" },
+      { status: 500 }
+    );
+  }
+}
+
+async function deactivateSession(data: {
+  sessionId: string;
+  studentId: string;
+}) {
+  try {
+    // Verify the session belongs to the student
+    const { data: session, error: sessionError } = await supabase
+      .from("sessions")
+      .select("id, student_id")
+      .eq("id", data.sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+
+    if (session.student_id !== data.studentId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    }
+
+    // Deactivate the session
+    const { error: updateError } = await supabase
+      .from("sessions")
+      .update({ is_active: false })
+      .eq("id", data.sessionId);
+
+    if (updateError) throw updateError;
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Deactivate session error:", error);
+    return NextResponse.json(
+      { error: "Failed to deactivate session" },
       { status: 500 }
     );
   }

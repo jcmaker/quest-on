@@ -28,14 +28,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
@@ -73,6 +65,12 @@ interface Exam {
   status: string;
   startTime?: string;
   endTime?: string;
+  rubric?: Array<{
+    id?: string;
+    evaluationArea: string;
+    detailedCriteria: string;
+  }>;
+  rubric_public?: boolean;
 }
 
 interface DraftAnswer {
@@ -1047,6 +1045,37 @@ export default function ExamPage() {
                         <li>• 풀이 과정을 단계별로 명확히 작성하세요</li>
                       </ul>
                     </div>
+
+                    {/* Rubric - 공개된 경우에만 표시 */}
+                    {exam.rubric_public &&
+                      exam.rubric &&
+                      exam.rubric.length > 0 && (
+                        <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-4 rounded-lg mt-4">
+                          <h4 className="font-semibold mb-3 text-sm text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                            <span>📋</span>
+                            평가 기준 (루브릭)
+                          </h4>
+                          <div className="space-y-3">
+                            {exam.rubric.map((item, index) => (
+                              <div
+                                key={item.id || index}
+                                className="bg-white dark:bg-blue-900/20 p-3 rounded-md border border-blue-100 dark:border-blue-800/50"
+                              >
+                                <div className="font-medium text-sm text-blue-800 dark:text-blue-200 mb-1">
+                                  {item.evaluationArea ||
+                                    `평가 영역 ${index + 1}`}
+                                </div>
+                                <div className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+                                  {item.detailedCriteria || "세부 기준 미설정"}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-3 italic">
+                            이 평가 기준에 따라 답안이 평가됩니다.
+                          </p>
+                        </div>
+                      )}
                   </div>
                 </div>
               )}
