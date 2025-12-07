@@ -80,13 +80,6 @@ export async function POST(request: NextRequest) {
   const requestStartTime = Date.now();
   try {
     const body = await request.json();
-    console.log("Chat API received request:", body);
-    console.log(
-      "🔍 DEBUG: sessionId =",
-      body.sessionId,
-      "| startsWith temp_ =",
-      body.sessionId?.startsWith("temp_")
-    );
 
     // 📊 사용자 활동 로그
     console.log(
@@ -96,21 +89,6 @@ export async function POST(request: NextRequest) {
         body.examCode || body.examId
       }`
     );
-
-    // 🧪 DB 연결 테스트
-    try {
-      const { data: testData, error: testError } = await supabase
-        .from("sessions")
-        .select("id")
-        .limit(1);
-      console.log(
-        "✅ DB 연결 테스트:",
-        testError ? "실패" : "성공",
-        testError || `(${testData?.length || 0}개 레코드 조회)`
-      );
-    } catch (dbTestError) {
-      console.error("❌ DB 연결 테스트 실패:", dbTestError);
-    }
 
     const {
       message,
@@ -133,19 +111,24 @@ export async function POST(request: NextRequest) {
     }
 
     if (!sessionId) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("Missing sessionId:", sessionId);
-      }
       return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
     }
 
-    // ✅ 임시 세션 처리 - DB 저장도 함께 수행
-    if (sessionId.startsWith("temp_")) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("Processing temporary session:", sessionId);
-      }
+    // 안전한 문제 인덱스 계산 (공통 로직)
+    let safeQIdx: number;
+    if (questionIdx !== undefined && questionIdx !== null) {
+      safeQIdx = parseInt(String(questionIdx));
+    } else if (questionId) {
+      safeQIdx = Math.abs(parseInt(questionId) % 2147483647);
+    } else {
+      safeQIdx = 0;
+    }
 
-      // 임시 세션이라도 실제 세션을 찾거나 생성
+    // ✅ 임시 세션 처리
+    if (sessionId.startsWith("temp_")) {
+      // 임시 세션 처리 로직은 기존과 동일하게 유지 (복잡성 때문에 이번 최적화에서는 제외하되 구조만 정리)
+      // ... (기존 로직 유지)
+      // 실제 세션 ID 확인 및 생성
       let actualSessionId = sessionId;
       if (examId && studentId) {
         const { data: existingSession } = await supabase
@@ -157,33 +140,17 @@ export async function POST(request: NextRequest) {
 
         if (existingSession) {
           actualSessionId = existingSession.id;
-          if (process.env.NODE_ENV === "development") {
-            console.log("Found existing session:", actualSessionId);
-          }
         } else {
-          // Create new session
-          const { data: newSession, error: createError } = await supabase
+          const { data: newSession } = await supabase
             .from("sessions")
-            .insert([
-              {
-                exam_id: examId,
-                student_id: studentId,
-              },
-            ])
+            .insert([{ exam_id: examId, student_id: studentId }])
             .select()
             .single();
-
-          if (!createError && newSession) {
-            actualSessionId = newSession.id;
-            if (process.env.NODE_ENV === "development") {
-              console.log("Created new session:", actualSessionId);
-            }
-          } else {
-            console.error("Error creating session:", createError);
-          }
+          if (newSession) actualSessionId = newSession.id;
         }
       }
 
+      // Prompt 생성
       const tempSystemPrompt = `
 ${
   requestExamTitle
@@ -216,202 +183,131 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
 6. 평가 루브릭의 핵심 역량(논리적 근거, 자료 분석, 의사결정 근거)을 반영한다.
 `;
 
-      // 사용자 메시지 DB 저장 (임시 세션도 저장)
+      // 병렬 처리: 메시지 저장과 히스토리 조회를 동시에 실행
+      let conversationHistory: Array<{
+        role: "user" | "assistant";
+        content: string;
+      }> = [];
+
       if (actualSessionId && !actualSessionId.startsWith("temp_")) {
-        if (process.env.NODE_ENV === "development") {
-          console.log(
-            "Saving temp session user message to database, length:",
-            message.length
-          );
-        }
+        const insertPromise = supabase.from("messages").insert([
+          {
+            session_id: actualSessionId,
+            q_idx: safeQIdx,
+            role: "user",
+            content: message,
+          },
+        ]);
 
-        // questionId를 안전한 정수로 변환
-        const safeQIdx = questionId
-          ? Math.abs(parseInt(questionId) % 2147483647)
-          : 0;
-        console.log(
-          "🔍 DEBUG: temp session questionId =",
-          questionId,
-          "→ safeQIdx =",
-          safeQIdx
-        );
-
-        const { error: userMessageError } = await supabase
-          .from("messages")
-          .insert([
-            {
-              session_id: actualSessionId,
-              q_idx: safeQIdx,
-              role: "user",
-              content: message,
-            },
-          ]);
-
-        if (userMessageError) {
-          console.error(
-            "Error saving temp session user message:",
-            userMessageError
-          );
-        }
-
-        // 같은 문제(q_idx)의 이전 대화 이력 조회
-        const { data: previousMessages, error: historyError } = await supabase
+        const historyPromise = supabase
           .from("messages")
           .select("role, content")
           .eq("session_id", actualSessionId)
           .eq("q_idx", safeQIdx)
           .order("created_at", { ascending: true })
-          .limit(20); // 최근 20개 메시지만 (토큰 제한 고려)
+          .limit(20);
 
-        if (historyError) {
-          console.error("Error fetching conversation history:", historyError);
-        }
+        // 병렬 실행 대기
+        const [insertResult, historyResult] = await Promise.all([
+          insertPromise,
+          historyPromise,
+        ]);
 
-        // 현재 메시지를 제외한 이전 메시지들만 필터링 (방금 저장한 메시지 제외)
-        const conversationHistory =
-          previousMessages
-            ?.filter((msg) => msg.role === "user" || msg.role === "ai")
-            .slice(0, -1) // 마지막 메시지(방금 저장한 것) 제외
-            .map((msg) => ({
-              role:
-                msg.role === "ai" ? ("assistant" as const) : ("user" as const),
-              content: msg.content,
-            })) || [];
-
-        if (process.env.NODE_ENV === "development") {
-          console.log(
-            "📜 Conversation history loaded:",
-            conversationHistory.length,
-            "messages"
+        if (insertResult.error)
+          console.error(
+            "Error saving temp session user message:",
+            insertResult.error
           );
-        }
 
-        const aiResponse = await getAIResponse(
-          tempSystemPrompt,
-          message,
-          conversationHistory
-        );
+        // 히스토리 처리
+        conversationHistory = (historyResult.data || [])
+          // 현재 메시지(방금 insert한 것일 수 있음)를 제외하거나 포함하는 로직
+          // 여기서는 단순히 이전 기록들을 가져와서 사용.
+          // insert된 메시지가 select에 포함될지는 타이밍에 따라 다르므로,
+          // 명시적으로 필터링하지 않고 가져온 것 + 현재 메시지를 getAIResponse에서 조합함.
+          // 하지만 getAIResponse는 history + currentMessage 구조이므로 history에는 currentMessage가 없어야 함.
+          // insert가 먼저 완료되면 history에 포함될 수 있음.
+          // 안전하게: history에서 현재 메시지와 동일한 내용이 가장 마지막에 있다면 제거
+          .filter((msg) => msg.role === "user" || msg.role === "ai")
+          .map((msg) => ({
+            role:
+              msg.role === "ai" ? ("assistant" as const) : ("user" as const),
+            content: msg.content,
+          }));
 
-        // Ensure we have a valid response
+        // 만약 history의 마지막 메시지가 방금 보낸 메시지와 같다면 제거 (중복 방지)
         if (
-          !aiResponse ||
-          typeof aiResponse !== "string" ||
-          aiResponse.trim().length === 0
+          conversationHistory.length > 0 &&
+          conversationHistory[conversationHistory.length - 1].content ===
+            message
         ) {
-          console.error("Invalid AI response received:", aiResponse);
-          return NextResponse.json(
-            { error: "Failed to generate AI response" },
-            { status: 500 }
-          );
+          conversationHistory.pop();
         }
+      }
 
-        // AI 응답 DB 저장 (임시 세션도 저장)
-        if (actualSessionId && !actualSessionId.startsWith("temp_")) {
-          if (process.env.NODE_ENV === "development") {
-            console.log(
-              "Saving temp session AI response to database, length:",
-              aiResponse.length
-            );
-          }
+      const aiResponse = await getAIResponse(
+        tempSystemPrompt,
+        message,
+        conversationHistory
+      );
 
-          // AI 메시지용 safeQIdx 재사용 (임시 세션에서는 다시 선언 필요)
-          const aiSafeQIdx = questionId
-            ? Math.abs(parseInt(questionId) % 2147483647)
-            : 0;
+      // AI 응답 저장 및 세션 업데이트 (병렬 처리)
+      if (
+        actualSessionId &&
+        !actualSessionId.startsWith("temp_") &&
+        aiResponse
+      ) {
+        // 1. AI 메시지 저장
+        const saveAiMsgPromise = supabase.from("messages").insert([
+          {
+            session_id: actualSessionId,
+            q_idx: safeQIdx,
+            role: "ai",
+            content: aiResponse,
+          },
+        ]);
 
-          const { error: aiMessageError } = await supabase
-            .from("messages")
-            .insert([
-              {
-                session_id: actualSessionId,
-                q_idx: aiSafeQIdx,
-                role: "ai",
-                content: aiResponse,
-              },
-            ]);
-
-          if (aiMessageError) {
-            console.error(
-              "Error saving temp session AI message:",
-              aiMessageError
-            );
-          }
-
-          // 세션 사용 횟수 업데이트
+        // 2. 세션 카운트 업데이트 (SQL increment 사용 권장되지만 여기선 읽고 쓰기 방식 유지하되 독립적으로 실행)
+        // rpc를 사용하면 더 좋지만 현재 구조 유지
+        const updateSessionPromise = (async () => {
           const { data: currentSession } = await supabase
             .from("sessions")
             .select("used_clarifications")
             .eq("id", actualSessionId)
             .single();
 
-          await supabase
-            .from("sessions")
-            .update({
-              used_clarifications:
-                (currentSession?.used_clarifications || 0) + 1,
-            })
-            .eq("id", actualSessionId);
-        }
+          if (currentSession) {
+            await supabase
+              .from("sessions")
+              .update({
+                used_clarifications:
+                  (currentSession.used_clarifications || 0) + 1,
+              })
+              .eq("id", actualSessionId);
+          }
+        })();
 
-        console.log(
-          "Returning temp session response, length:",
-          aiResponse.length
+        // 완료 기다리지 않고 로그만 찍거나 필요하면 await
+        Promise.all([saveAiMsgPromise, updateSessionPromise]).catch((err) =>
+          console.error("Error saving temp session AI data:", err)
         );
-
-        const requestDuration = Date.now() - requestStartTime;
-        console.log(
-          `⏱️  [PERFORMANCE] Total request time (temp): ${requestDuration}ms`
-        );
-        console.log(
-          `✅ [SUCCESS] Chat request completed | Session: ${actualSessionId} | Q: ${questionId}`
-        );
-
-        return NextResponse.json({
-          response: aiResponse,
-          timestamp: new Date().toISOString(),
-          examCode: requestExamCode || "TEMP",
-          questionId: questionId || "temp",
-        });
-      } else {
-        // 임시 세션이지만 DB에 저장할 수 없는 경우 (examId나 studentId가 없는 경우)
-        const aiResponse = await getAIResponse(tempSystemPrompt, message);
-
-        // Ensure we have a valid response
-        if (
-          !aiResponse ||
-          typeof aiResponse !== "string" ||
-          aiResponse.trim().length === 0
-        ) {
-          console.error("Invalid AI response received:", aiResponse);
-          return NextResponse.json(
-            { error: "Failed to generate AI response" },
-            { status: 500 }
-          );
-        }
-
-        const requestDuration = Date.now() - requestStartTime;
-        console.log(
-          `⏱️  [PERFORMANCE] Total request time (temp, no DB): ${requestDuration}ms`
-        );
-
-        return NextResponse.json({
-          response: aiResponse,
-          timestamp: new Date().toISOString(),
-          examCode: requestExamCode || "TEMP",
-          questionId: questionId || "temp",
-        });
       }
+
+      return NextResponse.json({
+        response: aiResponse,
+        timestamp: new Date().toISOString(),
+        examCode: requestExamCode || "TEMP",
+        questionId: questionId || "temp",
+      });
     }
 
-    // ✅ 정규 세션 처리
+    // ✅ 정규 세션 처리 (최적화 적용)
     console.log(
       "🔍 DEBUG: Entering REGULAR session processing for sessionId:",
       sessionId
     );
-    if (process.env.NODE_ENV === "development") {
-      console.log("Looking up session:", sessionId);
-    }
 
+    // 1. 세션 조회 (Join 없이)
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .select("*")
@@ -419,22 +315,44 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
       .single();
 
     if (sessionError || !session) {
+      console.error(
+        "Error fetching session:",
+        sessionError,
+        "SessionId:",
+        sessionId
+      );
       return NextResponse.json(
         { error: "Invalid session", details: sessionError?.message },
         { status: 400 }
       );
     }
 
+    // 2. 시험 정보 조회 (별도 쿼리)
+    // session.exam_id가 존재하는지 확인
+    if (!session.exam_id) {
+      console.error("Session has no exam_id:", session);
+      return NextResponse.json(
+        { error: "Session is missing exam information" },
+        { status: 400 }
+      );
+    }
+
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("code, title, questions, materials, rubric")
+      .select("*")
       .eq("id", session.exam_id)
       .single();
 
     if (examError || !exam) {
+      console.error(
+        "Error fetching exam:",
+        examError,
+        "ExamId:",
+        session.exam_id
+      );
       return NextResponse.json(
         { error: "Exam not found", details: examError?.message },
-        { status: 400 }
+        { status: 404 }
       );
     }
 
@@ -442,8 +360,21 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
     let dbCoreAbility = "";
     if (questionId && exam?.questions) {
       const questionIndex = parseInt(questionId);
-      if (!isNaN(questionIndex) && exam.questions[questionIndex]) {
-        dbCoreAbility = exam.questions[questionIndex].core_ability || "";
+      // Check if questions is an array and index is valid
+      if (
+        Array.isArray(exam.questions) &&
+        !isNaN(questionIndex) &&
+        exam.questions[questionIndex]
+      ) {
+        // Use type assertion or check if core_ability exists
+        const q = exam.questions[questionIndex] as any;
+        dbCoreAbility = q.core_ability || "";
+      } else if (Array.isArray(exam.questions)) {
+        // Fallback: try to find by ID if questionId is a string ID not index
+        const q = (exam.questions as any[]).find((q) => q.id === questionId);
+        if (q) {
+          dbCoreAbility = q.core_ability || "";
+        }
       }
     }
 
@@ -466,7 +397,7 @@ ${
 }
 
 ${
-  exam?.rubric && exam.rubric.length > 0
+  exam?.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
     ? `
 **평가 루브릭:**
 ${exam.rubric
@@ -506,180 +437,114 @@ ${exam.rubric
 `
     : ""
 }
-
 `;
 
-    // Get or create session for this student and exam
-    let actualSessionId = sessionId;
-
-    // If using temporary session, try to find or create a real session
-    if (sessionId.startsWith("temp_")) {
-      const { data: existingSession } = await supabase
-        .from("sessions")
-        .select("id")
-        .eq("exam_id", examId)
-        .eq("student_id", studentId)
-        .single();
-
-      if (existingSession) {
-        actualSessionId = existingSession.id;
-      } else {
-        // Create new session
-        const { data: newSession, error: createError } = await supabase
-          .from("sessions")
-          .insert([
-            {
-              exam_id: examId,
-              student_id: studentId,
-            },
-          ])
-          .select()
-          .single();
-
-        if (createError) {
-          console.error("Error creating session:", createError);
-          // Continue with temp session
-        } else {
-          actualSessionId = newSession.id;
-        }
-      }
-    }
-
-    // User message data preparation
-    if (process.env.NODE_ENV === "development") {
-      console.log("Saving user message to database, length:", message.length);
-    }
-
-    // 메시지 DB 저장 (유저 → AI)
-    // Use questionIdx if available, otherwise fall back to questionId conversion
-    let safeQIdx: number;
-    if (questionIdx !== undefined && questionIdx !== null) {
-      safeQIdx = parseInt(String(questionIdx));
-      console.log(
-        "🔍 DEBUG: Using questionIdx =",
-        questionIdx,
-        "→ safeQIdx =",
-        safeQIdx
-      );
-    } else if (questionId) {
-      // Fallback: questionId를 안전한 정수로 변환 (PostgreSQL integer 범위: -2^31 ~ 2^31-1)
-      safeQIdx = Math.abs(parseInt(questionId) % 2147483647);
-      console.log(
-        "🔍 DEBUG: Using questionId =",
-        questionId,
-        "→ safeQIdx =",
-        safeQIdx
-      );
-    } else {
-      safeQIdx = 0;
-      console.log(
-        "🔍 DEBUG: No question identifier, using default safeQIdx = 0"
-      );
-    }
-
-    const { error: userMessageError } = await supabase.from("messages").insert([
+    // 2. 병렬 처리: 사용자 메시지 DB 저장 & 대화 이력 조회
+    const insertUserMsgPromise = supabase.from("messages").insert([
       {
-        session_id: actualSessionId,
+        session_id: sessionId,
         q_idx: safeQIdx,
         role: "user",
         content: message,
       },
     ]);
 
-    if (userMessageError) {
-      console.error("Error saving user message:", userMessageError);
-    }
-
-    // 같은 문제(q_idx)의 이전 대화 이력 조회
-    const { data: previousMessages, error: historyError } = await supabase
+    const fetchHistoryPromise = supabase
       .from("messages")
       .select("role, content")
-      .eq("session_id", actualSessionId)
+      .eq("session_id", sessionId)
       .eq("q_idx", safeQIdx)
       .order("created_at", { ascending: true })
-      .limit(20); // 최근 20개 메시지만 (토큰 제한 고려)
+      .limit(20); // 최근 20개
 
-    if (historyError) {
-      console.error("Error fetching conversation history:", historyError);
+    // Wait for both
+    const [userMsgResult, historyResult] = await Promise.all([
+      insertUserMsgPromise,
+      fetchHistoryPromise,
+    ]);
+
+    if (userMsgResult.error) {
+      console.error("Error saving user message:", userMsgResult.error);
+    }
+    if (historyResult.error) {
+      console.error(
+        "Error fetching conversation history:",
+        historyResult.error
+      );
     }
 
-    // 현재 메시지를 제외한 이전 메시지들만 필터링 (방금 저장한 메시지 제외)
-    const conversationHistory =
-      previousMessages
-        ?.filter((msg) => msg.role === "user" || msg.role === "ai")
-        .slice(0, -1) // 마지막 메시지(방금 저장한 것) 제외
-        .map((msg) => ({
-          role: msg.role === "ai" ? ("assistant" as const) : ("user" as const),
-          content: msg.content,
-        })) || [];
+    // 히스토리 필터링 및 가공
+    const conversationHistory = (historyResult.data || [])
+      .filter((msg) => msg.role === "user" || msg.role === "ai")
+      .map((msg) => ({
+        role: msg.role === "ai" ? ("assistant" as const) : ("user" as const),
+        content: msg.content,
+      }));
+
+    // 중복 제거: 만약 히스토리의 마지막 메시지가 현재 메시지와 같다면 제거
+    // (insert가 fetch보다 먼저 완료되었을 경우를 대비)
+    if (
+      conversationHistory.length > 0 &&
+      conversationHistory[conversationHistory.length - 1].content === message
+    ) {
+      conversationHistory.pop();
+    }
 
     if (process.env.NODE_ENV === "development") {
       console.log(
         "📜 Conversation history loaded:",
-        conversationHistory.length,
-        "messages"
+        conversationHistory.length
       );
     }
 
+    // 3. OpenAI 호출
     const aiResponse = await getAIResponse(
       systemPrompt,
       message,
       conversationHistory
     );
 
-    // Ensure we have a valid response
     if (
       !aiResponse ||
       typeof aiResponse !== "string" ||
       aiResponse.trim().length === 0
     ) {
-      console.error("Invalid AI response received:", aiResponse);
       return NextResponse.json(
         { error: "Failed to generate AI response" },
         { status: 500 }
       );
     }
 
-    if (process.env.NODE_ENV === "development") {
-      console.log("Saving AI response to database, length:", aiResponse.length);
-    }
-
-    // AI response data preparation - already logged above
-
-    // AI 메시지용 safeQIdx 재사용
-
-    const { error: aiMessageError } = await supabase.from("messages").insert([
+    // 4. 병렬 처리: AI 응답 DB 저장 & 세션 업데이트
+    const insertAiMsgPromise = supabase.from("messages").insert([
       {
-        session_id: actualSessionId,
+        session_id: sessionId,
         q_idx: safeQIdx,
         role: "ai",
         content: aiResponse,
       },
     ]);
 
-    if (aiMessageError) {
-      console.error("Error saving AI message:", aiMessageError);
-    }
-
-    await supabase
+    const updateSessionPromise = supabase
       .from("sessions")
       .update({
         used_clarifications: (session.used_clarifications ?? 0) + 1,
       })
-      .eq("id", actualSessionId);
+      .eq("id", sessionId);
 
-    if (process.env.NODE_ENV === "development") {
-      console.log("Returning regular session response");
-    }
+    // 비동기로 처리하되 에러 로깅을 위해 catch 부착
+    Promise.all([insertAiMsgPromise, updateSessionPromise]).then(
+      ([aiResult, sessionResult]) => {
+        if (aiResult.error)
+          console.error("Error saving AI message:", aiResult.error);
+        if (sessionResult.error)
+          console.error("Error updating session:", sessionResult.error);
+      }
+    );
 
     const requestDuration = Date.now() - requestStartTime;
     console.log(
       `⏱️  [PERFORMANCE] Total request time (regular): ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Chat request completed | Session: ${actualSessionId} | Q: ${questionId} | Clarifications used: ${
-        (session.used_clarifications ?? 0) + 1
-      }`
     );
 
     return NextResponse.json({
@@ -689,24 +554,13 @@ ${exam.rubric
       questionId,
     });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
     console.error("Chat API error:", error);
-    console.error(
-      `❌ [ERROR] Chat request failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`
+    return NextResponse.json(
+      {
+        error: "Internal server error",
+        details: (error as Error)?.message,
+      },
+      { status: 500 }
     );
-
-    // Ensure we always return a proper error response
-    const errorMessage = (error as Error)?.message || "Unknown error occurred";
-    const errorResponse = {
-      error: "Internal server error",
-      details: errorMessage,
-      timestamp: new Date().toISOString(),
-    };
-
-    console.error("Returning error response:", errorResponse);
-
-    return NextResponse.json(errorResponse, { status: 500 });
   }
 }

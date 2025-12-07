@@ -40,7 +40,14 @@ import {
 
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { MessageCircle, ArrowUp, AlertCircle, Save, FileText, ChevronDown } from "lucide-react";
+import {
+  MessageCircle,
+  ArrowUp,
+  AlertCircle,
+  Save,
+  FileText,
+  ChevronDown,
+} from "lucide-react";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { ExamHeader } from "@/components/ExamHeader";
 import {
@@ -104,7 +111,7 @@ export default function ExamPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [hasOpenedQuestion, setHasOpenedQuestion] = useState(false);
+  const [hasOpenedQuestion, setHasOpenedQuestion] = useState(true);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -135,23 +142,27 @@ export default function ExamPage() {
     </>
   );
 
-  // Fetch exam data from database
+  // Fetch exam and session data from database using optimized single call
   useEffect(() => {
-    const fetchExam = async () => {
-      if (!examCode || !isLoaded) return;
+    const initExam = async () => {
+      if (!examCode || !isLoaded || !user) return;
 
       try {
         const response = await fetch("/api/supa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "get_exam",
-            data: { code: examCode },
+            action: "init_exam_session",
+            data: {
+              examCode,
+              studentId: user.id,
+            },
           }),
         });
 
         if (response.ok) {
           const result = await response.json();
+
           if (result.exam) {
             setExam(result.exam);
 
@@ -162,24 +173,33 @@ export default function ExamPage() {
             }));
             setDraftAnswers(initialDrafts);
 
-            // Create or get session
-            await createOrGetSession(result.exam.id);
+            // Set session data
+            if (result.session) {
+              setSessionId(result.session.id);
+
+              // Set chat history
+              if (result.messages && result.messages.length > 0) {
+                setChatHistory(result.messages);
+              }
+            } else {
+              setSessionError(true);
+            }
           } else {
             router.push("/join?error=exam_not_found");
           }
         } else {
-          router.push("/join?error=exam_not_found");
+          router.push("/join?error=network_error");
         }
       } catch (error) {
-        console.error("Error fetching exam:", error);
+        console.error("Error initializing exam:", error);
         router.push("/join?error=network_error");
       } finally {
         setExamLoading(false);
       }
     };
 
-    fetchExam();
-  }, [examCode, router, isLoaded]);
+    initExam();
+  }, [examCode, router, isLoaded, user]);
 
   // Load saved answers from server when session is available
   useEffect(() => {
@@ -231,76 +251,6 @@ export default function ExamPage() {
 
     loadSavedAnswersFromServer();
   }, [sessionId, exam]);
-
-  // Create or get existing session
-  const createOrGetSession = async (examId: string) => {
-    console.log("🔍 User state:", { user, isLoaded: !!user, userId: user?.id });
-
-    if (!user) {
-      console.log("❌ User not found, cannot create session");
-      return;
-    }
-
-    console.log("Creating/getting session for:", {
-      examId,
-      studentId: user.id,
-    });
-
-    try {
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create_or_get_session",
-          data: {
-            examId,
-            studentId: user.id,
-          },
-        }),
-      });
-
-      console.log("Session creation response status:", response.status);
-
-      if (response.ok) {
-        const result = await response.json();
-        console.log("🔍 Session creation result:", result);
-
-        setSessionId(result.session.id);
-
-        // Load existing chat history with qIdx
-        if (result.messages && result.messages.length > 0) {
-          console.log(
-            "📨 Restoring chat history:",
-            result.messages.length,
-            "messages"
-          );
-
-          // Map messages to include qIdx from database
-          const messagesWithQIdx = result.messages.map(
-            (msg: {
-              type: "user" | "assistant";
-              message: string;
-              timestamp: string;
-              qIdx?: number;
-            }) => ({
-              type: msg.type,
-              message: msg.message,
-              timestamp: msg.timestamp,
-              qIdx: msg.qIdx || 0, // Default to 0 if not present
-            })
-          );
-
-          setChatHistory(messagesWithQIdx);
-        }
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("Session creation error:", errorData);
-        setSessionError(true);
-      }
-    } catch (error) {
-      console.error("Error creating session:", error);
-    }
-  };
 
   // Manual save function
   const manualSave = useCallback(async () => {
@@ -382,7 +332,9 @@ export default function ExamPage() {
   // Auto-save every 30 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      if (draftAnswers.some((answer) => answer.text && !isHtmlEmpty(answer.text))) {
+      if (
+        draftAnswers.some((answer) => answer.text && !isHtmlEmpty(answer.text))
+      ) {
         autoSaveAnswers();
       }
     }, 30000);
@@ -484,8 +436,17 @@ export default function ExamPage() {
           "네트워크 오류가 발생했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.",
         timestamp: new Date().toISOString(),
         qIdx: currentQuestion,
+        type_error: "network_error", // Adding a temporary field to identify this error type if needed
       };
-      setChatHistory((prev) => [...prev, errorMessage]);
+      setChatHistory((prev) => [
+        ...prev,
+        {
+          type: "assistant" as const,
+          message: errorMessage.message,
+          timestamp: errorMessage.timestamp,
+          qIdx: errorMessage.qIdx,
+        },
+      ]);
     } finally {
       setIsLoading(false);
       setIsTyping(false);
@@ -493,35 +454,46 @@ export default function ExamPage() {
   };
 
   // Handle paste event for logging
-  const handlePaste = useCallback(async (e: ClipboardEvent) => {
-    const clipboard = e.clipboardData;
-    if (!clipboard) return;
+  const handlePaste = useCallback(
+    async (e: ClipboardEvent) => {
+      const clipboard = e.clipboardData;
+      if (!clipboard) return;
 
-    const text = clipboard.getData("text/plain");
-    const isInternal = clipboard.types.includes("application/x-queston-internal");
+      const text = clipboard.getData("text/plain");
+      const isInternal = clipboard.types.includes(
+        "application/x-queston-internal"
+      );
 
-    if (isInternal) {
-      console.log("%c[Paste Check] ✅ Internal Copy Detected", "color: green; font-weight: bold; font-size: 12px;");
-    } else {
-      console.warn("%c[Paste Check] ⚠️ External Copy Detected", "color: red; font-weight: bold; font-size: 12px;");
-    }
+      if (isInternal) {
+        console.log(
+          "%c[Paste Check] ✅ Internal Copy Detected",
+          "color: green; font-weight: bold; font-size: 12px;"
+        );
+      } else {
+        console.warn(
+          "%c[Paste Check] ⚠️ External Copy Detected",
+          "color: red; font-weight: bold; font-size: 12px;"
+        );
+      }
 
-    try {
-      await fetch("/api/log/paste", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          length: text.length,
-          isInternal,
-          ts: Date.now(),
-          examCode,
-          questionId: exam?.questions[currentQuestion]?.id,
-        }),
-      });
-    } catch (err) {
-      console.error("Failed to log paste event", err);
-    }
-  }, [examCode, exam, currentQuestion]);
+      try {
+        await fetch("/api/log/paste", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            length: text.length,
+            isInternal,
+            ts: Date.now(),
+            examCode,
+            questionId: exam?.questions[currentQuestion]?.id,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to log paste event", err);
+      }
+    },
+    [examCode, exam, currentQuestion]
+  );
 
   const handleSubmit = async () => {
     if (!exam) return;
@@ -555,10 +527,10 @@ export default function ExamPage() {
 
       // Transform chat history to match expected format for feedback API
       // Feedback API expects { type: "ai" | "student", content: string, timestamp: string }
-      const transformedChatHistory = chatHistory.map(msg => ({
+      const transformedChatHistory = chatHistory.map((msg) => ({
         type: msg.type === "user" ? "student" : "ai",
         content: msg.message,
-        timestamp: msg.timestamp
+        timestamp: msg.timestamp,
       }));
 
       const response = await fetch("/api/feedback", {
@@ -698,166 +670,9 @@ export default function ExamPage() {
       {/* Main Content - Resizable Layout */}
       <div className="flex-1 min-h-0">
         <ResizablePanelGroup direction="horizontal" className="h-full">
-          {/* Left Side - Answer (Full height) */}
+          {/* Left Side - Chat (Previously Right) */}
           <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
-            <div className="bg-background h-full border-r flex flex-col">
-              {/* Top Bar with Question Toggle */}
-              <div className="border-b p-3 flex items-center justify-between bg-muted/20">
-                <div className="flex items-center gap-3">
-                   <Sheet onOpenChange={(open) => {
-                     if (open && !hasOpenedQuestion) {
-                       setHasOpenedQuestion(true);
-                     }
-                   }}>
-                    <SheetTrigger asChild>
-                      <Button 
-                        variant={hasOpenedQuestion ? "outline" : "default"} 
-                        className={cn(
-                          "gap-2 transition-all duration-500",
-                          !hasOpenedQuestion && "animate-pulse ring-4 ring-blue-500/50 ring-offset-2 shadow-xl shadow-blue-200/50 font-bold scale-105",
-                          "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800 dark:hover:bg-blue-900/50"
-                        )}
-                      >
-                         <FileText className="w-4 h-4" />
-                         문제 보기
-                         <ChevronDown className="w-3 h-3 opacity-50" />
-                      </Button>
-                    </SheetTrigger>
-                    <SheetContent side="top" className="max-h-[85vh] overflow-y-auto">
-                      <SheetHeader>
-                        <SheetTitle className="flex items-center gap-2">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            문제 {currentQuestion + 1}
-                          </span>
-                          <span className="text-lg">
-                            {exam.questions[currentQuestion]?.type === "essay"
-                              ? "서술형 문제"
-                              : "문제"}
-                          </span>
-                        </SheetTitle>
-                        <SheetDescription>
-                           배점: {exam.questions[currentQuestion]?.points}점
-                        </SheetDescription>
-                      </SheetHeader>
-                      
-                      <div className="py-6 space-y-6">
-                        {/* Question Content */}
-                        <div className="bg-muted/50 p-6 rounded-lg border">
-                          <CopyProtector>
-                            <RichTextViewer
-                              content={exam.questions[currentQuestion]?.text || ""}
-                              className="text-lg leading-relaxed"
-                            />
-                          </CopyProtector>
-                        </div>
-
-                        {/* Requirements */}
-                        <div className="bg-muted/30 p-4 rounded-lg">
-                          <h4 className="font-semibold mb-2">요구사항</h4>
-                          <ul className="space-y-1 text-sm text-muted-foreground">
-                            <li>• 문제를 정확히 이해하고 답변하세요</li>
-                            <li>• 풀이 과정을 단계별로 명확히 작성하세요</li>
-                          </ul>
-                        </div>
-                      </div>
-                    </SheetContent>
-                  </Sheet>
-                </div>
-                
-                {/* Navigation - Small version */}
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setCurrentQuestion((prev) => Math.max(0, prev - 1))
-                    }
-                    disabled={currentQuestion === 0}
-                  >
-                    ← 이전
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    {currentQuestion + 1} / {exam.questions.length}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setCurrentQuestion((prev) =>
-                        Math.min(exam.questions.length - 1, prev + 1)
-                      )
-                    }
-                    disabled={currentQuestion === exam.questions.length - 1}
-                  >
-                    다음 →
-                  </Button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <Label className="text-base font-semibold">답안 작성</Label>
-                  
-                  {/* Save Status Indicator */}
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    {isSaving ? (
-                      <div className="flex items-center gap-2">
-                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary"></div>
-                        <span>저장 중...</span>
-                      </div>
-                    ) : lastSaved ? (
-                      <div className="flex items-center gap-2">
-                        <Save className="w-3 h-3" />
-                        <span>마지막 저장: {lastSaved}</span>
-                        <span className="text-xs flex items-center gap-1">
-                          • {saveShortcut}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Save className="w-3 h-3" />
-                        <span>자동 저장</span>
-                        <span className="text-xs flex items-center gap-1">
-                          • {saveShortcut}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Answer Editor */}
-                <div className="space-y-4 mb-6">
-                  <SimpleRichTextEditor
-                    placeholder="여기에 상세한 답안을 작성하세요..."
-                    value={draftAnswers[currentQuestion]?.text || ""}
-                    onChange={(value) =>
-                      updateAnswer(exam.questions[currentQuestion].id, value)
-                    }
-                    onPaste={handlePaste}
-                  />
-                </div>
-                
-                {/* Submit Button */}
-                <div className="mt-4">
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={isSubmitting}
-                    className="w-full"
-                    size="lg"
-                  >
-                    {isSubmitting ? "제출 중..." : "시험 제출하기"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </ResizablePanel>
-
-          {/* Resizable Handle */}
-          <ResizableHandle withHandle />
-
-          {/* Right Side - AI Chat */}
-          <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
-            <div className="bg-background flex flex-col h-full relative">
+            <div className="bg-background flex flex-col h-full relative border-r">
               <div className="absolute top-3 left-6 z-10">
                 <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                   AI와 대화하기
@@ -934,9 +749,7 @@ export default function ExamPage() {
                       size="sm"
                       onClick={() => {
                         setSessionError(false);
-                        if (exam) {
-                          createOrGetSession(exam.id);
-                        }
+                        window.location.reload();
                       }}
                       className="text-destructive border-destructive/30 hover:bg-destructive/5"
                     >
@@ -998,6 +811,172 @@ export default function ExamPage() {
                     </InputGroupButton>
                   </InputGroupAddon>
                 </InputGroup>
+              </div>
+            </div>
+          </ResizablePanel>
+
+          {/* Resizable Handle */}
+          <ResizableHandle withHandle />
+
+          {/* Right Side - Answer (Previously Left) */}
+          <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
+            <div className="bg-background h-full flex flex-col">
+              {/* Top Bar with Question Toggle */}
+              <div className="border-b p-3 flex items-center justify-between bg-muted/20">
+                <div className="flex items-center gap-3">
+                  <Sheet
+                    defaultOpen={true}
+                    onOpenChange={(open) => {
+                      if (open && !hasOpenedQuestion) {
+                        setHasOpenedQuestion(true);
+                      }
+                    }}
+                  >
+                    <SheetTrigger asChild>
+                      <Button
+                        variant={hasOpenedQuestion ? "outline" : "default"}
+                        className={cn(
+                          "gap-2 transition-all duration-500",
+                          !hasOpenedQuestion &&
+                            "animate-pulse ring-4 ring-blue-500/50 ring-offset-2 shadow-xl shadow-blue-200/50 font-bold scale-105",
+                          "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:text-blue-800 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800 dark:hover:bg-blue-900/50"
+                        )}
+                      >
+                        <FileText className="w-4 h-4" />
+                        문제 보기
+                        <ChevronDown className="w-3 h-3 opacity-50" />
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent
+                      side="top"
+                      className="max-h-[85vh] overflow-y-auto"
+                    >
+                      <SheetHeader>
+                        <SheetTitle className="flex items-center gap-2">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            문제 {currentQuestion + 1}
+                          </span>
+                          <span className="text-lg">
+                            {exam.questions[currentQuestion]?.type === "essay"
+                              ? "서술형 문제"
+                              : "문제"}
+                          </span>
+                        </SheetTitle>
+                        <SheetDescription>
+                          배점: {exam.questions[currentQuestion]?.points}점
+                        </SheetDescription>
+                      </SheetHeader>
+
+                      <div className="py-6 space-y-6">
+                        {/* Question Content */}
+                        <div className="bg-muted/50 p-6 rounded-lg border">
+                          <CopyProtector>
+                            <RichTextViewer
+                              content={
+                                exam.questions[currentQuestion]?.text || ""
+                              }
+                              className="text-lg leading-relaxed"
+                            />
+                          </CopyProtector>
+                        </div>
+
+                        {/* Requirements */}
+                        <div className="bg-muted/30 p-4 rounded-lg">
+                          <h4 className="font-semibold mb-2">요구사항</h4>
+                          <ul className="space-y-1 text-sm text-muted-foreground">
+                            <li>• 문제를 정확히 이해하고 답변하세요</li>
+                            <li>• 풀이 과정을 단계별로 명확히 작성하세요</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+                </div>
+
+                {/* Navigation - Small version */}
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentQuestion((prev) => Math.max(0, prev - 1))
+                    }
+                    disabled={currentQuestion === 0}
+                  >
+                    ← 이전
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {currentQuestion + 1} / {exam.questions.length}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setCurrentQuestion((prev) =>
+                        Math.min(exam.questions.length - 1, prev + 1)
+                      )
+                    }
+                    disabled={currentQuestion === exam.questions.length - 1}
+                  >
+                    다음 →
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <Label className="text-base font-semibold">답안 작성</Label>
+
+                  {/* Save Status Indicator */}
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    {isSaving ? (
+                      <div className="flex items-center gap-2">
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-primary"></div>
+                        <span>저장 중...</span>
+                      </div>
+                    ) : lastSaved ? (
+                      <div className="flex items-center gap-2">
+                        <Save className="w-3 h-3" />
+                        <span>마지막 저장: {lastSaved}</span>
+                        <span className="text-xs flex items-center gap-1">
+                          • {saveShortcut}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Save className="w-3 h-3" />
+                        <span>자동 저장</span>
+                        <span className="text-xs flex items-center gap-1">
+                          • {saveShortcut}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Answer Editor */}
+                <div className="space-y-4 mb-6">
+                  <SimpleRichTextEditor
+                    placeholder="여기에 상세한 답안을 작성하세요..."
+                    value={draftAnswers[currentQuestion]?.text || ""}
+                    onChange={(value) =>
+                      updateAnswer(exam.questions[currentQuestion].id, value)
+                    }
+                    onPaste={handlePaste}
+                  />
+                </div>
+
+                {/* Submit Button */}
+                <div className="mt-4">
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={isSubmitting}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {isSubmitting ? "제출 중..." : "시험 제출하기"}
+                  </Button>
+                </div>
               </div>
             </div>
           </ResizablePanel>
