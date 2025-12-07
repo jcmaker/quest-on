@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   GraduationCap,
   FileText,
@@ -31,8 +32,6 @@ interface Exam {
 export default function ExamManagement() {
   const router = useRouter();
   const { isSignedIn, isLoaded, user } = useUser();
-  const [exams, setExams] = useState<Exam[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
@@ -44,43 +43,31 @@ export default function ExamManagement() {
     }
   }, [isLoaded, isSignedIn, userRole, router]);
 
-  // Fetch exams from database
-  useEffect(() => {
-    const fetchExams = async () => {
-      if (!isSignedIn || userRole !== "instructor") return;
+  // Fetch exams from database using TanStack Query
+  const { data: exams = [], isLoading: loading } = useQuery({
+    queryKey: ["instructor-exams", user?.id],
+    queryFn: async () => {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "get_instructor_exams",
+        }),
+      });
 
-      try {
-        const response = await fetch("/api/supa", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            action: "get_instructor_exams",
-          }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          setExams(result.exams || []);
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-          console.error("Failed to fetch exams", {
-            status: response.status,
-            statusText: response.statusText,
-            error: errorData.error || "Unknown error",
-            details: errorData,
-          });
-        }
-      } catch (error) {
-        console.error("Error fetching exams:", error);
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to fetch exams");
       }
-    };
 
-    fetchExams();
-  }, [isSignedIn, userRole]);
+      const result = await response.json();
+      return (result.exams || []) as Exam[];
+    },
+    enabled: !!(isLoaded && isSignedIn && userRole === "instructor"),
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+  });
 
   const handleDeleteExam = (examId: string) => {
     // TODO: Implement delete functionality

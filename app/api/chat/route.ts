@@ -360,14 +360,14 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
     let dbCoreAbility = "";
     if (questionId && exam?.questions) {
       const questionIndex = parseInt(questionId);
-      
+
       // Define a minimal type for the question object
       interface QuestionType {
         id: string;
         core_ability?: string;
         [key: string]: unknown;
       }
-      
+
       const questions = exam.questions as unknown as QuestionType[];
 
       // Check if questions is an array and index is valid

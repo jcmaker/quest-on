@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState } from "react";
 import {
   BookOpen,
   User,
@@ -32,6 +32,8 @@ import {
   ListFilterIcon,
 } from "lucide-react";
 import { UserMenu } from "@/components/auth/UserMenu";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInView } from "react-intersection-observer";
 
 interface ExamSession {
   id: string;
@@ -49,26 +51,26 @@ interface ExamSession {
   isGraded: boolean;
 }
 
+interface SessionsResponse {
+  sessions: ExamSession[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    hasMore: boolean;
+  };
+}
+
 export default function StudentDashboard() {
   const router = useRouter();
   const { isSignedIn, isLoaded, user } = useUser();
-  const [sessions, setSessions] = useState<ExamSession[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<
     "all" | "graded" | "pending" | "in-progress"
   >("all");
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [totalCount, setTotalCount] = useState(0);
-  const [overallStats, setOverallStats] = useState<{
-    totalSessions: number;
-    completedSessions: number;
-    inProgressSessions: number;
-    overallAverageScore: number | null;
-  } | null>(null);
-  const observerTarget = useRef<HTMLDivElement>(null);
+
+  // Intersection Observer hook
+  const { ref: observerRef, inView } = useInView();
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
@@ -78,12 +80,10 @@ export default function StudentDashboard() {
   // Redirect non-students or users without role
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      // Role이 설정되지 않은 경우 onboarding으로 리다이렉트
       if (!user?.unsafeMetadata?.role) {
         router.push("/onboarding");
         return;
       }
-      // Role이 student가 아닌 경우 instructor 페이지로 리다이렉트
       if (userRole !== "student") {
         router.push("/instructor");
         return;
@@ -94,60 +94,29 @@ export default function StudentDashboard() {
   // Check if profile exists for students
   useEffect(() => {
     const checkProfile = async () => {
-      // 이미 체크했거나 체크 중이면 스킵
       if (profileChecked || isCheckingProfile) return;
-
-      // 학생이고 로그인된 상태에서만 체크
       if (isLoaded && isSignedIn && userRole === "student") {
         setIsCheckingProfile(true);
         try {
-          console.log(
-            "[Profile Check] Checking profile for student:",
-            user?.id
-          );
           const response = await fetch("/api/student/profile");
-          console.log("[Profile Check] Response status:", response.status);
-
           if (response.ok) {
             const data = await response.json();
-            console.log("[Profile Check] Profile data:", data);
-
             if (!data.profile) {
-              // 프로필이 없으면 프로필 설정 페이지로 리다이렉트
-              console.log(
-                "[Profile Check] No profile found, redirecting to setup"
-              );
               router.replace("/student/profile-setup");
               return;
-            } else {
-              console.log("[Profile Check] Profile exists, continuing");
             }
           } else if (response.status === 403) {
-            // 학생이 아닌 경우 (이미 위에서 처리되지만 안전장치)
-            console.log(
-              "[Profile Check] Not a student, redirecting to instructor"
-            );
             router.replace("/instructor");
             return;
-          } else {
-            // 에러 응답의 상세 정보 확인
-            const errorData = await response.json().catch(() => ({}));
-            console.error(
-              "[Profile Check] Unexpected response:",
-              response.status,
-              errorData
-            );
           }
         } catch (error) {
           console.error("[Profile Check] Error checking profile:", error);
-          // 에러 발생 시에도 체크 완료로 표시하여 무한 루프 방지
         } finally {
           setProfileChecked(true);
           setIsCheckingProfile(false);
         }
       }
     };
-
     checkProfile();
   }, [
     isLoaded,
@@ -159,122 +128,107 @@ export default function StudentDashboard() {
     user,
   ]);
 
-  const fetchSessions = useCallback(
-    async (pageNum: number, reset: boolean = false) => {
-      try {
-        if (reset) {
-          setIsLoading(true);
-        } else {
-          setIsLoadingMore(true);
-        }
-
-        const response = await fetch(
-          `/api/student/sessions?page=${pageNum}&limit=10`
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          if (reset) {
-            setSessions(data.sessions || []);
-          } else {
-            setSessions((prev) => [...prev, ...(data.sessions || [])]);
-          }
-          setHasMore(data.pagination?.hasMore || false);
-          setTotalCount(data.pagination?.total || 0);
-          setPage(pageNum);
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-          console.error("Failed to fetch sessions:", {
-            status: response.status,
-            statusText: response.statusText,
-            error: errorData,
-          });
-          
-          // Handle specific error cases
-          if (response.status === 401) {
-            console.error("Unauthorized - user may not be logged in");
-          } else if (response.status === 403) {
-            console.error("Forbidden - user may not be a student");
-          } else if (response.status === 500) {
-            console.error("Server error - check API route logs");
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching sessions:", error);
-      } finally {
-        setIsLoading(false);
-        setIsLoadingMore(false);
-      }
+  // TanStack Query for Sessions (Infinite Scroll)
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: isSessionsLoading,
+  } = useInfiniteQuery({
+    queryKey: ["student-sessions", user?.id],
+    queryFn: async ({ pageParam = 1 }) => {
+      const response = await fetch(
+        `/api/student/sessions?page=${pageParam}&limit=10`
+      );
+      if (!response.ok) throw new Error("Failed to fetch sessions");
+      return response.json() as Promise<SessionsResponse>;
     },
-    []
-  );
-
-  const fetchOverallStats = async () => {
-    try {
-      const response = await fetch("/api/student/sessions/stats");
-      if (response.ok) {
-        const data = await response.json();
-        setOverallStats(data);
-      }
-    } catch (error) {
-      console.error("Error fetching overall stats:", error);
-    }
-  };
-
-  // Fetch sessions when user is loaded and profile is checked
-  useEffect(() => {
-    if (
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.pagination.hasMore ? lastPage.pagination.page + 1 : undefined,
+    enabled: !!(
       isLoaded &&
       isSignedIn &&
       userRole === "student" &&
-      profileChecked &&
-      !isCheckingProfile
-    ) {
-      fetchSessions(1, true);
-      fetchOverallStats();
-    }
-  }, [
-    isLoaded,
-    isSignedIn,
-    userRole,
-    profileChecked,
-    isCheckingProfile,
-    fetchSessions,
-  ]);
+      profileChecked
+    ),
+    staleTime: 1000 * 60 * 1, // 1 minute stale time
+  });
 
-  // Intersection Observer for infinite scroll
+  // Load more when in view
   useEffect(() => {
-    if (searchQuery.trim() || filter !== "all") return; // 검색 중이거나 필터 적용 중일 때는 observer 비활성화
-    if (!hasMore || isLoadingMore || isLoading) return; // 로딩 중이거나 더 이상 데이터가 없으면 observer 비활성화
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          fetchSessions(page + 1, false);
-        }
-      },
-      { threshold: 0.1, rootMargin: "100px" }
-    );
-
-    const currentTarget = observerTarget.current;
-    if (currentTarget) {
-      observer.observe(currentTarget);
+    if (
+      inView &&
+      hasNextPage &&
+      !isFetchingNextPage &&
+      !searchQuery &&
+      filter === "all"
+    ) {
+      fetchNextPage();
     }
-
-    return () => {
-      if (currentTarget) {
-        observer.unobserve(currentTarget);
-      }
-    };
   }, [
-    hasMore,
-    isLoadingMore,
-    isLoading,
-    page,
+    inView,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
     searchQuery,
     filter,
-    fetchSessions,
   ]);
+
+  // TanStack Query for Stats
+  const { data: overallStats } = useQuery({
+    queryKey: ["student-stats", user?.id],
+    queryFn: async () => {
+      const response = await fetch("/api/student/sessions/stats");
+      if (!response.ok) throw new Error("Failed to fetch stats");
+      return response.json();
+    },
+    enabled: !!(
+      isLoaded &&
+      isSignedIn &&
+      userRole === "student" &&
+      profileChecked
+    ),
+    staleTime: 1000 * 60 * 5, // 5 minutes stale time
+  });
+
+  // Flatten sessions from pages
+  const allSessions = data?.pages.flatMap((page) => page.sessions) || [];
+
+  const completedSessions = allSessions.filter(
+    (session) => session.status === "completed"
+  );
+  const inProgressSessions = allSessions.filter(
+    (session) => session.status === "in-progress"
+  );
+
+  // Filter sessions based on search query and filter
+  const filteredSessions = allSessions.filter((session) => {
+    // Apply filter
+    if (filter === "graded") {
+      if (session.status !== "completed" || !session.isGraded) return false;
+    } else if (filter === "pending") {
+      if (session.status !== "completed" || session.isGraded) return false;
+    } else if (filter === "in-progress") {
+      if (session.status !== "in-progress") return false;
+    }
+
+    // Apply search query
+    if (!searchQuery.trim()) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      session.examTitle.toLowerCase().includes(query) ||
+      session.examCode.toLowerCase().includes(query)
+    );
+  });
+
+  const displayTotalCount = overallStats?.totalSessions || allSessions.length;
+  const displayCompletedCount =
+    overallStats?.completedSessions || completedSessions.length;
+  const displayInProgressCount =
+    overallStats?.inProgressSessions || inProgressSessions.length;
+  const overallAverageScore = overallStats?.overallAverageScore ?? null;
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -318,44 +272,6 @@ export default function StudentDashboard() {
     });
   };
 
-  const completedSessions = sessions.filter(
-    (session) => session.status === "completed"
-  );
-  const inProgressSessions = sessions.filter(
-    (session) => session.status === "in-progress"
-  );
-
-  // Filter sessions based on search query and filter
-  const filteredSessions = sessions.filter((session) => {
-    // Apply filter
-    if (filter === "graded") {
-      if (session.status !== "completed" || !session.isGraded) return false;
-    } else if (filter === "pending") {
-      if (session.status !== "completed" || session.isGraded) return false;
-    } else if (filter === "in-progress") {
-      if (session.status !== "in-progress") return false;
-    }
-    // filter === "all"일 때는 모든 세션 통과
-
-    // Apply search query
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      session.examTitle.toLowerCase().includes(query) ||
-      session.examCode.toLowerCase().includes(query)
-    );
-  });
-
-  // Use overall stats if available, otherwise calculate from loaded sessions
-  const displayTotalCount =
-    overallStats?.totalSessions || totalCount || sessions.length;
-  const displayCompletedCount =
-    overallStats?.completedSessions || completedSessions.length;
-  const displayInProgressCount =
-    overallStats?.inProgressSessions || inProgressSessions.length;
-  const overallAverageScore = overallStats?.overallAverageScore ?? null;
-
-  // 프로필 체크 중이면 로딩 표시
   if (isLoaded && isSignedIn && userRole === "student" && isCheckingProfile) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -391,7 +307,6 @@ export default function StudentDashboard() {
       </SignedOut>
 
       <SignedIn>
-        {/* Header */}
         <header className="bg-card/80 backdrop-blur-sm border-b border-border shadow-sm">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
@@ -422,9 +337,7 @@ export default function StudentDashboard() {
           </div>
         </header>
 
-        {/* Main Content */}
         <main className="max-w-7xl mx-auto p-6 space-y-8">
-          {/* Welcome Section */}
           <Card className="border-0 shadow-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground">
             <CardContent className="p-8">
               <div className="flex items-center justify-between">
@@ -442,7 +355,6 @@ export default function StudentDashboard() {
             </CardContent>
           </Card>
 
-          {/* Quick Actions */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Link href="/join">
               <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
@@ -483,7 +395,6 @@ export default function StudentDashboard() {
             </Card>
           </div>
 
-          {/* Stats Overview */}
           <div className="grid gap-6 md:grid-cols-3">
             <Card className="border-0 shadow-lg">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -541,7 +452,6 @@ export default function StudentDashboard() {
             </Card>
           </div>
 
-          {/* Exam History */}
           <Card id="exam-history" className="border-0 shadow-xl">
             <CardHeader>
               <div className="flex flex-col space-y-4">
@@ -564,7 +474,6 @@ export default function StudentDashboard() {
                     </span>
                   </div>
                 </div>
-                {/* Filter Tabs */}
                 <div className="flex items-center gap-2 overflow-x-auto pb-2">
                   <ListFilterIcon className="w-4 h-4" />
                   <Button
@@ -600,7 +509,6 @@ export default function StudentDashboard() {
                     진행 중
                   </Button>
                 </div>
-                {/* Search Input */}
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
@@ -626,14 +534,14 @@ export default function StudentDashboard() {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {isLoading ? (
+              {isSessionsLoading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
                   <span className="ml-2 text-muted-foreground">
                     시험 목록을 불러오는 중...
                   </span>
                 </div>
-              ) : sessions.length === 0 ? (
+              ) : allSessions.length === 0 ? (
                 <div className="text-center py-8 border-2 border-dashed border-muted-foreground/20 rounded-lg">
                   <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                   <p className="text-muted-foreground mb-4">
@@ -760,24 +668,29 @@ export default function StudentDashboard() {
                       </div>
                     </div>
                   ))}
-                  {/* Infinite scroll observer target */}
-                  {!searchQuery.trim() && filter === "all" && (
-                    <div ref={observerTarget} className="h-4" />
-                  )}
-                  {/* Loading more indicator */}
-                  {isLoadingMore && !searchQuery.trim() && filter === "all" && (
-                    <div className="flex items-center justify-center py-4">
-                      <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
-                      <span className="ml-2 text-sm text-muted-foreground">
-                        더 불러오는 중...
-                      </span>
+                  {!searchQuery.trim() && filter === "all" && hasNextPage && (
+                    <div
+                      ref={observerRef}
+                      className="flex items-center justify-center py-4"
+                    >
+                      {isFetchingNextPage ? (
+                        <>
+                          <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
+                          <span className="ml-2 text-sm text-muted-foreground">
+                            더 불러오는 중...
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-sm text-muted-foreground">
+                          스크롤해서 더 보기
+                        </span>
+                      )}
                     </div>
                   )}
-                  {/* End of list indicator */}
-                  {!hasMore &&
+                  {!hasNextPage &&
                     !searchQuery.trim() &&
                     filter === "all" &&
-                    sessions.length > 0 && (
+                    allSessions.length > 0 && (
                       <div className="text-center py-4 text-sm text-muted-foreground">
                         모든 시험을 불러왔습니다.
                       </div>

@@ -42,6 +42,8 @@ export async function POST(request: NextRequest) {
         return await getInstructorExams();
       case "create_or_get_session":
         return await createOrGetSession(data);
+      case "init_exam_session": // New optimized action
+        return await initExamSession(data);
       case "save_draft":
         return await saveDraft(data);
       case "save_all_drafts":
@@ -565,6 +567,81 @@ async function createOrGetSession(data: { examId: string; studentId: string }) {
   }
 }
 
+// Optimized function to fetch exam AND session in one go
+async function initExamSession(data: { examCode: string; studentId: string }) {
+  try {
+    // 1. Fetch Exam by Code
+    const { data: exam, error: examError } = await supabase
+      .from("exams")
+      .select("*")
+      .eq("code", data.examCode)
+      .single();
+
+    if (examError || !exam) {
+      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+    }
+
+    // 2. Create or Get Session
+    const { data: existingSessions, error: checkError } = await supabase
+      .from("sessions")
+      .select("*")
+      .eq("exam_id", exam.id)
+      .eq("student_id", data.studentId)
+      .order("created_at", { ascending: false });
+
+    if (checkError) throw checkError;
+
+    const existingSession =
+      existingSessions && existingSessions.length > 0
+        ? existingSessions[0]
+        : null;
+
+    let session = existingSession;
+    let messages: any[] = [];
+
+    if (existingSession) {
+      // Get messages for existing session
+      const { data: sessionMessages } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("session_id", existingSession.id)
+        .order("created_at", { ascending: true });
+
+      messages = (sessionMessages || []).map((msg) => ({
+        type: msg.role === "user" ? "user" : "assistant",
+        message: msg.content,
+        timestamp: msg.created_at,
+        qIdx: msg.q_idx || 0,
+      }));
+    } else {
+      // Create new session
+      const { data: newSession, error: createError } = await supabase
+        .from("sessions")
+        .insert([
+          {
+            exam_id: exam.id,
+            student_id: data.studentId,
+            used_clarifications: 0,
+            created_at: new Date().toISOString(),
+          },
+        ])
+        .select()
+        .single();
+
+      if (createError) throw createError;
+      session = newSession;
+    }
+
+    return NextResponse.json({ exam, session, messages });
+  } catch (error) {
+    console.error("Init exam session error:", error);
+    return NextResponse.json(
+      { error: "Failed to initialize exam session" },
+      { status: 500 }
+    );
+  }
+}
+
 async function saveDraft(data: {
   sessionId: string;
   questionId: string;
@@ -863,8 +940,9 @@ async function getFolderContents(data: { folder_id?: string | null }) {
     }
 
     // Apply ordering - 최신순으로 정렬
-    const { data: nodes, error } = await query
-      .order("updated_at", { ascending: false }); // 최근 수정된 것이 먼저
+    const { data: nodes, error } = await query.order("updated_at", {
+      ascending: false,
+    }); // 최근 수정된 것이 먼저
 
     if (error) {
       console.error("Supabase query error:", {

@@ -36,6 +36,7 @@
     "@tiptap/extension-underline": "^3.6.6",
     "@tiptap/react": "^3.6.6",
     "@tiptap/starter-kit": "^3.6.6",
+    "@vercel/analytics": "^1.6.1",
     "add": "^2.0.6",
     "adm-zip": "^0.5.16",
     "badge": "^1.0.3",

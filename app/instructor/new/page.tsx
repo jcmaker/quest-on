@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,7 @@ import type { Question } from "@/components/instructor/QuestionEditor";
 export default function CreateExam() {
   const router = useRouter();
   const { user } = useUser();
+  const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [createdExamCode, setCreatedExamCode] = useState("");
@@ -443,6 +445,33 @@ export default function CreateExam() {
     setRubric(newRubric);
   };
 
+  const createExamMutation = useMutation({
+    mutationFn: async (examDataForDB: any) => {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "create_exam",
+          data: examDataForDB,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          `Failed to create exam: ${errorData.error || "Unknown error"}`
+        );
+      }
+
+      return await response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["instructor-exams"] });
+    },
+  });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -632,27 +661,8 @@ export default function CreateExam() {
         updated_at: new Date().toISOString(),
       };
 
-      // Save to Supabase
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "create_exam",
-          data: examDataForDB,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("API Error:", errorData);
-        throw new Error(
-          `Failed to create exam: ${errorData.error || "Unknown error"}`
-        );
-      }
-
-      const result = await response.json();
+      // Save to Supabase using useMutation
+      const result = await createExamMutation.mutateAsync(examDataForDB);
       console.log("Exam created successfully:", result);
 
       // Show dialog with exam code instead of redirecting
