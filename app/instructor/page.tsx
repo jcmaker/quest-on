@@ -10,40 +10,74 @@ import { useEffect, useState, useRef } from "react";
 import {
   GraduationCap,
   BookOpen,
-  // Users,
-  // BarChart3,
   Plus,
   FileText,
   Calendar,
+  Loader2,
+  Menu,
+  LayoutDashboard,
+  FolderOpen,
+  List,
+  Folder,
+  Search,
+  LayoutGrid,
+  MoreVertical,
+  Copy,
+  Trash2,
+  FolderPlus,
 } from "lucide-react";
-import { ExamCard } from "@/components/instructor/ExamCard";
+import { UserMenu } from "@/components/auth/UserMenu";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
+import { useMemo } from "react";
 
-interface Question {
+interface ExamNode {
   id: string;
-  text: string;
-  type: string;
-  core_ability?: string;
-}
-
-interface Exam {
-  id: string;
-  title: string;
-  code: string;
-  description: string;
-  duration: number;
-  status: string;
+  instructor_id: string;
+  parent_id: string | null;
+  kind: "folder" | "exam";
+  name: string;
+  sort_order: number;
+  exam_id: string | null;
   created_at: string;
   updated_at: string;
-  questions: Question[];
+  student_count?: number;
+  exams?: {
+    id: string;
+    title: string;
+    code: string;
+    description: string;
+    duration: number;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  } | null;
 }
 
 export default function InstructorHome() {
   const router = useRouter();
+  const pathname = usePathname();
   const { isSignedIn, isLoaded, user } = useUser();
-  const [exams, setExams] = useState<Exam[]>([]);
+  const [nodes, setNodes] = useState<ExamNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [displayedCount, setDisplayedCount] = useState(5);
-  const observerTarget = useRef<HTMLDivElement>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
@@ -71,42 +105,43 @@ export default function InstructorHome() {
     }
   }, [isLoaded, isSignedIn, userRole, user, router]);
 
-  // Fetch exams when user is loaded
+  // Fetch nodes when user is loaded
   useEffect(() => {
     if (isLoaded && isSignedIn && userRole === "instructor") {
-      fetchExams();
+      loadFolderContents(null);
     }
   }, [isLoaded, isSignedIn, userRole]);
 
-  // Reset displayed count when exams change
-  useEffect(() => {
-    setDisplayedCount(5);
-  }, [exams]);
-
-  // Intersection Observer for infinite scroll
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && displayedCount < exams.length) {
-          setDisplayedCount((prev) => Math.min(prev + 5, exams.length));
-        }
-      },
-      { threshold: 0.1 }
-    );
-
-    const currentTarget = observerTarget.current;
-    if (currentTarget) {
-      observer.observe(currentTarget);
+  const filteredNodes = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return nodes;
     }
+    const query = searchQuery.toLowerCase();
+    return nodes.filter((node) => node.name.toLowerCase().includes(query));
+  }, [nodes, searchQuery]);
 
-    return () => {
-      if (currentTarget) {
-        observer.unobserve(currentTarget);
-      }
-    };
-  }, [displayedCount, exams.length]);
+  const folderNodes = useMemo(() => {
+    const folders = filteredNodes.filter((node) => node.kind === "folder");
+    return folders.sort((a, b) => {
+      const dateA = new Date(a.updated_at).getTime();
+      const dateB = new Date(b.updated_at).getTime();
+      return dateB - dateA;
+    });
+  }, [filteredNodes]);
 
-  const fetchExams = async () => {
+  const examNodes = useMemo(() => {
+    const exams = filteredNodes.filter((node) => node.kind === "exam");
+    return exams.sort((a, b) => {
+      const dateA = new Date(a.updated_at).getTime();
+      const dateB = new Date(b.updated_at).getTime();
+      return dateB - dateA;
+    });
+  }, [filteredNodes]);
+
+  const isFiltering = searchQuery.trim().length > 0;
+  const hasResults = filteredNodes.length > 0;
+
+  const loadFolderContents = async (folderId: string | null) => {
     try {
       setIsLoading(true);
       const response = await fetch("/api/supa", {
@@ -115,38 +150,401 @@ export default function InstructorHome() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          action: "get_instructor_exams",
+          action: "get_folder_contents",
+          data: { folder_id: folderId },
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
-        setExams(data.exams || []);
+        setNodes(data.nodes || []);
       } else {
-        console.error("Failed to fetch exams");
+        console.error("Failed to fetch folder contents");
       }
     } catch (error) {
-      console.error("Error fetching exams:", error);
+      console.error("Error loading folder contents:", error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const copyExamCode = (code: string) => {
-    navigator.clipboard.writeText(code);
-    // You could add a toast notification here
+  const formatDate = (dateString: string) => {
+    try {
+      return new Intl.DateTimeFormat("ko-KR", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }).format(new Date(dateString));
+    } catch {
+      return "";
+    }
   };
+
+  const handleCopyExamCode = async (code?: string) => {
+    if (!code) {
+      toast.error("시험 코드가 없습니다.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(code);
+      toast.success("시험 코드가 복사되었습니다.");
+    } catch (error) {
+      console.error("Copy exam code error:", error);
+      toast.error("시험 코드를 복사하지 못했습니다.");
+    }
+  };
+
+  const renderNodeStatus = (node: ExamNode) => {
+    if (node.kind !== "exam" || !node.exams) {
+      return null;
+    }
+
+    const statusLabel =
+      node.exams.status === "active"
+        ? "활성"
+        : node.exams.status === "draft"
+        ? "초안"
+        : "완료";
+
+    if (node.exams.status === "draft") {
+      return null;
+    }
+
+    const badgeClasses =
+      node.exams.status === "active"
+        ? "bg-emerald-100 text-emerald-700"
+        : "bg-slate-200 text-slate-700";
+
+    return (
+      <span
+        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${badgeClasses}`}
+      >
+        {statusLabel}
+      </span>
+    );
+  };
+
+  const renderStudentCount = (node: ExamNode) => {
+    if (node.kind !== "exam") {
+      return null;
+    }
+    const studentCount = node.student_count ?? 0;
+    return (
+      <span className="text-xs text-muted-foreground">
+        학생 {studentCount}명
+      </span>
+    );
+  };
+
+  const renderNodeActions = (node: ExamNode) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="opacity-0 group-hover:opacity-100 transition-opacity min-h-[44px] min-w-[44px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <MoreVertical className="w-4 h-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {node.kind === "exam" && node.exams?.code && (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCopyExamCode(node.exams?.code);
+            }}
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            코드 복사
+          </DropdownMenuItem>
+        )}
+        {node.kind === "folder" && (
+          <DropdownMenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              router.push("/instructor/drive");
+            }}
+          >
+            <FolderOpen className="w-4 h-4 mr-2" />
+            드라이브에서 열기
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const getViewButtonClasses = (mode: "grid" | "list") =>
+    cn(
+      "h-8 w-8 rounded-full border border-transparent transition-colors text-muted-foreground min-h-[44px] min-w-[44px]",
+      viewMode === mode
+        ? "bg-primary text-primary-foreground shadow-sm"
+        : "hover:bg-muted/70"
+    );
+
+  const renderGridNode = (node: ExamNode) => {
+    const isFolder = node.kind === "folder";
+    const iconWrapperClasses = isFolder
+      ? "from-blue-100 to-blue-50 text-blue-500"
+      : "from-slate-100 to-slate-50 text-slate-500";
+
+    return (
+      <Card
+        key={node.id}
+        className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm transition-all duration-200 group cursor-pointer hover:shadow-md"
+        onClick={() => {
+          if (isFolder) {
+            router.push("/instructor/drive");
+          } else if (node.exam_id) {
+            router.push(`/instructor/${node.exam_id}`);
+          }
+        }}
+      >
+        <div className="flex flex-1 flex-col text-left">
+          <div
+            className={`flex flex-1 items-center justify-center bg-gradient-to-b ${iconWrapperClasses} p-10`}
+          >
+            {isFolder ? (
+              <Folder className="h-16 w-16" strokeWidth={1.5} />
+            ) : (
+              <FileText className="h-16 w-16" strokeWidth={1.5} />
+            )}
+          </div>
+          <CardContent className="flex flex-col gap-2 border-t border-border/50 bg-background/80 px-5 py-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-medium text-foreground truncate">
+                  {node.name}
+                </h3>
+                <div className="mt-1 space-y-0.5">
+                  <p className="text-xs text-muted-foreground truncate">
+                    {isFolder ? (
+                      `폴더 · ${formatDate(node.updated_at)}`
+                    ) : (
+                      <span>{node.exams?.code || ""}</span>
+                    )}
+                  </p>
+                  {!isFolder && (
+                    <p className="text-xs text-muted-foreground truncate">
+                      생성 {formatDate(node.created_at)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+            {!isFolder && (
+              <div className="flex items-center justify-between">
+                <div>{renderNodeStatus(node)}</div>
+                {renderStudentCount(node)}
+              </div>
+            )}
+          </CardContent>
+        </div>
+        <div
+          className="absolute right-2 top-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {renderNodeActions(node)}
+        </div>
+      </Card>
+    );
+  };
+
+  const renderListNode = (node: ExamNode) => {
+    const statusBadge = renderNodeStatus(node);
+
+    return (
+      <div
+        key={node.id}
+        className="group flex items-center justify-between rounded-xl border border-border/60 bg-card/60 px-4 py-3 transition hover:shadow-sm cursor-pointer"
+        onClick={() => {
+          if (node.kind === "folder") {
+            router.push("/instructor/drive");
+          } else if (node.exam_id) {
+            router.push(`/instructor/${node.exam_id}`);
+          }
+        }}
+      >
+        <div className="flex items-center gap-4 flex-1">
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background/80">
+            {node.kind === "folder" ? (
+              <Folder className="w-5 h-5 text-primary" />
+            ) : (
+              <FileText className="w-5 h-5 text-blue-500" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="font-medium text-sm text-foreground truncate">
+              {node.name}
+            </p>
+            {node.kind === "folder" ? (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span>{formatDate(node.updated_at)}</span>
+                <span>· 폴더</span>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {node.exams?.code && <span>{node.exams.code}</span>}
+                <span>· 생성 {formatDate(node.created_at)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {statusBadge && (
+            <span className="hidden sm:inline-flex">{statusBadge}</span>
+          )}
+          {renderStudentCount(node)}
+          {renderNodeActions(node)}
+        </div>
+      </div>
+    );
+  };
+
+  const renderSection = (
+    title: string,
+    nodesList: ExamNode[],
+    options: { emptyLabel: string; emptyFilteredLabel: string }
+  ) => {
+    const emptyMessage = isFiltering
+      ? options.emptyFilteredLabel
+      : options.emptyLabel;
+
+    const content =
+      nodesList.length > 0 ? (
+        viewMode === "grid" ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {nodesList.map((node) => renderGridNode(node))}
+          </div>
+        ) : (
+          <div className="space-y-2">{nodesList.map(renderListNode)}</div>
+        )
+      ) : (
+        <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-card/40 py-6 text-center text-sm text-muted-foreground">
+          {emptyMessage}
+        </div>
+      );
+
+    return (
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {title}
+          </p>
+          <span className="text-xs text-muted-foreground">
+            {nodesList.length}개
+          </span>
+        </div>
+        {content}
+      </div>
+    );
+  };
+
+  const navigationItems = [
+    {
+      title: "대시보드",
+      href: "/instructor",
+      icon: LayoutDashboard,
+      active: pathname === "/instructor",
+    },
+    {
+      title: "새 시험 생성",
+      href: "/instructor/new",
+      icon: Plus,
+      active: pathname === "/instructor/new",
+    },
+    {
+      title: "내 드라이브",
+      href: "/instructor/drive",
+      icon: FolderOpen,
+      active: pathname === "/instructor/drive",
+    },
+    {
+      title: "시험 관리",
+      href: "/instructor/exams",
+      icon: List,
+      active: pathname === "/instructor/exams",
+    },
+  ];
+
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full bg-sidebar">
+      {/* Sidebar Header */}
+      <div className="p-4 sm:p-5 border-b border-sidebar-border">
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shrink-0 shadow-sm">
+            <GraduationCap
+              className="w-5 h-5 text-primary-foreground"
+              aria-hidden="true"
+            />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-base sm:text-lg font-bold text-sidebar-foreground truncate">
+              강사 콘솔
+            </h2>
+            <p className="text-xs text-sidebar-foreground/70 truncate">
+              {user?.firstName || user?.emailAddresses[0]?.emailAddress}
+            </p>
+          </div>
+        </div>
+        <Badge
+          variant="outline"
+          className="bg-primary/10 text-primary border-primary/20 text-xs w-fit"
+        >
+          강사 모드
+        </Badge>
+      </div>
+
+      {/* Navigation */}
+      <nav
+        className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
+        aria-label="주요 네비게이션"
+      >
+        {navigationItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setSidebarOpen(false)}
+              className={cn(
+                "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar",
+                item.active
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+              )}
+              aria-current={item.active ? "page" : undefined}
+            >
+              <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
+              <span>{item.title}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Sidebar Footer */}
+      <div className="p-4 border-t border-sidebar-border">
+        <UserMenu />
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background">
       <SignedOut>
-        <div className="flex items-center justify-center h-screen">
+        <div className="flex items-center justify-center h-screen p-4">
           <Card className="w-full max-w-md shadow-xl border-0 bg-card/80 backdrop-blur-sm">
             <CardHeader className="text-center space-y-4">
               <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto">
-                <GraduationCap className="w-8 h-8 text-primary-foreground" />
+                <GraduationCap
+                  className="w-8 h-8 text-primary-foreground"
+                  aria-hidden="true"
+                />
               </div>
-              <CardTitle className="text-xl">로그인이 필요합니다</CardTitle>
+              <CardTitle className="text-xl font-bold">
+                로그인이 필요합니다
+              </CardTitle>
               <p className="text-sm text-muted-foreground">
                 강사 페이지에 접근하려면 로그인해주세요
               </p>
@@ -154,7 +552,8 @@ export default function InstructorHome() {
             <CardContent className="text-center pb-8">
               <Button
                 onClick={() => router.replace("/sign-in")}
-                className="w-full"
+                className="w-full min-h-[44px]"
+                aria-label="강사로 로그인"
               >
                 강사로 로그인
               </Button>
@@ -164,219 +563,276 @@ export default function InstructorHome() {
       </SignedOut>
 
       <SignedIn>
-        {/* Header */}
-        <header className="bg-card/80 backdrop-blur-sm border-b border-border shadow-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-                  <GraduationCap className="w-6 h-6 text-primary-foreground" />
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-foreground">
-                    강사 콘솔
-                  </h1>
-                  <p className="text-sm text-muted-foreground">
-                    AI 시험 플랫폼 관리
-                  </p>
+        <div className="flex h-screen overflow-hidden">
+          {/* Desktop Sidebar */}
+          <aside
+            className="hidden lg:flex lg:flex-shrink-0 lg:w-64 lg:flex-col lg:border-r lg:border-sidebar-border"
+            aria-label="사이드바 네비게이션"
+          >
+            <SidebarContent />
+          </aside>
+
+          {/* Mobile Sidebar Sheet */}
+          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+            <SheetContent side="left" className="w-64 p-0">
+              <SheetHeader className="sr-only">
+                <SheetTitle>메뉴</SheetTitle>
+              </SheetHeader>
+              <SidebarContent />
+            </SheetContent>
+          </Sheet>
+
+          {/* Main Content Area */}
+          <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+            {/* Top Header */}
+            <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200">
+              <div className="px-4 sm:px-6 lg:px-8 py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
+                    {/* Mobile Menu Button */}
+                    <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+                      <SheetTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="lg:hidden min-h-[44px] min-w-[44px] p-0"
+                          aria-label="메뉴 열기"
+                        >
+                          <Menu className="w-5 h-5" aria-hidden="true" />
+                        </Button>
+                      </SheetTrigger>
+                    </Sheet>
+
+                    <div className="min-w-0">
+                      <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
+                        강사 콘솔
+                      </h1>
+                      <p className="text-xs text-muted-foreground truncate hidden sm:block">
+                        환영합니다,{" "}
+                        {user?.firstName ||
+                          user?.emailAddresses[0]?.emailAddress}
+                        님
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <Badge
+                      variant="outline"
+                      className="bg-primary/10 text-primary border-primary/20 text-xs hidden sm:inline-flex"
+                      aria-label="강사 모드"
+                    >
+                      강사 모드
+                    </Badge>
+                    <div className="lg:hidden">
+                      <UserMenu />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center space-x-3">
-                <Badge
-                  variant="outline"
-                  className="bg-primary/10 text-primary border-primary/20"
-                >
-                  강사 모드
-                </Badge>
-              </div>
-            </div>
-          </div>
-        </header>
+            </header>
 
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto p-6 space-y-8">
-          {/* Welcome Section */}
-          <Card className="border-0 shadow-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground">
-            <CardContent className="p-8">
-              <div className="flex items-center justify-between">
-                <div className="space-y-2">
-                  <h2 className="text-2xl font-bold">안녕하세요, 강사님!</h2>
-                  <p className="text-primary-foreground/80">
-                    AI 기반 인터랙티브 시험을 생성하고 관리하세요
-                  </p>
-                </div>
-                <div className="hidden md:block">
-                  <BookOpen className="w-16 h-16 text-primary-foreground/60" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            {/* Main Content */}
+            <main className="flex-1 overflow-y-auto bg-background">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
+                {/* Welcome Section */}
+                <Card className="border-0 shadow-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground overflow-hidden">
+                  <CardContent className="p-6 sm:p-8">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <h2 className="text-xl sm:text-2xl font-bold">
+                          안녕하세요, 강사님!
+                        </h2>
+                        <p className="text-sm sm:text-base text-primary-foreground/90 leading-relaxed">
+                          AI 기반 인터랙티브 시험을 생성하고 관리하세요
+                        </p>
+                      </div>
+                      <div className="hidden md:block shrink-0">
+                        <BookOpen
+                          className="w-16 h-16 text-primary-foreground/60"
+                          aria-hidden="true"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
 
-          {/* Quick Actions */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
-            <Link href="/instructor/new">
-              <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
-                <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
-                    <Plus className="w-6 h-6 text-primary-foreground" />
-                  </div>
-                  <h3 className="font-semibold text-foreground mb-2">
-                    새 시험 생성
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    AI 기반 인터랙티브 시험 만들기
-                  </p>
-                </CardContent>
-              </Card>
-            </Link>
-
-            <Link href="/instructor/drive">
-              <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
-                <CardContent className="p-6 text-center">
-                  <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
-                    <FileText className="w-6 h-6 text-primary-foreground" />
-                  </div>
-                  <h3 className="font-semibold text-foreground mb-2">
-                    내 드라이브
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    폴더와 시험을 관리하세요
-                  </p>
-                </CardContent>
-              </Card>
-            </Link>
-
-            {/* <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
-              <CardContent className="p-6 text-center">
-                <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
-                  <Users className="w-6 h-6 text-primary-foreground" />
-                </div>
-                <h3 className="font-semibold text-foreground mb-2">
-                  학생 관리
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  학생 성적 및 진행상황 확인
-                </p>
-              </CardContent>
-            </Card> */}
-
-            {/* <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-200 cursor-pointer group">
-              <CardContent className="p-6 text-center">
-                <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform duration-200">
-                  <BarChart3 className="w-6 h-6 text-primary-foreground" />
-                </div>
-                <h3 className="font-semibold text-foreground mb-2">
-                  분석 리포트
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  성적 분석 및 통계 확인
-                </p>
-              </CardContent>
-            </Card> */}
-          </div>
-
-          {/* 시험 관리 */}
-          <Card className="border-0 shadow-xl">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center space-x-2">
-                  <BookOpen className="w-5 h-5 text-primary" />
-                  <span>시험 관리</span>
-                </CardTitle>
-                <div className="flex items-center space-x-2">
-                  <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                    <Calendar className="w-4 h-4" />
-                    <span>총 {exams.length}개의 시험</span>
-                  </div>
-                  <Link href="/instructor/exams">
-                    <Button variant="outline" size="sm">
-                      전체 보기
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* 새 시험 출제 버튼 */}
-              <div className="flex items-center justify-between p-4 bg-primary/5 rounded-lg border border-primary/20">
-                <div>
-                  <h3 className="font-semibold text-foreground mb-1">
-                    새 시험 출제
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    AI 기반 인터랙티브 시험을 생성하고 학생들에게 배포하세요
-                  </p>
-                </div>
-                <Link href="/instructor/new">
-                  <Button
-                    size="lg"
-                    className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    시험 출제하기
-                  </Button>
-                </Link>
-              </div>
-
-              {/* 기존 시험 목록 */}
-              <div>
-                <h3 className="font-semibold text-foreground mb-4">
-                  출제된 시험
-                </h3>
-                {isLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
-                    <span className="ml-2 text-muted-foreground">
-                      시험 목록을 불러오는 중...
-                    </span>
-                  </div>
-                ) : exams.length === 0 ? (
-                  <div className="text-center py-8 border-2 border-dashed border-muted-foreground/20 rounded-lg">
-                    <FileText className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground mb-4">
-                      아직 출제된 시험이 없습니다.
-                    </p>
-                    <Link href="/instructor/new">
-                      <Button>
-                        <Plus className="w-4 h-4 mr-2" />첫 번째 시험 출제하기
-                      </Button>
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {exams.slice(0, displayedCount).map((exam) => (
-                      <ExamCard
-                        key={exam.id}
-                        exam={exam}
-                        onCopyCode={copyExamCode}
-                        onEdit={(examId) =>
-                          router.push(`/instructor/${examId}/edit`)
-                        }
-                        showStudentCount={false}
-                      />
-                    ))}
-                    {/* {exams.length > 5 && (
-                      <div className="text-center pt-4">
-                        <Link href="/instructor/exams">
-                          <Button variant="outline">
-                            더 많은 시험 보기 ({exams.length - 5}개 더)
+                {/* 시험 관리 */}
+                <Card className="border-0 shadow-xl">
+                  <CardHeader className="space-y-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <CardTitle className="flex items-center space-x-2 text-lg sm:text-xl">
+                          <BookOpen
+                            className="w-5 h-5 text-primary shrink-0"
+                            aria-hidden="true"
+                          />
+                          <span>시험 관리</span>
+                        </CardTitle>
+                      </div>
+                      <div className="flex items-center gap-3 sm:gap-4 shrink-0 w-full sm:w-auto justify-between sm:justify-end">
+                        <div className="flex items-center space-x-2 text-xs sm:text-sm text-muted-foreground">
+                          <Calendar
+                            className="w-4 h-4 shrink-0"
+                            aria-hidden="true"
+                          />
+                          <span className="whitespace-nowrap">
+                            총 {nodes.length}개
+                          </span>
+                        </div>
+                        <Link
+                          href="/instructor/drive"
+                          className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="min-h-[44px] px-4"
+                          >
+                            드라이브에서 보기
                           </Button>
                         </Link>
                       </div>
-                    )} */}
-                    {displayedCount < exams.length && (
-                      <div ref={observerTarget} className="py-4">
-                        <div className="flex items-center justify-center">
-                          <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4 sm:space-y-6">
+                    {/* 액션 바 */}
+                    <div className="bg-card/80 border border-border rounded-2xl p-4 shadow-sm">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                        <div className="flex items-center gap-2">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button className="gap-2 bg-primary text-primary-foreground min-h-[44px]">
+                                <Plus className="w-4 h-4" />새 항목
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-48">
+                              <DropdownMenuItem
+                                onSelect={() =>
+                                  router.push("/instructor/drive")
+                                }
+                              >
+                                <FolderPlus className="w-4 h-4 mr-2" />새 폴더
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => router.push("/instructor/new")}
+                              >
+                                <FileText className="w-4 h-4 mr-2" />새 시험
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <Link href="/instructor/drive">
+                            <Button
+                              variant="outline"
+                              className="gap-2 min-h-[44px]"
+                            >
+                              <FolderOpen className="w-4 h-4" />
+                              드라이브 열기
+                            </Button>
+                          </Link>
+                        </div>
+                        <div className="flex flex-1 flex-wrap items-center gap-3 min-w-[260px]">
+                          <div className="relative flex-1 min-w-[220px]">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              placeholder="시험 및 폴더 검색"
+                              className="pl-9 min-h-[44px]"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1 rounded-full border border-border bg-background/90 p-1 shadow-sm">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className={getViewButtonClasses("grid")}
+                              onClick={() => setViewMode("grid")}
+                              aria-pressed={viewMode === "grid"}
+                            >
+                              <LayoutGrid className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className={getViewButtonClasses("list")}
+                              onClick={() => setViewMode("list")}
+                              aria-pressed={viewMode === "list"}
+                            >
+                              <List className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
+                    </div>
+
+                    {/* 콘텐츠 */}
+                    {isLoading ? (
+                      <div className="flex items-center justify-center py-16">
+                        <div className="flex flex-col items-center gap-3">
+                          <Loader2
+                            className="w-10 h-10 animate-spin text-primary"
+                            aria-hidden="true"
+                          />
+                          <p className="text-sm text-muted-foreground">
+                            시험 목록을 불러오는 중...
+                          </p>
+                        </div>
+                      </div>
+                    ) : !hasResults ? (
+                      <div className="text-center py-16 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-card/40">
+                        <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                        <p className="text-muted-foreground mb-2">
+                          {isFiltering
+                            ? "검색 결과가 없습니다."
+                            : "아직 시험이나 폴더가 없습니다."}
+                        </p>
+                        <p className="text-sm text-muted-foreground mb-6">
+                          {isFiltering
+                            ? "다른 검색어를 시도해보세요."
+                            : "새 폴더를 만들거나 시험을 생성해보세요."}
+                        </p>
+                        {!isFiltering && (
+                          <div className="flex items-center justify-center space-x-2">
+                            <Link href="/instructor/drive">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="min-h-[44px]"
+                              >
+                                <FolderPlus className="w-4 h-4 mr-2" />
+                                폴더 만들기
+                              </Button>
+                            </Link>
+                            <Link href="/instructor/new">
+                              <Button size="sm" className="min-h-[44px]">
+                                <Plus className="w-4 h-4 mr-2" />
+                                시험 만들기
+                              </Button>
+                            </Link>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-10">
+                        {renderSection("폴더", folderNodes, {
+                          emptyLabel: "폴더가 없습니다.",
+                          emptyFilteredLabel:
+                            "검색 조건에 맞는 폴더가 없습니다.",
+                        })}
+                        {renderSection("시험", examNodes, {
+                          emptyLabel: "시험이 없습니다.",
+                          emptyFilteredLabel:
+                            "검색 조건에 맞는 시험이 없습니다.",
+                        })}
+                      </div>
                     )}
-                  </div>
-                )}
+                  </CardContent>
+                </Card>
               </div>
-            </CardContent>
-          </Card>
-        </main>
+            </main>
+          </div>
+        </div>
       </SignedIn>
     </div>
   );
