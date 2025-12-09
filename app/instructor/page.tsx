@@ -194,6 +194,53 @@ export default function InstructorHome() {
     }
   };
 
+  const handleDeleteNode = async (node: ExamNode) => {
+    if (node.kind === "exam" && node.exams?.code) {
+      const input = prompt(
+        `"${node.name}" 시험을 삭제하려면 시험 코드를 입력하세요.`
+      );
+      if (input === null) {
+        return;
+      }
+      if (input.trim() !== node.exams.code) {
+        toast.error("시험 코드가 일치하지 않습니다.");
+        return;
+      }
+    } else {
+      if (
+        !confirm(
+          `"${node.name}"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`
+        )
+      ) {
+        return;
+      }
+    }
+
+    try {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "delete_node",
+          data: { node_id: node.id },
+        }),
+      });
+
+      if (response.ok) {
+        toast.success("삭제되었습니다.");
+        loadFolderContents(null); // 루트 레벨 노드 다시 로드
+      } else {
+        const errorData = await response.json();
+        toast.error(errorData.error || "삭제에 실패했습니다.");
+      }
+    } catch (error) {
+      console.error("Error deleting node:", error);
+      toast.error("삭제에 실패했습니다.");
+    }
+  };
+
   const renderNodeStatus = (node: ExamNode) => {
     if (node.kind !== "exam" || !node.exams) {
       return null;
@@ -244,8 +291,9 @@ export default function InstructorHome() {
           size="icon"
           className="opacity-0 group-hover:opacity-100 transition-opacity min-h-[44px] min-w-[44px]"
           onClick={(e) => e.stopPropagation()}
+          aria-label="메뉴 열기"
         >
-          <MoreVertical className="w-4 h-4" />
+          <MoreVertical className="w-4 h-4" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -256,7 +304,7 @@ export default function InstructorHome() {
               handleCopyExamCode(node.exams?.code);
             }}
           >
-            <Copy className="w-4 h-4 mr-2" />
+            <Copy className="w-4 h-4 mr-2" aria-hidden="true" />
             코드 복사
           </DropdownMenuItem>
         )}
@@ -267,10 +315,20 @@ export default function InstructorHome() {
               router.push("/instructor/drive");
             }}
           >
-            <FolderOpen className="w-4 h-4 mr-2" />
+            <FolderOpen className="w-4 h-4 mr-2" aria-hidden="true" />
             드라이브에서 열기
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteNode(node);
+          }}
+          className="text-destructive focus:text-destructive"
+        >
+          <Trash2 className="w-4 h-4 mr-2" aria-hidden="true" />
+          삭제
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
