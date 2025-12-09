@@ -99,6 +99,11 @@ async function createExam(data: {
   duration: number;
   questions: QuestionData[];
   materials?: string[];
+  materials_text?: Array<{
+    url: string;
+    text: string;
+    fileName: string;
+  }>;
   rubric?: {
     evaluationArea: string;
     detailedCriteria: string;
@@ -140,6 +145,7 @@ async function createExam(data: {
       duration: data.duration,
       questions: data.questions,
       materials: data.materials || [],
+      materials_text: data.materials_text || [], // 추출된 텍스트 저장
       rubric: data.rubric || [],
       rubric_public: data.rubric_public || false,
       status: data.status,
@@ -147,6 +153,20 @@ async function createExam(data: {
       created_at: data.created_at,
       updated_at: data.updated_at,
     };
+
+    console.log("[api] Creating exam with materials_text:", {
+      materialsCount: examData.materials.length,
+      materialsTextCount: examData.materials_text.length,
+      materialsTextPreview: Array.isArray(examData.materials_text)
+        ? examData.materials_text.map((m: unknown) => {
+            const mt = m as { fileName?: string; text?: string };
+            return {
+              fileName: mt?.fileName || "unknown",
+              textLength: mt?.text?.length || 0,
+            };
+          })
+        : "not an array",
+    });
 
     const { data: exam, error } = await supabase
       .from("exams")
@@ -765,6 +785,33 @@ async function initExamSession(data: {
         timestamp: msg.created_at,
         qIdx: msg.q_idx || 0,
       }));
+    } else if (existingSession && existingSession.submitted_at) {
+      // Session is submitted, but we should still load messages for viewing
+      console.log(
+        "[INIT_EXAM_SESSION] Loading messages from submitted session:",
+        existingSession.id
+      );
+      session = existingSession;
+
+      // Get messages for submitted session (read-only)
+      const { data: sessionMessages } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("session_id", existingSession.id)
+        .order("created_at", { ascending: true });
+
+      messages = (sessionMessages || []).map((msg) => ({
+        type: msg.role === "user" ? "user" : "assistant",
+        message: msg.content,
+        timestamp: msg.created_at,
+        qIdx: msg.q_idx || 0,
+      }));
+
+      console.log(
+        "[INIT_EXAM_SESSION] Loaded",
+        messages.length,
+        "messages from submitted session"
+      );
     } else {
       // Create new session and activate it
       console.log("[INIT_EXAM_SESSION] Creating new session");
@@ -1068,6 +1115,10 @@ async function getFolderContents(data: { folder_id?: string | null }) {
     }
 
     const parentId = data.folder_id || null;
+    console.log("[api] getFolderContents called:", {
+      folder_id: parentId,
+      userId: user.id,
+    });
 
     // Build query
     let query = supabase
@@ -1102,14 +1153,21 @@ async function getFolderContents(data: { folder_id?: string | null }) {
     }); // 최근 수정된 것이 먼저
 
     if (error) {
-      console.error("Supabase query error:", {
+      console.error("[api] Supabase query error in getFolderContents:", {
         message: error.message,
         details: error.details,
         hint: error.hint,
         code: error.code,
+        folder_id: parentId,
+        userId: user.id,
       });
       throw error;
     }
+
+    console.log("[api] getFolderContents query successful:", {
+      nodesCount: nodes?.length || 0,
+      folder_id: parentId,
+    });
 
     let nodesWithCounts = nodes || [];
 
@@ -1153,7 +1211,11 @@ async function getFolderContents(data: { folder_id?: string | null }) {
 
     return NextResponse.json({ nodes: nodesWithCounts });
   } catch (error) {
-    console.error("Get folder contents error:", error);
+    console.error("[api] Get folder contents error:", {
+      error,
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
+import { searchRelevantMaterials } from "@/lib/material-search";
 
 // Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
 const supabase = createClient(
@@ -8,71 +9,81 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// 공통 Completion 함수
+// 공통 Completion 함수 - Responses API 사용 (previous_response_id 방식)
 async function getAIResponse(
   systemPrompt: string,
   userMessage: string,
-  conversationHistory: Array<{
-    role: "user" | "assistant";
-    content: string;
-  }> = []
-) {
+  previousResponseId: string | null = null
+): Promise<{ response: string; responseId: string }> {
   const aiStartTime = Date.now();
   try {
     if (process.env.NODE_ENV === "development") {
       console.log(
-        "Calling OpenAI API with prompt length:",
+        "Calling OpenAI Responses API with prompt length:",
         systemPrompt.length,
-        "| Conversation history messages:",
-        conversationHistory.length
+        "| Previous response ID:",
+        previousResponseId || "none (first message)"
       );
     }
 
-    // messages 배열 구성: system message + conversation history + current user message
-    const messages: Array<
-      | { role: "system"; content: string }
-      | { role: "user" | "assistant"; content: string }
-    > = [{ role: "system", content: systemPrompt }];
-
-    // 이전 대화 이력 추가
-    conversationHistory.forEach((msg) => {
-      messages.push({
-        role: msg.role === "assistant" ? "assistant" : "user",
-        content: msg.content,
-      });
-    });
-
-    // 현재 사용자 메시지 추가
-    messages.push({ role: "user", content: userMessage });
-
-    const completion = await openai.chat.completions.create({
+    // Responses API 사용
+    const response = await openai.responses.create({
       model: AI_MODEL,
-      messages,
-      // 여기 나중에 꼭 막아야 할곳 아니면 you broke
-      // max_tokens: 600,
+      instructions: systemPrompt,
+      input: userMessage,
+      previous_response_id: previousResponseId || undefined,
+      store: true, // 응답을 저장하여 나중에 참조 가능하도록
     });
 
     const aiDuration = Date.now() - aiStartTime;
-    console.log(`⏱️  [PERFORMANCE] OpenAI API response time: ${aiDuration}ms`);
+    console.log(
+      `⏱️  [PERFORMANCE] OpenAI Responses API response time: ${aiDuration}ms`
+    );
 
     if (process.env.NODE_ENV === "development") {
-      console.log("OpenAI response received:", {
-        choicesCount: completion.choices?.length,
-        hasContent: !!completion.choices?.[0]?.message?.content,
+      console.log("OpenAI Responses API response received:", {
+        responseId: response.id,
+        hasOutput: !!response.output,
+        outputLength: response.output?.length || 0,
       });
     }
 
-    const response = completion.choices[0]?.message?.content;
+    // output 배열에서 메시지 타입 찾기
+    let responseText = "";
+    const outputArray = response.output as any;
+    if (outputArray && Array.isArray(outputArray)) {
+      // type이 'message'인 항목 찾기
+      const messageOutput = outputArray.find(
+        (item: any) => item.type === "message" && item.content
+      );
 
-    if (!response || response.trim().length === 0) {
-      console.warn("OpenAI returned empty or null response");
-      return "I'm sorry, I couldn't process your question. Please try rephrasing it.";
+      if (messageOutput && Array.isArray(messageOutput.content)) {
+        // content 배열에서 텍스트 추출
+        const textParts = messageOutput.content
+          .filter((part: any) => part.type === "output_text" && part.text)
+          .map((part: any) => part.text);
+        responseText = textParts.join("");
+      }
     }
 
-    return response;
+    if (!responseText || responseText.trim().length === 0) {
+      console.warn("OpenAI returned empty or null response");
+      return {
+        response:
+          "I'm sorry, I couldn't process your question. Please try rephrasing it.",
+        responseId: response.id,
+      };
+    }
+
+    return {
+      response: responseText,
+      responseId: response.id,
+    };
   } catch (openaiError) {
-    console.error("OpenAI API error:", openaiError);
-    throw new Error(`OpenAI API failed: ${(openaiError as Error).message}`);
+    console.error("OpenAI Responses API error:", openaiError);
+    throw new Error(
+      `OpenAI Responses API failed: ${(openaiError as Error).message}`
+    );
   }
 }
 
@@ -150,6 +161,65 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // 수업 자료에서 관련 내용 검색
+      let relevantMaterialsText = "";
+      if (examId) {
+        try {
+          console.log("[chat] 임시 세션 - 수업 자료 검색 시작:", { examId });
+          const { data: examData, error: examDataError } = await supabase
+            .from("exams")
+            .select("materials_text")
+            .eq("id", examId)
+            .single();
+
+          if (examDataError) {
+            console.error("[chat] 임시 세션 - exam 조회 실패:", examDataError);
+          }
+
+          if (
+            examData?.materials_text &&
+            Array.isArray(examData.materials_text)
+          ) {
+            const materialsText = examData.materials_text as Array<{
+              url: string;
+              text: string;
+              fileName: string;
+            }>;
+            console.log("[chat] 임시 세션 - materials_text 발견:", {
+              count: materialsText.length,
+              totalTextLength: materialsText.reduce(
+                (sum, m) => sum + (m.text?.length || 0),
+                0
+              ),
+            });
+            relevantMaterialsText = searchRelevantMaterials(
+              materialsText,
+              message,
+              3, // 최대 3개 결과
+              2000 // 최대 2000자
+            );
+            console.log("[chat] 임시 세션 - 검색 결과:", {
+              found: relevantMaterialsText.length > 0,
+              resultLength: relevantMaterialsText.length,
+              preview: relevantMaterialsText.substring(0, 200),
+            });
+          } else {
+            console.log(
+              "[chat] 임시 세션 - materials_text 없음 또는 배열 아님:",
+              {
+                hasMaterialsText: !!examData?.materials_text,
+                isArray: Array.isArray(examData?.materials_text),
+              }
+            );
+          }
+        } catch (error) {
+          console.error("[chat] 임시 세션 - 수업 자료 검색 실패:", error);
+          // 에러가 발생해도 계속 진행
+        }
+      } else {
+        console.log("[chat] 임시 세션 - examId 없음, 검색 건너뜀");
+      }
+
       // Prompt 생성
       const tempSystemPrompt = `
 ${
@@ -162,6 +232,9 @@ ${
 ${questionId ? `현재 문제 ID: ${questionId}에 있습니다.` : ""}
 ${currentQuestionText ? `문제 내용: ${currentQuestionText}` : ""}
 ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
+${relevantMaterialsText ? relevantMaterialsText : ""}
+
+**중요**: 위의 [수업 자료 참고 내용]이 제공된 경우, 반드시 그 내용을 기반으로 답변해야 합니다. 수업 자료의 내용을 참고하여 정확하고 구체적인 답변을 제공하세요.
 
 역할(Role):
 - 너는 특정한 가상의 상황을 가정하고 문제를 출제했다. 
@@ -183,11 +256,8 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
 6. 평가 루브릭의 핵심 역량(논리적 근거, 자료 분석, 의사결정 근거)을 반영한다.
 `;
 
-      // 병렬 처리: 메시지 저장과 히스토리 조회를 동시에 실행
-      let conversationHistory: Array<{
-        role: "user" | "assistant";
-        content: string;
-      }> = [];
+      // 병렬 처리: 메시지 저장과 이전 response_id 조회를 동시에 실행
+      let previousResponseId: string | null = null;
 
       if (actualSessionId && !actualSessionId.startsWith("temp_")) {
         const insertPromise = supabase.from("messages").insert([
@@ -199,18 +269,22 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
           },
         ]);
 
-        const historyPromise = supabase
+        // 가장 최근 AI 응답의 response_id 조회 (previous_response_id로 사용)
+        const fetchPreviousResponseIdPromise = supabase
           .from("messages")
-          .select("role, content")
+          .select("response_id")
           .eq("session_id", actualSessionId)
           .eq("q_idx", safeQIdx)
-          .order("created_at", { ascending: true })
-          .limit(20);
+          .eq("role", "ai")
+          .not("response_id", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
 
         // 병렬 실행 대기
-        const [insertResult, historyResult] = await Promise.all([
+        const [insertResult, previousResponseResult] = await Promise.all([
           insertPromise,
-          historyPromise,
+          fetchPreviousResponseIdPromise,
         ]);
 
         if (insertResult.error)
@@ -219,36 +293,25 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
             insertResult.error
           );
 
-        // 히스토리 처리
-        conversationHistory = (historyResult.data || [])
-          // 현재 메시지(방금 insert한 것일 수 있음)를 제외하거나 포함하는 로직
-          // 여기서는 단순히 이전 기록들을 가져와서 사용.
-          // insert된 메시지가 select에 포함될지는 타이밍에 따라 다르므로,
-          // 명시적으로 필터링하지 않고 가져온 것 + 현재 메시지를 getAIResponse에서 조합함.
-          // 하지만 getAIResponse는 history + currentMessage 구조이므로 history에는 currentMessage가 없어야 함.
-          // insert가 먼저 완료되면 history에 포함될 수 있음.
-          // 안전하게: history에서 현재 메시지와 동일한 내용이 가장 마지막에 있다면 제거
-          .filter((msg) => msg.role === "user" || msg.role === "ai")
-          .map((msg) => ({
-            role:
-              msg.role === "ai" ? ("assistant" as const) : ("user" as const),
-            content: msg.content,
-          }));
-
-        // 만약 history의 마지막 메시지가 방금 보낸 메시지와 같다면 제거 (중복 방지)
         if (
-          conversationHistory.length > 0 &&
-          conversationHistory[conversationHistory.length - 1].content ===
-            message
+          previousResponseResult.error &&
+          previousResponseResult.error.code !== "PGRST116"
         ) {
-          conversationHistory.pop();
+          // PGRST116은 "no rows returned" 에러로, 첫 메시지인 경우 정상임
+          console.error(
+            "Error fetching previous response_id:",
+            previousResponseResult.error
+          );
         }
+
+        // 이전 response_id 추출 (없으면 null = 첫 메시지)
+        previousResponseId = previousResponseResult.data?.response_id || null;
       }
 
-      const aiResponse = await getAIResponse(
+      const { response: aiResponse, responseId } = await getAIResponse(
         tempSystemPrompt,
         message,
-        conversationHistory
+        previousResponseId
       );
 
       // AI 응답 저장 및 세션 업데이트 (병렬 처리)
@@ -257,13 +320,14 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
         !actualSessionId.startsWith("temp_") &&
         aiResponse
       ) {
-        // 1. AI 메시지 저장
+        // 1. AI 메시지 저장 (response_id 포함)
         const saveAiMsgPromise = supabase.from("messages").insert([
           {
             session_id: actualSessionId,
             q_idx: safeQIdx,
             role: "ai",
             content: aiResponse,
+            response_id: responseId, // OpenAI Responses API의 response ID 저장
           },
         ]);
 
@@ -387,6 +451,46 @@ ${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
       }
     }
 
+    // 수업 자료에서 관련 내용 검색
+    let relevantMaterialsText = "";
+    if (exam?.materials_text && Array.isArray(exam.materials_text)) {
+      try {
+        const materialsText = exam.materials_text as Array<{
+          url: string;
+          text: string;
+          fileName: string;
+        }>;
+        console.log("[chat] 정규 세션 - 수업 자료 검색 시작:", {
+          materialsCount: materialsText.length,
+          totalTextLength: materialsText.reduce(
+            (sum, m) => sum + (m.text?.length || 0),
+            0
+          ),
+          question: message.substring(0, 100),
+        });
+        relevantMaterialsText = searchRelevantMaterials(
+          materialsText,
+          message,
+          3, // 최대 3개 결과
+          2000 // 최대 2000자
+        );
+        console.log("[chat] 정규 세션 - 검색 결과:", {
+          found: relevantMaterialsText.length > 0,
+          resultLength: relevantMaterialsText.length,
+          preview: relevantMaterialsText.substring(0, 300),
+        });
+      } catch (error) {
+        console.error("[chat] 정규 세션 - 수업 자료 검색 실패:", error);
+        // 에러가 발생해도 계속 진행
+      }
+    } else {
+      console.log("[chat] 정규 세션 - materials_text 없음:", {
+        hasExam: !!exam,
+        hasMaterialsText: !!exam?.materials_text,
+        isArray: Array.isArray(exam?.materials_text),
+      });
+    }
+
     const systemPrompt = `
 ${
   requestExamTitle
@@ -404,6 +508,7 @@ ${
     ? `문제 핵심 역량: ${dbCoreAbility}`
     : ""
 }
+${relevantMaterialsText ? relevantMaterialsText : ""}
 
 ${
   exam?.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
@@ -443,12 +548,17 @@ ${exam.rubric
 6. 가상의 상황을 주고난 뒤 그에 대한 해석이나 분석을 제공하지 않는다.
 7. 항상 질문에 대한 답변을 하나의 완결된 문단으로 끝까지 작성합니다.
 8. 문단 중간에 끊지 말고, 마지막 문장까지 자연스럽게 마무리합니다.
+9. 너는 항상 **마크다운** 형식으로 대답한다.
+9-1. 제목은 \`##\` 로 시작한다.
+9-2. 문단 사이에 한 줄씩 비운다.
+9-3. 핵심은 불릿 리스트((1.), (2.), (3.), ...)로 정리한다.
+9-4. 번호 목록은 반드시 각 항목마다 줄을 바꿔서 작성해라.
 `
     : ""
 }
 `;
 
-    // 2. 병렬 처리: 사용자 메시지 DB 저장 & 대화 이력 조회
+    // 2. 병렬 처리: 사용자 메시지 DB 저장 & 이전 response_id 조회
     const insertUserMsgPromise = supabase.from("messages").insert([
       {
         session_id: sessionId,
@@ -458,59 +568,54 @@ ${exam.rubric
       },
     ]);
 
-    const fetchHistoryPromise = supabase
+    // 가장 최근 AI 응답의 response_id 조회 (previous_response_id로 사용)
+    const fetchPreviousResponseIdPromise = supabase
       .from("messages")
-      .select("role, content")
+      .select("response_id")
       .eq("session_id", sessionId)
       .eq("q_idx", safeQIdx)
-      .order("created_at", { ascending: true })
-      .limit(20); // 최근 20개
+      .eq("role", "ai")
+      .not("response_id", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .single();
 
     // Wait for both
-    const [userMsgResult, historyResult] = await Promise.all([
+    const [userMsgResult, previousResponseResult] = await Promise.all([
       insertUserMsgPromise,
-      fetchHistoryPromise,
+      fetchPreviousResponseIdPromise,
     ]);
 
     if (userMsgResult.error) {
       console.error("Error saving user message:", userMsgResult.error);
     }
-    if (historyResult.error) {
+    if (
+      previousResponseResult.error &&
+      previousResponseResult.error.code !== "PGRST116"
+    ) {
+      // PGRST116은 "no rows returned" 에러로, 첫 메시지인 경우 정상임
       console.error(
-        "Error fetching conversation history:",
-        historyResult.error
+        "Error fetching previous response_id:",
+        previousResponseResult.error
       );
     }
 
-    // 히스토리 필터링 및 가공
-    const conversationHistory = (historyResult.data || [])
-      .filter((msg) => msg.role === "user" || msg.role === "ai")
-      .map((msg) => ({
-        role: msg.role === "ai" ? ("assistant" as const) : ("user" as const),
-        content: msg.content,
-      }));
-
-    // 중복 제거: 만약 히스토리의 마지막 메시지가 현재 메시지와 같다면 제거
-    // (insert가 fetch보다 먼저 완료되었을 경우를 대비)
-    if (
-      conversationHistory.length > 0 &&
-      conversationHistory[conversationHistory.length - 1].content === message
-    ) {
-      conversationHistory.pop();
-    }
+    // 이전 response_id 추출 (없으면 null = 첫 메시지)
+    const previousResponseId: string | null =
+      previousResponseResult.data?.response_id || null;
 
     if (process.env.NODE_ENV === "development") {
       console.log(
-        "📜 Conversation history loaded:",
-        conversationHistory.length
+        "📜 Previous response_id:",
+        previousResponseId || "none (first message)"
       );
     }
 
-    // 3. OpenAI 호출
-    const aiResponse = await getAIResponse(
+    // 3. OpenAI Responses API 호출
+    const { response: aiResponse, responseId } = await getAIResponse(
       systemPrompt,
       message,
-      conversationHistory
+      previousResponseId
     );
 
     if (
@@ -524,13 +629,14 @@ ${exam.rubric
       );
     }
 
-    // 4. 병렬 처리: AI 응답 DB 저장 & 세션 업데이트
+    // 4. 병렬 처리: AI 응답 DB 저장 (response_id 포함) & 세션 업데이트
     const insertAiMsgPromise = supabase.from("messages").insert([
       {
         session_id: sessionId,
         q_idx: safeQIdx,
         role: "ai",
         content: aiResponse,
+        response_id: responseId, // OpenAI Responses API의 response ID 저장
       },
     ]);
 

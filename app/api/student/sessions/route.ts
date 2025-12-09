@@ -30,44 +30,73 @@ export async function GET(request: NextRequest) {
     // Get pagination parameters
     const searchParams = request.nextUrl.searchParams;
     const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = parseInt(searchParams.get("limit") || String(ITEMS_PER_PAGE), 10);
+    const limit = parseInt(
+      searchParams.get("limit") || String(ITEMS_PER_PAGE),
+      10
+    );
     const offset = (page - 1) * limit;
 
-    // Get total count for pagination
-    const { count: totalCount, error: countError } = await supabase
-      .from("sessions")
-      .select("*", { count: "exact", head: true })
-      .eq("student_id", user.id);
+    // Note: We'll calculate total count after filtering duplicates
+    // This is more accurate than counting all sessions
 
-    if (countError) {
-      console.error("Error counting sessions:", countError);
-      // Continue with count = 0 if counting fails
-    }
-
-    // Get paginated sessions for this student
-    const { data: sessions, error: sessionsError } = await supabase
+    // Get all sessions for this student (we need to filter duplicates before pagination)
+    const { data: allSessions, error: sessionsError } = await supabase
       .from("sessions")
       .select("id, exam_id, submitted_at, created_at")
       .eq("student_id", user.id)
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+      .order("created_at", { ascending: false });
 
     if (sessionsError) {
       console.error("Error fetching student sessions:", sessionsError);
       throw sessionsError;
     }
 
-    if (!sessions || sessions.length === 0) {
-      return NextResponse.json({ 
+    if (!allSessions || allSessions.length === 0) {
+      return NextResponse.json({
         sessions: [],
         pagination: {
           page,
           limit,
-          total: totalCount || 0,
+          total: 0,
           hasMore: false,
-        }
+        },
       });
     }
+
+    // Filter: For each exam, keep only the most recent unsubmitted session
+    // Submitted sessions are kept separately (they represent past attempts)
+    const examSessionMap = new Map<string, (typeof allSessions)[0]>();
+    const submittedSessions: typeof allSessions = [];
+
+    for (const session of allSessions) {
+      if (session.submitted_at) {
+        // Submitted sessions: keep all (they are historical records)
+        submittedSessions.push(session);
+      } else {
+        // Unsubmitted sessions: keep only the most recent one per exam
+        const examId = session.exam_id;
+        // Since sessions are already sorted by created_at desc, first one is most recent
+        if (!examSessionMap.has(examId)) {
+          examSessionMap.set(examId, session);
+        }
+      }
+    }
+
+    // Combine: unsubmitted (one per exam) + all submitted sessions
+    const unsubmittedSessions = Array.from(examSessionMap.values());
+    const filteredSessions = [
+      ...unsubmittedSessions,
+      ...submittedSessions,
+    ].sort((a, b) => {
+      // Sort by created_at desc (most recent first)
+      const dateA = new Date(a.created_at).getTime();
+      const dateB = new Date(b.created_at).getTime();
+      return dateB - dateA;
+    });
+
+    // Apply pagination after filtering
+    const sessions = filteredSessions.slice(offset, offset + limit);
+    const filteredTotalCount = filteredSessions.length;
 
     // Collect all unique exam_ids
     const examIds = [...new Set(sessions.map((s) => s.exam_id))];
@@ -146,16 +175,18 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    const hasMore = totalCount ? offset + limit < totalCount : false;
+    const hasMore = filteredTotalCount
+      ? offset + limit < filteredTotalCount
+      : false;
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       sessions: sessionsWithDetails,
       pagination: {
         page,
         limit,
-        total: totalCount || 0,
+        total: filteredTotalCount,
         hasMore,
-      }
+      },
     });
   } catch (error) {
     console.error("Get student sessions error:", error);

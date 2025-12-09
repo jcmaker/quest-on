@@ -233,13 +233,14 @@ ${answersText}
 
         const compressedSessionData = compressData(sessionData);
 
-        // Update session with compressed data
+        // Update session with compressed data and deactivate
         await supabase
           .from("sessions")
           .update({
             compressed_session_data: compressedSessionData.data,
             compression_metadata: compressedSessionData.metadata,
             submitted_at: new Date().toISOString(),
+            is_active: false, // Deactivate session on submission
           })
           .eq("id", actualSessionId);
 

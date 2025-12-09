@@ -48,14 +48,14 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
 
   return (
     <div className="bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30">
-      <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mb-2 prose-p:mb-3 prose-p:last:mb-0">
+      <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mb-2 prose-p:mb-3 prose-p:last:mb-0 whitespace-pre-wrap break-words [&_*]:break-words">
         {/* HTML 콘텐츠인지 확인하여 조건부 렌더링 */}
         {content.includes("<") &&
         content.includes(">") &&
         /<\/?[a-z][\s\S]*>/i.test(content) ? (
           // HTML 콘텐츠인 경우
           <div
-            className="prose prose-sm max-w-none dark:prose-invert [&_*]:text-inherit [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-4 [&_h1]:mt-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mb-3 [&_h2]:mt-6 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_p]:mb-4 [&_p]:leading-7 [&_p]:last:mb-0 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:ml-2 [&_ul]:mb-4 [&_ul]:space-y-2 [&_ol]:list-decimal [&_ol]:list-inside [&_ol]:ml-2 [&_ol]:mb-4 [&_ol]:space-y-2 [&_li]:leading-7 [&_strong]:font-bold [&_strong]:text-primary/90 [&_em]:italic [&_em]:text-muted-foreground [&_blockquote]:border-l-4 [&_blockquote]:border-primary/30 [&_blockquote]:pl-4 [&_blockquote]:py-1 [&_blockquote]:bg-muted/30 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:my-4 [&_code]:bg-muted [&_code]:text-primary [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:text-sm [&_code]:font-mono"
+            className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap break-words [&_*]:text-inherit [&_*]:break-words [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-4 [&_h1]:mt-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mb-3 [&_h2]:mt-6 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_p]:mb-4 [&_p]:leading-7 [&_p]:last:mb-0 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:ml-2 [&_ul]:mb-4 [&_ul]:space-y-2 [&_ol]:list-decimal [&_ol]:list-inside [&_ol]:ml-2 [&_ol]:mb-4 [&_ol]:space-y-2 [&_li]:leading-7 [&_strong]:font-bold [&_strong]:text-primary/90 [&_em]:italic [&_em]:text-muted-foreground [&_blockquote]:border-l-4 [&_blockquote]:border-primary/30 [&_blockquote]:pl-4 [&_blockquote]:py-1 [&_blockquote]:bg-muted/30 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:my-4 [&_code]:bg-muted [&_code]:text-primary [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:text-sm [&_code]:font-mono"
             dangerouslySetInnerHTML={{ __html: content }}
           />
         ) : (

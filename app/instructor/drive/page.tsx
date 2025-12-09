@@ -457,9 +457,28 @@ export default function InstructorDrive() {
         const data = await response.json();
         setNodes(data.nodes || []);
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("Failed to load folder contents:", errorData);
-        toast.error(errorData.error || "폴더 내용을 불러오는데 실패했습니다.");
+        let errorData: { error?: string; details?: string } = {};
+        try {
+          const text = await response.text();
+          if (text) {
+            errorData = JSON.parse(text);
+          }
+        } catch (parseError) {
+          console.error("Failed to parse error response:", parseError);
+          errorData = {
+            error: `서버 오류 (${response.status}): ${response.statusText}`,
+          };
+        }
+        console.error("Failed to load folder contents:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorData,
+        });
+        toast.error(
+          errorData.error ||
+            errorData.details ||
+            "폴더 내용을 불러오는데 실패했습니다."
+        );
       }
     } catch (error) {
       console.error("Error loading folder contents:", error);

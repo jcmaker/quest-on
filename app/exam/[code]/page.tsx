@@ -202,9 +202,18 @@ export default function ExamPage() {
             if (result.session) {
               setSessionId(result.session.id);
 
-              // Set chat history
-              if (result.messages && result.messages.length > 0) {
+              // Set chat history (always set, even if empty, to ensure consistency)
+              if (result.messages) {
                 setChatHistory(result.messages);
+                console.log(
+                  "[INIT_EXAM] Loaded chat history:",
+                  result.messages.length,
+                  "messages"
+                );
+              } else {
+                // Explicitly set empty array if messages is not provided
+                setChatHistory([]);
+                console.log("[INIT_EXAM] No messages found in session");
               }
             } else {
               setSessionError(true);

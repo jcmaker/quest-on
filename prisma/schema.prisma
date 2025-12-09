@@ -75,6 +75,7 @@ model messages {
   created_at           DateTime @default(now()) @db.Timestamptz(6)
   compressed_content   String?
   compression_metadata Json?    @default("{}")
+  response_id          String?  // OpenAI Responses API response ID for chaining conversations
   sessions             sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 

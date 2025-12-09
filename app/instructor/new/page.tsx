@@ -49,6 +49,10 @@ export default function CreateExam() {
     },
   ]);
   const [isRubricPublic, setIsRubricPublic] = useState(false);
+  // 추출된 텍스트 저장: Map<fileUrl, {text: string, fileName: string}>
+  const [extractedTexts, setExtractedTexts] = useState<
+    Map<string, { text: string; fileName: string }>
+  >(new Map());
 
   const generateExamCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -356,12 +360,21 @@ export default function CreateExam() {
 
       const extractResult = await extractResponse.json();
 
-      // 추출된 텍스트를 콘솔에만 로그로 출력
-      console.log(`[extract-text] 추출된 텍스트 (${file.name}):`, {
-        fileName: file.name,
-        textLength: extractResult.text?.length || 0,
-        text: extractResult.text || "",
-      });
+      // 추출된 텍스트를 상태에 저장
+      if (extractResult.text && uploadResult.url) {
+        setExtractedTexts((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(uploadResult.url, {
+            text: extractResult.text,
+            fileName: file.name,
+          });
+          return newMap;
+        });
+        console.log(`[extract-text] 텍스트 저장 완료 (${file.name}):`, {
+          fileName: file.name,
+          textLength: extractResult.text?.length || 0,
+        });
+      }
     } catch (error) {
       console.error(`[extract-text] 텍스트 추출 실패 (${file.name}):`, error);
     }
@@ -511,6 +524,11 @@ export default function CreateExam() {
 
     try {
       let materialUrls: string[] = [];
+      let materialsText: Array<{
+        url: string;
+        text: string;
+        fileName: string;
+      }> = [];
 
       // Upload files to Supabase Storage if any materials exist
       // 비활성화된 파일들을 제외하고 업로드
@@ -658,9 +676,87 @@ export default function CreateExam() {
           toast.error(errorMessage);
           throw uploadError; // Re-throw to prevent exam creation
         }
+
+        // 파일 업로드 후 텍스트 추출 (업로드된 실제 URL 사용)
+        console.log(
+          `[client] Starting text extraction for ${materialUrls.length} files...`
+        );
+        const textExtractionPromises = activeMaterials.map(
+          async (file, index) => {
+            const url = materialUrls[index];
+            if (!url) return null;
+
+            const extension = file.name.split(".").pop()?.toLowerCase() || "";
+            const textExtractableExtensions = ["pdf", "docx", "pptx", "csv"];
+
+            if (!textExtractableExtensions.includes(extension)) {
+              return null; // 텍스트 추출 불가능한 파일은 건너뛰기
+            }
+
+            try {
+              console.log(`[client] Extracting text from ${file.name}...`);
+              const extractResponse = await fetch("/api/extract-text", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  fileUrl: url,
+                  fileName: file.name,
+                  mimeType: file.type,
+                }),
+              });
+
+              if (!extractResponse.ok) {
+                console.error(
+                  `[client] Text extraction failed for ${file.name}`
+                );
+                return null;
+              }
+
+              const extractResult = await extractResponse.json();
+              if (extractResult.text) {
+                return {
+                  url,
+                  text: extractResult.text,
+                  fileName: file.name,
+                };
+              }
+              return null;
+            } catch (error) {
+              console.error(
+                `[client] Text extraction error for ${file.name}:`,
+                error
+              );
+              return null;
+            }
+          }
+        );
+
+        // 텍스트 추출 결과 수집
+        const extractedTextsArray = await Promise.all(textExtractionPromises);
+        materialsText = extractedTextsArray.filter(
+          (item): item is { url: string; text: string; fileName: string } =>
+            item !== null
+        );
+
+        console.log(
+          `[client] Text extraction completed: ${materialsText.length} files extracted`
+        );
       }
 
+      // 기존 extractedTexts는 사용하지 않음 (URL 매칭 문제로 인해)
+
       // Prepare exam data for database
+      console.log(`[client] Preparing exam data:`, {
+        materialsCount: materialUrls.length,
+        materialsTextCount: materialsText.length,
+        materialsTextPreview: materialsText.map((m) => ({
+          fileName: m.fileName,
+          textLength: m.text.length,
+        })),
+      });
+
       const examDataForDB = {
         title: examData.title,
         code: examData.code,
@@ -669,6 +765,7 @@ export default function CreateExam() {
         rubric: rubric, // 루브릭 데이터 추가
         rubric_public: isRubricPublic, // 루브릭 공개 여부
         materials: materialUrls, // Array of file URLs
+        materials_text: materialsText, // 추출된 텍스트 배열
         status: "draft", // Start as draft
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
