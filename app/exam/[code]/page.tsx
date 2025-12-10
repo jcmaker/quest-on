@@ -124,9 +124,11 @@ export default function ExamPage() {
   const [hasOpenedQuestion, setHasOpenedQuestion] = useState(true);
   const [isQuestionVisible, setIsQuestionVisible] = useState(true);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [questionScrollTop, setQuestionScrollTop] = useState(0);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const questionScrollRef = useRef<HTMLDivElement>(null);
 
   // Filter chat history by current question
   const currentQuestionChatHistory = chatHistory.filter(
@@ -723,6 +725,14 @@ export default function ExamPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentQuestionChatHistory]);
 
+  // Reset question scroll position when question changes
+  useEffect(() => {
+    if (questionScrollRef.current) {
+      questionScrollRef.current.scrollTop = 0;
+      setQuestionScrollTop(0);
+    }
+  }, [currentQuestion]);
+
   if (!isLoaded || examLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -1124,167 +1134,307 @@ export default function ExamPage() {
                 </div>
               </div>
 
-              {/* Question Content - Toggleable */}
-              {isQuestionVisible && (
-                <div className="border-b border-border bg-muted/20 overflow-y-auto hide-scrollbar max-h-[40vh] animate-in slide-in-from-top-2 duration-300">
-                  <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-                    <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                      <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs sm:text-sm font-semibold bg-primary/10 text-primary border border-primary/20">
-                        문제 {currentQuestion + 1}
-                      </span>
-                      <span className="text-xs sm:text-sm font-medium text-muted-foreground">
-                        {exam.questions[currentQuestion]?.type === "essay"
-                          ? "서술형 문제"
-                          : "문제"}
-                      </span>
-                      <span className="text-xs sm:text-sm text-muted-foreground">
-                        배점: {exam.questions[currentQuestion]?.points}점
-                      </span>
-                    </div>
-
-                    {/* Question Content */}
-                    <div className="bg-card p-4 sm:p-5 rounded-lg border border-border shadow-sm">
-                      <CopyProtector>
-                        <RichTextViewer
-                          content={exam.questions[currentQuestion]?.text || ""}
-                          className="text-sm sm:text-base leading-relaxed"
-                        />
-                      </CopyProtector>
-                    </div>
-
-                    {/* Requirements */}
-                    <div className="bg-muted/40 p-3 sm:p-4 rounded-lg border border-border">
-                      <h4 className="font-semibold mb-2 sm:mb-3 text-sm sm:text-base text-foreground">
-                        요구사항
-                      </h4>
-                      <ul className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-muted-foreground">
-                        <li className="flex items-start gap-2">
-                          <span className="text-primary mt-0.5">•</span>
-                          <span>문제를 정확히 이해하고 답변하세요</span>
-                        </li>
-                        <li className="flex items-start gap-2">
-                          <span className="text-primary mt-0.5">•</span>
-                          <span>풀이 과정을 단계별로 명확히 작성하세요</span>
-                        </li>
-                      </ul>
-                    </div>
-
-                    {/* Rubric - 공개된 경우에만 표시 */}
-                    {exam.rubric_public &&
-                      exam.rubric &&
-                      exam.rubric.length > 0 && (
-                        <div className="bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800 p-4 sm:p-5 rounded-lg mt-4 shadow-sm">
-                          <h4 className="font-semibold mb-3 sm:mb-4 text-sm sm:text-base text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                            <span className="text-lg">📋</span>
-                            <span>평가 기준 (루브릭)</span>
-                          </h4>
-                          <div className="space-y-2.5 sm:space-y-3">
-                            {exam.rubric.map((item, index) => (
-                              <div
-                                key={item.id || index}
-                                className="bg-white dark:bg-blue-900/20 p-3 sm:p-4 rounded-md border border-blue-100 dark:border-blue-800/50 shadow-sm"
-                              >
-                                <div className="font-semibold text-sm sm:text-base text-blue-800 dark:text-blue-200 mb-1.5 sm:mb-2">
-                                  {item.evaluationArea ||
-                                    `평가 영역 ${index + 1}`}
-                                </div>
-                                <div className="text-xs sm:text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
-                                  {item.detailedCriteria || "세부 기준 미설정"}
-                                </div>
-                              </div>
-                            ))}
+              {/* Resizable Vertical Layout for Question & Answer */}
+              {isQuestionVisible ? (
+                <ResizablePanelGroup
+                  direction="vertical"
+                  className="flex-1 min-h-0"
+                >
+                  {/* Question Content - Resizable */}
+                  <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
+                    <div className="relative h-full flex flex-col border-b border-border bg-muted/20">
+                      <div
+                        ref={questionScrollRef}
+                        className="flex-1 overflow-y-auto hide-scrollbar animate-in slide-in-from-top-2 duration-300"
+                        onScroll={(e) => {
+                          const scrollTop = e.currentTarget.scrollTop;
+                          setQuestionScrollTop(scrollTop);
+                        }}
+                      >
+                        <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
+                          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs sm:text-sm font-semibold bg-primary/10 text-primary border border-primary/20">
+                              문제 {currentQuestion + 1}
+                            </span>
+                            <span className="text-xs sm:text-sm font-medium text-muted-foreground">
+                              {exam.questions[currentQuestion]?.type === "essay"
+                                ? "서술형 문제"
+                                : "문제"}
+                            </span>
+                            <span className="text-xs sm:text-sm text-muted-foreground">
+                              배점: {exam.questions[currentQuestion]?.points}점
+                            </span>
                           </div>
-                          <p className="text-xs sm:text-sm text-blue-600 dark:text-blue-400 mt-3 sm:mt-4 italic">
-                            이 평가 기준에 따라 답안이 평가됩니다.
-                          </p>
+
+                          {/* Question Content */}
+                          <div className="bg-card p-4 sm:p-5 rounded-lg border border-border shadow-sm">
+                            <CopyProtector>
+                              <RichTextViewer
+                                content={
+                                  exam.questions[currentQuestion]?.text || ""
+                                }
+                                className="text-sm sm:text-base leading-relaxed"
+                              />
+                            </CopyProtector>
+                          </div>
+
+                          {/* Requirements */}
+                          <div className="bg-muted/40 p-3 sm:p-4 rounded-lg border border-border">
+                            <h4 className="font-semibold mb-2 sm:mb-3 text-sm sm:text-base text-foreground">
+                              요구사항
+                            </h4>
+                            <ul className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-muted-foreground">
+                              <li className="flex items-start gap-2">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span>문제를 정확히 이해하고 답변하세요</span>
+                              </li>
+                              <li className="flex items-start gap-2">
+                                <span className="text-primary mt-0.5">•</span>
+                                <span>
+                                  풀이 과정을 단계별로 명확히 작성하세요
+                                </span>
+                              </li>
+                            </ul>
+                          </div>
+
+                          {/* Rubric - 공개된 경우에만 표시 */}
+                          {exam.rubric_public &&
+                            exam.rubric &&
+                            exam.rubric.length > 0 && (
+                              <div className="bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800 p-4 sm:p-5 rounded-lg mt-4 shadow-sm">
+                                <h4 className="font-semibold mb-3 sm:mb-4 text-sm sm:text-base text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                                  <span className="text-lg">📋</span>
+                                  <span>평가 기준 (루브릭)</span>
+                                </h4>
+                                <div className="space-y-2.5 sm:space-y-3">
+                                  {exam.rubric.map((item, index) => (
+                                    <div
+                                      key={item.id || index}
+                                      className="bg-white dark:bg-blue-900/20 p-3 sm:p-4 rounded-md border border-blue-100 dark:border-blue-800/50 shadow-sm"
+                                    >
+                                      <div className="font-semibold text-sm sm:text-base text-blue-800 dark:text-blue-200 mb-1.5 sm:mb-2">
+                                        {item.evaluationArea ||
+                                          `평가 영역 ${index + 1}`}
+                                      </div>
+                                      <div className="text-xs sm:text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
+                                        {item.detailedCriteria ||
+                                          "세부 기준 미설정"}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="text-xs sm:text-sm text-blue-600 dark:text-blue-400 mt-3 sm:mt-4 italic">
+                                  이 평가 기준에 따라 답안이 평가됩니다.
+                                </p>
+                              </div>
+                            )}
+                        </div>
+                      </div>
+                      {/* Scroll Down Button - Only visible at top, positioned at bottom */}
+                      {questionScrollTop === 0 && (
+                        <div className="sticky bottom-0 left-0 right-0 z-20 flex justify-center pb-2 pt-2 bg-gradient-to-t from-muted/20 via-muted/20 to-transparent pointer-events-none">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              questionScrollRef.current?.scrollTo({
+                                top: 100,
+                                behavior: "smooth",
+                              });
+                            }}
+                            className="rounded-full shadow-lg bg-background/95 backdrop-blur-sm border-border hover:bg-muted min-h-[44px] px-4 gap-2 pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-300"
+                            aria-label="더 읽기"
+                          >
+                            <ChevronDown
+                              className="w-4 h-4"
+                              aria-hidden="true"
+                            />
+                            <span className="text-xs sm:text-sm">더 읽기</span>
+                          </Button>
                         </div>
                       )}
+                    </div>
+                  </ResizablePanel>
+
+                  {/* Resizable Handle */}
+                  <ResizableHandle withHandle />
+
+                  {/* Answer Section - Resizable */}
+                  <ResizablePanel defaultSize={60} minSize={30}>
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 hide-scrollbar min-h-0">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
+                        <Label className="text-base sm:text-lg font-semibold text-foreground">
+                          답안 작성
+                        </Label>
+
+                        {/* Save Status Indicator */}
+                        <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                          {isSaving ? (
+                            <div className="flex items-center gap-2">
+                              <div className="animate-spin rounded-full h-3 w-3 sm:h-4 sm:w-4 border-2 border-primary border-t-transparent"></div>
+                              <span className="font-medium">저장 중...</span>
+                            </div>
+                          ) : lastSaved ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <Save
+                                  className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400"
+                                  aria-hidden="true"
+                                />
+                                <span className="font-medium text-green-600 dark:text-green-400">
+                                  저장됨
+                                </span>
+                              </div>
+                              <span className="hidden sm:inline">•</span>
+                              <span className="text-xs">{lastSaved}</span>
+                              <span className="hidden sm:flex items-center gap-1 text-xs">
+                                <span>•</span>
+                                {saveShortcut}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <Save
+                                className="w-3 h-3 sm:w-4 sm:h-4"
+                                aria-hidden="true"
+                              />
+                              <span>자동 저장</span>
+                              <span className="hidden sm:flex items-center gap-1 text-xs">
+                                <span>•</span>
+                                {saveShortcut}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Answer Editor */}
+                      <div className="space-y-4 mb-6 sm:mb-8">
+                        <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+                          <SimpleRichTextEditor
+                            placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
+                            value={draftAnswers[currentQuestion]?.text || ""}
+                            onChange={(value) =>
+                              updateAnswer(
+                                exam.questions[currentQuestion].id,
+                                value
+                              )
+                            }
+                            onPaste={handlePaste}
+                            className="min-h-[300px] sm:min-h-[400px]"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Submit Button */}
+                      <div className="mt-6 pb-4">
+                        <Button
+                          onClick={handleSubmitClick}
+                          disabled={isSubmitting}
+                          className="w-full min-h-[44px] sm:min-h-[48px] text-sm sm:text-base font-semibold shadow-md hover:shadow-lg transition-all duration-200"
+                          size="lg"
+                          aria-label="시험 제출하기"
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent mr-2"></div>
+                              제출 중...
+                            </>
+                          ) : (
+                            "시험 제출하기"
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              ) : (
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 hide-scrollbar min-h-0">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
+                    <Label className="text-base sm:text-lg font-semibold text-foreground">
+                      답안 작성
+                    </Label>
+
+                    {/* Save Status Indicator */}
+                    <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                      {isSaving ? (
+                        <div className="flex items-center gap-2">
+                          <div className="animate-spin rounded-full h-3 w-3 sm:h-4 sm:w-4 border-2 border-primary border-t-transparent"></div>
+                          <span className="font-medium">저장 중...</span>
+                        </div>
+                      ) : lastSaved ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <Save
+                              className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400"
+                              aria-hidden="true"
+                            />
+                            <span className="font-medium text-green-600 dark:text-green-400">
+                              저장됨
+                            </span>
+                          </div>
+                          <span className="hidden sm:inline">•</span>
+                          <span className="text-xs">{lastSaved}</span>
+                          <span className="hidden sm:flex items-center gap-1 text-xs">
+                            <span>•</span>
+                            {saveShortcut}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <Save
+                            className="w-3 h-3 sm:w-4 sm:h-4"
+                            aria-hidden="true"
+                          />
+                          <span>자동 저장</span>
+                          <span className="hidden sm:flex items-center gap-1 text-xs">
+                            <span>•</span>
+                            {saveShortcut}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Answer Editor */}
+                  <div className="space-y-4 mb-6 sm:mb-8">
+                    <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+                      <SimpleRichTextEditor
+                        placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
+                        value={draftAnswers[currentQuestion]?.text || ""}
+                        onChange={(value) =>
+                          updateAnswer(
+                            exam.questions[currentQuestion].id,
+                            value
+                          )
+                        }
+                        onPaste={handlePaste}
+                        className="min-h-[300px] sm:min-h-[400px]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Submit Button */}
+                  <div className="mt-6 pb-4">
+                    <Button
+                      onClick={handleSubmitClick}
+                      disabled={isSubmitting}
+                      className="w-full min-h-[44px] sm:min-h-[48px] text-sm sm:text-base font-semibold shadow-md hover:shadow-lg transition-all duration-200"
+                      size="lg"
+                      aria-label="시험 제출하기"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent mr-2"></div>
+                          제출 중...
+                        </>
+                      ) : (
+                        "시험 제출하기"
+                      )}
+                    </Button>
                   </div>
                 </div>
               )}
-
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 hide-scrollbar min-h-0">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
-                  <Label className="text-base sm:text-lg font-semibold text-foreground">
-                    답안 작성
-                  </Label>
-
-                  {/* Save Status Indicator */}
-                  <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
-                    {isSaving ? (
-                      <div className="flex items-center gap-2">
-                        <div className="animate-spin rounded-full h-3 w-3 sm:h-4 sm:w-4 border-2 border-primary border-t-transparent"></div>
-                        <span className="font-medium">저장 중...</span>
-                      </div>
-                    ) : lastSaved ? (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="flex items-center gap-1.5">
-                          <Save
-                            className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400"
-                            aria-hidden="true"
-                          />
-                          <span className="font-medium text-green-600 dark:text-green-400">
-                            저장됨
-                          </span>
-                        </div>
-                        <span className="hidden sm:inline">•</span>
-                        <span className="text-xs">{lastSaved}</span>
-                        <span className="hidden sm:flex items-center gap-1 text-xs">
-                          <span>•</span>
-                          {saveShortcut}
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Save
-                          className="w-3 h-3 sm:w-4 sm:h-4"
-                          aria-hidden="true"
-                        />
-                        <span>자동 저장</span>
-                        <span className="hidden sm:flex items-center gap-1 text-xs">
-                          <span>•</span>
-                          {saveShortcut}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Answer Editor */}
-                <div className="space-y-4 mb-6 sm:mb-8">
-                  <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-                    <SimpleRichTextEditor
-                      placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
-                      value={draftAnswers[currentQuestion]?.text || ""}
-                      onChange={(value) =>
-                        updateAnswer(exam.questions[currentQuestion].id, value)
-                      }
-                      onPaste={handlePaste}
-                      className="min-h-[300px] sm:min-h-[400px]"
-                    />
-                  </div>
-                </div>
-
-                {/* Submit Button */}
-                <div className="mt-6 pb-4">
-                  <Button
-                    onClick={handleSubmitClick}
-                    disabled={isSubmitting}
-                    className="w-full min-h-[44px] sm:min-h-[48px] text-sm sm:text-base font-semibold shadow-md hover:shadow-lg transition-all duration-200"
-                    size="lg"
-                    aria-label="시험 제출하기"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent mr-2"></div>
-                        제출 중...
-                      </>
-                    ) : (
-                      "시험 제출하기"
-                    )}
-                  </Button>
-                </div>
-              </div>
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
