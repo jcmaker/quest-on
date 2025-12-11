@@ -522,6 +522,8 @@ export default function ExamPage() {
     setChatMessage("");
     setIsLoading(true);
     setIsTyping(true);
+    // Scroll to bottom after sending user message
+    scrollToBottom();
 
     try {
       const response = await fetch("/api/chat", {
@@ -552,6 +554,8 @@ export default function ExamPage() {
           qIdx: currentQuestion,
         };
         setChatHistory((prev) => [...prev, assistantMessage]);
+        // Scroll to bottom after receiving assistant response
+        scrollToBottom();
       } else {
         const errorData = await response
           .json()
@@ -578,6 +582,8 @@ export default function ExamPage() {
           qIdx: currentQuestion,
         };
         setChatHistory((prev) => [...prev, assistantMessage]);
+        // Scroll to bottom after receiving assistant response
+        scrollToBottom();
       }
     } catch (error) {
       console.error("Error sending chat message:", error);
@@ -598,6 +604,8 @@ export default function ExamPage() {
           qIdx: errorMessage.qIdx,
         },
       ]);
+      // Scroll to bottom after error message
+      scrollToBottom();
     } finally {
       setIsLoading(false);
       setIsTyping(false);
@@ -720,10 +728,12 @@ export default function ExamPage() {
     }
   };
 
-  // Auto scroll to bottom of chat
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [currentQuestionChatHistory]);
+  // Scroll to bottom of chat when message is sent or received
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  }, []);
 
   // Reset question scroll position when question changes
   useEffect(() => {

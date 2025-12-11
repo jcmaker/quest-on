@@ -23,7 +23,7 @@ async function getUserInfo(clerkUserId: string): Promise<{
 } | null> {
   try {
     const user = await clerk.users.getUser(clerkUserId);
-    
+
     // Get user name from firstName/lastName or fullName
     let name = "";
     if (user.firstName && user.lastName) {
@@ -36,11 +36,14 @@ async function getUserInfo(clerkUserId: string): Promise<{
       name = user.fullName;
     } else {
       // Fallback to email or ID
-      name = user.emailAddresses[0]?.emailAddress || `Student ${clerkUserId.slice(0, 8)}`;
+      name =
+        user.emailAddresses[0]?.emailAddress ||
+        `Student ${clerkUserId.slice(0, 8)}`;
     }
-    
-    const email = user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
-    
+
+    const email =
+      user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
+
     return {
       name,
       email,
@@ -79,7 +82,8 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Get session data first
+    // Get session data first (including ai_summary for auto-graded summary)
+    // ai_summary가 없을 수 있으므로 안전하게 처리
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .select("*")
@@ -224,17 +228,20 @@ export async function GET(
 
     // Get student info from Clerk
     const clerkStudentInfo = await getUserInfo(session.student_id);
-    
+
     // Get student profile from database
     const { data: studentProfile } = await supabase
       .from("student_profiles")
       .select("name, student_number, school")
       .eq("student_id", session.student_id)
       .single();
-    
+
     // Merge Clerk info with profile info (prefer profile name if available)
     const studentInfo = {
-      name: studentProfile?.name || clerkStudentInfo?.name || `Student ${session.student_id.slice(0, 8)}`,
+      name:
+        studentProfile?.name ||
+        clerkStudentInfo?.name ||
+        `Student ${session.student_id.slice(0, 8)}`,
       email: clerkStudentInfo?.email || `${session.student_id}@example.com`,
       student_number: studentProfile?.student_number,
       school: studentProfile?.school,
@@ -402,15 +409,23 @@ export async function GET(
         used_clarifications: session.used_clarifications,
         created_at: session.created_at,
         decompressed: decompressedSessionData,
+        ai_summary: session.ai_summary || null, // 서버 사이드 자동 채점 요약 평가
       },
       exam: exam,
       student: studentInfo,
       submissions: submissionsByQuestion,
       messages: messagesByQuestion,
-      grades: gradesByQuestion,
+      grades: gradesByQuestion, // 서버 사이드 자동 채점 점수
       overallScore,
-      aiSummary: session.ai_summary || null,
+      aiSummary: session.ai_summary || null, // 하위 호환성을 위해 유지
     };
+
+    console.log("📊 Response data summary:", {
+      hasAiSummary: !!session.ai_summary,
+      gradesCount: grades?.length || 0,
+      overallScore,
+      gradesByQuestionKeys: Object.keys(gradesByQuestion),
+    });
 
     console.log("📦 Returning response data:", {
       examQuestionsLength: exam.questions?.length || 0,
@@ -637,10 +652,7 @@ export async function PUT(
       }
     } else {
       // Delete existing grades if force regrade
-      await supabase
-        .from("grades")
-        .delete()
-        .eq("session_id", sessionId);
+      await supabase.from("grades").delete().eq("session_id", sessionId);
     }
 
     // Get submissions
@@ -729,7 +741,9 @@ export async function PUT(
       });
 
       console.log(
-        `📦 [AUTO_GRADE] Processed submissions for q_idx: ${Object.keys(submissionsByQuestion).join(", ")}`
+        `📦 [AUTO_GRADE] Processed submissions for q_idx: ${Object.keys(
+          submissionsByQuestion
+        ).join(", ")}`
       );
     }
 
@@ -750,8 +764,9 @@ export async function PUT(
         ) {
           try {
             content =
-              (decompressData(message.compressed_content as string) as string) ||
-              content;
+              (decompressData(
+                message.compressed_content as string
+              ) as string) || content;
           } catch (error) {
             console.error("Error decompressing message content:", error);
           }
@@ -782,7 +797,9 @@ export async function PUT(
       : [];
 
     console.log(
-      `📝 [AUTO_GRADE] Questions: ${questions.length}, Submissions: ${submissions?.length || 0}`
+      `📝 [AUTO_GRADE] Questions: ${questions.length}, Submissions: ${
+        submissions?.length || 0
+      }`
     );
 
     // Auto-grade each question
@@ -808,7 +825,9 @@ export async function PUT(
       const questionMessages = messagesByQuestion[qIdx] || [];
 
       console.log(
-        `🔍 [AUTO_GRADE] Processing question ${qIdx}: submission=${!!submission}, messages=${questionMessages.length}, answer=${submission?.answer ? "yes" : "no"}`
+        `🔍 [AUTO_GRADE] Processing question ${qIdx}: submission=${!!submission}, messages=${
+          questionMessages.length
+        }, answer=${submission?.answer ? "yes" : "no"}`
       );
 
       if (!submission) {
@@ -826,16 +845,16 @@ export async function PUT(
 ${exam.rubric
   .map(
     (
-              item: {
-                evaluationArea: string;
-                detailedCriteria: string;
-              },
-              index: number
-            ) =>
-              `${index + 1}. ${item.evaluationArea}
+      item: {
+        evaluationArea: string;
+        detailedCriteria: string;
+      },
+      index: number
+    ) =>
+      `${index + 1}. ${item.evaluationArea}
            - 세부 기준: ${item.detailedCriteria}`
-          )
-          .join("\n")}
+  )
+  .join("\n")}
 `
           : "";
 
@@ -1090,8 +1109,13 @@ ${submission.student_reply}
         stageCount++;
       }
 
-      const finalScore = stageCount > 0 ? Math.round(overallScore / stageCount) : 0;
-      const overallComment = `채팅 단계: ${stageGrading.chat?.score || "N/A"}점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점, 피드백 단계: ${stageGrading.feedback?.score || "N/A"}점`;
+      const finalScore =
+        stageCount > 0 ? Math.round(overallScore / stageCount) : 0;
+      const overallComment = `채팅 단계: ${
+        stageGrading.chat?.score || "N/A"
+      }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점, 피드백 단계: ${
+        stageGrading.feedback?.score || "N/A"
+      }점`;
 
       // Only add grade if at least one stage was graded
       if (Object.keys(stageGrading).length > 0) {
@@ -1103,7 +1127,9 @@ ${submission.student_reply}
         });
 
         console.log(
-          `✅ [AUTO_GRADE] Question ${qIdx} overall graded: ${finalScore}점 (stages: ${Object.keys(stageGrading).join(", ")})`
+          `✅ [AUTO_GRADE] Question ${qIdx} overall graded: ${finalScore}점 (stages: ${Object.keys(
+            stageGrading
+          ).join(", ")})`
         );
       } else {
         console.log(
@@ -1117,30 +1143,23 @@ ${submission.student_reply}
       console.log(
         `💾 [AUTO_GRADE] Saving ${grades.length} grades to database...`
       );
-      const { error: insertError } = await supabase
-        .from("grades")
-        .insert(
-          grades.map((grade) => ({
-            session_id: sessionId,
-            q_idx: grade.q_idx,
-            score: grade.score,
-            comment: grade.comment,
-            stage_grading: grade.stage_grading || null,
-          }))
-        );
+      const { error: insertError } = await supabase.from("grades").insert(
+        grades.map((grade) => ({
+          session_id: sessionId,
+          q_idx: grade.q_idx,
+          score: grade.score,
+          comment: grade.comment,
+          stage_grading: grade.stage_grading || null,
+        }))
+      );
 
       if (insertError) {
-        console.error(
-          `❌ [AUTO_GRADE] Database insert error:`,
-          insertError
-        );
+        console.error(`❌ [AUTO_GRADE] Database insert error:`, insertError);
         throw insertError;
       }
       console.log(`✅ [AUTO_GRADE] Successfully saved ${grades.length} grades`);
     } else {
-      console.log(
-        `⚠️ [AUTO_GRADE] No grades to save (grades.length = 0)`
-      );
+      console.log(`⚠️ [AUTO_GRADE] No grades to save (grades.length = 0)`);
     }
 
     const requestDuration = Date.now() - requestStartTime;
@@ -1166,12 +1185,12 @@ ${submission.student_reply}
     );
     console.error("Error stack:", (error as Error)?.stack);
     console.error("Full error:", error);
-    
+
     return NextResponse.json(
-      { 
-        error: "Internal server error", 
+      {
+        error: "Internal server error",
         details: (error as Error)?.message,
-        message: (error as Error)?.message || "Unknown error occurred"
+        message: (error as Error)?.message || "Unknown error occurred",
       },
       { status: 500 }
     );

@@ -11,4 +11,4 @@ export const openai = new OpenAI({
 });
 
 // AI 모델 상수 - 여기서 변경하면 전체 코드에 적용됨
-export const AI_MODEL = "gpt-5-mini";
+export const AI_MODEL = "gpt-5-chat-latest";

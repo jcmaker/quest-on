@@ -485,14 +485,13 @@
 /* ===== Read-only Viewer ===== */
 .rich-text-content {
   color: hsl(var(--foreground));
-  line-height: 1.8;
   font-size: 1rem;
 }
 
 /* 뷰어 테이블: 에디터와 동일 톤 */
 .rich-text-content table {
   width: 100%;
-  border-collapse: separate;
+  /* border-collapse: separate; */
   border-spacing: 0;
   margin: 1rem 0;
   border: var(--pm-border) solid var(--pm-table-border);
@@ -527,27 +526,22 @@
 }
 
 /* 타이포 리듬 */
-.rich-text-content p {
-  margin: 0.7rem 0;
-}
+/* .rich-text-content p {
+} */
 .rich-text-content h1 {
   font-size: 1.9rem;
   font-weight: 700;
-  margin: 1.2rem 0 0.8rem;
 }
 .rich-text-content h2 {
   font-size: 1.45rem;
   font-weight: 650;
-  margin: 1rem 0 0.7rem;
 }
 .rich-text-content h3 {
   font-size: 1.2rem;
   font-weight: 600;
-  margin: 0.8rem 0 0.6rem;
 }
 .rich-text-content ul,
 .rich-text-content ol {
-  margin: 0.5rem 0;
   padding-left: 1.8rem;
 }
 .rich-text-content ul {
@@ -558,7 +552,6 @@
 }
 .rich-text-content li {
   display: list-item;
-  margin: 0.25rem 0;
 }
 .rich-text-content strong {
   font-weight: 700;
@@ -571,14 +564,12 @@
 }
 .rich-text-content blockquote {
   border-left: 4px solid hsl(var(--primary));
-  padding: 0.25rem 1rem;
   border-radius: 0 10px 10px 0;
   background: color-mix(in oklab, hsl(var(--primary)) 6%, transparent);
 }
 .rich-text-content hr {
   border: none;
   border-top: var(--pm-border) solid var(--pm-table-border);
-  margin: 1.25rem 0;
 }
 
 /* Dark (Viewer) */

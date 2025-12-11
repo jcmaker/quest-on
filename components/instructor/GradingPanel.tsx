@@ -44,7 +44,7 @@ export function GradingPanel({
 }: GradingPanelProps) {
   // 입력 중에는 문자열로 관리하여 "020" 같은 문제 방지
   const [scoreInput, setScoreInput] = useState<string>(overallScore.toString());
-  
+
   // overallScore가 외부에서 변경되면 (예: 다른 문제로 이동) input 값 업데이트
   useEffect(() => {
     setScoreInput(overallScore.toString());
@@ -58,7 +58,9 @@ export function GradingPanel({
           문제 {questionNumber} 채점
         </CardTitle>
         <CardDescription>
-          이 문제에 대한 점수와 피드백을 입력하세요
+          {isGraded && overallScore > 0
+            ? "AI 가채점 완료. 점수와 피드백을 수정할 수 있습니다."
+            : "이 문제에 대한 점수와 피드백을 입력하세요"}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -154,34 +156,34 @@ export function GradingPanel({
                 }}
                 onChange={(e) => {
                   let value = e.target.value;
-                  
+
                   // 빈 문자열 허용 (입력 중)
                   if (value === "") {
                     setScoreInput("");
                     return;
                   }
-                  
+
                   // 숫자가 아닌 문자는 무시
                   if (!/^\d*$/.test(value)) {
                     return;
                   }
-                  
+
                   // "020", "002" 같은 경우를 방지: 0으로 시작하는 여러 자리 숫자는 첫 번째 0 제거
                   // 단, "0" 자체는 허용
                   if (value.length > 1 && value.startsWith("0")) {
                     value = value.replace(/^0+/, "") || "0";
                   }
-                  
+
                   // 입력 중에는 문자열로 유지
                   setScoreInput(value);
-                  
+
                   // 숫자로 변환하여 범위 체크 및 부모 컴포넌트에 전달
                   const numValue = Number(value);
                   if (!Number.isNaN(numValue)) {
                     // 0-100 범위로 제한
                     const clampedValue = Math.max(0, Math.min(100, numValue));
                     onOverallScoreChange(clampedValue);
-                    
+
                     // 클램핑된 값이 원래 값과 다르면 input 업데이트
                     if (clampedValue !== numValue) {
                       setScoreInput(clampedValue.toString());
@@ -190,14 +192,14 @@ export function GradingPanel({
                 }}
                 onBlur={(e) => {
                   const value = e.target.value;
-                  
+
                   // blur 시 빈 값이거나 유효하지 않은 값이면 0으로 설정
                   if (value === "" || Number.isNaN(Number(value))) {
                     setScoreInput("0");
                     onOverallScoreChange(0);
                     return;
                   }
-                  
+
                   const numValue = Number(value);
                   // 0-100 범위로 제한하고 정규화
                   const clampedValue = Math.max(0, Math.min(100, numValue));
@@ -229,7 +231,7 @@ export function GradingPanel({
 
         {isGraded && (
           <div className="text-sm text-green-600 text-center">
-            ✓ 채점 완료됨
+            ✓ {overallScore > 0 ? "AI 가채점 완료" : "채점 완료됨"}
           </div>
         )}
       </CardContent>

@@ -101,6 +101,7 @@ model sessions {
   submitted_at            DateTime?     @db.Timestamptz(6)
   compressed_session_data String?
   compression_metadata    Json?         @default("{}")
+  ai_summary              Json?         // AI 자동 채점 요약 평가
   grades                  grades[]
   messages                messages[]
   submissions             submissions[]

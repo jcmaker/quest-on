@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 import { compressData } from "@/lib/compression";
 import { openai, AI_MODEL } from "@/lib/openai";
+import { autoGradeSession } from "@/lib/grading";
 
 // Helper function to sanitize text for JSON storage
 function sanitizeText(text: string): string {
@@ -352,6 +353,27 @@ ${answersText}
           studentId,
           submissionsCount: submissionInserts.length,
         });
+
+        // 백그라운드에서 자동 채점 시작 (비동기로 실행, 응답은 기다리지 않음)
+        if (actualSessionId) {
+          autoGradeSession(actualSessionId)
+            .then((result) => {
+              console.log(
+                `✅ [AUTO_GRADE] Background grading completed for session ${actualSessionId}:`,
+                {
+                  gradesCount: result.grades.length,
+                  hasSummary: !!result.summary,
+                }
+              );
+            })
+            .catch((error) => {
+              console.error(
+                `❌ [AUTO_GRADE] Background grading failed for session ${actualSessionId}:`,
+                error
+              );
+              // 채점 실패해도 제출은 완료된 것으로 처리
+            });
+        }
       } catch (error) {
         console.error("Error storing submission:", error);
         return NextResponse.json(

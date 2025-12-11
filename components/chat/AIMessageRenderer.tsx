@@ -48,14 +48,14 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
 
   return (
     <div className="bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30">
-      <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mb-2 prose-p:mb-3 prose-p:last:mb-0 whitespace-pre-wrap break-words [&_*]:break-words">
+      <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mb-0 prose-p:mb-0 prose-p:last:mb-0 prose-ul:mb-0 prose-ol:mb-0 prose-li:mb-0 whitespace-pre-wrap break-words [&_*]:break-words [&_*]:leading-[1.3]">
         {/* HTML 콘텐츠인지 확인하여 조건부 렌더링 */}
         {content.includes("<") &&
         content.includes(">") &&
         /<\/?[a-z][\s\S]*>/i.test(content) ? (
           // HTML 콘텐츠인 경우
           <div
-            className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap break-words [&_*]:text-inherit [&_*]:break-words [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-4 [&_h1]:mt-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mb-3 [&_h2]:mt-6 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mb-2 [&_h3]:mt-4 [&_p]:mb-4 [&_p]:leading-7 [&_p]:last:mb-0 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:ml-2 [&_ul]:mb-4 [&_ul]:space-y-2 [&_ol]:list-decimal [&_ol]:list-inside [&_ol]:ml-2 [&_ol]:mb-4 [&_ol]:space-y-2 [&_li]:leading-7 [&_strong]:font-bold [&_strong]:text-primary/90 [&_em]:italic [&_em]:text-muted-foreground [&_blockquote]:border-l-4 [&_blockquote]:border-primary/30 [&_blockquote]:pl-4 [&_blockquote]:py-1 [&_blockquote]:bg-muted/30 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:my-4 [&_code]:bg-muted [&_code]:text-primary [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded-md [&_code]:text-sm [&_code]:font-mono"
+            className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap break-words [&_*]:text-inherit [&_*]:break-words [&_*]:leading-[1.3] [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-0 [&_h1]:mt-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mb-0 [&_h2]:mt-1 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mb-0 [&_h3]:mt-0.5 [&_p]:mb-0 [&_p]:leading-[1.3] [&_p]:last:mb-0 [&_p+*]:mt-0 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:ml-2 [&_ul]:mb-0 [&_ul]:space-y-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:list-decimal [&_ol]:list-inside [&_ol]:ml-2 [&_ol]:mb-0 [&_ol]:space-y-0 [&_ol]:mt-0 [&_ol]:last:mb-0 [&_li]:leading-[1.3] [&_li]:mb-0 [&_li]:mt-0 [&_li+li]:mt-0 [&_li]:last:mb-0 [&_li>*]:last:mb-0 [&_li_p]:mb-0 [&_li_p]:mt-0 [&_li_p]:first:mt-0 [&_li_p]:last:mb-0 [&_li_ul]:mb-0 [&_li_ul]:mt-0 [&_li_ul]:first:mt-0 [&_li_ul]:last:mb-0 [&_li_ol]:mb-0 [&_li_ol]:mt-0 [&_li_ol]:first:mt-0 [&_li_ol]:last:mb-0 [&_strong]:font-bold [&_strong]:text-primary/90 [&_em]:italic [&_em]:text-muted-foreground [&_blockquote]:border-l-4 [&_blockquote]:border-primary/30 [&_blockquote]:pl-2 [&_blockquote]:py-0 [&_blockquote]:bg-muted/30 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:my-0 [&_code]:bg-muted [&_code]:text-primary [&_code]:px-1 [&_code]:py-0 [&_code]:rounded-md [&_code]:text-sm [&_code]:font-mono"
             dangerouslySetInnerHTML={{ __html: content }}
           />
         ) : (
@@ -85,24 +85,24 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
               {
                 // 헤더 스타일링
                 h1: ({ children }: React.ComponentProps<"h1">) => (
-                  <h1 className="text-xl font-bold text-foreground mb-4 mt-6 first:mt-0 border-b pb-2">
+                  <h1 className="text-xl font-bold text-foreground mb-0 mt-1 first:mt-0 border-b pb-0.5 [&+*]:mt-0">
                     {children}
                   </h1>
                 ),
                 h2: ({ children }: React.ComponentProps<"h2">) => (
-                  <h2 className="text-lg font-bold text-foreground mb-3 mt-6">
+                  <h2 className="text-lg font-bold text-foreground mb-0 mt-1 [&+*]:mt-0">
                     {children}
                   </h2>
                 ),
                 h3: ({ children }: React.ComponentProps<"h3">) => (
-                  <h3 className="text-base font-semibold text-foreground mb-2 mt-4">
+                  <h3 className="text-base font-semibold text-foreground mb-0 mt-0.5 [&+*]:mt-0">
                     {children}
                   </h3>
                 ),
 
                 // 문단 스타일링
                 p: ({ children }: React.ComponentProps<"p">) => (
-                  <p className="text-sm leading-7 mb-4 last:mb-0 text-foreground/90">
+                  <p className="text-sm leading-[1.3] mb-0 mt-0 last:mb-0 text-foreground/90 [&+*]:mt-0">
                     {children}
                   </p>
                 ),
@@ -117,7 +117,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
                   const match = /language-(\w+)/.exec(className || "");
                   const isInline = !match || (node && node.tagName !== "PRE");
                   return !isInline && match ? (
-                    <div className="my-4 rounded-lg overflow-hidden shadow-sm border border-border/50">
+                    <div className="my-0 mt-0 mb-0 rounded-lg overflow-hidden shadow-sm border border-border/50 [&+*]:mt-0">
                       <div className="bg-muted/50 px-4 py-1 text-xs font-mono text-muted-foreground border-b border-border/50 flex justify-between">
                         <span>{match[1]}</span>
                       </div>
@@ -136,7 +136,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
                     </div>
                   ) : (
                     <code
-                      className="bg-muted text-primary px-1.5 py-0.5 rounded-md text-xs font-mono border border-border/50"
+                      className="bg-muted text-primary px-1 py-0 rounded-md text-xs font-mono border border-border/50"
                       {...props}
                     >
                       {children}
@@ -146,7 +146,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
 
                 // 테이블 스타일링
                 table: ({ children }: React.ComponentProps<"table">) => (
-                  <div className="overflow-x-auto my-4 border border-border/50 rounded-lg shadow-sm bg-white dark:bg-gray-800">
+                  <div className="overflow-x-auto my-0 mt-0 mb-0 border border-border/50 rounded-lg shadow-sm bg-white dark:bg-gray-800 [&+*]:mt-0">
                     <table className="min-w-full divide-y divide-border">
                       {children}
                     </table>
@@ -180,17 +180,19 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
 
                 // 리스트 스타일링
                 ul: ({ children }: React.ComponentProps<"ul">) => (
-                  <ul className="list-disc list-outside ml-5 mb-4 space-y-2 marker:text-muted-foreground">
+                  <ul className="list-disc list-outside ml-5 mb-0 mt-0 space-y-0 marker:text-muted-foreground [&>li]:mb-0 [&>li]:mt-0 [&>li]:first:mt-0 [&>li+li]:mt-0 [&>li]:last:mb-0 [&+*]:mt-0 [&_p]:mb-0 [&_p]:mt-0 [&_p]:leading-[1.3] [&_p]:first:mt-0 [&_p]:last:mb-0 [&_ul]:mb-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:mb-0 [&_ol]:mt-0 [&_ol]:last:mb-0">
                     {children}
                   </ul>
                 ),
                 ol: ({ children }: React.ComponentProps<"ol">) => (
-                  <ol className="list-decimal list-outside ml-5 mb-4 space-y-2 marker:text-muted-foreground marker:font-medium">
+                  <ol className="list-decimal list-outside ml-5 mb-0 mt-0 space-y-0 marker:text-muted-foreground marker:font-medium [&>li]:mb-0 [&>li]:mt-0 [&>li]:first:mt-0 [&>li+li]:mt-0 [&>li]:last:mb-0 [&+*]:mt-0 [&_p]:mb-0 [&_p]:mt-0 [&_p]:leading-[1.3] [&_p]:first:mt-0 [&_p]:last:mb-0 [&_ul]:mb-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:mb-0 [&_ol]:mt-0 [&_ol]:last:mb-0">
                     {children}
                   </ol>
                 ),
                 li: ({ children }: React.ComponentProps<"li">) => (
-                  <li className="text-sm leading-7 pl-1">{children}</li>
+                  <li className="text-sm leading-[1.3] pl-1 mb-0 mt-0 first:mt-0 [&+li]:mt-0 [&>*]:last:mb-0 [&>p]:mb-0 [&>p]:mt-0 [&>p]:first:mt-0 [&>p]:last:mb-0 [&>p]:leading-[1.3] [&>ul]:mb-0 [&>ul]:mt-0 [&>ul]:first:mt-0 [&>ul]:last:mb-0 [&>ol]:mb-0 [&>ol]:mt-0 [&>ol]:first:mt-0 [&>ol]:last:mb-0 [&_p]:mb-0 [&_p]:mt-0 [&_p]:first:mt-0 [&_p]:last:mb-0 [&_p]:leading-[1.3] [&_ul]:mb-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:mb-0 [&_ol]:mt-0 [&_ol]:last:mb-0">
+                    {children}
+                  </li>
                 ),
 
                 // 강조 스타일링
@@ -219,7 +221,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
                 blockquote: ({
                   children,
                 }: React.ComponentProps<"blockquote">) => (
-                  <blockquote className="border-l-4 border-primary/30 pl-4 py-1 bg-muted/30 rounded-r-lg italic text-muted-foreground my-4 shadow-sm">
+                  <blockquote className="border-l-4 border-primary/30 pl-2 py-0 bg-muted/30 rounded-r-lg italic text-muted-foreground my-0 mt-0 mb-0 [&+*]:mt-0 shadow-sm">
                     {children}
                   </blockquote>
                 ),
@@ -227,7 +229,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
                 // 수학 식 렌더링 (remark-math 플러그인용)
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 math: ({ children }: any) => (
-                  <div className="my-4 overflow-x-auto p-2 bg-muted/20 rounded-lg text-center">
+                  <div className="my-0 mt-0 mb-0 overflow-x-auto p-0.5 bg-muted/20 rounded-lg text-center [&+*]:mt-0">
                     {children}
                   </div>
                 ),
@@ -240,7 +242,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
 
                 // 수평선
                 hr: (): React.ReactElement => (
-                  <hr className="border-border my-6" />
+                  <hr className="border-border my-0 mt-0 mb-0 [&+*]:mt-0" />
                 ),
 
                 // 취소선 스타일링 (물결표 오작동 방지)

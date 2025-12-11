@@ -26,7 +26,10 @@ import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { ExamHeader } from "@/components/ExamHeader";
 import { CopyProtector } from "@/components/exam/CopyProtector";
 import { Kbd } from "@/components/ui/kbd";
-import { SubmissionOverlay, ChatLoadingIndicator } from "@/components/exam/ExamLoading";
+import {
+  SubmissionOverlay,
+  ChatLoadingIndicator,
+} from "@/components/exam/ExamLoading";
 
 interface Question {
   id: string;
@@ -510,7 +513,6 @@ export default function AnswerSubmission() {
     return html.replace(/<[^>]*>/g, "").length;
   };
 
-
   // 채팅 메시지 전송
   const sendChatMessage = async () => {
     if (isHtmlEmpty(chatMessage)) return;
@@ -678,39 +680,50 @@ export default function AnswerSubmission() {
   };
 
   // Handle paste event for logging
-  const handlePaste = useCallback(async (e: ClipboardEvent) => {
-    const clipboard = e.clipboardData;
-    if (!clipboard) return;
+  const handlePaste = useCallback(
+    async (e: ClipboardEvent) => {
+      const clipboard = e.clipboardData;
+      if (!clipboard) return;
 
-    const text = clipboard.getData("text/plain");
-    const isInternal = clipboard.types.includes("application/x-queston-internal");
+      const text = clipboard.getData("text/plain");
+      const isInternal = clipboard.types.includes(
+        "application/x-queston-internal"
+      );
 
-    if (isInternal) {
-      console.log("%c[Paste Check] ✅ Internal Copy Detected", "color: green; font-weight: bold; font-size: 12px;");
-      console.log("Source: Internal content");
-    } else {
-      console.warn("%c[Paste Check] ⚠️ External Copy Detected", "color: red; font-weight: bold; font-size: 12px;");
-      console.warn("Source: External clipboard");
-    }
-    console.log("Content Length:", text.length);
+      if (isInternal) {
+        console.log(
+          "%c[Paste Check] ✅ Internal Copy Detected",
+          "color: green; font-weight: bold; font-size: 12px;"
+        );
+        console.log("Source: Internal content");
+      } else {
+        console.warn(
+          "%c[Paste Check] ⚠️ External Copy Detected",
+          "color: red; font-weight: bold; font-size: 12px;"
+        );
+        console.warn("Source: External clipboard");
+      }
+      console.log("Content Length:", text.length);
 
-    // Log to server
-    try {
-      await fetch("/api/log/paste", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          length: text.length,
-          isInternal,
-          ts: Date.now(),
-          examCode,
-          questionId: exam?.questions[currentQuestion]?.id,
-        }),
-      });
-    } catch (err) {
-      console.error("Failed to log paste event", err);
-    }
-  }, [examCode, exam, currentQuestion]);
+      // Log to server
+      try {
+        await fetch("/api/log/paste", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            length: text.length,
+            isInternal,
+            ts: Date.now(),
+            examCode,
+            questionId: exam?.questions[currentQuestion]?.id,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to log paste event", err);
+      }
+    },
+    [examCode, exam, currentQuestion]
+  );
 
   if (isLoading) {
     return (
@@ -946,7 +959,7 @@ export default function AnswerSubmission() {
                           {isTyping ? "처리 중..." : "제출하기"}
                         </Button>
                       </div>
-                      
+
                       {/* Reply Loading Indicator */}
                       {isTyping && (
                         <div className="mt-4 flex justify-start">
