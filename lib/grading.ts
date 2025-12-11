@@ -179,14 +179,26 @@ export async function autoGradeSession(
   }
 
   // 6. 문제 정규화
-  const questions = exam.questions
+  const questions: Array<{
+    idx: number;
+    prompt?: string;
+    ai_context?: string;
+  }> = exam.questions
     ? Array.isArray(exam.questions)
       ? exam.questions.map((q: Record<string, unknown>, index: number) => ({
-          id: q.id,
           idx: q.idx !== undefined ? (q.idx as number) : index,
-          type: q.type,
-          prompt: q.prompt || q.text,
-          ai_context: q.ai_context || q.core_ability,
+          prompt:
+            typeof q.prompt === "string"
+              ? q.prompt
+              : typeof q.text === "string"
+                ? q.text
+                : undefined,
+          ai_context:
+            typeof q.ai_context === "string"
+              ? q.ai_context
+              : typeof q.core_ability === "string"
+                ? q.core_ability
+                : undefined,
         }))
       : []
     : [];
@@ -216,7 +228,7 @@ ${exam.rubric
   const grades: GradeResult[] = [];
 
   for (const question of questions) {
-    const qIdx = question.idx as number;
+    const qIdx = question.idx;
     let submission = submissionsByQuestion[qIdx];
     if (!submission && questions.indexOf(question) >= 0) {
       const questionIndex = questions.indexOf(question);
@@ -530,7 +542,7 @@ ${submission.student_reply}
 async function generateSummary(
   sessionId: string,
   exam: { title: string; rubric?: unknown },
-  questions: Array<{ idx?: number; prompt?: string; ai_context?: string }>,
+  questions: Array<{ idx: number; prompt?: string; ai_context?: string }>,
   submissionsByQuestion: Record<number, { answer: string }>,
   grades: GradeResult[]
 ): Promise<SummaryResult | null> {
@@ -558,7 +570,7 @@ ${exam.rubric
     const questionsText = questions
       .map((q, index) => {
         // q_idx를 사용하여 submission과 grade 찾기
-        const qIdx = q.idx !== undefined ? (q.idx as number) : index;
+        const qIdx = q.idx;
         const submission = submissionsByQuestion[qIdx];
         const grade = grades.find((g) => g.q_idx === qIdx);
         return `문제 ${index + 1}:
