@@ -3,13 +3,37 @@
 
 import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ExamDetailHeader } from "@/components/instructor/ExamDetailHeader";
 import { ExamDetailsCard } from "@/components/instructor/ExamDetailsCard";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
-import { StudentProgressCard } from "@/components/instructor/StudentProgressCard";
+import { ExamAnalyticsCard } from "@/components/instructor/ExamAnalyticsCard";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  FileText,
+  Activity,
+  Search,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
+import { StudentLiveMonitoring } from "../../../components/instructor/StudentLiveMonitoring";
 
 interface Exam {
   id: string;
@@ -35,10 +59,17 @@ interface Student {
   email: string;
   status: "not-started" | "in-progress" | "completed";
   score?: number;
+  finalScore?: number; // 교수가 최종 채점한 점수
   submittedAt?: string;
+  createdAt?: string;
   student_number?: string;
   school?: string;
+  questionCount?: number;
+  answerLength?: number;
+  isGraded?: boolean; // 교수가 최종 채점했는지 여부
 }
+
+type SortOption = "score" | "questionCount" | "answerLength" | "submittedAt";
 
 export default function ExamDetail({
   params,
@@ -52,18 +83,31 @@ export default function ExamDetail({
   const [exam, setExam] = useState<Exam | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortOption, setSortOption] = useState<SortOption>("score");
+  const [monitoringSessionId, setMonitoringSessionId] = useState<string | null>(
+    null
+  );
+  const [monitoringStudent, setMonitoringStudent] = useState<Student | null>(
+    null
+  );
+  const [examInfoOpen, setExamInfoOpen] = useState(false);
+  const [questionsOpen, setQuestionsOpen] = useState(false);
 
-  // Example student data for demonstration
-  const exampleStudents: Student[] = [
-    {
-      id: "example-1",
-      name: "Justin Cho",
-      email: "jcmaker0627@gmail.com",
-      status: "completed",
-      // score: 85,
-      submittedAt: "2024-01-20",
+  // Fetch analytics data (for charts only, student scores are already in exam.students)
+  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
+    queryKey: ["exam-analytics", resolvedParams.examId],
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/analytics/exam/${resolvedParams.examId}/overview`
+      );
+      if (!response.ok) {
+        throw new Error("Failed to fetch analytics");
+      }
+      return response.json();
     },
-  ];
+    enabled: !!resolvedParams.examId && isLoaded && isSignedIn && !!exam,
+  });
 
   // Redirect non-instructors
   useEffect(() => {
@@ -108,10 +152,58 @@ export default function ExamDetail({
         const sessionsResponse = await fetch(
           `/api/exam/${resolvedParams.examId}/sessions`
         );
-        let students = exampleStudents; // fallback to example data
+        let students: Student[] = [];
+
+        // Analytics data will be fetched separately via useQuery
+        // For now, we'll fetch it here too to get scores immediately
+        let analyticsData: any = null;
+        try {
+          const analyticsResponse = await fetch(
+            `/api/analytics/exam/${resolvedParams.examId}/overview`
+          );
+          if (analyticsResponse.ok) {
+            analyticsData = await analyticsResponse.json();
+          }
+        } catch (err) {
+          console.error("Failed to fetch analytics:", err);
+        }
+
+        // Fetch final grades (교수가 최종 채점한 점수)
+        // 교수가 채점 페이지에서 수동으로 저장한 점수만 최종 채점으로 간주
+        // 자동 채점은 제외 (자동 채점은 가채점으로만 표시)
+        let finalGradesMap = new Map<string, number>();
+        try {
+          const gradesResponse = await fetch(
+            `/api/exam/${resolvedParams.examId}/final-grades`
+          );
+          if (gradesResponse.ok) {
+            const gradesData = await gradesResponse.json();
+            if (gradesData.grades) {
+              gradesData.grades.forEach(
+                (g: {
+                  session_id: string;
+                  score: number;
+                  isManual?: boolean;
+                }) => {
+                  // 교수가 수동으로 채점한 경우만 최종 채점으로 표시
+                  if (g.isManual) {
+                    finalGradesMap.set(g.session_id, g.score);
+                  }
+                }
+              );
+            }
+          }
+        } catch (err) {
+          console.error("Failed to fetch final grades:", err);
+        }
 
         if (sessionsResponse.ok) {
           const sessionsResult = await sessionsResponse.json();
+
+          // Analytics에서 점수 정보 가져오기 (한 번만 생성)
+          const analyticsStudentsMap = analyticsData?.students
+            ? new Map(analyticsData.students.map((s: any) => [s.sessionId, s]))
+            : new Map();
 
           // 학생별로 세션을 그룹화
           const sessionsByStudent = new Map<
@@ -198,11 +290,20 @@ export default function ExamDetail({
                     : String(selectedSession.created_at)
                   : undefined;
 
+              // Analytics에서 점수 정보 가져오기
+              const analyticsStudent = analyticsStudentsMap.get(sessionId);
+
+              // 최종 채점 점수 확인
+              const finalScore = finalGradesMap.get(sessionId);
+              const isGraded = finalScore !== undefined;
+
               return {
                 id: sessionId, // Use session ID for routing to grade page
                 name: studentName,
                 email: studentEmail,
                 status: submittedAt ? "completed" : "in-progress",
+                score: analyticsStudent?.score || undefined, // 가채점 점수
+                finalScore: finalScore, // 교수가 최종 채점한 점수
                 submittedAt: submittedAt as string | undefined,
                 createdAt: createdAt as string | undefined,
                 student_number:
@@ -213,22 +314,12 @@ export default function ExamDetail({
                   typeof selectedSession.student_school === "string"
                     ? selectedSession.student_school
                     : undefined,
+                questionCount: analyticsStudent?.questionCount,
+                answerLength: analyticsStudent?.answerLength,
+                isGraded,
               };
             }
           );
-
-          // 학생 목록 정렬: 제출 완료한 학생 먼저, 그 다음 진행 중인 학생
-          students.sort((a, b) => {
-            // 제출 완료한 학생을 먼저
-            if (a.status === "completed" && b.status !== "completed") {
-              return -1;
-            }
-            if (a.status !== "completed" && b.status === "completed") {
-              return 1;
-            }
-            // 같은 상태면 이름순으로 정렬
-            return a.name.localeCompare(b.name);
-          });
         }
 
         setExam({
@@ -254,6 +345,109 @@ export default function ExamDetail({
 
     fetchExamData();
   }, [resolvedParams.examId]);
+
+  // Filtered and sorted students
+  const filteredAndSortedStudents = useMemo(() => {
+    if (!exam) return [];
+
+    let filtered = exam.students.filter((student) => {
+      const query = searchQuery.toLowerCase();
+      return (
+        student.name.toLowerCase().includes(query) ||
+        student.email.toLowerCase().includes(query) ||
+        student.student_number?.toLowerCase().includes(query) ||
+        student.school?.toLowerCase().includes(query)
+      );
+    });
+
+    // Sort by selected option
+    filtered.sort((a, b) => {
+      switch (sortOption) {
+        case "score":
+          // 가채점 점수 기준
+          if (a.score !== undefined && b.score === undefined) return -1;
+          if (a.score === undefined && b.score !== undefined) return 1;
+          if (a.score !== undefined && b.score !== undefined) {
+            return b.score - a.score;
+          }
+          return 0;
+        case "questionCount":
+          if (a.questionCount !== undefined && b.questionCount === undefined)
+            return -1;
+          if (a.questionCount === undefined && b.questionCount !== undefined)
+            return 1;
+          if (a.questionCount !== undefined && b.questionCount !== undefined) {
+            return b.questionCount - a.questionCount;
+          }
+          return 0;
+        case "answerLength":
+          if (a.answerLength !== undefined && b.answerLength === undefined)
+            return -1;
+          if (a.answerLength === undefined && b.answerLength !== undefined)
+            return 1;
+          if (a.answerLength !== undefined && b.answerLength !== undefined) {
+            return b.answerLength - a.answerLength;
+          }
+          return 0;
+        case "submittedAt":
+          if (a.submittedAt && !b.submittedAt) return -1;
+          if (!a.submittedAt && b.submittedAt) return 1;
+          if (a.submittedAt && b.submittedAt) {
+            return (
+              new Date(b.submittedAt).getTime() -
+              new Date(a.submittedAt).getTime()
+            );
+          }
+          return 0;
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [exam, searchQuery, sortOption]);
+
+  // Separated graded students (교수가 최종 채점한 학생)
+  const gradedStudents = useMemo(() => {
+    return filteredAndSortedStudents
+      .filter((s) => s.isGraded)
+      .sort((a, b) => {
+        if (a.finalScore !== undefined && b.finalScore === undefined) return -1;
+        if (a.finalScore === undefined && b.finalScore !== undefined) return 1;
+        if (a.finalScore !== undefined && b.finalScore !== undefined) {
+          return b.finalScore - a.finalScore;
+        }
+        return 0;
+      });
+  }, [filteredAndSortedStudents]);
+
+  // Non-graded students (가채점만 있는 학생)
+  const nonGradedStudents = useMemo(() => {
+    return filteredAndSortedStudents.filter((s) => !s.isGraded);
+  }, [filteredAndSortedStudents]);
+
+  const handleLiveMonitoring = (student: Student) => {
+    setMonitoringStudent(student);
+    setMonitoringSessionId(student.id);
+  };
+
+  const handleCloseMonitoring = () => {
+    setMonitoringSessionId(null);
+    setMonitoringStudent(null);
+  };
+
+  const getStudentStatusColor = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "bg-green-100 text-green-800";
+      case "in-progress":
+        return "bg-yellow-100 text-yellow-800";
+      case "not-started":
+        return "bg-gray-100 text-gray-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
 
   // Show loading while auth is loading
   if (!isLoaded) {
@@ -301,20 +495,312 @@ export default function ExamDetail({
     <div className="container mx-auto p-6">
       <ExamDetailHeader title={exam.title} code={exam.code} examId={exam.id} />
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div className="space-y-6">
-          <ExamDetailsCard
-            description={exam.description}
-            duration={exam.duration}
-            createdAt={exam.createdAt}
-            examCode={exam.code}
-          />
+      {/* 위쪽: 시험 정보와 문제 (Collapsible) */}
+      <div className="space-y-3 mt-6 mb-6">
+        {/* 시험 정보 */}
+        <Collapsible open={examInfoOpen} onOpenChange={setExamInfoOpen}>
+          <div className="border rounded-lg">
+            <CollapsibleTrigger className="w-full">
+              <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                <div className="flex items-center gap-3">
+                  <h3 className="font-semibold">시험 정보</h3>
+                  <span className="text-sm text-muted-foreground">
+                    {exam.duration}분 • {exam.code}
+                  </span>
+                </div>
+                {examInfoOpen ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="px-4 pb-4">
+                <ExamDetailsCard
+                  description={exam.description}
+                  duration={exam.duration}
+                  createdAt={exam.createdAt}
+                  examCode={exam.code}
+                />
+              </div>
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
 
-          <QuestionsListCard questions={exam.questions} />
+        {/* 문제 보기 */}
+        <Collapsible open={questionsOpen} onOpenChange={setQuestionsOpen}>
+          <div className="border rounded-lg">
+            <CollapsibleTrigger className="w-full">
+              <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                <div className="flex items-center gap-3">
+                  <h3 className="font-semibold">문제 보기</h3>
+                  <span className="text-sm text-muted-foreground">
+                    {exam.questions.length}개 문제
+                  </span>
+                </div>
+                {questionsOpen ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="px-4 pb-4">
+                <QuestionsListCard questions={exam.questions} />
+              </div>
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
+      </div>
+
+      {/* 아래쪽: 좌우 그리드 (차트 | 학생 목록) */}
+      <div className="grid gap-6 lg:grid-cols-[1fr_500px]">
+        {/* 왼쪽: 차트 */}
+        <div className="space-y-4">
+          {analyticsData && !analyticsLoading && (
+            <ExamAnalyticsCard
+              averageScore={analyticsData.averageScore || 0}
+              averageQuestions={analyticsData.averageQuestions || 0}
+              averageAnswerLength={analyticsData.averageAnswerLength || 0}
+              averageExamDuration={analyticsData.averageExamDuration || 0}
+              scoreDistribution={
+                analyticsData.statistics?.scoreDistribution || []
+              }
+              questionCountDistribution={
+                analyticsData.statistics?.questionCountDistribution || []
+              }
+              answerLengthDistribution={
+                analyticsData.statistics?.answerLengthDistribution || []
+              }
+              examDurationDistribution={
+                analyticsData.statistics?.examDurationDistribution || []
+              }
+              stageAnalysis={analyticsData.stageAnalysis}
+              rubricAnalysis={analyticsData.rubricAnalysis}
+              questionTypeAnalysis={analyticsData.questionTypeAnalysis}
+            />
+          )}
+          {analyticsLoading && (
+            <div className="flex items-center justify-center py-8 border rounded-lg">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+            </div>
+          )}
         </div>
 
-        <div className="space-y-6">
-          <StudentProgressCard students={exam.students} examId={exam.id} />
+        {/* 오른쪽: 학생 목록 */}
+        <div className="space-y-4">
+          {/* 검색 및 필터링 */}
+          <div className="flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                placeholder="학생 이름, 이메일, 학번, 학교로 검색..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <Select
+              value={sortOption}
+              onValueChange={(v) => setSortOption(v as SortOption)}
+            >
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="정렬 기준" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="score">가채점 순</SelectItem>
+                <SelectItem value="questionCount">질문 갯수 순</SelectItem>
+                <SelectItem value="answerLength">답안 길이 순</SelectItem>
+                <SelectItem value="submittedAt">제출 빠른 순</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* 최종 채점 학생 목록 - 교수가 실제로 채점한 경우만 표시 */}
+          {gradedStudents.length > 0 && (
+            <div className="border rounded-lg flex flex-col max-h-[300px]">
+              <div className="p-4 border-b bg-muted/50 flex-shrink-0">
+                <h3 className="font-semibold">
+                  최종 채점 완료 ({gradedStudents.length}명)
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  교수가 최종 채점한 학생 (점수 순)
+                </p>
+              </div>
+              <div className="divide-y overflow-y-auto flex-1">
+                {gradedStudents.map((student) => (
+                  <StudentListItem
+                    key={student.id}
+                    student={student}
+                    examId={exam.id}
+                    onLiveMonitoring={handleLiveMonitoring}
+                    getStudentStatusColor={getStudentStatusColor}
+                    showFinalScore={true}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 가채점 학생 목록 */}
+          <div className="border rounded-lg flex flex-col h-[calc(100vh-400px)] min-h-[600px]">
+            <div className="p-4 border-b bg-muted/50 flex-shrink-0">
+              <h3 className="font-semibold">
+                학생 목록 ({nonGradedStudents.length}명)
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {sortOption === "score" && "가채점 점수 순"}
+                {sortOption === "questionCount" && "질문 갯수 순"}
+                {sortOption === "answerLength" && "답안 길이 순"}
+                {sortOption === "submittedAt" && "제출 빠른 순"}
+              </p>
+            </div>
+            <div className="divide-y overflow-y-auto flex-1">
+              {nonGradedStudents.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  <p>표시할 학생이 없습니다.</p>
+                </div>
+              ) : (
+                nonGradedStudents.map((student) => (
+                  <StudentListItem
+                    key={student.id}
+                    student={student}
+                    examId={exam.id}
+                    onLiveMonitoring={handleLiveMonitoring}
+                    getStudentStatusColor={getStudentStatusColor}
+                    showFinalScore={false}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {monitoringStudent && monitoringSessionId && (
+        <StudentLiveMonitoring
+          open={monitoringSessionId !== null}
+          onOpenChange={(open: boolean) => {
+            if (!open) handleCloseMonitoring();
+          }}
+          sessionId={monitoringSessionId}
+          studentName={monitoringStudent.name}
+          studentNumber={monitoringStudent.student_number}
+          school={monitoringStudent.school}
+        />
+      )}
+    </div>
+  );
+}
+
+// Student List Item Component
+function StudentListItem({
+  student,
+  examId,
+  onLiveMonitoring,
+  getStudentStatusColor,
+  showFinalScore,
+}: {
+  student: Student;
+  examId: string;
+  onLiveMonitoring: (student: Student) => void;
+  getStudentStatusColor: (status: string) => string;
+  showFinalScore: boolean;
+}) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4 hover:bg-muted/50 transition-colors">
+      <div className="flex items-start gap-4">
+        <Avatar className="h-10 w-10 border">
+          <AvatarFallback className="bg-primary/10 text-primary font-medium">
+            {student.name.slice(-2)}
+          </AvatarFallback>
+        </Avatar>
+        <div>
+          <div className="flex items-center gap-2">
+            <h4 className="font-medium leading-none">{student.name}</h4>
+            <Badge
+              variant="secondary"
+              className={`text-xs font-normal ${getStudentStatusColor(
+                student.status
+              )}`}
+            >
+              {student.status === "in-progress" && (
+                <span className="relative flex h-2 w-2 mr-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-600 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-600"></span>
+                </span>
+              )}
+              {student.status === "completed"
+                ? "완료"
+                : student.status === "in-progress"
+                ? "진행 중"
+                : "시작 안함"}
+            </Badge>
+          </div>
+          <div className="text-sm text-muted-foreground mt-1">
+            {student.email}
+          </div>
+          {(student.student_number || student.school) && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+              {student.student_number && <span>{student.student_number}</span>}
+              {student.student_number && student.school && (
+                <span className="text-muted-foreground/50">•</span>
+              )}
+              {student.school && <span>{student.school}</span>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4 self-end sm:self-auto">
+        <div className="text-right min-w-[120px]">
+          {showFinalScore && student.finalScore !== undefined ? (
+            <div className="flex flex-col items-end">
+              <span className="font-semibold text-lg text-primary">
+                {student.finalScore}점
+              </span>
+              <span className="text-xs text-muted-foreground">최종 점수</span>
+            </div>
+          ) : student.score !== undefined && student.score !== null ? (
+            <div className="flex flex-col items-end">
+              <span className="font-semibold text-lg">{student.score}점</span>
+              <span className="text-xs text-muted-foreground">가채점</span>
+              {student.status === "completed" && student.submittedAt && (
+                <span className="text-xs text-muted-foreground">
+                  {new Date(student.submittedAt).toLocaleDateString("ko-KR")}
+                </span>
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {student.status === "in-progress" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-green-600 border-green-600 hover:bg-green-50 h-8"
+              onClick={() => onLiveMonitoring(student)}
+            >
+              <Activity className="w-3.5 h-3.5 mr-1" />
+              모니터링
+            </Button>
+          )}
+          {student.status === "completed" && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-blue-600 border-blue-600 hover:bg-blue-50 h-8"
+              onClick={() =>
+                (window.location.href = `/instructor/${examId}/grade/${student.id}`)
+              }
+            >
+              <FileText className="w-3.5 h-3.5 mr-1" />
+              {showFinalScore ? "재채점" : "채점"}
+            </Button>
+          )}
         </div>
       </div>
     </div>

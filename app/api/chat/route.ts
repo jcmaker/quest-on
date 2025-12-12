@@ -9,12 +9,54 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// 메시지 타입 분류 함수 (개념/계산/전략/기타)
+async function classifyMessageType(
+  message: string
+): Promise<"concept" | "calculation" | "strategy" | "other"> {
+  try {
+    // 간단한 키워드 기반 분류 (빠른 응답을 위해)
+    const lowerMessage = message.toLowerCase();
+
+    // 계산 관련 키워드
+    if (
+      /\d+|\+|\-|\*|\/|계산|연산|공식|수식|값|결과/.test(lowerMessage) ||
+      /how much|calculate|compute|solve|equation/.test(lowerMessage)
+    ) {
+      return "calculation";
+    }
+
+    // 전략/방법 관련 키워드
+    if (
+      /방법|전략|접근|절차|과정|어떻게|how to|way|method|strategy|approach/.test(
+        lowerMessage
+      )
+    ) {
+      return "strategy";
+    }
+
+    // 개념 관련 키워드
+    if (
+      /무엇|뭐|의미|정의|개념|이유|왜|what|meaning|definition|concept|why/.test(
+        lowerMessage
+      )
+    ) {
+      return "concept";
+    }
+
+    // 기본값: 기타
+    return "other";
+  } catch (error) {
+    console.error("Error classifying message type:", error);
+    return "other";
+  }
+}
+
 // 공통 Completion 함수 - Responses API 사용 (previous_response_id 방식)
 async function getAIResponse(
   systemPrompt: string,
   userMessage: string,
   previousResponseId: string | null = null
-): Promise<{ response: string; responseId: string }> {
+): Promise<{ response: string; responseId: string; tokensUsed?: number }> {
   const aiStartTime = Date.now();
   try {
     if (process.env.NODE_ENV === "development") {
@@ -75,9 +117,12 @@ async function getAIResponse(
       };
     }
 
+    // Responses API는 토큰 사용량을 직접 반환하지 않으므로 null 반환
+    // 필요시 response_id로 나중에 조회 가능
     return {
       response: responseText,
       responseId: response.id,
+      tokensUsed: undefined, // Responses API는 usage 정보를 제공하지 않음
     };
   } catch (openaiError) {
     console.error("OpenAI Responses API error:", openaiError);
@@ -546,13 +591,19 @@ ${exam.rubric
 }
 `;
 
-    // 2. 병렬 처리: 사용자 메시지 DB 저장 & 이전 response_id 조회
+    // 2. 메시지 타입 분류 (비동기로 실행, 실패해도 계속 진행)
+    const messageTypePromise = classifyMessageType(message).catch(
+      () => "other"
+    );
+
+    // 3. 병렬 처리: 사용자 메시지 DB 저장 & 이전 response_id 조회
     const insertUserMsgPromise = supabase.from("messages").insert([
       {
         session_id: sessionId,
         q_idx: safeQIdx,
         role: "user",
         content: message,
+        message_type: await messageTypePromise, // 메시지 타입 저장
       },
     ]);
 
@@ -599,12 +650,12 @@ ${exam.rubric
       );
     }
 
-    // 3. OpenAI Responses API 호출
-    const { response: aiResponse, responseId } = await getAIResponse(
-      systemPrompt,
-      message,
-      previousResponseId
-    );
+    // 4. OpenAI Responses API 호출
+    const {
+      response: aiResponse,
+      responseId,
+      tokensUsed,
+    } = await getAIResponse(systemPrompt, message, previousResponseId);
 
     if (
       !aiResponse ||
@@ -617,7 +668,7 @@ ${exam.rubric
       );
     }
 
-    // 4. 병렬 처리: AI 응답 DB 저장 (response_id 포함) & 세션 업데이트
+    // 5. 병렬 처리: AI 응답 DB 저장 (response_id, 토큰 사용량 포함) & 세션 업데이트
     const insertAiMsgPromise = supabase.from("messages").insert([
       {
         session_id: sessionId,
@@ -625,6 +676,10 @@ ${exam.rubric
         role: "ai",
         content: aiResponse,
         response_id: responseId, // OpenAI Responses API의 response ID 저장
+        tokens_used: tokensUsed || null, // 토큰 사용량 (Responses API는 제공하지 않음)
+        metadata: tokensUsed
+          ? { prompt_tokens: 0, completion_tokens: 0, total_tokens: tokensUsed }
+          : {}, // 메타데이터에 토큰 정보 저장
       },
     ]);
 

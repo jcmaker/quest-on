@@ -193,21 +193,35 @@ export function StudentProgressCard({
                 </div>
 
                 <div className="flex items-center gap-4 self-end sm:self-auto">
-                  <div className="text-right min-w-[100px]">
-                    {student.status === "completed" &&
-                      student.score !== undefined && (
-                        <div className="flex flex-col items-end">
-                          <span className="font-medium">{student.score}%</span>
-                          <span className="text-xs text-muted-foreground">
-                            {student.submittedAt}
-                          </span>
-                        </div>
-                      )}
-                    {student.status === "in-progress" && student.createdAt && (
-                      <div className="text-xs text-muted-foreground">
-                        <ElapsedTime createdAt={student.createdAt} />
+                  <div className="text-right min-w-[120px]">
+                    {student.score !== undefined && student.score !== null && (
+                      <div className="flex flex-col items-end">
+                        <span className="font-semibold text-lg">
+                          {student.score}점
+                        </span>
+                        {student.status === "completed" &&
+                          student.submittedAt && (
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(student.submittedAt).toLocaleDateString(
+                                "ko-KR"
+                              )}
+                            </span>
+                          )}
+                        {student.status === "in-progress" &&
+                          student.createdAt && (
+                            <div className="text-xs text-muted-foreground">
+                              <ElapsedTime createdAt={student.createdAt} />
+                            </div>
+                          )}
                       </div>
                     )}
+                    {student.status === "in-progress" &&
+                      student.score === undefined &&
+                      student.createdAt && (
+                        <div className="text-xs text-muted-foreground">
+                          <ElapsedTime createdAt={student.createdAt} />
+                        </div>
+                      )}
                   </div>
 
                   <div className="flex items-center gap-2">

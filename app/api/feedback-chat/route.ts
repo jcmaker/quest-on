@@ -9,6 +9,43 @@ import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
 import { compressData } from "@/lib/compression";
 
+// 메시지 타입 분류 함수 (개념/계산/전략/기타)
+async function classifyMessageType(
+  message: string
+): Promise<"concept" | "calculation" | "strategy" | "other"> {
+  try {
+    const lowerMessage = message.toLowerCase();
+
+    if (
+      /\d+|\+|\-|\*|\/|계산|연산|공식|수식|값|결과/.test(lowerMessage) ||
+      /how much|calculate|compute|solve|equation/.test(lowerMessage)
+    ) {
+      return "calculation";
+    }
+
+    if (
+      /방법|전략|접근|절차|과정|어떻게|how to|way|method|strategy|approach/.test(
+        lowerMessage
+      )
+    ) {
+      return "strategy";
+    }
+
+    if (
+      /무엇|뭐|의미|정의|개념|이유|왜|what|meaning|definition|concept|why/.test(
+        lowerMessage
+      )
+    ) {
+      return "concept";
+    }
+
+    return "other";
+  } catch (error) {
+    console.error("Error classifying message type:", error);
+    return "other";
+  }
+}
+
 // Supabase 서버 전용 클라이언트
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -170,6 +207,7 @@ ${conversationContext}
     );
 
     const response = completion.choices[0]?.message?.content;
+    const tokensUsed = completion.usage?.total_tokens || null; // 토큰 사용량 추출
 
     if (!response) {
       return NextResponse.json(
@@ -181,6 +219,9 @@ ${conversationContext}
     // Store feedback chat interaction with compression
     if (studentId) {
       try {
+        // 메시지 타입 분류
+        const messageType = await classifyMessageType(message);
+
         // Get or create session for this student and exam
         const { data: session, error: sessionError } = await supabase
           .from("sessions")
@@ -221,13 +262,14 @@ ${conversationContext}
 
         const compressedData = compressData(chatInteraction);
 
-        // Store in messages table with compression
+        // Store in messages table with compression, message type, and tokens
         const { error: insertError } = await supabase.from("messages").insert([
           {
             session_id: sessionId,
             q_idx: questionId ? parseInt(questionId) : 0,
             role: "user",
             content: message,
+            message_type: messageType,
             compressed_content: compressedData.data,
             compression_metadata: compressedData.metadata,
             created_at: new Date().toISOString(),
@@ -237,6 +279,14 @@ ${conversationContext}
             q_idx: questionId ? parseInt(questionId) : 0,
             role: "ai",
             content: response,
+            tokens_used: tokensUsed,
+            metadata: tokensUsed
+              ? {
+                  prompt_tokens: completion.usage?.prompt_tokens || 0,
+                  completion_tokens: completion.usage?.completion_tokens || 0,
+                  total_tokens: tokensUsed,
+                }
+              : {},
             compressed_content: compressedData.data,
             compression_metadata: compressedData.metadata,
             created_at: new Date().toISOString(),

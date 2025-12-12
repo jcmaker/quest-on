@@ -76,6 +76,9 @@ model messages {
   compressed_content   String?
   compression_metadata Json?    @default("{}")
   response_id          String?  // OpenAI Responses API response ID for chaining conversations
+  message_type         String?  // 질문 타입: "concept" | "calculation" | "strategy" | "other"
+  tokens_used          Int?     // 토큰 사용량 (prompt + completion)
+  metadata             Json?    @default("{}") // 추가 메타데이터 (토큰 상세 정보 등)
   sessions             sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }
 
@@ -116,6 +119,9 @@ model submissions {
   ai_feedback              Json?
   student_reply            String?
   created_at               DateTime @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime? @default(now()) @db.Timestamptz(6) // 답안 수정 시간
+  answer_history           Json?    @default("[]") // 답안 수정 이력: [{ text: string, timestamp: string }]
+  edit_count               Int?     @default(0) // 답안 수정 횟수
   compressed_answer_data   String?
   compressed_feedback_data String?
   compression_metadata     Json?    @default("{}")

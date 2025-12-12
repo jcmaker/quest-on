@@ -191,24 +191,32 @@ export async function autoGradeSession(
             typeof q.prompt === "string"
               ? q.prompt
               : typeof q.text === "string"
-                ? q.text
-                : undefined,
+              ? q.text
+              : undefined,
           ai_context:
             typeof q.ai_context === "string"
               ? q.ai_context
               : typeof q.core_ability === "string"
-                ? q.core_ability
-                : undefined,
+              ? q.core_ability
+              : undefined,
         }))
       : []
     : [];
 
   // 7. 루브릭 텍스트 생성
-  const rubricText =
+  const rubricItems =
     exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
+      ? (exam.rubric as Array<{
+          evaluationArea: string;
+          detailedCriteria: string;
+        }>)
+      : [];
+
+  const rubricText =
+    rubricItems.length > 0
       ? `
 **평가 루브릭 기준:**
-${exam.rubric
+${rubricItems
   .map(
     (
       item: {
@@ -244,14 +252,33 @@ ${exam.rubric
     }
 
     const stageGrading: {
-      chat?: { score: number; comment: string };
-      answer?: { score: number; comment: string };
-      feedback?: { score: number; comment: string };
+      chat?: {
+        score: number;
+        comment: string;
+        rubric_scores?: Record<string, number>;
+      };
+      answer?: {
+        score: number;
+        comment: string;
+        rubric_scores?: Record<string, number>;
+      };
+      feedback?: {
+        score: number;
+        comment: string;
+        rubric_scores?: Record<string, number>;
+      };
     } = {};
 
     // 8-1. Chat stage 채점
     if (questionMessages.length > 0) {
       try {
+        const rubricScoresSchema = rubricItems
+          .map(
+            (item) =>
+              `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
+          )
+          .join(",\n");
+
         const chatSystemPrompt = `당신은 전문 평가위원입니다. 학생과 AI의 대화 과정을 루브릭 기준에 따라 평가하고 점수를 부여합니다.
 
 ${rubricText}
@@ -260,13 +287,17 @@ ${rubricText}
 1. 제공된 루브릭의 각 평가 영역과 기준을 정확히 검토하세요.
 2. 학생이 AI와의 대화에서 보여준 질문의 질, 문제 이해도, 개념 파악 수준을 평가하세요.
 3. AI의 답변을 통해 학생이 얼마나 효과적으로 학습하고 개선했는지 평가하세요.
-4. 점수는 0-100점 사이의 정수로 부여하세요.
-5. 구체적이고 건설적인 피드백을 제공하세요.
+4. 전체 점수는 0-100점 사이의 정수로 부여하세요.
+5. 각 루브릭 항목별로 0-5점 척도로 평가하세요 (0: 전혀 충족하지 않음, 5: 완벽하게 충족).
+6. 구체적이고 건설적인 피드백을 제공하세요.
 
 응답 형식 (JSON):
 {
   "score": 75,
-  "comment": "대화 과정에서 보여준 학습 태도와 이해도를 평가한 내용을 한국어로 작성하세요."
+  "comment": "대화 과정에서 보여준 학습 태도와 이해도를 평가한 내용을 한국어로 작성하세요.",
+  "rubric_scores": {
+${rubricScoresSchema}
+  }
 }`;
 
         const chatUserPrompt = `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
@@ -296,12 +327,28 @@ ${questionMessages
           chatCompletion.choices[0]?.message?.content || "";
         const chatParsedResponse = JSON.parse(chatResponseContent);
 
+        // 루브릭 항목별 점수 추출
+        const rubricScores: Record<string, number> = {};
+        if (chatParsedResponse.rubric_scores && rubricItems.length > 0) {
+          rubricItems.forEach((item) => {
+            const score = chatParsedResponse.rubric_scores[item.evaluationArea];
+            if (typeof score === "number") {
+              rubricScores[item.evaluationArea] = Math.max(
+                0,
+                Math.min(5, Math.round(score))
+              );
+            }
+          });
+        }
+
         stageGrading.chat = {
           score: Math.max(
             0,
             Math.min(100, Math.round(chatParsedResponse.score || 0))
           ),
           comment: chatParsedResponse.comment || "채팅 단계 평가 완료",
+          rubric_scores:
+            Object.keys(rubricScores).length > 0 ? rubricScores : undefined,
         };
 
         console.log(
@@ -318,6 +365,13 @@ ${questionMessages
     // 8-2. Answer stage 채점
     if (submission.answer) {
       try {
+        const answerRubricScoresSchema = rubricItems
+          .map(
+            (item) =>
+              `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
+          )
+          .join(",\n");
+
         const answerSystemPrompt = `당신은 전문 평가위원입니다. 학생의 최종 답안을 루브릭 기준에 따라 평가하고 점수를 부여합니다.
 
 ${rubricText}
@@ -326,13 +380,17 @@ ${rubricText}
 1. 제공된 루브릭의 각 평가 영역과 기준을 정확히 검토하세요.
 2. 학생의 답안이 루브릭의 각 평가 영역을 얼마나 충족하는지 평가하세요.
 3. 답안의 완성도, 논리성, 정확성을 종합적으로 평가하세요.
-4. 점수는 0-100점 사이의 정수로 부여하세요.
-5. 구체적이고 건설적인 피드백을 제공하세요.
+4. 전체 점수는 0-100점 사이의 정수로 부여하세요.
+5. 각 루브릭 항목별로 0-5점 척도로 평가하세요 (0: 전혀 충족하지 않음, 5: 완벽하게 충족).
+6. 구체적이고 건설적인 피드백을 제공하세요.
 
 응답 형식 (JSON):
 {
   "score": 75,
-  "comment": "답안의 강점과 개선점을 루브릭 기준에 따라 평가한 내용을 한국어로 작성하세요."
+  "comment": "답안의 강점과 개선점을 루브릭 기준에 따라 평가한 내용을 한국어로 작성하세요.",
+  "rubric_scores": {
+${answerRubricScoresSchema}
+  }
 }`;
 
         const answerUserPrompt = `다음 정보를 바탕으로 최종 답안을 평가해주세요:
@@ -360,12 +418,31 @@ ${submission.answer || "답안이 없습니다."}
           answerCompletion.choices[0]?.message?.content || "";
         const answerParsedResponse = JSON.parse(answerResponseContent);
 
+        // 루브릭 항목별 점수 추출
+        const answerRubricScores: Record<string, number> = {};
+        if (answerParsedResponse.rubric_scores && rubricItems.length > 0) {
+          rubricItems.forEach((item) => {
+            const score =
+              answerParsedResponse.rubric_scores[item.evaluationArea];
+            if (typeof score === "number") {
+              answerRubricScores[item.evaluationArea] = Math.max(
+                0,
+                Math.min(5, Math.round(score))
+              );
+            }
+          });
+        }
+
         stageGrading.answer = {
           score: Math.max(
             0,
             Math.min(100, Math.round(answerParsedResponse.score || 0))
           ),
           comment: answerParsedResponse.comment || "답안 평가 완료",
+          rubric_scores:
+            Object.keys(answerRubricScores).length > 0
+              ? answerRubricScores
+              : undefined,
         };
 
         console.log(
@@ -382,6 +459,13 @@ ${submission.answer || "답안이 없습니다."}
     // 8-3. Feedback stage 채점
     if (submission.ai_feedback && submission.student_reply) {
       try {
+        const feedbackRubricScoresSchema = rubricItems
+          .map(
+            (item) =>
+              `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
+          )
+          .join(",\n");
+
         const feedbackSystemPrompt = `당신은 전문 평가위원입니다. AI 피드백에 대한 학생의 반박 답변을 루브릭 기준에 따라 평가하고 점수를 부여합니다.
 
 ${rubricText}
@@ -391,13 +475,17 @@ ${rubricText}
 2. 학생이 AI 피드백을 제대로 이해하고 반박했는지 평가하세요.
 3. 학생의 반박 내용이 논리적이고 타당한지 평가하세요.
 4. 피드백을 통해 학생이 얼마나 성장했는지 평가하세요.
-5. 점수는 0-100점 사이의 정수로 부여하세요.
-6. 구체적이고 건설적인 피드백을 제공하세요.
+5. 전체 점수는 0-100점 사이의 정수로 부여하세요.
+6. 각 루브릭 항목별로 0-5점 척도로 평가하세요 (0: 전혀 충족하지 않음, 5: 완벽하게 충족).
+7. 구체적이고 건설적인 피드백을 제공하세요.
 
 응답 형식 (JSON):
 {
   "score": 75,
-  "comment": "피드백에 대한 학생의 반박 답변을 루브릭 기준에 따라 평가한 내용을 한국어로 작성하세요."
+  "comment": "피드백에 대한 학생의 반박 답변을 루브릭 기준에 따라 평가한 내용을 한국어로 작성하세요.",
+  "rubric_scores": {
+${feedbackRubricScoresSchema}
+  }
 }`;
 
         const feedbackUserPrompt = `다음 정보를 바탕으로 피드백 대응 단계를 평가해주세요:
@@ -431,12 +519,31 @@ ${submission.student_reply}
           feedbackCompletion.choices[0]?.message?.content || "";
         const feedbackParsedResponse = JSON.parse(feedbackResponseContent);
 
+        // 루브릭 항목별 점수 추출
+        const feedbackRubricScores: Record<string, number> = {};
+        if (feedbackParsedResponse.rubric_scores && rubricItems.length > 0) {
+          rubricItems.forEach((item) => {
+            const score =
+              feedbackParsedResponse.rubric_scores[item.evaluationArea];
+            if (typeof score === "number") {
+              feedbackRubricScores[item.evaluationArea] = Math.max(
+                0,
+                Math.min(5, Math.round(score))
+              );
+            }
+          });
+        }
+
         stageGrading.feedback = {
           score: Math.max(
             0,
             Math.min(100, Math.round(feedbackParsedResponse.score || 0))
           ),
           comment: feedbackParsedResponse.comment || "피드백 대응 평가 완료",
+          rubric_scores:
+            Object.keys(feedbackRubricScores).length > 0
+              ? feedbackRubricScores
+              : undefined,
         };
 
         console.log(

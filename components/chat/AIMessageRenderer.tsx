@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React from "react";
 import ReactMarkdown, { Components } from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -17,244 +17,204 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
   content,
   timestamp,
 }) => {
-  // HTML 콘텐츠에 수학 식이 있을 경우 KaTeX 렌더링
-  useEffect(() => {
-    if (
-      content.includes("<") &&
-      content.includes(">") &&
-      /<\/?[a-z][\s\S]*>/i.test(content)
-    ) {
-      // HTML 콘텐츠인 경우 KaTeX 렌더링
-      if (typeof window !== "undefined" && window.katex) {
-        // 수학 식이 포함된 요소들을 찾아서 KaTeX로 렌더링
-        const mathElements = document.querySelectorAll(".katex-math");
-        mathElements.forEach((element) => {
-          try {
-            window.katex.render(
-              element.textContent || "",
-              element as HTMLElement,
+  return (
+    <div className="bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30">
+      <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mb-0 prose-p:mb-0 prose-p:last:mb-0 prose-ul:mb-0 prose-ol:mb-0 prose-li:mb-0 break-words [&_*]:break-words [&_*]:leading-[1.3]">
+        {/* 항상 마크다운으로 렌더링 */}
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm, remarkMath]}
+          rehypePlugins={[
+            [
+              rehypeKatex,
               {
                 throwOnError: false,
                 errorColor: "#cc0000",
-              }
-            );
-          } catch (error) {
-            console.warn("KaTeX rendering failed:", error);
-          }
-        });
-      }
-    }
-  }, [content]);
-
-  return (
-    <div className="bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30">
-      <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mb-0 prose-p:mb-0 prose-p:last:mb-0 prose-ul:mb-0 prose-ol:mb-0 prose-li:mb-0 whitespace-pre-wrap break-words [&_*]:break-words [&_*]:leading-[1.3]">
-        {/* HTML 콘텐츠인지 확인하여 조건부 렌더링 */}
-        {content.includes("<") &&
-        content.includes(">") &&
-        /<\/?[a-z][\s\S]*>/i.test(content) ? (
-          // HTML 콘텐츠인 경우
-          <div
-            className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap break-words [&_*]:text-inherit [&_*]:break-words [&_*]:leading-[1.3] [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-0 [&_h1]:mt-0 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mb-0 [&_h2]:mt-1 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mb-0 [&_h3]:mt-0.5 [&_p]:mb-0 [&_p]:leading-[1.3] [&_p]:last:mb-0 [&_p+*]:mt-0 [&_ul]:list-disc [&_ul]:list-inside [&_ul]:ml-2 [&_ul]:mb-0 [&_ul]:space-y-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:list-decimal [&_ol]:list-inside [&_ol]:ml-2 [&_ol]:mb-0 [&_ol]:space-y-0 [&_ol]:mt-0 [&_ol]:last:mb-0 [&_li]:leading-[1.3] [&_li]:mb-0 [&_li]:mt-0 [&_li+li]:mt-0 [&_li]:last:mb-0 [&_li>*]:last:mb-0 [&_li_p]:mb-0 [&_li_p]:mt-0 [&_li_p]:first:mt-0 [&_li_p]:last:mb-0 [&_li_ul]:mb-0 [&_li_ul]:mt-0 [&_li_ul]:first:mt-0 [&_li_ul]:last:mb-0 [&_li_ol]:mb-0 [&_li_ol]:mt-0 [&_li_ol]:first:mt-0 [&_li_ol]:last:mb-0 [&_strong]:font-bold [&_strong]:text-primary/90 [&_em]:italic [&_em]:text-muted-foreground [&_blockquote]:border-l-4 [&_blockquote]:border-primary/30 [&_blockquote]:pl-2 [&_blockquote]:py-0 [&_blockquote]:bg-muted/30 [&_blockquote]:rounded-r-lg [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:my-0 [&_code]:bg-muted [&_code]:text-primary [&_code]:px-1 [&_code]:py-0 [&_code]:rounded-md [&_code]:text-sm [&_code]:font-mono"
-            dangerouslySetInnerHTML={{ __html: content }}
-          />
-        ) : (
-          // 마크다운 콘텐츠인 경우
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[
-              [
-                rehypeKatex,
-                {
-                  throwOnError: false,
-                  errorColor: "#cc0000",
-                  displayMode: false, // 기본적으로 인라인 모드
-                  fleqn: false, // 왼쪽 정렬 사용 안 함
-                  output: "html", // MathML 대신 HTML만 출력하도록 설정
-                  macros: {
-                    "\\RR": "\\mathbb{R}",
-                    "\\NN": "\\mathbb{N}",
-                    "\\ZZ": "\\mathbb{Z}",
-                    "\\QQ": "\\mathbb{Q}",
-                    "\\CC": "\\mathbb{C}",
-                  },
+                displayMode: false, // 기본적으로 인라인 모드
+                fleqn: false, // 왼쪽 정렬 사용 안 함
+                output: "html", // MathML 대신 HTML만 출력하도록 설정
+                macros: {
+                  "\\RR": "\\mathbb{R}",
+                  "\\NN": "\\mathbb{N}",
+                  "\\ZZ": "\\mathbb{Z}",
+                  "\\QQ": "\\mathbb{Q}",
+                  "\\CC": "\\mathbb{C}",
                 },
-              ],
-            ]}
-            components={
-              {
-                // 헤더 스타일링
-                h1: ({ children }: React.ComponentProps<"h1">) => (
-                  <h1 className="text-xl font-bold text-foreground mb-0 mt-1 first:mt-0 border-b pb-0.5 [&+*]:mt-0">
-                    {children}
-                  </h1>
-                ),
-                h2: ({ children }: React.ComponentProps<"h2">) => (
-                  <h2 className="text-lg font-bold text-foreground mb-0 mt-1 [&+*]:mt-0">
-                    {children}
-                  </h2>
-                ),
-                h3: ({ children }: React.ComponentProps<"h3">) => (
-                  <h3 className="text-base font-semibold text-foreground mb-0 mt-0.5 [&+*]:mt-0">
-                    {children}
-                  </h3>
-                ),
+              },
+            ],
+          ]}
+          components={
+            {
+              // 헤더 스타일링
+              h1: ({ children }: React.ComponentProps<"h1">) => (
+                <h1 className="text-xl font-bold text-foreground mb-0 mt-1 first:mt-0 border-b pb-0.5 [&+*]:mt-0">
+                  {children}
+                </h1>
+              ),
+              h2: ({ children }: React.ComponentProps<"h2">) => (
+                <h2 className="text-lg font-bold text-foreground mb-0 mt-1 [&+*]:mt-0">
+                  {children}
+                </h2>
+              ),
+              h3: ({ children }: React.ComponentProps<"h3">) => (
+                <h3 className="text-base font-semibold text-foreground mb-0 mt-0.5 [&+*]:mt-0">
+                  {children}
+                </h3>
+              ),
 
-                // 문단 스타일링
-                p: ({ children }: React.ComponentProps<"p">) => (
-                  <p className="text-sm leading-[1.3] mb-0 mt-0 last:mb-0 text-foreground/90 [&+*]:mt-0">
-                    {children}
-                  </p>
-                ),
+              // 문단 스타일링
+              p: ({ children }: React.ComponentProps<"p">) => (
+                <p className="text-sm leading-[1.3] mb-0 mt-0 last:mb-0 text-foreground/90 [&+*]:mt-0">
+                  {children}
+                </p>
+              ),
 
-                // 코드 블록 스타일링
-                code: ({
-                  node,
-                  className,
-                  children,
-                  ...props
-                }: React.ComponentProps<"code"> & { node?: Element }) => {
-                  const match = /language-(\w+)/.exec(className || "");
-                  const isInline = !match || (node && node.tagName !== "PRE");
-                  return !isInline && match ? (
-                    <div className="my-0 mt-0 mb-0 rounded-lg overflow-hidden shadow-sm border border-border/50 [&+*]:mt-0">
-                      <div className="bg-muted/50 px-4 py-1 text-xs font-mono text-muted-foreground border-b border-border/50 flex justify-between">
-                        <span>{match[1]}</span>
-                      </div>
-                      <SyntaxHighlighter
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        style={vscDarkPlus as any}
-                        language={match[1]}
-                        PreTag="div"
-                        className="!m-0 !rounded-none !bg-[#1e1e1e]"
-                        showLineNumbers={true}
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        {...(props as any)}
-                      >
-                        {String(children).replace(/\n$/, "")}
-                      </SyntaxHighlighter>
+              // 코드 블록 스타일링
+              code: ({
+                node,
+                className,
+                children,
+                ...props
+              }: React.ComponentProps<"code"> & { node?: Element }) => {
+                const match = /language-(\w+)/.exec(className || "");
+                const isInline = !match || (node && node.tagName !== "PRE");
+                return !isInline && match ? (
+                  <div className="my-0 mt-0 mb-0 rounded-lg overflow-hidden shadow-sm border border-border/50 [&+*]:mt-0">
+                    <div className="bg-muted/50 px-4 py-1 text-xs font-mono text-muted-foreground border-b border-border/50 flex justify-between">
+                      <span>{match[1]}</span>
                     </div>
-                  ) : (
-                    <code
-                      className="bg-muted text-primary px-1 py-0 rounded-md text-xs font-mono border border-border/50"
-                      {...props}
+                    <SyntaxHighlighter
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      style={vscDarkPlus as any}
+                      language={match[1]}
+                      PreTag="div"
+                      className="!m-0 !rounded-none !bg-[#1e1e1e]"
+                      showLineNumbers={true}
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      {...(props as any)}
                     >
-                      {children}
-                    </code>
-                  );
-                },
-
-                // 테이블 스타일링
-                table: ({ children }: React.ComponentProps<"table">) => (
-                  <div className="overflow-x-auto my-0 mt-0 mb-0 border border-border/50 rounded-lg shadow-sm bg-white dark:bg-gray-800 [&+*]:mt-0">
-                    <table className="min-w-full divide-y divide-border">
-                      {children}
-                    </table>
+                      {String(children).replace(/\n$/, "")}
+                    </SyntaxHighlighter>
                   </div>
-                ),
-                thead: ({ children }: React.ComponentProps<"thead">) => (
-                  <thead className="bg-primary/10 dark:bg-primary/20 border-b-2 border-primary/20">
-                    {children}
-                  </thead>
-                ),
-                tbody: ({ children }: React.ComponentProps<"tbody">) => (
-                  <tbody className="divide-y divide-border/50 bg-background">
-                    {children}
-                  </tbody>
-                ),
-                tr: ({ children }: React.ComponentProps<"tr">) => (
-                  <tr className="transition-colors hover:bg-muted/40 border-b border-border/30 last:border-b-0">
-                    {children}
-                  </tr>
-                ),
-                th: ({ children }: React.ComponentProps<"th">) => (
-                  <th className="px-4 py-3 text-left text-sm font-bold text-foreground">
-                    {children}
-                  </th>
-                ),
-                td: ({ children }: React.ComponentProps<"td">) => (
-                  <td className="px-4 py-3 text-sm text-foreground/90 whitespace-normal break-words">
-                    {children}
-                  </td>
-                ),
-
-                // 리스트 스타일링
-                ul: ({ children }: React.ComponentProps<"ul">) => (
-                  <ul className="list-disc list-outside ml-5 mb-0 mt-0 space-y-0 marker:text-muted-foreground [&>li]:mb-0 [&>li]:mt-0 [&>li]:first:mt-0 [&>li+li]:mt-0 [&>li]:last:mb-0 [&+*]:mt-0 [&_p]:mb-0 [&_p]:mt-0 [&_p]:leading-[1.3] [&_p]:first:mt-0 [&_p]:last:mb-0 [&_ul]:mb-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:mb-0 [&_ol]:mt-0 [&_ol]:last:mb-0">
-                    {children}
-                  </ul>
-                ),
-                ol: ({ children }: React.ComponentProps<"ol">) => (
-                  <ol className="list-decimal list-outside ml-5 mb-0 mt-0 space-y-0 marker:text-muted-foreground marker:font-medium [&>li]:mb-0 [&>li]:mt-0 [&>li]:first:mt-0 [&>li+li]:mt-0 [&>li]:last:mb-0 [&+*]:mt-0 [&_p]:mb-0 [&_p]:mt-0 [&_p]:leading-[1.3] [&_p]:first:mt-0 [&_p]:last:mb-0 [&_ul]:mb-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:mb-0 [&_ol]:mt-0 [&_ol]:last:mb-0">
-                    {children}
-                  </ol>
-                ),
-                li: ({ children }: React.ComponentProps<"li">) => (
-                  <li className="text-sm leading-[1.3] pl-1 mb-0 mt-0 first:mt-0 [&+li]:mt-0 [&>*]:last:mb-0 [&>p]:mb-0 [&>p]:mt-0 [&>p]:first:mt-0 [&>p]:last:mb-0 [&>p]:leading-[1.3] [&>ul]:mb-0 [&>ul]:mt-0 [&>ul]:first:mt-0 [&>ul]:last:mb-0 [&>ol]:mb-0 [&>ol]:mt-0 [&>ol]:first:mt-0 [&>ol]:last:mb-0 [&_p]:mb-0 [&_p]:mt-0 [&_p]:first:mt-0 [&_p]:last:mb-0 [&_p]:leading-[1.3] [&_ul]:mb-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:mb-0 [&_ol]:mt-0 [&_ol]:last:mb-0">
-                    {children}
-                  </li>
-                ),
-
-                // 강조 스타일링
-                strong: ({ children }: React.ComponentProps<"strong">) => (
-                  <strong className="font-bold text-primary/90">
-                    {children}
-                  </strong>
-                ),
-                em: ({ children }: React.ComponentProps<"em">) => (
-                  <em className="italic text-muted-foreground">{children}</em>
-                ),
-
-                // 링크 스타일링
-                a: ({ children, href }: React.ComponentProps<"a">) => (
-                  <a
-                    href={href}
-                    className="text-blue-500 hover:text-blue-600 hover:underline transition-colors font-medium"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                ) : (
+                  <code
+                    className="bg-muted text-primary px-1 py-0 rounded-md text-xs font-mono border border-border/50"
+                    {...props}
                   >
                     {children}
-                  </a>
-                ),
+                  </code>
+                );
+              },
 
-                // 인용구 스타일링
-                blockquote: ({
-                  children,
-                }: React.ComponentProps<"blockquote">) => (
-                  <blockquote className="border-l-4 border-primary/30 pl-2 py-0 bg-muted/30 rounded-r-lg italic text-muted-foreground my-0 mt-0 mb-0 [&+*]:mt-0 shadow-sm">
+              // 테이블 스타일링
+              table: ({ children }: React.ComponentProps<"table">) => (
+                <div className="overflow-x-auto my-0 mt-0 mb-0 border border-border/50 rounded-lg shadow-sm bg-white dark:bg-gray-800 [&+*]:mt-0">
+                  <table className="min-w-full divide-y divide-border">
                     {children}
-                  </blockquote>
-                ),
+                  </table>
+                </div>
+              ),
+              thead: ({ children }: React.ComponentProps<"thead">) => (
+                <thead className="bg-primary/10 dark:bg-primary/20 border-b-2 border-primary/20">
+                  {children}
+                </thead>
+              ),
+              tbody: ({ children }: React.ComponentProps<"tbody">) => (
+                <tbody className="divide-y divide-border/50 bg-background">
+                  {children}
+                </tbody>
+              ),
+              tr: ({ children }: React.ComponentProps<"tr">) => (
+                <tr className="transition-colors hover:bg-muted/40 border-b border-border/30 last:border-b-0">
+                  {children}
+                </tr>
+              ),
+              th: ({ children }: React.ComponentProps<"th">) => (
+                <th className="px-4 py-3 text-left text-sm font-bold text-foreground">
+                  {children}
+                </th>
+              ),
+              td: ({ children }: React.ComponentProps<"td">) => (
+                <td className="px-4 py-3 text-sm text-foreground/90 whitespace-normal break-words">
+                  {children}
+                </td>
+              ),
 
-                // 수학 식 렌더링 (remark-math 플러그인용)
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                math: ({ children }: any) => (
-                  <div className="my-0 mt-0 mb-0 overflow-x-auto p-0.5 bg-muted/20 rounded-lg text-center [&+*]:mt-0">
-                    {children}
-                  </div>
-                ),
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                inlineMath: ({ children }: any) => (
-                  <span className="inline-block mx-1 px-1 bg-muted/20 rounded">
-                    {children}
-                  </span>
-                ),
+              // 리스트 스타일링
+              ul: ({ children }: React.ComponentProps<"ul">) => (
+                <ul className="list-disc list-outside ml-5 mb-0 mt-0 space-y-0 marker:text-muted-foreground [&>li]:mb-0 [&>li]:mt-0 [&>li]:first:mt-0 [&>li+li]:mt-0 [&>li]:last:mb-0 [&+*]:mt-0 [&_p]:mb-0 [&_p]:mt-0 [&_p]:leading-[1.3] [&_p]:first:mt-0 [&_p]:last:mb-0 [&_ul]:mb-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:mb-0 [&_ol]:mt-0 [&_ol]:last:mb-0">
+                  {children}
+                </ul>
+              ),
+              ol: ({ children }: React.ComponentProps<"ol">) => (
+                <ol className="list-decimal list-outside ml-5 mb-0 mt-0 space-y-0 marker:text-muted-foreground marker:font-medium [&>li]:mb-0 [&>li]:mt-0 [&>li]:first:mt-0 [&>li+li]:mt-0 [&>li]:last:mb-0 [&+*]:mt-0 [&_p]:mb-0 [&_p]:mt-0 [&_p]:leading-[1.3] [&_p]:first:mt-0 [&_p]:last:mb-0 [&_ul]:mb-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:mb-0 [&_ol]:mt-0 [&_ol]:last:mb-0">
+                  {children}
+                </ol>
+              ),
+              li: ({ children }: React.ComponentProps<"li">) => (
+                <li className="text-sm leading-[1.3] pl-1 mb-0 mt-0 first:mt-0 [&+li]:mt-0 [&>*]:last:mb-0 [&>p]:mb-0 [&>p]:mt-0 [&>p]:first:mt-0 [&>p]:last:mb-0 [&>p]:leading-[1.3] [&>ul]:mb-0 [&>ul]:mt-0 [&>ul]:first:mt-0 [&>ul]:last:mb-0 [&>ol]:mb-0 [&>ol]:mt-0 [&>ol]:first:mt-0 [&>ol]:last:mb-0 [&_p]:mb-0 [&_p]:mt-0 [&_p]:first:mt-0 [&_p]:last:mb-0 [&_p]:leading-[1.3] [&_ul]:mb-0 [&_ul]:mt-0 [&_ul]:last:mb-0 [&_ol]:mb-0 [&_ol]:mt-0 [&_ol]:last:mb-0">
+                  {children}
+                </li>
+              ),
 
-                // 수평선
-                hr: (): React.ReactElement => (
-                  <hr className="border-border my-0 mt-0 mb-0 [&+*]:mt-0" />
-                ),
+              // 강조 스타일링
+              strong: ({ children }: React.ComponentProps<"strong">) => (
+                <strong className="font-bold text-primary/90">
+                  {children}
+                </strong>
+              ),
+              em: ({ children }: React.ComponentProps<"em">) => (
+                <em className="italic text-muted-foreground">{children}</em>
+              ),
 
-                // 취소선 스타일링 (물결표 오작동 방지)
-                del: ({ children }: React.ComponentProps<"del">) => (
-                  <span className="no-underline decoration-0">{children}</span>
-                ),
-              } as Components
-            }
-          >
-            {content}
-          </ReactMarkdown>
-        )}
+              // 링크 스타일링
+              a: ({ children, href }: React.ComponentProps<"a">) => (
+                <a
+                  href={href}
+                  className="text-blue-500 hover:text-blue-600 hover:underline transition-colors font-medium"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {children}
+                </a>
+              ),
+
+              // 인용구 스타일링
+              blockquote: ({
+                children,
+              }: React.ComponentProps<"blockquote">) => (
+                <blockquote className="border-l-4 border-primary/30 pl-2 py-0 bg-muted/30 rounded-r-lg italic text-muted-foreground my-0 mt-0 mb-0 [&+*]:mt-0 shadow-sm">
+                  {children}
+                </blockquote>
+              ),
+
+              // 수학 식 렌더링 (remark-math 플러그인용)
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              math: ({ children }: any) => (
+                <div className="my-0 mt-0 mb-0 overflow-x-auto p-0.5 bg-muted/20 rounded-lg text-center [&+*]:mt-0">
+                  {children}
+                </div>
+              ),
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              inlineMath: ({ children }: any) => (
+                <span className="inline-block mx-1 px-1 bg-muted/20 rounded">
+                  {children}
+                </span>
+              ),
+
+              // 수평선
+              hr: (): React.ReactElement => (
+                <hr className="border-border my-0 mt-0 mb-0 [&+*]:mt-0" />
+              ),
+
+              // 취소선 스타일링 (물결표 오작동 방지)
+              del: ({ children }: React.ComponentProps<"del">) => (
+                <span className="no-underline decoration-0">{children}</span>
+              ),
+            } as Components
+          }
+        >
+          {content}
+        </ReactMarkdown>
       </div>
 
       <div className="mt-4 pt-3 border-t border-border/30 flex justify-between items-center">

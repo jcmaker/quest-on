@@ -864,13 +864,43 @@ async function saveDraft(data: {
       throw checkError;
     }
 
+    const now = new Date().toISOString();
+
     if (existingSubmission) {
+      // 답안이 변경된 경우에만 히스토리 업데이트
+      const answerChanged = existingSubmission.answer !== data.answer;
+
+      // 기존 히스토리 가져오기
+      let answerHistory: Array<{ text: string; timestamp: string }> = [];
+      if (existingSubmission.answer_history) {
+        try {
+          answerHistory = Array.isArray(existingSubmission.answer_history)
+            ? existingSubmission.answer_history
+            : [];
+        } catch (e) {
+          answerHistory = [];
+        }
+      }
+
+      // 답안이 변경된 경우 히스토리에 추가
+      if (answerChanged && existingSubmission.answer) {
+        answerHistory.push({
+          text: existingSubmission.answer,
+          timestamp:
+            existingSubmission.updated_at || existingSubmission.created_at,
+        });
+      }
+
       // Update existing submission
       const { data: updatedSubmission, error: updateError } = await supabase
         .from("submissions")
         .update({
           answer: data.answer,
-          created_at: new Date().toISOString(),
+          updated_at: now,
+          answer_history: answerHistory.length > 0 ? answerHistory : null,
+          edit_count: answerChanged
+            ? (existingSubmission.edit_count || 0) + 1
+            : existingSubmission.edit_count || 0,
         })
         .eq("id", existingSubmission.id)
         .select()
@@ -887,7 +917,10 @@ async function saveDraft(data: {
             session_id: data.sessionId,
             q_idx: data.questionId,
             answer: data.answer,
-            created_at: new Date().toISOString(),
+            created_at: now,
+            updated_at: now,
+            edit_count: 0,
+            answer_history: [],
           },
         ])
         .select()
