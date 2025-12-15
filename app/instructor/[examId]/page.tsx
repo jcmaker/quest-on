@@ -33,6 +33,8 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import { Radio } from "@/components/animate-ui/icons/radio";
+import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import { StudentLiveMonitoring } from "../../../components/instructor/StudentLiveMonitoring";
 
 interface Exam {
@@ -710,19 +712,21 @@ function StudentListItem({
   showFinalScore: boolean;
 }) {
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4 hover:bg-muted/50 transition-colors">
-      <div className="flex items-start gap-4">
-        <Avatar className="h-10 w-10 border">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4 hover:bg-muted/50 transition-colors overflow-hidden">
+      <div className="flex items-start gap-4 min-w-0 flex-1">
+        <Avatar className="h-10 w-10 border flex-shrink-0">
           <AvatarFallback className="bg-primary/10 text-primary font-medium">
             {student.name.slice(-2)}
           </AvatarFallback>
         </Avatar>
-        <div>
+        <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h4 className="font-medium leading-none">{student.name}</h4>
+            <h4 className="font-medium leading-none truncate">
+              {student.name}
+            </h4>
             <Badge
               variant="secondary"
-              className={`text-xs font-normal ${getStudentStatusColor(
+              className={`text-xs font-normal flex-shrink-0 ${getStudentStatusColor(
                 student.status
               )}`}
             >
@@ -739,7 +743,7 @@ function StudentListItem({
                 : "시작 안함"}
             </Badge>
           </div>
-          <div className="text-sm text-muted-foreground mt-1">
+          <div className="text-sm text-muted-foreground mt-1 truncate">
             {student.email}
           </div>
           {(student.student_number || student.school) && (
@@ -754,8 +758,8 @@ function StudentListItem({
         </div>
       </div>
 
-      <div className="flex items-center gap-4 self-end sm:self-auto">
-        <div className="text-right min-w-[120px]">
+      <div className="flex items-center gap-2 sm:gap-4 self-end sm:self-auto flex-shrink-0">
+        <div className="text-right min-w-[100px] sm:min-w-[120px]">
           {showFinalScore && student.finalScore !== undefined ? (
             <div className="flex flex-col items-end">
               <span className="font-semibold text-lg text-primary">
@@ -776,29 +780,33 @@ function StudentListItem({
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           {student.status === "in-progress" && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-green-600 border-green-600 hover:bg-green-50 h-8"
-              onClick={() => onLiveMonitoring(student)}
-            >
-              <Activity className="w-3.5 h-3.5 mr-1" />
-              모니터링
-            </Button>
+            <AnimateIcon animateOnHover={true} loop={true} asChild>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-green-600 border-green-600 hover:bg-green-50 h-8 px-2 sm:px-3 text-xs sm:text-sm whitespace-nowrap"
+                onClick={() => onLiveMonitoring(student)}
+              >
+                <Radio size={14} className="sm:mr-1" />
+                <span className="hidden sm:inline">보기</span>
+              </Button>
+            </AnimateIcon>
           )}
           {student.status === "completed" && (
             <Button
               size="sm"
               variant="outline"
-              className="text-blue-600 border-blue-600 hover:bg-blue-50 h-8"
+              className="text-blue-600 border-blue-600 hover:bg-blue-50 h-8 px-2 sm:px-3 text-xs sm:text-sm whitespace-nowrap"
               onClick={() =>
                 (window.location.href = `/instructor/${examId}/grade/${student.id}`)
               }
             >
-              <FileText className="w-3.5 h-3.5 mr-1" />
-              {showFinalScore ? "재채점" : "채점"}
+              <FileText className="w-3.5 h-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">
+                {showFinalScore ? "재채점" : "채점"}
+              </span>
             </Button>
           )}
         </div>
