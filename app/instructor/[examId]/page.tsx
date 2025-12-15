@@ -34,6 +34,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { Radio } from "@/components/animate-ui/icons/radio";
+import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import { StudentLiveMonitoring } from "../../../components/instructor/StudentLiveMonitoring";
 
@@ -795,19 +796,26 @@ function StudentListItem({
             </AnimateIcon>
           )}
           {student.status === "completed" && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="text-blue-600 border-blue-600 hover:bg-blue-50 h-8 px-2 sm:px-3 text-xs sm:text-sm whitespace-nowrap"
-              onClick={() =>
-                (window.location.href = `/instructor/${examId}/grade/${student.id}`)
-              }
+            <AnimateIcon
+              animateOnHover={true}
+              loop={true}
+              loopDelay={700}
+              asChild
             >
-              <FileText className="w-3.5 h-3.5 sm:mr-1" />
-              <span className="hidden sm:inline">
-                {showFinalScore ? "재채점" : "채점"}
-              </span>
-            </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-blue-600 border-blue-600 hover:bg-blue-50 h-8 px-2 sm:px-3 text-xs sm:text-sm whitespace-nowrap"
+                onClick={() =>
+                  (window.location.href = `/instructor/${examId}/grade/${student.id}`)
+                }
+              >
+                <ClipboardCheck size={14} className="sm:mr-1" />
+                <span className="hidden sm:inline">
+                  {showFinalScore ? "재채점" : "채점"}
+                </span>
+              </Button>
+            </AnimateIcon>
           )}
         </div>
       </div>
