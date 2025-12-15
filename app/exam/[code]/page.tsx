@@ -215,6 +215,10 @@ export default function ExamPage() {
             // Set session data
             if (result.session) {
               setSessionId(result.session.id);
+              // If the session is already submitted (e.g. user reopens the page), show the submitted screen.
+              if (result.session.submitted_at) {
+                setIsSubmitted(true);
+              }
 
               // Set chat history (always set, even if empty, to ensure consistency)
               if (result.messages) {
@@ -237,19 +241,6 @@ export default function ExamPage() {
           }
         } else {
           const errorData = await response.json().catch(() => ({}));
-
-          // Handle concurrent access error
-          if (
-            response.status === 409 &&
-            errorData.error === "CONCURRENT_ACCESS_BLOCKED"
-          ) {
-            alert(
-              errorData.message ||
-                "이미 다른 기기에서 시험이 진행 중입니다. 동시 접속은 불가능합니다."
-            );
-            router.push("/");
-            return;
-          }
 
           router.push("/join?error=network_error");
         }

@@ -618,90 +618,7 @@ async function initExamSession(data: {
       return NextResponse.json({ error: "Exam not found" }, { status: 404 });
     }
 
-    // 2. Check for active session (prevent concurrent access)
-    const { data: activeSessions, error: activeCheckError } = await supabase
-      .from("sessions")
-      .select("*")
-      .eq("exam_id", exam.id)
-      .eq("student_id", data.studentId)
-      .eq("is_active", true)
-      .is("submitted_at", null);
-
-    if (activeCheckError) throw activeCheckError;
-
-    console.log(
-      "[INIT_EXAM_SESSION] Active sessions found:",
-      activeSessions?.length || 0
-    );
-
-    // If there's an active session and it's not from the same device, block access
-    if (activeSessions && activeSessions.length > 0) {
-      const activeSession = activeSessions[0];
-      console.log("[INIT_EXAM_SESSION] Active session details:", {
-        sessionId: activeSession.id,
-        deviceFingerprint: activeSession.device_fingerprint,
-        incomingFingerprint: data.deviceFingerprint,
-        lastHeartbeat: activeSession.last_heartbeat_at,
-      });
-
-      // Check if it's from the same device (if device fingerprint is provided)
-      if (data.deviceFingerprint && activeSession.device_fingerprint) {
-        if (activeSession.device_fingerprint !== data.deviceFingerprint) {
-          // Different device trying to access - block it
-          console.log(
-            "[INIT_EXAM_SESSION] ❌ BLOCKED: Different device detected"
-          );
-          return NextResponse.json(
-            {
-              error: "CONCURRENT_ACCESS_BLOCKED",
-              message:
-                "이미 다른 기기에서 시험이 진행 중입니다. 동시 접속은 불가능합니다.",
-              activeSessionId: activeSession.id,
-            },
-            { status: 409 }
-          );
-        }
-        // Same device - allow reconnection
-        console.log(
-          "[INIT_EXAM_SESSION] ✅ Same device - allowing reconnection"
-        );
-      } else {
-        // No device fingerprint, but active session exists - block for safety
-        // Check if last heartbeat was recent (within 5 minutes)
-        const lastHeartbeat = activeSession.last_heartbeat_at
-          ? new Date(activeSession.last_heartbeat_at).getTime()
-          : 0;
-        const now = Date.now();
-        const fiveMinutes = 5 * 60 * 1000;
-
-        if (now - lastHeartbeat < fiveMinutes) {
-          // Active session exists and is recent - block
-          console.log(
-            "[INIT_EXAM_SESSION] ❌ BLOCKED: Recent active session without device fingerprint"
-          );
-          return NextResponse.json(
-            {
-              error: "CONCURRENT_ACCESS_BLOCKED",
-              message:
-                "이미 다른 기기에서 시험이 진행 중입니다. 동시 접속은 불가능합니다.",
-              activeSessionId: activeSession.id,
-            },
-            { status: 409 }
-          );
-        } else {
-          // Last heartbeat is old, consider session stale - deactivate it
-          console.log(
-            "[INIT_EXAM_SESSION] ⚠️ Stale session detected - deactivating"
-          );
-          await supabase
-            .from("sessions")
-            .update({ is_active: false })
-            .eq("id", activeSession.id);
-        }
-      }
-    }
-
-    // 3. Get all existing sessions (for finding the most recent one)
+    // 2. Get all existing sessions (most recent first)
     const { data: existingSessions, error: checkError } = await supabase
       .from("sessions")
       .select("*")
@@ -711,36 +628,50 @@ async function initExamSession(data: {
 
     if (checkError) throw checkError;
 
-    let existingSession: (typeof existingSessions)[0] | null =
-      existingSessions && existingSessions.length > 0
-        ? existingSessions[0]
-        : null;
-
-    console.log(
-      "[INIT_EXAM_SESSION] Existing session found:",
-      !!existingSession
+    // NOTE: 동시 접속을 "허용"하기 위해, 여기서는 다른 기기/탭을 차단하거나
+    // 기존 세션을 강제로 비활성화하지 않습니다.
+    // - 같은 기기(같은 deviceFingerprint)면 기존 세션을 재사용(재접속)
+    // - 다른 기기면 새 세션을 생성 (서로의 heartbeat/deactivate 영향을 최소화)
+    const unsubmittedSessions = (existingSessions || []).filter(
+      (s) => !s.submitted_at
     );
+    const mostRecentSubmittedSession =
+      (existingSessions || []).find((s) => !!s.submitted_at) || null;
 
-    // IMPORTANT: If existing session exists but has different device fingerprint,
-    // don't reuse it - this prevents device switching
-    if (existingSession && !existingSession.submitted_at) {
-      if (
-        data.deviceFingerprint &&
-        existingSession.device_fingerprint &&
-        existingSession.device_fingerprint !== data.deviceFingerprint
-      ) {
-        console.log(
-          "[INIT_EXAM_SESSION] ⚠️ Existing session from different device - not reusing"
-        );
-        // Don't use this session, will create a new one
-        // But first, deactivate the old one to prevent confusion
-        await supabase
-          .from("sessions")
-          .update({ is_active: false })
-          .eq("id", existingSession.id);
-        existingSession = null;
-      }
-    }
+    const incomingFingerprint = data.deviceFingerprint || null;
+
+    const exactDeviceMatch =
+      incomingFingerprint === null
+        ? null
+        : unsubmittedSessions.find(
+            (s) => s.device_fingerprint === incomingFingerprint
+          ) || null;
+
+    // Legacy: device_fingerprint가 비어있는 예전 세션이 있으면, 첫 접속에서 "소유"하도록 할당
+    const claimableLegacySession =
+      incomingFingerprint === null
+        ? null
+        : unsubmittedSessions.find((s) => !s.device_fingerprint) || null;
+
+    let existingSession: (typeof existingSessions)[0] | null =
+      exactDeviceMatch ||
+      claimableLegacySession ||
+      // If there are no unsubmitted sessions, fall back to the most recent submitted one (read-only)
+      mostRecentSubmittedSession ||
+      null;
+
+    console.log("[INIT_EXAM_SESSION] Existing session selected:", {
+      selected: !!existingSession,
+      selectedId: existingSession?.id,
+      reason: exactDeviceMatch
+        ? "device_match"
+        : claimableLegacySession
+        ? "legacy_claim"
+        : mostRecentSubmittedSession
+        ? "submitted_fallback"
+        : "none",
+      incomingHasFingerprint: !!incomingFingerprint,
+    });
 
     let session = existingSession;
     let messages: Array<{
@@ -752,7 +683,7 @@ async function initExamSession(data: {
     const now = new Date().toISOString();
 
     if (existingSession && !existingSession.submitted_at) {
-      // Activate existing session (only if same device or no device info)
+      // Activate existing session
       console.log(
         "[INIT_EXAM_SESSION] Activating existing session:",
         existingSession.id
@@ -763,7 +694,7 @@ async function initExamSession(data: {
           is_active: true,
           last_heartbeat_at: now,
           device_fingerprint:
-            data.deviceFingerprint || existingSession.device_fingerprint,
+            incomingFingerprint || existingSession.device_fingerprint || null,
         })
         .eq("id", existingSession.id)
         .select()
@@ -824,7 +755,7 @@ async function initExamSession(data: {
             used_clarifications: 0,
             is_active: true,
             last_heartbeat_at: now,
-            device_fingerprint: data.deviceFingerprint || null,
+            device_fingerprint: incomingFingerprint,
             created_at: now,
           },
         ])
