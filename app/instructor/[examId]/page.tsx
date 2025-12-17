@@ -11,6 +11,7 @@ import { ExamDetailsCard } from "@/components/instructor/ExamDetailsCard";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
 import { ExamAnalyticsCard } from "@/components/instructor/ExamAnalyticsCard";
 import { useQuery } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import {
   Collapsible,
   CollapsibleContent,
@@ -99,10 +100,11 @@ export default function ExamDetail({
 
   // Fetch analytics data (for charts only, student scores are already in exam.students)
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
-    queryKey: ["exam-analytics", resolvedParams.examId],
-    queryFn: async () => {
+    queryKey: qk.instructor.examAnalytics(resolvedParams.examId),
+    queryFn: async ({ signal }) => {
       const response = await fetch(
-        `/api/analytics/exam/${resolvedParams.examId}/overview`
+        `/api/analytics/exam/${resolvedParams.examId}/overview`,
+        { signal } // AbortSignal 연결
       );
       if (!response.ok) {
         throw new Error("Failed to fetch analytics");

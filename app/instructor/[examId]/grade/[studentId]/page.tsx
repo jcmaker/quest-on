@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useState, useEffect, use } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { GradeHeader } from "@/components/instructor/GradeHeader";
@@ -124,11 +125,12 @@ export default function GradeStudentPage({
 
   // Query for session data
   const { data: sessionData, isLoading: loading } = useQuery({
-    queryKey: ["session-grade", resolvedParams.studentId],
-    queryFn: async () => {
+    queryKey: qk.session.grade(resolvedParams.studentId),
+    queryFn: async ({ signal }) => {
       // studentId is actually sessionId in the URL
       const response = await fetch(
-        `/api/session/${resolvedParams.studentId}/grade`
+        `/api/session/${resolvedParams.studentId}/grade`,
+        { signal } // AbortSignal 연결
       );
 
       if (!response.ok) {
@@ -216,8 +218,8 @@ export default function GradeStudentPage({
 
   // Query for AI Summary (optimizing GPT API call)
   const { data: generatedSummary, isLoading: summaryLoading } = useQuery({
-    queryKey: ["session-summary", sessionData?.session?.id],
-    queryFn: async () => {
+    queryKey: qk.session.summary(sessionData?.session?.id),
+    queryFn: async ({ signal }) => {
       const response = await fetch("/api/instructor/generate-summary", {
         method: "POST",
         headers: {
@@ -226,6 +228,7 @@ export default function GradeStudentPage({
         body: JSON.stringify({
           sessionId: sessionData?.session?.id,
         }),
+        signal, // AbortSignal 연결
       });
 
       if (!response.ok) {
@@ -293,7 +296,7 @@ export default function GradeStudentPage({
     onSuccess: () => {
       // Invalidate to refresh overall score
       queryClient.invalidateQueries({
-        queryKey: ["session-grade", resolvedParams.studentId],
+        queryKey: qk.session.grade(resolvedParams.studentId),
       });
       toast.success("채점이 저장되었습니다.");
     },

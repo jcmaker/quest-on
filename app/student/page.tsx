@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { UserMenu } from "@/components/auth/UserMenu";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import { useInView } from "react-intersection-observer";
 import {
   Sheet,
@@ -174,10 +175,11 @@ export default function StudentDashboard() {
     isFetchingNextPage,
     isLoading: isSessionsLoading,
   } = useInfiniteQuery({
-    queryKey: ["student-sessions", user?.id],
-    queryFn: async ({ pageParam = 1 }) => {
+    queryKey: qk.student.sessions(user?.id),
+    queryFn: async ({ pageParam = 1, signal }) => {
       const response = await fetch(
-        `/api/student/sessions?page=${pageParam}&limit=10`
+        `/api/student/sessions?page=${pageParam}&limit=10`,
+        { signal } // AbortSignal 연결
       );
       if (!response.ok) throw new Error("Failed to fetch sessions");
       return response.json() as Promise<SessionsResponse>;
@@ -216,9 +218,11 @@ export default function StudentDashboard() {
 
   // TanStack Query for Stats
   const { data: overallStats } = useQuery({
-    queryKey: ["student-stats", user?.id],
-    queryFn: async () => {
-      const response = await fetch("/api/student/sessions/stats");
+    queryKey: qk.student.stats(user?.id),
+    queryFn: async ({ signal }) => {
+      const response = await fetch("/api/student/sessions/stats", {
+        signal, // AbortSignal 연결
+      });
       if (!response.ok) throw new Error("Failed to fetch stats");
       return response.json();
     },

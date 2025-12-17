@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useUser } from "@clerk/nextjs";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import {
   Dialog,
   DialogContent,
@@ -493,7 +494,7 @@ export default function CreateExam() {
       return await response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["instructor-exams"] });
+      queryClient.invalidateQueries({ queryKey: qk.instructor.exams() });
     },
   });
 

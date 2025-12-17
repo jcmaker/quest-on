@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import {
   GraduationCap,
   FileText,
@@ -45,8 +46,8 @@ export default function ExamManagement() {
 
   // Fetch exams from database using TanStack Query
   const { data: exams = [], isLoading: loading } = useQuery({
-    queryKey: ["instructor-exams", user?.id],
-    queryFn: async () => {
+    queryKey: qk.instructor.exams(user?.id),
+    queryFn: async ({ signal }) => {
       const response = await fetch("/api/supa", {
         method: "POST",
         headers: {
@@ -55,6 +56,7 @@ export default function ExamManagement() {
         body: JSON.stringify({
           action: "get_instructor_exams",
         }),
+        signal, // AbortSignal 연결
       });
 
       if (!response.ok) {

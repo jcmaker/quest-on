@@ -6,6 +6,8 @@ import { SignedIn, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
 import {
   Folder,
   FileText,
@@ -70,10 +72,8 @@ interface BreadcrumbItem {
 export default function InstructorDrive() {
   const router = useRouter();
   const { isSignedIn, isLoaded, user } = useUser();
-  const [nodes, setNodes] = useState<ExamNode[]>([]);
-  const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([]);
+  const queryClient = useQueryClient();
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -85,18 +85,109 @@ export default function InstructorDrive() {
 
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
+  // TanStack Query for folder contents
+  const { data: folderContentsData, isLoading: isLoadingContents } = useQuery({
+    queryKey: qk.drive.folderContents(currentFolderId, user?.id),
+    queryFn: async ({ signal }) => {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "get_folder_contents",
+          data: { folder_id: currentFolderId },
+        }),
+        signal, // AbortSignal 연결
+      });
+
+      if (!response.ok) {
+        let errorData: { error?: string; details?: string } = {};
+        try {
+          const text = await response.text();
+          if (text) {
+            errorData = JSON.parse(text);
+          }
+        } catch (parseError) {
+          console.error("Failed to parse error response:", parseError);
+          errorData = {
+            error: `서버 오류 (${response.status}): ${response.statusText}`,
+          };
+        }
+        const errorMessage =
+          errorData.error ||
+          errorData.details ||
+          `폴더 내용을 불러오는데 실패했습니다. (${response.status})`;
+        console.error("Failed to load folder contents:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: Object.keys(errorData).length > 0 ? errorData : undefined,
+        });
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      return data.nodes || [];
+    },
+    enabled: !!(isLoaded && isSignedIn && userRole === "instructor"),
+    staleTime: 1000 * 60 * 1, // 1 minute cache
+  });
+
+  // TanStack Query for breadcrumb
+  const { data: breadcrumbData } = useQuery({
+    queryKey: qk.drive.breadcrumb(currentFolderId || ""),
+    queryFn: async ({ signal }) => {
+      if (!currentFolderId) {
+        return [];
+      }
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "get_breadcrumb",
+          data: { folder_id: currentFolderId },
+        }),
+        signal, // AbortSignal 연결
+      });
+
+      if (!response.ok) {
+        throw new Error("브레드크럼을 불러오는데 실패했습니다.");
+      }
+
+      const data = await response.json();
+      return data.breadcrumb || [];
+    },
+    enabled: !!(
+      isLoaded &&
+      isSignedIn &&
+      userRole === "instructor" &&
+      currentFolderId
+    ),
+    staleTime: 1000 * 60 * 5, // 5 minutes cache
+  });
+
+  const nodes = folderContentsData || [];
+  const breadcrumb = breadcrumbData || [];
+  const isLoading = isLoadingContents;
+
   const filteredNodes = useMemo(() => {
     if (!searchQuery.trim()) {
       return nodes;
     }
     const query = searchQuery.toLowerCase();
-    return nodes.filter((node) => node.name.toLowerCase().includes(query));
+    return nodes.filter((node: ExamNode) =>
+      node.name.toLowerCase().includes(query)
+    );
   }, [nodes, searchQuery]);
 
   const folderNodes = useMemo(() => {
-    const folders = filteredNodes.filter((node) => node.kind === "folder");
+    const folders = filteredNodes.filter(
+      (node: ExamNode) => node.kind === "folder"
+    );
     // 최신순으로 정렬 (updated_at 기준 내림차순)
-    return folders.sort((a, b) => {
+    return folders.sort((a: ExamNode, b: ExamNode) => {
       const dateA = new Date(a.updated_at).getTime();
       const dateB = new Date(b.updated_at).getTime();
       return dateB - dateA; // 최신이 먼저
@@ -104,9 +195,11 @@ export default function InstructorDrive() {
   }, [filteredNodes]);
 
   const examNodes = useMemo(() => {
-    const exams = filteredNodes.filter((node) => node.kind === "exam");
+    const exams = filteredNodes.filter(
+      (node: ExamNode) => node.kind === "exam"
+    );
     // 최신순으로 정렬 (updated_at 기준 내림차순)
-    return exams.sort((a, b) => {
+    return exams.sort((a: ExamNode, b: ExamNode) => {
       const dateA = new Date(a.updated_at).getTime();
       const dateB = new Date(b.updated_at).getTime();
       return dateB - dateA; // 최신이 먼저
@@ -428,88 +521,6 @@ export default function InstructorDrive() {
     );
   };
 
-  useEffect(() => {
-    if (isLoaded && isSignedIn && userRole === "instructor") {
-      loadFolderContents(currentFolderId);
-      if (currentFolderId) {
-        loadBreadcrumb(currentFolderId);
-      } else {
-        setBreadcrumb([]);
-      }
-    }
-  }, [isLoaded, isSignedIn, userRole, currentFolderId]);
-
-  const loadFolderContents = async (folderId: string | null) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "get_folder_contents",
-          data: { folder_id: folderId },
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setNodes(data.nodes || []);
-      } else {
-        let errorData: { error?: string; details?: string } = {};
-        try {
-          const text = await response.text();
-          if (text) {
-            errorData = JSON.parse(text);
-          }
-        } catch (parseError) {
-          console.error("Failed to parse error response:", parseError);
-          errorData = {
-            error: `서버 오류 (${response.status}): ${response.statusText}`,
-          };
-        }
-        console.error("Failed to load folder contents:", {
-          status: response.status,
-          statusText: response.statusText,
-          errorData,
-        });
-        toast.error(
-          errorData.error ||
-            errorData.details ||
-            "폴더 내용을 불러오는데 실패했습니다."
-        );
-      }
-    } catch (error) {
-      console.error("Error loading folder contents:", error);
-      toast.error("폴더 내용을 불러오는데 실패했습니다.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadBreadcrumb = async (folderId: string) => {
-    try {
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "get_breadcrumb",
-          data: { folder_id: folderId },
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setBreadcrumb(data.breadcrumb || []);
-      }
-    } catch (error) {
-      console.error("Error loading breadcrumb:", error);
-    }
-  };
-
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) {
       toast.error("폴더 이름을 입력해주세요.");
@@ -536,7 +547,10 @@ export default function InstructorDrive() {
         toast.success("폴더가 생성되었습니다.");
         setNewFolderName("");
         setIsCreateFolderOpen(false);
-        loadFolderContents(currentFolderId);
+        // Invalidate folder contents query
+        queryClient.invalidateQueries({
+          queryKey: qk.drive.folderContents(currentFolderId, user?.id),
+        });
       } else {
         const errorData = await response.json();
         toast.error(errorData.error || "폴더 생성에 실패했습니다.");
@@ -585,7 +599,10 @@ export default function InstructorDrive() {
 
       if (response.ok) {
         toast.success("삭제되었습니다.");
-        loadFolderContents(currentFolderId);
+        // Invalidate folder contents query
+        queryClient.invalidateQueries({
+          queryKey: qk.drive.folderContents(currentFolderId, user?.id),
+        });
       } else {
         const errorData = await response.json();
         toast.error(errorData.error || "삭제에 실패했습니다.");
@@ -712,7 +729,10 @@ export default function InstructorDrive() {
         toast.success(
           `"${draggedNode.name}"이(가) "${targetNode.name}" 폴더로 이동되었습니다.`
         );
-        loadFolderContents(currentFolderId);
+        // Invalidate folder contents query
+        queryClient.invalidateQueries({
+          queryKey: qk.drive.folderContents(currentFolderId, user?.id),
+        });
       } else {
         const errorData = await response.json();
         toast.error(errorData.error || "이동에 실패했습니다.");
@@ -760,7 +780,10 @@ export default function InstructorDrive() {
 
       if (response.ok) {
         toast.success(`"${draggedNode.name}"이(가) 루트로 이동되었습니다.`);
-        loadFolderContents(currentFolderId);
+        // Invalidate folder contents query
+        queryClient.invalidateQueries({
+          queryKey: qk.drive.folderContents(currentFolderId, user?.id),
+        });
       } else {
         const errorData = await response.json();
         toast.error(errorData.error || "이동에 실패했습니다.");
@@ -838,7 +861,7 @@ export default function InstructorDrive() {
               <Home className="w-4 h-4 mr-1" />
               루트
             </button>
-            {breadcrumb.map((item) => (
+            {breadcrumb.map((item: BreadcrumbItem) => (
               <div key={item.id} className="flex items-center space-x-2">
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
                 <button
