@@ -73,13 +73,28 @@ export async function autoGradeSession(
       ai_feedback,
       student_reply,
       compressed_answer_data,
-      compressed_feedback_data
+      compressed_feedback_data,
+      created_at
     `
     )
-    .eq("session_id", sessionId);
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false }); // 최신 것부터 정렬
 
   if (submissionsError) {
-    console.error("Error fetching submissions:", submissionsError);
+    console.error(
+      "❌ [AUTO_GRADE] Error fetching submissions:",
+      submissionsError
+    );
+    throw new Error(`Failed to fetch submissions: ${submissionsError.message}`);
+  }
+
+  if (!submissions || submissions.length === 0) {
+    console.warn(
+      `⚠️ [AUTO_GRADE] No submissions found for session: ${sessionId}`
+    );
+    // submissions가 없어도 계속 진행 (메시지만으로 채점 가능할 수 있음)
+  } else {
+    console.log(`📤 [AUTO_GRADE] Found ${submissions.length} submissions`);
   }
 
   // 4. 메시지 가져오기 (채팅 기록)
@@ -95,13 +110,18 @@ export async function autoGradeSession(
       created_at
     `
     )
-    .eq("session_id", sessionId);
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: true });
 
   if (messagesError) {
-    console.error("Error fetching messages:", messagesError);
+    console.error("❌ [AUTO_GRADE] Error fetching messages:", messagesError);
+    // messages는 필수가 아니므로 에러를 throw하지 않음
+  } else {
+    console.log(`💬 [AUTO_GRADE] Found ${messages?.length || 0} messages`);
   }
 
   // 5. 데이터 압축 해제 및 정리
+  // 같은 q_idx에 여러 submission이 있으면 가장 최신 것(또는 가장 완전한 것)을 선택
   const submissionsByQuestion: Record<
     number,
     {
@@ -112,36 +132,102 @@ export async function autoGradeSession(
   > = {};
 
   if (submissions) {
+    // q_idx별로 그룹화하고, 각 그룹에서 가장 최신이거나 가장 완전한 것을 선택
+    const submissionsByQIdx = new Map<number, Array<Record<string, unknown>>>();
+
     submissions.forEach((submission: Record<string, unknown>) => {
       const qIdx = submission.q_idx as number;
-      let answer = submission.answer as string;
+      if (!submissionsByQIdx.has(qIdx)) {
+        submissionsByQIdx.set(qIdx, []);
+      }
+      submissionsByQIdx.get(qIdx)!.push(submission);
+    });
+
+    // 각 q_idx에 대해 가장 좋은 submission 선택
+    submissionsByQIdx.forEach((subs, qIdx) => {
+      // 같은 q_idx에 여러 submission이 있으면:
+      // 1. answer가 가장 긴 것 (더 완전한 답안)
+      // 2. ai_feedback이 있는 것
+      // 3. 가장 최신 것
+      const bestSubmission = subs.reduce((best, current) => {
+        const bestAnswer = (best.answer as string) || "";
+        const currentAnswer = (current.answer as string) || "";
+        const bestHasFeedback = !!best.ai_feedback;
+        const currentHasFeedback = !!current.ai_feedback;
+
+        // ai_feedback이 있는 것을 우선
+        if (currentHasFeedback && !bestHasFeedback) return current;
+        if (bestHasFeedback && !currentHasFeedback) return best;
+
+        // answer가 더 긴 것을 우선
+        if (currentAnswer.length > bestAnswer.length) return current;
+        if (bestAnswer.length > currentAnswer.length) return best;
+
+        // 최신 것을 우선 (created_at 비교)
+        const bestCreated = best.created_at
+          ? new Date(best.created_at as string).getTime()
+          : 0;
+        const currentCreated = current.created_at
+          ? new Date(current.created_at as string).getTime()
+          : 0;
+        return currentCreated > bestCreated ? current : best;
+      });
+
+      let answer = (bestSubmission.answer as string) || "";
 
       if (
-        submission.compressed_answer_data &&
-        typeof submission.compressed_answer_data === "string"
+        bestSubmission.compressed_answer_data &&
+        typeof bestSubmission.compressed_answer_data === "string"
       ) {
         try {
           const decompressed = decompressData(
-            submission.compressed_answer_data as string
+            bestSubmission.compressed_answer_data as string
           );
           answer = (decompressed as { answer?: string })?.answer || answer;
         } catch (error) {
-          console.error("Error decompressing answer data:", error);
+          console.error(
+            `❌ [AUTO_GRADE] Error decompressing answer data for q_idx ${qIdx}:`,
+            error
+          );
+        }
+      }
+
+      // ai_feedback 처리 (JSON 객체일 수 있음)
+      let aiFeedback: string | undefined = undefined;
+      if (bestSubmission.ai_feedback) {
+        if (typeof bestSubmission.ai_feedback === "string") {
+          aiFeedback = bestSubmission.ai_feedback;
+        } else if (
+          typeof bestSubmission.ai_feedback === "object" &&
+          bestSubmission.ai_feedback !== null
+        ) {
+          // JSON 객체인 경우 feedback 필드 추출
+          const feedbackObj = bestSubmission.ai_feedback as {
+            feedback?: string;
+          };
+          aiFeedback = feedbackObj.feedback;
         }
       }
 
       submissionsByQuestion[qIdx] = {
         answer: answer || "",
-        ai_feedback:
-          typeof submission.ai_feedback === "string"
-            ? submission.ai_feedback
-            : undefined,
+        ai_feedback: aiFeedback,
         student_reply:
-          typeof submission.student_reply === "string"
-            ? submission.student_reply
+          typeof bestSubmission.student_reply === "string"
+            ? bestSubmission.student_reply
             : undefined,
       };
+
+      if (subs.length > 1) {
+        console.log(
+          `⚠️ [AUTO_GRADE] Found ${subs.length} submissions for q_idx ${qIdx}, using the best one`
+        );
+      }
     });
+
+    console.log(
+      `📝 [AUTO_GRADE] Processed ${submissionsByQIdx.size} unique questions from submissions`
+    );
   }
 
   const messagesByQuestion: Record<
@@ -618,6 +704,14 @@ ${submission.student_reply}
       throw insertError;
     }
     console.log(`✅ [AUTO_GRADE] Saved ${grades.length} grades`);
+  } else {
+    console.warn(
+      `⚠️ [AUTO_GRADE] No grades generated for session ${sessionId}. ` +
+        `Submissions: ${submissions?.length || 0}, ` +
+        `Messages: ${messages?.length || 0}, ` +
+        `Questions: ${questions.length}`
+    );
+    // grades가 비어있어도 에러를 throw하지 않음 (경고만)
   }
 
   // 10. 요약 평가 생성

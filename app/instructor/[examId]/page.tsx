@@ -3,14 +3,14 @@
 
 import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import React, { useState, useEffect, use, useMemo, useRef } from "react";
+import React, { useState, useEffect, use, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ExamDetailHeader } from "@/components/instructor/ExamDetailHeader";
 import { ExamDetailsCard } from "@/components/instructor/ExamDetailsCard";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
 import { ExamAnalyticsCard } from "@/components/instructor/ExamAnalyticsCard";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import {
   Collapsible,
@@ -34,28 +34,12 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { Copy, X } from "lucide-react";
-import { Plus, SlidersHorizontal, RotateCcw, ArrowUp } from "lucide-react";
 import { Radio } from "@/components/animate-ui/icons/radio";
 import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
-import { BotMessageSquare } from "@/components/animate-ui/icons/bot-message-square";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import { StudentLiveMonitoring } from "../../../components/instructor/StudentLiveMonitoring";
-import { Textarea } from "@/components/ui/textarea";
-import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarSeparator,
-  useSidebar,
-} from "@/components/ui/sidebar";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
 
 interface Exam {
   id: string;
@@ -501,6 +485,11 @@ export default function ExamDetail({
     }
   };
 
+  const examContext = useMemo(() => {
+    if (!exam) return "";
+    return buildInstructorExamContext(exam);
+  }, [exam]);
+
   // Show loading while auth is loading
   if (!isLoaded) {
     return (
@@ -545,15 +534,12 @@ export default function ExamDetail({
 
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
-      <ExamSettingsSidebar
-        exam={exam}
-        examInfoOpen={examInfoOpen}
-        questionsOpen={questionsOpen}
-        monitoringStudent={monitoringStudent}
-        onCopyExamCode={handleCopyExamCode}
-        onOpenExamInfo={handleOpenExamInfo}
-        onOpenQuestions={handleOpenQuestions}
-        onCloseMonitoring={handleCloseMonitoring}
+      <InstructorChatSidebar
+        context={examContext}
+        sessionIdSeed={`exam_${exam.id}`}
+        scopeDescription="시험/문항/학생 데이터"
+        title="시험 도우미"
+        subtitle="이 화면에 보이는 데이터 범위 안에서만 답변합니다."
       />
 
       <SidebarInset>
@@ -765,83 +751,10 @@ export default function ExamDetail({
             />
           )}
         </div>
-
-        {/* Settings trigger (sticky bottom-right) */}
-        <ExamSettingsFloatingTrigger />
       </SidebarInset>
     </SidebarProvider>
   );
 }
-
-function ExamSettingsFloatingTrigger() {
-  const { toggleSidebar, open, isMobile, openMobile } = useSidebar();
-  const isOpen = isMobile ? openMobile : open;
-  if (isOpen) return null;
-  return (
-    <div className="fixed bottom-6 right-6 z-50">
-      <div className="relative">
-        <AnimateIcon animateOnHover="path-loop" loop={true} asChild>
-          <Button
-            type="button"
-            className="h-14 w-14 rounded-3xl rounded-br-none p-0 shadow-lg"
-            onClick={toggleSidebar}
-            aria-label="설정 사이드바 열기"
-          >
-            <BotMessageSquare size={56} className="-scale-x-100" />
-          </Button>
-        </AnimateIcon>
-      </div>
-    </div>
-  );
-}
-
-function ExamSettingsSidebar({
-  exam,
-  examInfoOpen,
-  questionsOpen,
-  monitoringStudent,
-  onCopyExamCode,
-  onOpenExamInfo,
-  onOpenQuestions,
-  onCloseMonitoring,
-}: {
-  exam: Exam;
-  examInfoOpen: boolean;
-  questionsOpen: boolean;
-  monitoringStudent: Student | null;
-  onCopyExamCode: () => void;
-  onOpenExamInfo: () => void;
-  onOpenQuestions: () => void;
-  onCloseMonitoring: () => void;
-}) {
-  return (
-    <Sidebar side="right" variant="floating" collapsible="offcanvas">
-      <SidebarHeader className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold leading-none">시험 패널</div>
-            <div className="mt-1 text-xs text-muted-foreground truncate">
-              이 페이지에서 궁금한것을 물어보세요.
-            </div>
-          </div>
-          <ExamSettingsSidebarCloseButton />
-        </div>
-      </SidebarHeader>
-
-      <SidebarSeparator />
-
-      <SidebarContent>
-        <ChatWrapper exam={exam} />
-      </SidebarContent>
-    </Sidebar>
-  );
-}
-
-type InstructorChatMessage = {
-  role: "user" | "assistant";
-  content: string;
-  ts: number;
-};
 
 function buildInstructorExamContext(exam: Exam) {
   const total = exam.students?.length ?? 0;
@@ -878,193 +791,6 @@ function buildInstructorExamContext(exam: Exam) {
   ]
     .filter(Boolean)
     .join("\n");
-}
-
-function ChatWrapper({ exam }: { exam: Exam }) {
-  const { user } = useUser();
-  const userId = user?.id ?? "instructor_unknown";
-
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<InstructorChatMessage[]>([]);
-
-  const sessionId = useMemo(
-    () => `temp_instructor_${exam.id}_${userId}`,
-    [exam.id, userId]
-  );
-
-  const context = useMemo(() => buildInstructorExamContext(exam), [exam]);
-
-  const listRef = useRef<HTMLDivElement | null>(null);
-  const scrollToBottom = () => {
-    requestAnimationFrame(() => {
-      listRef.current?.scrollTo({
-        top: listRef.current.scrollHeight,
-        behavior: "smooth",
-      });
-    });
-  };
-
-  const mutation = useMutation({
-    mutationFn: async (message: string) => {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          sessionId,
-          questionIdx: 0,
-          questionId: exam.questions?.[0]?.id,
-          examTitle: exam.title,
-          examCode: exam.code,
-          examId: exam.id,
-          studentId: userId, // reuse schema; ensures temp_ session can be converted to real session
-          currentQuestionText: `아래는 '강사가 보고 있는 화면 데이터 요약'입니다.\n\n${context}`,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data?.error || "Chat request failed");
-      }
-      return data as { response: string };
-    },
-    onSuccess: (data) => {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.response, ts: Date.now() },
-      ]);
-      scrollToBottom();
-    },
-    onError: (err) => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "assistant",
-          ts: Date.now(),
-          content:
-            err instanceof Error
-              ? `오류: ${err.message}`
-              : "오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-        },
-      ]);
-      scrollToBottom();
-    },
-  });
-
-  const send = async () => {
-    const text = input.trim();
-    if (!text) return;
-
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: text, ts: Date.now() },
-    ]);
-    setInput("");
-    scrollToBottom();
-
-    mutation.mutate(text);
-  };
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* Messages */}
-      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto">
-        <div className="px-3 py-4 space-y-3">
-          {messages.length === 0 && !mutation.isPending && (
-            <div className="h-full flex flex-col items-center justify-center text-center gap-3 py-8">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground shadow-sm">
-                <BotMessageSquare className="h-6 w-6 -scale-x-100" />
-              </div>
-              <div className="space-y-1 max-w-[260px]">
-                <p className="text-sm font-medium text-foreground">
-                  이 페이지에 대해 무엇이든 물어보세요
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  예: “최종 채점 완료 학생이 몇 명이야?” “문항 유형 분포를
-                  요약해줘”
-                </p>
-              </div>
-            </div>
-          )}
-          {messages.map((m, idx) => {
-            if (m.role === "assistant") {
-              return (
-                <div key={`${m.ts}-${idx}`} className="flex justify-start">
-                  <AIMessageRenderer
-                    content={m.content}
-                    timestamp={new Date(m.ts).toISOString()}
-                    variant="plain"
-                  />
-                </div>
-              );
-            }
-
-            return (
-              <div key={`${m.ts}-${idx}`} className="flex justify-end">
-                <div className="max-w-[90%] rounded-2xl rounded-br-none bg-primary text-primary-foreground px-3 py-2 text-sm whitespace-pre-wrap">
-                  {m.content}
-                </div>
-              </div>
-            );
-          })}
-          {mutation.isPending && (
-            <div className="flex justify-start">
-              <AIMessageRenderer
-                content={"답변 생성 중..."}
-                timestamp={new Date().toISOString()}
-                variant="plain"
-              />
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Composer */}
-      <div className="p-3 pt-2">
-        <div className="rounded-[26px] border bg-background shadow-sm p-2 flex items-center justify-between gap-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="무엇을 도와드릴까요?"
-            className="min-h-[42px] resize-none border-0 shadow-none focus-visible:ring-0 focus-visible:border-0 px-2 py-2 text-base"
-            disabled={mutation.isPending}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send();
-              }
-            }}
-          />
-
-          <Button
-            type="button"
-            size="icon"
-            className="h-10 w-10 rounded-full"
-            onClick={send}
-            disabled={mutation.isPending || !input.trim()}
-            aria-label="전송"
-          >
-            <ArrowUp className="h-5 w-5" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ExamSettingsSidebarCloseButton() {
-  const { setOpen, isMobile, setOpenMobile } = useSidebar();
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className="h-8 w-8"
-      onClick={() => (isMobile ? setOpenMobile(false) : setOpen(false))}
-      aria-label="설정 사이드바 닫기"
-    >
-      <X className="h-4 w-4" />
-    </Button>
-  );
 }
 
 // Student List Item Component

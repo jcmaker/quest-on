@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, use, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ import {
   AIOverallSummary,
   SummaryData,
 } from "@/components/instructor/AIOverallSummary";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
 
 interface Conversation {
   id: string;
@@ -330,6 +332,31 @@ export default function GradeStudentPage({
     }));
   };
 
+  // Compute chat context (must be before conditional returns to follow Rules of Hooks)
+  const chatContext = useMemo(() => {
+    if (!sessionData) return "";
+    const currentQuestion = sessionData.exam?.questions?.[selectedQuestionIdx];
+    const currentSubmission = sessionData.submissions?.[selectedQuestionIdx] as
+      | Submission
+      | undefined;
+    return [
+      `시험 제목: ${sessionData.exam.title}`,
+      `시험 코드: ${sessionData.exam.code}`,
+      `선택된 문항 번호: ${selectedQuestionIdx + 1}`,
+      currentQuestion
+        ? `문항 프롬프트: ${currentQuestion.prompt}`
+        : "현재 문항 정보를 찾을 수 없습니다.",
+      currentSubmission?.answer
+        ? `학생 답안:\n${currentSubmission.answer}`
+        : "학생 답안이 비어 있습니다.",
+      sessionData.overallScore !== null
+        ? `현재 전체 점수: ${sessionData.overallScore}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }, [sessionData, selectedQuestionIdx]);
+
   // Show loading while auth is loading
   if (!isLoaded) {
     return (
@@ -396,113 +423,129 @@ export default function GradeStudentPage({
   const duringExamMessages = aiConversations;
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
-      <GradeHeader
-        studentName={sessionData.student.name}
-        submittedAt={sessionData.session.submitted_at}
-        overallScore={sessionData.overallScore}
-        examId={resolvedParams.examId}
-        studentNumber={sessionData.student.student_number}
-        school={sessionData.student.school}
+    <SidebarProvider defaultOpen={false} className="flex-row-reverse">
+      <InstructorChatSidebar
+        context={chatContext}
+        sessionIdSeed={`grade_${sessionData.session.id}`}
+        scopeDescription="문항/답안/채점 데이터"
+        title="채점 도우미"
+        subtitle="이 화면에 보이는 데이터 범위 안에서만 답변합니다."
       />
-
-      <div className="mb-6">
-        <AIOverallSummary summary={overallSummary} loading={summaryLoading} />
-      </div>
-
-      <QuestionNavigation
-        questions={sessionData.exam?.questions || []}
-        selectedQuestionIdx={selectedQuestionIdx}
-        onSelectQuestion={setSelectedQuestionIdx}
-        grades={sessionData.grades}
-      />
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 space-y-6">
-          <QuestionPromptCard
-            question={currentQuestion}
-            questionNumber={selectedQuestionIdx + 1}
+      <SidebarInset>
+        <div className="container mx-auto p-6 max-w-7xl">
+          <GradeHeader
+            studentName={sessionData.student.name}
+            submittedAt={sessionData.session.submitted_at}
+            overallScore={sessionData.overallScore}
+            examId={resolvedParams.examId}
+            studentNumber={sessionData.student.student_number}
+            school={sessionData.student.school}
           />
 
-          <AIConversationsCard messages={duringExamMessages} />
+          <div className="mb-6">
+            <AIOverallSummary
+              summary={overallSummary}
+              loading={summaryLoading}
+            />
+          </div>
 
-          <FinalAnswerCard submission={currentSubmission} />
+          <QuestionNavigation
+            questions={sessionData.exam?.questions || []}
+            selectedQuestionIdx={selectedQuestionIdx}
+            onSelectQuestion={setSelectedQuestionIdx}
+            grades={sessionData.grades}
+          />
+
+          <div className="grid gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2 space-y-6">
+              <QuestionPromptCard
+                question={currentQuestion}
+                questionNumber={selectedQuestionIdx + 1}
+              />
+
+              <AIConversationsCard messages={duringExamMessages} />
+
+              <FinalAnswerCard submission={currentSubmission} />
+            </div>
+
+            <div className="space-y-6">
+              <GradingPanel
+                questionNumber={selectedQuestionIdx + 1}
+                stageScores={stageScores[selectedQuestionIdx] || {}}
+                stageComments={stageComments[selectedQuestionIdx] || {}}
+                overallScore={scores[selectedQuestionIdx] || 0}
+                overallFeedback={feedbacks[selectedQuestionIdx] || ""}
+                isGraded={!!sessionData.grades[selectedQuestionIdx]}
+                saving={saveGradeMutation.isPending}
+                onStageScoreChange={handleStageScoreChange}
+                onStageCommentChange={handleStageCommentChange}
+                onOverallScoreChange={(value) =>
+                  setScores({
+                    ...scores,
+                    [selectedQuestionIdx]: value,
+                  })
+                }
+                onOverallFeedbackChange={(value) =>
+                  setFeedbacks({
+                    ...feedbacks,
+                    [selectedQuestionIdx]: value,
+                  })
+                }
+                onSave={() => handleSaveGrade(selectedQuestionIdx)}
+              />
+
+              <QuickActionsCard
+                sessionId={sessionData.session.id}
+                isGraded={
+                  Object.keys(sessionData.grades || {}).length > 0 &&
+                  sessionData.overallScore !== null
+                }
+                reportData={
+                  sessionData
+                    ? {
+                        exam: {
+                          title: sessionData.exam.title,
+                          code: sessionData.exam.code,
+                          questions: sessionData.exam.questions.map(
+                            (q: Question) => ({
+                              id: q.id,
+                              idx: q.idx,
+                              type: q.type,
+                              prompt: q.prompt,
+                            })
+                          ),
+                          description: undefined, // Not available in SessionData
+                        },
+                        session: {
+                          submitted_at: sessionData.session.submitted_at,
+                        },
+                        grades: Object.fromEntries(
+                          Object.entries(sessionData.grades).map(
+                            ([key, grade]) => {
+                              const typedGrade = grade as Grade;
+                              return [
+                                parseInt(key),
+                                {
+                                  id: typedGrade.id,
+                                  q_idx: typedGrade.q_idx,
+                                  score: typedGrade.score,
+                                  comment: typedGrade.comment,
+                                },
+                              ];
+                            }
+                          )
+                        ),
+                        overallScore: sessionData.overallScore,
+                        studentName: sessionData.student.name,
+                        aiSummary: undefined, // Can be fetched separately if needed
+                      }
+                    : undefined
+                }
+              />
+            </div>
+          </div>
         </div>
-
-        <div className="space-y-6">
-          <GradingPanel
-            questionNumber={selectedQuestionIdx + 1}
-            stageScores={stageScores[selectedQuestionIdx] || {}}
-            stageComments={stageComments[selectedQuestionIdx] || {}}
-            overallScore={scores[selectedQuestionIdx] || 0}
-            overallFeedback={feedbacks[selectedQuestionIdx] || ""}
-            isGraded={!!sessionData.grades[selectedQuestionIdx]}
-            saving={saveGradeMutation.isPending}
-            onStageScoreChange={handleStageScoreChange}
-            onStageCommentChange={handleStageCommentChange}
-            onOverallScoreChange={(value) =>
-              setScores({
-                ...scores,
-                [selectedQuestionIdx]: value,
-              })
-            }
-            onOverallFeedbackChange={(value) =>
-              setFeedbacks({
-                ...feedbacks,
-                [selectedQuestionIdx]: value,
-              })
-            }
-            onSave={() => handleSaveGrade(selectedQuestionIdx)}
-          />
-
-          <QuickActionsCard
-            sessionId={sessionData.session.id}
-            isGraded={
-              Object.keys(sessionData.grades || {}).length > 0 &&
-              sessionData.overallScore !== null
-            }
-            reportData={
-              sessionData
-                ? {
-                    exam: {
-                      title: sessionData.exam.title,
-                      code: sessionData.exam.code,
-                      questions: sessionData.exam.questions.map(
-                        (q: Question) => ({
-                          id: q.id,
-                          idx: q.idx,
-                          type: q.type,
-                          prompt: q.prompt,
-                        })
-                      ),
-                      description: undefined, // Not available in SessionData
-                    },
-                    session: {
-                      submitted_at: sessionData.session.submitted_at,
-                    },
-                    grades: Object.fromEntries(
-                      Object.entries(sessionData.grades).map(([key, grade]) => {
-                        const typedGrade = grade as Grade;
-                        return [
-                          parseInt(key),
-                          {
-                            id: typedGrade.id,
-                            q_idx: typedGrade.q_idx,
-                            score: typedGrade.score,
-                            comment: typedGrade.comment,
-                          },
-                        ];
-                      })
-                    ),
-                    overallScore: sessionData.overallScore,
-                    studentName: sessionData.student.name,
-                    aiSummary: undefined, // Can be fetched separately if needed
-                  }
-                : undefined
-            }
-          />
-        </div>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

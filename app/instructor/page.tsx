@@ -6,26 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useRef } from "react";
-import {
-  GraduationCap,
-  BookOpen,
-  Plus,
-  FileText,
-  Calendar,
-  Loader2,
-  Menu,
-  LayoutDashboard,
-  FolderOpen,
-  List,
-  Folder,
-  Search,
-  LayoutGrid,
-  MoreVertical,
-  Copy,
-  Trash2,
-  FolderPlus,
-} from "lucide-react";
+import { useEffect, useState, useMemo, useCallback, memo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { qk } from "@/lib/query-keys";
+// 동적 임포트로 아이콘 최적화
+import { GraduationCap } from "lucide-react";
+import dynamic from "next/dynamic";
 import { UserMenu } from "@/components/auth/UserMenu";
 import {
   Sheet,
@@ -44,7 +30,56 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { toast } from "sonner";
-import { useMemo } from "react";
+
+// 무거운 컴포넌트는 동적 임포트로 지연 로딩
+const BookOpen = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.BookOpen }))
+);
+const Plus = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.Plus }))
+);
+const FileText = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.FileText }))
+);
+const Calendar = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.Calendar }))
+);
+const Loader2 = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.Loader2 }))
+);
+const Menu = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.Menu }))
+);
+const LayoutDashboard = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.LayoutDashboard }))
+);
+const FolderOpen = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.FolderOpen }))
+);
+const List = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.List }))
+);
+const Folder = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.Folder }))
+);
+const Search = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.Search }))
+);
+const LayoutGrid = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.LayoutGrid }))
+);
+const MoreVertical = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.MoreVertical }))
+);
+const Copy = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.Copy }))
+);
+const Trash2 = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.Trash2 }))
+);
+const FolderPlus = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.FolderPlus }))
+);
 
 interface ExamNode {
   id: string;
@@ -73,8 +108,7 @@ export default function InstructorHome() {
   const router = useRouter();
   const pathname = usePathname();
   const { isSignedIn, isLoaded, user } = useUser();
-  const [nodes, setNodes] = useState<ExamNode[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -82,13 +116,56 @@ export default function InstructorHome() {
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
-  // Scroll to top on mount and when pathname changes
+  // TanStack Query로 폴더 내용 가져오기 (캐싱 및 최적화)
+  const { data: nodes = [], isLoading } = useQuery({
+    queryKey: qk.drive.folderContents(null, user?.id),
+    queryFn: async ({ signal }) => {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "get_folder_contents",
+          data: { folder_id: null },
+        }),
+        signal, // AbortSignal로 취소 가능
+      });
+
+      if (!response.ok) {
+        let errorData: { error?: string; details?: string } = {};
+        try {
+          const text = await response.text();
+          if (text) {
+            errorData = JSON.parse(text);
+          }
+        } catch (parseError) {
+          console.error("Failed to parse error response:", parseError);
+          errorData = {
+            error: `서버 오류 (${response.status}): ${response.statusText}`,
+          };
+        }
+        const errorMessage =
+          errorData.error ||
+          errorData.details ||
+          `폴더 내용을 불러오는데 실패했습니다. (${response.status})`;
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+      return data.nodes || [];
+    },
+    enabled: !!(isLoaded && isSignedIn && userRole === "instructor"),
+    staleTime: 1000 * 60 * 1, // 1분 캐시
+    gcTime: 1000 * 60 * 5, // 5분 후 가비지 컬렉션
+  });
+
+  // Scroll to top on mount (한 번만 실행)
   useEffect(() => {
-    // Use requestAnimationFrame to ensure DOM is ready
-    requestAnimationFrame(() => {
+    if (typeof window !== "undefined") {
       window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    });
-  }, []);
+    }
+  }, []); // 빈 의존성 배열로 마운트 시 한 번만 실행
 
   // Redirect non-instructors or users without role
   useEffect(() => {
@@ -105,24 +182,21 @@ export default function InstructorHome() {
     }
   }, [isLoaded, isSignedIn, userRole, user, router]);
 
-  // Fetch nodes when user is loaded
-  useEffect(() => {
-    if (isLoaded && isSignedIn && userRole === "instructor") {
-      loadFolderContents(null);
-    }
-  }, [isLoaded, isSignedIn, userRole]);
-
-  const filteredNodes = useMemo(() => {
+  const filteredNodes = useMemo<ExamNode[]>(() => {
     if (!searchQuery.trim()) {
       return nodes;
     }
     const query = searchQuery.toLowerCase();
-    return nodes.filter((node) => node.name.toLowerCase().includes(query));
+    return nodes.filter((node: ExamNode) =>
+      node.name.toLowerCase().includes(query)
+    );
   }, [nodes, searchQuery]);
 
   const folderNodes = useMemo(() => {
-    const folders = filteredNodes.filter((node) => node.kind === "folder");
-    return folders.sort((a, b) => {
+    const folders = filteredNodes.filter(
+      (node: ExamNode) => node.kind === "folder"
+    );
+    return folders.sort((a: ExamNode, b: ExamNode) => {
       const dateA = new Date(a.updated_at).getTime();
       const dateB = new Date(b.updated_at).getTime();
       return dateB - dateA;
@@ -130,8 +204,10 @@ export default function InstructorHome() {
   }, [filteredNodes]);
 
   const examNodes = useMemo(() => {
-    const exams = filteredNodes.filter((node) => node.kind === "exam");
-    return exams.sort((a, b) => {
+    const exams = filteredNodes.filter(
+      (node: ExamNode) => node.kind === "exam"
+    );
+    return exams.sort((a: ExamNode, b: ExamNode) => {
       const dateA = new Date(a.updated_at).getTime();
       const dateB = new Date(b.updated_at).getTime();
       return dateB - dateA;
@@ -141,44 +217,34 @@ export default function InstructorHome() {
   const isFiltering = searchQuery.trim().length > 0;
   const hasResults = filteredNodes.length > 0;
 
-  const loadFolderContents = async (folderId: string | null) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          action: "get_folder_contents",
-          data: { folder_id: folderId },
-        }),
-      });
+  // 삭제 후 데이터 새로고침 (TanStack Query 캐시 무효화)
+  const refetchFolderContents = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: qk.drive.folderContents(null, user?.id),
+    });
+  }, [queryClient, user?.id]);
 
-      if (response.ok) {
-        const data = await response.json();
-        setNodes(data.nodes || []);
-      } else {
-        console.error("Failed to fetch folder contents");
-      }
-    } catch (error) {
-      console.error("Error loading folder contents:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    try {
-      return new Intl.DateTimeFormat("ko-KR", {
+  // 날짜 포맷터를 한 번만 생성 (성능 최적화)
+  const dateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("ko-KR", {
         year: "numeric",
         month: "short",
         day: "numeric",
-      }).format(new Date(dateString));
-    } catch {
-      return "";
-    }
-  };
+      }),
+    []
+  );
+
+  const formatDate = useCallback(
+    (dateString: string) => {
+      try {
+        return dateFormatter.format(new Date(dateString));
+      } catch {
+        return "";
+      }
+    },
+    [dateFormatter]
+  );
 
   const handleCopyExamCode = async (code?: string) => {
     if (!code) {
@@ -230,7 +296,7 @@ export default function InstructorHome() {
 
       if (response.ok) {
         toast.success("삭제되었습니다.");
-        loadFolderContents(null); // 루트 레벨 노드 다시 로드
+        refetchFolderContents(); // TanStack Query 캐시 무효화 및 재조회
       } else {
         const errorData = await response.json();
         toast.error(errorData.error || "삭제에 실패했습니다.");
@@ -341,124 +407,142 @@ export default function InstructorHome() {
         : "hover:bg-muted/70"
     );
 
-  const renderGridNode = (node: ExamNode) => {
-    const isFolder = node.kind === "folder";
-    const iconWrapperClasses = isFolder
-      ? "from-blue-100 to-blue-50 text-blue-500"
-      : "from-slate-100 to-slate-50 text-slate-500";
+  // 노드 클릭 핸들러 최적화
+  const handleNodeClick = useCallback(
+    (node: ExamNode) => {
+      if (node.kind === "folder") {
+        router.push("/instructor/drive");
+      } else if (node.exam_id) {
+        router.push(`/instructor/${node.exam_id}`);
+      }
+    },
+    [router]
+  );
 
-    return (
-      <Card
-        key={node.id}
-        className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm transition-all duration-200 group cursor-pointer hover:shadow-md"
-        onClick={() => {
-          if (isFolder) {
-            router.push("/instructor/drive");
-          } else if (node.exam_id) {
-            router.push(`/instructor/${node.exam_id}`);
-          }
-        }}
-      >
-        <div className="flex flex-1 flex-col text-left">
-          <div
-            className={`flex flex-1 items-center justify-center bg-gradient-to-b ${iconWrapperClasses} p-10`}
-          >
-            {isFolder ? (
-              <Folder className="h-16 w-16" strokeWidth={1.5} />
-            ) : (
-              <FileText className="h-16 w-16" strokeWidth={1.5} />
-            )}
-          </div>
-          <CardContent className="flex flex-col gap-2 border-t border-border/50 bg-background/80 px-5 py-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <h3 className="text-base font-medium text-foreground truncate">
-                  {node.name}
-                </h3>
-                <div className="mt-1 space-y-0.5">
-                  <p className="text-xs text-muted-foreground truncate">
-                    {isFolder ? (
-                      `폴더 · ${formatDate(node.updated_at)}`
-                    ) : (
-                      <span>{node.exams?.code || ""}</span>
-                    )}
-                  </p>
-                  {!isFolder && (
+  const renderGridNode = useCallback(
+    (node: ExamNode) => {
+      const isFolder = node.kind === "folder";
+      const iconWrapperClasses = isFolder
+        ? "from-blue-100 to-blue-50 text-blue-500"
+        : "from-slate-100 to-slate-50 text-slate-500";
+
+      return (
+        <Card
+          key={node.id}
+          className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm transition-all duration-200 group cursor-pointer hover:shadow-md"
+          onClick={() => handleNodeClick(node)}
+        >
+          <div className="flex flex-1 flex-col text-left">
+            <div
+              className={`flex flex-1 items-center justify-center bg-gradient-to-b ${iconWrapperClasses} p-10`}
+            >
+              {isFolder ? (
+                <Folder className="h-16 w-16" strokeWidth={1.5} />
+              ) : (
+                <FileText className="h-16 w-16" strokeWidth={1.5} />
+              )}
+            </div>
+            <CardContent className="flex flex-col gap-2 border-t border-border/50 bg-background/80 px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-base font-medium text-foreground truncate">
+                    {node.name}
+                  </h3>
+                  <div className="mt-1 space-y-0.5">
                     <p className="text-xs text-muted-foreground truncate">
-                      생성 {formatDate(node.created_at)}
+                      {isFolder ? (
+                        `폴더 · ${formatDate(node.updated_at)}`
+                      ) : (
+                        <span>{node.exams?.code || ""}</span>
+                      )}
                     </p>
-                  )}
+                    {!isFolder && (
+                      <p className="text-xs text-muted-foreground truncate">
+                        생성 {formatDate(node.created_at)}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-            {!isFolder && (
-              <div className="flex items-center justify-between">
-                <div>{renderNodeStatus(node)}</div>
-                {renderStudentCount(node)}
-              </div>
-            )}
-          </CardContent>
-        </div>
+              {!isFolder && (
+                <div className="flex items-center justify-between">
+                  <div>{renderNodeStatus(node)}</div>
+                  {renderStudentCount(node)}
+                </div>
+              )}
+            </CardContent>
+          </div>
+          <div
+            className="absolute right-2 top-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {renderNodeActions(node)}
+          </div>
+        </Card>
+      );
+    },
+    [
+      formatDate,
+      handleNodeClick,
+      renderNodeActions,
+      renderNodeStatus,
+      renderStudentCount,
+    ]
+  );
+
+  const renderListNode = useCallback(
+    (node: ExamNode) => {
+      const statusBadge = renderNodeStatus(node);
+
+      return (
         <div
-          className="absolute right-2 top-2"
-          onClick={(e) => e.stopPropagation()}
+          key={node.id}
+          className="group flex items-center justify-between rounded-xl border border-border/60 bg-card/60 px-4 py-3 transition hover:shadow-sm cursor-pointer"
+          onClick={() => handleNodeClick(node)}
         >
-          {renderNodeActions(node)}
-        </div>
-      </Card>
-    );
-  };
-
-  const renderListNode = (node: ExamNode) => {
-    const statusBadge = renderNodeStatus(node);
-
-    return (
-      <div
-        key={node.id}
-        className="group flex items-center justify-between rounded-xl border border-border/60 bg-card/60 px-4 py-3 transition hover:shadow-sm cursor-pointer"
-        onClick={() => {
-          if (node.kind === "folder") {
-            router.push("/instructor/drive");
-          } else if (node.exam_id) {
-            router.push(`/instructor/${node.exam_id}`);
-          }
-        }}
-      >
-        <div className="flex items-center gap-4 flex-1">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background/80">
-            {node.kind === "folder" ? (
-              <Folder className="w-5 h-5 text-primary" />
-            ) : (
-              <FileText className="w-5 h-5 text-blue-500" />
-            )}
+          <div className="flex items-center gap-4 flex-1">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background/80">
+              {node.kind === "folder" ? (
+                <Folder className="w-5 h-5 text-primary" />
+              ) : (
+                <FileText className="w-5 h-5 text-blue-500" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="font-medium text-sm text-foreground truncate">
+                {node.name}
+              </p>
+              {node.kind === "folder" ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <span>{formatDate(node.updated_at)}</span>
+                  <span>· 폴더</span>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  {node.exams?.code && <span>{node.exams.code}</span>}
+                  <span>· 생성 {formatDate(node.created_at)}</span>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="font-medium text-sm text-foreground truncate">
-              {node.name}
-            </p>
-            {node.kind === "folder" ? (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>{formatDate(node.updated_at)}</span>
-                <span>· 폴더</span>
-              </div>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                {node.exams?.code && <span>{node.exams.code}</span>}
-                <span>· 생성 {formatDate(node.created_at)}</span>
-              </div>
+          <div className="flex items-center gap-3">
+            {statusBadge && (
+              <span className="hidden sm:inline-flex">{statusBadge}</span>
             )}
+            {renderStudentCount(node)}
+            {renderNodeActions(node)}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {statusBadge && (
-            <span className="hidden sm:inline-flex">{statusBadge}</span>
-          )}
-          {renderStudentCount(node)}
-          {renderNodeActions(node)}
-        </div>
-      </div>
-    );
-  };
+      );
+    },
+    [
+      formatDate,
+      handleNodeClick,
+      renderNodeActions,
+      renderNodeStatus,
+      renderStudentCount,
+    ]
+  );
 
   const renderSection = (
     title: string,

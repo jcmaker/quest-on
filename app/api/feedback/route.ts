@@ -356,6 +356,9 @@ ${answersText}
 
         // 백그라운드에서 자동 채점 시작 (비동기로 실행, 응답은 기다리지 않음)
         if (actualSessionId) {
+          console.log(
+            `🚀 [AUTO_GRADE] Starting background grading for session: ${actualSessionId}`
+          );
           autoGradeSession(actualSessionId)
             .then((result) => {
               console.log(
@@ -365,14 +368,28 @@ ${answersText}
                   hasSummary: !!result.summary,
                 }
               );
+              if (result.grades.length === 0) {
+                console.warn(
+                  `⚠️ [AUTO_GRADE] No grades generated for session ${actualSessionId}. ` +
+                    `This might indicate an issue with submissions, messages, or rubric.`
+                );
+              }
             })
             .catch((error) => {
               console.error(
                 `❌ [AUTO_GRADE] Background grading failed for session ${actualSessionId}:`,
-                error
+                {
+                  error: error instanceof Error ? error.message : String(error),
+                  stack: error instanceof Error ? error.stack : undefined,
+                }
               );
               // 채점 실패해도 제출은 완료된 것으로 처리
+              // TODO: 실패한 채점을 재시도할 수 있는 메커니즘 추가 고려
             });
+        } else {
+          console.warn(
+            `⚠️ [AUTO_GRADE] Cannot start auto-grading: actualSessionId is missing`
+          );
         }
       } catch (error) {
         console.error("Error storing submission:", error);
