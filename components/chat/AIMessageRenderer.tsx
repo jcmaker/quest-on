@@ -11,15 +11,30 @@ import rehypeKatex from "rehype-katex";
 interface AIMessageRendererProps {
   content: string;
   timestamp: string;
+  variant?: "bubble" | "plain";
 }
 
 const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
   content,
   timestamp,
+  variant = "bubble",
 }) => {
+  const isPlain = variant === "plain";
   return (
-    <div className="bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30">
-      <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mb-0 prose-p:mb-0 prose-p:last:mb-0 prose-ul:mb-0 prose-ol:mb-0 prose-li:mb-0 break-words [&_*]:break-words [&_*]:leading-[1.3]">
+    <div
+      className={
+        isPlain
+          ? "text-foreground w-full"
+          : "bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30"
+      }
+    >
+      <div
+        className={
+          isPlain
+            ? "prose prose-sm max-w-none dark:prose-invert break-words [&_*]:break-words [&_*]:leading-[1.5]"
+            : "prose prose-sm max-w-none dark:prose-invert prose-headings:mb-0 prose-p:mb-0 prose-p:last:mb-0 prose-ul:mb-0 prose-ol:mb-0 prose-li:mb-0 break-words [&_*]:break-words [&_*]:leading-[1.3]"
+        }
+      >
         {/* 항상 마크다운으로 렌더링 */}
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkMath]}
@@ -217,24 +232,28 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
         </ReactMarkdown>
       </div>
 
-      <div className="mt-4 pt-3 border-t border-border/30 flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
-          <span className="text-xs font-medium text-muted-foreground">
-            AI 답변
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground font-mono">
-          {new Date(timestamp).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </p>
-      </div>
-      {content.includes("$") && (
-        <div className="mt-1 text-[10px] text-muted-foreground/70 text-right">
-          LaTeX 수식 포함됨
-        </div>
+      {!isPlain && (
+        <>
+          <div className="mt-4 pt-3 border-t border-border/30 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+              <span className="text-xs font-medium text-muted-foreground">
+                AI 답변
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground font-mono">
+              {new Date(timestamp).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </p>
+          </div>
+          {content.includes("$") && (
+            <div className="mt-1 text-[10px] text-muted-foreground/70 text-right">
+              LaTeX 수식 포함됨
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -3,14 +3,14 @@
 
 import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { useState, useEffect, use, useMemo } from "react";
+import React, { useState, useEffect, use, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ExamDetailHeader } from "@/components/instructor/ExamDetailHeader";
 import { ExamDetailsCard } from "@/components/instructor/ExamDetailsCard";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
 import { ExamAnalyticsCard } from "@/components/instructor/ExamAnalyticsCard";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import {
   Collapsible,
@@ -34,10 +34,28 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import { Copy, X } from "lucide-react";
+import { Plus, SlidersHorizontal, RotateCcw, ArrowUp } from "lucide-react";
 import { Radio } from "@/components/animate-ui/icons/radio";
 import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
+import { BotMessageSquare } from "@/components/animate-ui/icons/bot-message-square";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import { StudentLiveMonitoring } from "../../../components/instructor/StudentLiveMonitoring";
+import { Textarea } from "@/components/ui/textarea";
+import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+  SidebarSeparator,
+  useSidebar,
+} from "@/components/ui/sidebar";
 
 interface Exam {
   id: string;
@@ -441,6 +459,35 @@ export default function ExamDetail({
     setMonitoringStudent(null);
   };
 
+  const handleCopyExamCode = async () => {
+    if (!exam?.code) return;
+    try {
+      await navigator.clipboard.writeText(exam.code);
+    } catch (err) {
+      console.error("Failed to copy exam code:", err);
+    }
+  };
+
+  const handleOpenExamInfo = () => {
+    setExamInfoOpen(true);
+    requestAnimationFrame(() => {
+      document.getElementById("exam-info-section")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
+
+  const handleOpenQuestions = () => {
+    setQuestionsOpen(true);
+    requestAnimationFrame(() => {
+      document.getElementById("questions-section")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
+
   const getStudentStatusColor = (status: string) => {
     switch (status) {
       case "completed":
@@ -497,206 +544,526 @@ export default function ExamDetail({
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <ExamDetailHeader title={exam.title} code={exam.code} examId={exam.id} />
+    <SidebarProvider defaultOpen={false} className="flex-row-reverse">
+      <ExamSettingsSidebar
+        exam={exam}
+        examInfoOpen={examInfoOpen}
+        questionsOpen={questionsOpen}
+        monitoringStudent={monitoringStudent}
+        onCopyExamCode={handleCopyExamCode}
+        onOpenExamInfo={handleOpenExamInfo}
+        onOpenQuestions={handleOpenQuestions}
+        onCloseMonitoring={handleCloseMonitoring}
+      />
 
-      {/* 위쪽: 시험 정보와 문제 (Collapsible) */}
-      <div className="space-y-3 mt-6 mb-6">
-        {/* 시험 정보 */}
-        <Collapsible open={examInfoOpen} onOpenChange={setExamInfoOpen}>
-          <div className="border rounded-lg">
-            <CollapsibleTrigger className="w-full">
-              <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
-                <div className="flex items-center gap-3">
-                  <h3 className="font-semibold">시험 정보</h3>
-                  <span className="text-sm text-muted-foreground">
-                    {exam.duration}분 • {exam.code}
-                  </span>
+      <SidebarInset>
+        <div className="container mx-auto p-6">
+          <ExamDetailHeader
+            title={exam.title}
+            code={exam.code}
+            examId={exam.id}
+          />
+
+          {/* 위쪽: 시험 정보와 문제 (Collapsible) */}
+          <div className="space-y-3 mt-6 mb-6">
+            {/* 시험 정보 */}
+            <div id="exam-info-section">
+              <Collapsible open={examInfoOpen} onOpenChange={setExamInfoOpen}>
+                <div className="border rounded-lg">
+                  <CollapsibleTrigger className="w-full">
+                    <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-semibold">시험 정보</h3>
+                        <span className="text-sm text-muted-foreground">
+                          {exam.duration}분 • {exam.code}
+                        </span>
+                      </div>
+                      {examInfoOpen ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="px-4 pb-4">
+                      <ExamDetailsCard
+                        description={exam.description}
+                        duration={exam.duration}
+                        createdAt={exam.createdAt}
+                        examCode={exam.code}
+                      />
+                    </div>
+                  </CollapsibleContent>
                 </div>
-                {examInfoOpen ? (
-                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                )}
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="px-4 pb-4">
-                <ExamDetailsCard
-                  description={exam.description}
-                  duration={exam.duration}
-                  createdAt={exam.createdAt}
-                  examCode={exam.code}
+              </Collapsible>
+            </div>
+
+            {/* 문제 보기 */}
+            <div id="questions-section">
+              <Collapsible open={questionsOpen} onOpenChange={setQuestionsOpen}>
+                <div className="border rounded-lg">
+                  <CollapsibleTrigger className="w-full">
+                    <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-semibold">문제 보기</h3>
+                        <span className="text-sm text-muted-foreground">
+                          {exam.questions.length}개 문제
+                        </span>
+                      </div>
+                      {questionsOpen ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="px-4 pb-4">
+                      <QuestionsListCard questions={exam.questions} />
+                    </div>
+                  </CollapsibleContent>
+                </div>
+              </Collapsible>
+            </div>
+          </div>
+
+          {/* 아래쪽: 좌우 그리드 (차트 | 학생 목록) */}
+          <div className="grid gap-6 lg:grid-cols-[1fr_500px]">
+            {/* 왼쪽: 차트 */}
+            <div className="space-y-4">
+              {analyticsData && !analyticsLoading && (
+                <ExamAnalyticsCard
+                  averageScore={analyticsData.averageScore || 0}
+                  averageQuestions={analyticsData.averageQuestions || 0}
+                  averageAnswerLength={analyticsData.averageAnswerLength || 0}
+                  averageExamDuration={analyticsData.averageExamDuration || 0}
+                  scoreDistribution={
+                    analyticsData.statistics?.scoreDistribution || []
+                  }
+                  questionCountDistribution={
+                    analyticsData.statistics?.questionCountDistribution || []
+                  }
+                  answerLengthDistribution={
+                    analyticsData.statistics?.answerLengthDistribution || []
+                  }
+                  examDurationDistribution={
+                    analyticsData.statistics?.examDurationDistribution || []
+                  }
+                  stageAnalysis={analyticsData.stageAnalysis}
+                  rubricAnalysis={analyticsData.rubricAnalysis}
+                  questionTypeAnalysis={analyticsData.questionTypeAnalysis}
                 />
-              </div>
-            </CollapsibleContent>
-          </div>
-        </Collapsible>
-
-        {/* 문제 보기 */}
-        <Collapsible open={questionsOpen} onOpenChange={setQuestionsOpen}>
-          <div className="border rounded-lg">
-            <CollapsibleTrigger className="w-full">
-              <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
-                <div className="flex items-center gap-3">
-                  <h3 className="font-semibold">문제 보기</h3>
-                  <span className="text-sm text-muted-foreground">
-                    {exam.questions.length}개 문제
-                  </span>
+              )}
+              {analyticsLoading && (
+                <div className="flex items-center justify-center py-8 border rounded-lg">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
                 </div>
-                {questionsOpen ? (
-                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                )}
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="px-4 pb-4">
-                <QuestionsListCard questions={exam.questions} />
-              </div>
-            </CollapsibleContent>
-          </div>
-        </Collapsible>
-      </div>
-
-      {/* 아래쪽: 좌우 그리드 (차트 | 학생 목록) */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_500px]">
-        {/* 왼쪽: 차트 */}
-        <div className="space-y-4">
-          {analyticsData && !analyticsLoading && (
-            <ExamAnalyticsCard
-              averageScore={analyticsData.averageScore || 0}
-              averageQuestions={analyticsData.averageQuestions || 0}
-              averageAnswerLength={analyticsData.averageAnswerLength || 0}
-              averageExamDuration={analyticsData.averageExamDuration || 0}
-              scoreDistribution={
-                analyticsData.statistics?.scoreDistribution || []
-              }
-              questionCountDistribution={
-                analyticsData.statistics?.questionCountDistribution || []
-              }
-              answerLengthDistribution={
-                analyticsData.statistics?.answerLengthDistribution || []
-              }
-              examDurationDistribution={
-                analyticsData.statistics?.examDurationDistribution || []
-              }
-              stageAnalysis={analyticsData.stageAnalysis}
-              rubricAnalysis={analyticsData.rubricAnalysis}
-              questionTypeAnalysis={analyticsData.questionTypeAnalysis}
-            />
-          )}
-          {analyticsLoading && (
-            <div className="flex items-center justify-center py-8 border rounded-lg">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-            </div>
-          )}
-        </div>
-
-        {/* 오른쪽: 학생 목록 */}
-        <div className="space-y-4">
-          {/* 검색 및 필터링 */}
-          <div className="flex gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                placeholder="학생 이름, 이메일, 학번, 학교로 검색..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            <Select
-              value={sortOption}
-              onValueChange={(v) => setSortOption(v as SortOption)}
-            >
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="정렬 기준" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="score">가채점 순</SelectItem>
-                <SelectItem value="questionCount">질문 갯수 순</SelectItem>
-                <SelectItem value="answerLength">답안 길이 순</SelectItem>
-                <SelectItem value="submittedAt">제출 빠른 순</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* 최종 채점 학생 목록 - 교수가 실제로 채점한 경우만 표시 */}
-          {gradedStudents.length > 0 && (
-            <div className="border rounded-lg flex flex-col max-h-[300px]">
-              <div className="p-4 border-b bg-muted/50 flex-shrink-0">
-                <h3 className="font-semibold">
-                  최종 채점 완료 ({gradedStudents.length}명)
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  교수가 최종 채점한 학생 (점수 순)
-                </p>
-              </div>
-              <div className="divide-y overflow-y-auto flex-1">
-                {gradedStudents.map((student) => (
-                  <StudentListItem
-                    key={student.id}
-                    student={student}
-                    examId={exam.id}
-                    onLiveMonitoring={handleLiveMonitoring}
-                    getStudentStatusColor={getStudentStatusColor}
-                    showFinalScore={true}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 가채점 학생 목록 */}
-          <div className="border rounded-lg flex flex-col h-[calc(100vh-400px)] min-h-[600px]">
-            <div className="p-4 border-b bg-muted/50 flex-shrink-0">
-              <h3 className="font-semibold">
-                학생 목록 ({nonGradedStudents.length}명)
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {sortOption === "score" && "가채점 점수 순"}
-                {sortOption === "questionCount" && "질문 갯수 순"}
-                {sortOption === "answerLength" && "답안 길이 순"}
-                {sortOption === "submittedAt" && "제출 빠른 순"}
-              </p>
-            </div>
-            <div className="divide-y overflow-y-auto flex-1">
-              {nonGradedStudents.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">
-                  <p>표시할 학생이 없습니다.</p>
-                </div>
-              ) : (
-                nonGradedStudents.map((student) => (
-                  <StudentListItem
-                    key={student.id}
-                    student={student}
-                    examId={exam.id}
-                    onLiveMonitoring={handleLiveMonitoring}
-                    getStudentStatusColor={getStudentStatusColor}
-                    showFinalScore={false}
-                  />
-                ))
               )}
             </div>
+
+            {/* 오른쪽: 학생 목록 */}
+            <div className="space-y-4">
+              {/* 검색 및 필터링 */}
+              <div className="flex gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                  <Input
+                    placeholder="학생 이름, 이메일, 학번, 학교로 검색..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                <Select
+                  value={sortOption}
+                  onValueChange={(v) => setSortOption(v as SortOption)}
+                >
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="정렬 기준" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="score">가채점 순</SelectItem>
+                    <SelectItem value="questionCount">질문 갯수 순</SelectItem>
+                    <SelectItem value="answerLength">답안 길이 순</SelectItem>
+                    <SelectItem value="submittedAt">제출 빠른 순</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* 최종 채점 학생 목록 - 교수가 실제로 채점한 경우만 표시 */}
+              {gradedStudents.length > 0 && (
+                <div className="border rounded-lg flex flex-col max-h-[300px]">
+                  <div className="p-4 border-b bg-muted/50 flex-shrink-0">
+                    <h3 className="font-semibold">
+                      최종 채점 완료 ({gradedStudents.length}명)
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      교수가 최종 채점한 학생 (점수 순)
+                    </p>
+                  </div>
+                  <div className="divide-y overflow-y-auto flex-1">
+                    {gradedStudents.map((student) => (
+                      <StudentListItem
+                        key={student.id}
+                        student={student}
+                        examId={exam.id}
+                        onLiveMonitoring={handleLiveMonitoring}
+                        getStudentStatusColor={getStudentStatusColor}
+                        showFinalScore={true}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 가채점 학생 목록 */}
+              <div className="border rounded-lg flex flex-col h-[calc(100vh-400px)] min-h-[600px]">
+                <div className="p-4 border-b bg-muted/50 flex-shrink-0">
+                  <h3 className="font-semibold">
+                    학생 목록 ({nonGradedStudents.length}명)
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    {sortOption === "score" && "가채점 점수 순"}
+                    {sortOption === "questionCount" && "질문 갯수 순"}
+                    {sortOption === "answerLength" && "답안 길이 순"}
+                    {sortOption === "submittedAt" && "제출 빠른 순"}
+                  </p>
+                </div>
+                <div className="divide-y overflow-y-auto flex-1">
+                  {nonGradedStudents.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground">
+                      <p>표시할 학생이 없습니다.</p>
+                    </div>
+                  ) : (
+                    nonGradedStudents.map((student) => (
+                      <StudentListItem
+                        key={student.id}
+                        student={student}
+                        examId={exam.id}
+                        onLiveMonitoring={handleLiveMonitoring}
+                        getStudentStatusColor={getStudentStatusColor}
+                        showFinalScore={false}
+                      />
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
+
+          {monitoringStudent && monitoringSessionId && (
+            <StudentLiveMonitoring
+              open={monitoringSessionId !== null}
+              onOpenChange={(open: boolean) => {
+                if (!open) handleCloseMonitoring();
+              }}
+              sessionId={monitoringSessionId}
+              studentName={monitoringStudent.name}
+              studentNumber={monitoringStudent.student_number}
+              school={monitoringStudent.school}
+            />
+          )}
+        </div>
+
+        {/* Settings trigger (sticky bottom-right) */}
+        <ExamSettingsFloatingTrigger />
+      </SidebarInset>
+    </SidebarProvider>
+  );
+}
+
+function ExamSettingsFloatingTrigger() {
+  const { toggleSidebar, open, isMobile, openMobile } = useSidebar();
+  const isOpen = isMobile ? openMobile : open;
+  if (isOpen) return null;
+  return (
+    <div className="fixed bottom-6 right-6 z-50">
+      <div className="relative">
+        <AnimateIcon animateOnHover="path-loop" loop={true} asChild>
+          <Button
+            type="button"
+            className="h-14 w-14 rounded-3xl rounded-br-none p-0 shadow-lg"
+            onClick={toggleSidebar}
+            aria-label="설정 사이드바 열기"
+          >
+            <BotMessageSquare size={56} className="-scale-x-100" />
+          </Button>
+        </AnimateIcon>
+      </div>
+    </div>
+  );
+}
+
+function ExamSettingsSidebar({
+  exam,
+  examInfoOpen,
+  questionsOpen,
+  monitoringStudent,
+  onCopyExamCode,
+  onOpenExamInfo,
+  onOpenQuestions,
+  onCloseMonitoring,
+}: {
+  exam: Exam;
+  examInfoOpen: boolean;
+  questionsOpen: boolean;
+  monitoringStudent: Student | null;
+  onCopyExamCode: () => void;
+  onOpenExamInfo: () => void;
+  onOpenQuestions: () => void;
+  onCloseMonitoring: () => void;
+}) {
+  return (
+    <Sidebar side="right" variant="floating" collapsible="offcanvas">
+      <SidebarHeader className="p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold leading-none">시험 패널</div>
+            <div className="mt-1 text-xs text-muted-foreground truncate">
+              이 페이지에서 궁금한것을 물어보세요.
+            </div>
+          </div>
+          <ExamSettingsSidebarCloseButton />
+        </div>
+      </SidebarHeader>
+
+      <SidebarSeparator />
+
+      <SidebarContent>
+        <ChatWrapper exam={exam} />
+      </SidebarContent>
+    </Sidebar>
+  );
+}
+
+type InstructorChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+  ts: number;
+};
+
+function buildInstructorExamContext(exam: Exam) {
+  const total = exam.students?.length ?? 0;
+  const completed = exam.students?.filter(
+    (s) => s.status === "completed"
+  ).length;
+  const inProgress = exam.students?.filter(
+    (s) => s.status === "in-progress"
+  ).length;
+  const notStarted = exam.students?.filter(
+    (s) => s.status === "not-started"
+  ).length;
+  const graded = exam.students?.filter((s) => s.isGraded).length ?? 0;
+  const hasScores = exam.students?.filter(
+    (s) => typeof s.score === "number"
+  ).length;
+
+  const questionsPreview = (exam.questions ?? [])
+    .slice(0, 12)
+    .map((q, i) => `${i + 1}. (${q.type}) ${q.text}`)
+    .join("\n");
+
+  return [
+    `시험 제목: ${exam.title}`,
+    `시험 코드: ${exam.code}`,
+    `시험 상태: ${exam.status}`,
+    `시험 시간: ${exam.duration}분`,
+    exam.description ? `시험 설명: ${exam.description}` : "",
+    `문항 수: ${(exam.questions ?? []).length}`,
+    questionsPreview ? `문항(일부):\n${questionsPreview}` : "",
+    `학생 수: ${total} (완료 ${completed}, 진행중 ${inProgress}, 미시작 ${notStarted})`,
+    `최종채점 완료: ${graded}`,
+    `가채점 점수 보유: ${hasScores}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function ChatWrapper({ exam }: { exam: Exam }) {
+  const { user } = useUser();
+  const userId = user?.id ?? "instructor_unknown";
+
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<InstructorChatMessage[]>([]);
+
+  const sessionId = useMemo(
+    () => `temp_instructor_${exam.id}_${userId}`,
+    [exam.id, userId]
+  );
+
+  const context = useMemo(() => buildInstructorExamContext(exam), [exam]);
+
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollTo({
+        top: listRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    });
+  };
+
+  const mutation = useMutation({
+    mutationFn: async (message: string) => {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          sessionId,
+          questionIdx: 0,
+          questionId: exam.questions?.[0]?.id,
+          examTitle: exam.title,
+          examCode: exam.code,
+          examId: exam.id,
+          studentId: userId, // reuse schema; ensures temp_ session can be converted to real session
+          currentQuestionText: `아래는 '강사가 보고 있는 화면 데이터 요약'입니다.\n\n${context}`,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Chat request failed");
+      }
+      return data as { response: string };
+    },
+    onSuccess: (data) => {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.response, ts: Date.now() },
+      ]);
+      scrollToBottom();
+    },
+    onError: (err) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          ts: Date.now(),
+          content:
+            err instanceof Error
+              ? `오류: ${err.message}`
+              : "오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        },
+      ]);
+      scrollToBottom();
+    },
+  });
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text) return;
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", content: text, ts: Date.now() },
+    ]);
+    setInput("");
+    scrollToBottom();
+
+    mutation.mutate(text);
+  };
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Messages */}
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto">
+        <div className="px-3 py-4 space-y-3">
+          {messages.length === 0 && !mutation.isPending && (
+            <div className="h-full flex flex-col items-center justify-center text-center gap-3 py-8">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground shadow-sm">
+                <BotMessageSquare className="h-6 w-6 -scale-x-100" />
+              </div>
+              <div className="space-y-1 max-w-[260px]">
+                <p className="text-sm font-medium text-foreground">
+                  이 페이지에 대해 무엇이든 물어보세요
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  예: “최종 채점 완료 학생이 몇 명이야?” “문항 유형 분포를
+                  요약해줘”
+                </p>
+              </div>
+            </div>
+          )}
+          {messages.map((m, idx) => {
+            if (m.role === "assistant") {
+              return (
+                <div key={`${m.ts}-${idx}`} className="flex justify-start">
+                  <AIMessageRenderer
+                    content={m.content}
+                    timestamp={new Date(m.ts).toISOString()}
+                    variant="plain"
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <div key={`${m.ts}-${idx}`} className="flex justify-end">
+                <div className="max-w-[90%] rounded-2xl rounded-br-none bg-primary text-primary-foreground px-3 py-2 text-sm whitespace-pre-wrap">
+                  {m.content}
+                </div>
+              </div>
+            );
+          })}
+          {mutation.isPending && (
+            <div className="flex justify-start">
+              <AIMessageRenderer
+                content={"답변 생성 중..."}
+                timestamp={new Date().toISOString()}
+                variant="plain"
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      {monitoringStudent && monitoringSessionId && (
-        <StudentLiveMonitoring
-          open={monitoringSessionId !== null}
-          onOpenChange={(open: boolean) => {
-            if (!open) handleCloseMonitoring();
-          }}
-          sessionId={monitoringSessionId}
-          studentName={monitoringStudent.name}
-          studentNumber={monitoringStudent.student_number}
-          school={monitoringStudent.school}
-        />
-      )}
+      {/* Composer */}
+      <div className="p-3 pt-2">
+        <div className="rounded-[26px] border bg-background shadow-sm p-2 flex items-center justify-between gap-2">
+          <Textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="무엇을 도와드릴까요?"
+            className="min-h-[42px] resize-none border-0 shadow-none focus-visible:ring-0 focus-visible:border-0 px-2 py-2 text-base"
+            disabled={mutation.isPending}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void send();
+              }
+            }}
+          />
+
+          <Button
+            type="button"
+            size="icon"
+            className="h-10 w-10 rounded-full"
+            onClick={send}
+            disabled={mutation.isPending || !input.trim()}
+            aria-label="전송"
+          >
+            <ArrowUp className="h-5 w-5" />
+          </Button>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function ExamSettingsSidebarCloseButton() {
+  const { setOpen, isMobile, setOpenMobile } = useSidebar();
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="h-8 w-8"
+      onClick={() => (isMobile ? setOpenMobile(false) : setOpen(false))}
+      aria-label="설정 사이드바 닫기"
+    >
+      <X className="h-4 w-4" />
+    </Button>
   );
 }
 

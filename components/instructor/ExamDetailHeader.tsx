@@ -1,16 +1,19 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import type { ReactNode } from "react";
 
 interface ExamDetailHeaderProps {
   title: string;
   code: string;
   examId: string;
+  extraActions?: ReactNode;
 }
 
 export function ExamDetailHeader({
   title,
   code,
   examId,
+  extraActions,
 }: ExamDetailHeaderProps) {
   return (
     <div className="mb-8">
@@ -22,6 +25,7 @@ export function ExamDetailHeader({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {extraActions}
           <Link href="/instructor">
             <Button variant="outline">대시보드로 돌아가기</Button>
           </Link>
