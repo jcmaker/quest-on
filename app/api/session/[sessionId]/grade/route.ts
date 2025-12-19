@@ -144,72 +144,74 @@ export async function GET(
       questions: exam.questions,
     });
 
-    // Get submissions
-    const { data: submissions, error: submissionsError } = await supabase
-      .from("submissions")
-      .select(
+    // Optimized: Fetch submissions, messages, and grades in parallel
+    const [submissionsResult, messagesResult, gradesResult] = await Promise.all(
+      [
+        supabase
+          .from("submissions")
+          .select(
+            `
+          id,
+          q_idx,
+          answer,
+          ai_feedback,
+          student_reply,
+          compressed_answer_data,
+          compressed_feedback_data,
+          compression_metadata,
+          created_at
         `
-        id,
-        q_idx,
-        answer,
-        ai_feedback,
-        student_reply,
-        compressed_answer_data,
-        compressed_feedback_data,
-        compression_metadata,
-        created_at
-      `
-      )
-      .eq("session_id", sessionId);
+          )
+          .eq("session_id", sessionId),
+        supabase
+          .from("messages")
+          .select(
+            `
+          id,
+          q_idx,
+          role,
+          content,
+          compressed_content,
+          compression_metadata,
+          created_at
+        `
+          )
+          .eq("session_id", sessionId),
+        supabase
+          .from("grades")
+          .select(
+            `
+          id,
+          q_idx,
+          score,
+          comment,
+          stage_grading,
+          created_at
+        `
+          )
+          .eq("session_id", sessionId),
+      ]
+    );
+
+    const { data: submissions, error: submissionsError } = submissionsResult;
+    const { data: messages, error: messagesError } = messagesResult;
+    const { data: grades, error: gradesError } = gradesResult;
 
     if (submissionsError) {
       console.log("⚠️ Error fetching submissions:", submissionsError);
     } else {
       console.log("📤 Submissions fetched:", {
         count: submissions?.length || 0,
-        submissions: submissions,
       });
     }
-
-    // Get messages
-    const { data: messages, error: messagesError } = await supabase
-      .from("messages")
-      .select(
-        `
-        id,
-        q_idx,
-        role,
-        content,
-        compressed_content,
-        compression_metadata,
-        created_at
-      `
-      )
-      .eq("session_id", sessionId);
 
     if (messagesError) {
       console.log("⚠️ Error fetching messages:", messagesError);
     } else {
       console.log("💬 Messages fetched:", {
         count: messages?.length || 0,
-        messages: messages,
       });
     }
-
-    // Get grades
-    const { data: grades, error: gradesError } = await supabase
-      .from("grades")
-      .select(
-        `
-        id,
-        q_idx,
-        score,
-        comment,
-        stage_grading,
-        created_at
-      `
-      )
-      .eq("session_id", sessionId);
 
     if (gradesError) {
       console.log("⚠️ Error fetching grades:", gradesError);

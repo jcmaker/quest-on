@@ -146,222 +146,247 @@ export async function GET(
       });
     }
 
-    // 3. 각 세션별로 상세 데이터 수집
-    const studentData = await Promise.all(
-      filteredSessions.map(async (session) => {
-        const sessionId = session.id;
+    // 3. Optimized: Batch fetch all data at once instead of per-session
+    const sessionIds = filteredSessions.map((s) => s.id);
 
-        // 가채점 점수 및 단계별 점수 가져오기
-        const { data: grades } = await supabase
+    // Batch fetch all grades, messages, and submissions
+    const [gradesResult, messagesResult, submissionsResult] = await Promise.all(
+      [
+        supabase
           .from("grades")
-          .select("score, q_idx, stage_grading")
-          .eq("session_id", sessionId);
-
-        const averageScore =
-          grades && grades.length > 0
-            ? Math.round(
-                grades.reduce((sum, g) => sum + (g.score || 0), 0) /
-                  grades.length
-              )
-            : null;
-
-        // 질문 수 및 질문 유형 가져오기
-        const { data: messages } = await supabase
+          .select("session_id, score, q_idx, stage_grading")
+          .in("session_id", sessionIds),
+        supabase
           .from("messages")
-          .select("id, role, q_idx, message_type")
-          .eq("session_id", sessionId)
-          .eq("role", "user");
-
-        const questionCount = messages?.length || 0;
-
-        // 답안 길이 계산
-        const { data: submissions } = await supabase
+          .select("session_id, id, role, q_idx, message_type")
+          .in("session_id", sessionIds)
+          .eq("role", "user"),
+        supabase
           .from("submissions")
-          .select("answer, compressed_answer_data")
-          .eq("session_id", sessionId);
+          .select("session_id, answer, compressed_answer_data")
+          .in("session_id", sessionIds),
+      ]
+    );
 
-        let totalAnswerLength = 0;
-        if (submissions) {
-          for (const submission of submissions) {
-            let answer = submission.answer || "";
-            if (submission.compressed_answer_data) {
-              try {
-                const decompressed = decompressData(
-                  submission.compressed_answer_data as string
-                );
-                answer =
-                  (decompressed as { answer?: string })?.answer || answer;
-              } catch (e) {
-                // 압축 해제 실패 시 원본 사용
-              }
-            }
-            totalAnswerLength += answer.length;
+    const { data: allGrades } = gradesResult;
+    const { data: allMessages } = messagesResult;
+    const { data: allSubmissions } = submissionsResult;
+
+    // Create maps for O(1) lookups
+    const gradesBySession = new Map<string, typeof allGrades>();
+    if (allGrades) {
+      for (const grade of allGrades) {
+        if (!gradesBySession.has(grade.session_id)) {
+          gradesBySession.set(grade.session_id, []);
+        }
+        gradesBySession.get(grade.session_id)!.push(grade);
+      }
+    }
+
+    const messagesBySession = new Map<string, typeof allMessages>();
+    if (allMessages) {
+      for (const message of allMessages) {
+        if (!messagesBySession.has(message.session_id)) {
+          messagesBySession.set(message.session_id, []);
+        }
+        messagesBySession.get(message.session_id)!.push(message);
+      }
+    }
+
+    const submissionsBySession = new Map<string, typeof allSubmissions>();
+    if (allSubmissions) {
+      for (const submission of allSubmissions) {
+        if (!submissionsBySession.has(submission.session_id)) {
+          submissionsBySession.set(submission.session_id, []);
+        }
+        submissionsBySession.get(submission.session_id)!.push(submission);
+      }
+    }
+
+    // 4. Process each session with pre-fetched data
+    const studentData = filteredSessions.map((session) => {
+      const sessionId = session.id;
+
+      // Get pre-fetched data
+      const grades = gradesBySession.get(sessionId) || [];
+      const messages = messagesBySession.get(sessionId) || [];
+      const submissions = submissionsBySession.get(sessionId) || [];
+
+      const averageScore =
+        grades.length > 0
+          ? Math.round(
+              grades.reduce((sum, g) => sum + (g.score || 0), 0) / grades.length
+            )
+          : null;
+
+      const questionCount = messages.length;
+
+      // 답안 길이 계산 (압축 해제 최소화 - answer 필드 우선 사용)
+      let totalAnswerLength = 0;
+      for (const submission of submissions) {
+        let answer = submission.answer || "";
+        // Only decompress if answer is empty and compressed data exists
+        if (!answer && submission.compressed_answer_data) {
+          try {
+            const decompressed = decompressData(
+              submission.compressed_answer_data as string
+            );
+            answer = (decompressed as { answer?: string })?.answer || answer;
+          } catch (e) {
+            // 압축 해제 실패 시 원본 사용
           }
         }
+        totalAnswerLength += answer.length;
+      }
 
-        const averageAnswerLength =
-          submissions && submissions.length > 0
-            ? Math.round(totalAnswerLength / submissions.length)
-            : 0;
+      const averageAnswerLength =
+        submissions.length > 0
+          ? Math.round(totalAnswerLength / submissions.length)
+          : 0;
 
-        // 시험 소요 시간 계산 (분 단위)
-        const examDuration =
-          session.submitted_at && session.created_at
-            ? Math.round(
-                (new Date(session.submitted_at).getTime() -
-                  new Date(session.created_at).getTime()) /
-                  60000
-              )
-            : null;
+      // 시험 소요 시간 계산 (분 단위)
+      const examDuration =
+        session.submitted_at && session.created_at
+          ? Math.round(
+              (new Date(session.submitted_at).getTime() -
+                new Date(session.created_at).getTime()) /
+                60000
+            )
+          : null;
 
-        // 단계별 점수 추출
-        let stageScores = {
-          chat: null as number | null,
-          answer: null as number | null,
-          feedback: null as number | null,
+      // 단계별 점수 추출
+      let stageScores = {
+        chat: null as number | null,
+        answer: null as number | null,
+        feedback: null as number | null,
+      };
+
+      if (grades.length > 0) {
+        const stageScoresList = {
+          chat: [] as number[],
+          answer: [] as number[],
+          feedback: [] as number[],
         };
 
-        if (grades && grades.length > 0) {
-          const stageScoresList = {
-            chat: [] as number[],
-            answer: [] as number[],
-            feedback: [] as number[],
-          };
-
-          grades.forEach((grade) => {
-            if (
-              grade.stage_grading &&
-              typeof grade.stage_grading === "object"
-            ) {
-              const stageGrading = grade.stage_grading as {
-                chat?: { score: number };
-                answer?: { score: number };
-                feedback?: { score: number };
-              };
-              if (stageGrading.chat?.score)
-                stageScoresList.chat.push(stageGrading.chat.score);
-              if (stageGrading.answer?.score)
-                stageScoresList.answer.push(stageGrading.answer.score);
-              // essay 타입 시험에는 피드백 단계가 없음
-              if (!isEssayTypeOnly && stageGrading.feedback?.score)
-                stageScoresList.feedback.push(stageGrading.feedback.score);
-            }
-          });
-
-          stageScores.chat =
-            stageScoresList.chat.length > 0
-              ? Math.round(
-                  stageScoresList.chat.reduce((a, b) => a + b, 0) /
-                    stageScoresList.chat.length
-                )
-              : null;
-          stageScores.answer =
-            stageScoresList.answer.length > 0
-              ? Math.round(
-                  stageScoresList.answer.reduce((a, b) => a + b, 0) /
-                    stageScoresList.answer.length
-                )
-              : null;
-          // essay 타입 시험에는 피드백 단계가 없음
-          if (!isEssayTypeOnly) {
-            stageScores.feedback =
-              stageScoresList.feedback.length > 0
-                ? Math.round(
-                    stageScoresList.feedback.reduce((a, b) => a + b, 0) /
-                      stageScoresList.feedback.length
-                  )
-                : null;
+        grades.forEach((grade) => {
+          if (grade.stage_grading && typeof grade.stage_grading === "object") {
+            const stageGrading = grade.stage_grading as {
+              chat?: { score: number };
+              answer?: { score: number };
+              feedback?: { score: number };
+            };
+            if (stageGrading.chat?.score)
+              stageScoresList.chat.push(stageGrading.chat.score);
+            if (stageGrading.answer?.score)
+              stageScoresList.answer.push(stageGrading.answer.score);
+            // essay 타입 시험에는 피드백 단계가 없음
+            if (!isEssayTypeOnly && stageGrading.feedback?.score)
+              stageScoresList.feedback.push(stageGrading.feedback.score);
           }
-        }
-
-        // 루브릭 항목별 점수 추출
-        const rubricScoresMap = new Map<string, number[]>();
-        if (grades && grades.length > 0) {
-          grades.forEach((grade) => {
-            if (
-              grade.stage_grading &&
-              typeof grade.stage_grading === "object"
-            ) {
-              const stageGrading = grade.stage_grading as {
-                chat?: { rubric_scores?: Record<string, number> };
-                answer?: { rubric_scores?: Record<string, number> };
-                feedback?: { rubric_scores?: Record<string, number> };
-              };
-
-              // 각 단계의 rubric_scores를 합산
-              // essay 타입 시험에는 피드백 단계가 없음
-              const stages = isEssayTypeOnly
-                ? [stageGrading.chat, stageGrading.answer]
-                : [
-                    stageGrading.chat,
-                    stageGrading.answer,
-                    stageGrading.feedback,
-                  ];
-              stages.filter(Boolean).forEach((stage) => {
-                if (stage?.rubric_scores) {
-                  Object.entries(stage.rubric_scores).forEach(
-                    ([key, value]) => {
-                      if (!rubricScoresMap.has(key)) {
-                        rubricScoresMap.set(key, []);
-                      }
-                      rubricScoresMap.get(key)?.push(value);
-                    }
-                  );
-                }
-              });
-            }
-          });
-        }
-
-        const rubricScores: Record<string, number> = {};
-        rubricScoresMap.forEach((scores, key) => {
-          const avg =
-            scores.length > 0
-              ? scores.reduce((a, b) => a + b, 0) / scores.length
-              : 0;
-          rubricScores[key] = Math.round(avg * 10) / 10; // 소수점 1자리
         });
 
-        // 질문 유형별 카운트
-        const questionTypeCount = {
-          concept: 0,
-          calculation: 0,
-          strategy: 0,
-          other: 0,
-        };
-
-        if (messages) {
-          messages.forEach((msg) => {
-            const type = msg.message_type || "other";
-            if (type === "concept") questionTypeCount.concept++;
-            else if (type === "calculation") questionTypeCount.calculation++;
-            else if (type === "strategy") questionTypeCount.strategy++;
-            else questionTypeCount.other++;
-          });
+        stageScores.chat =
+          stageScoresList.chat.length > 0
+            ? Math.round(
+                stageScoresList.chat.reduce((a, b) => a + b, 0) /
+                  stageScoresList.chat.length
+              )
+            : null;
+        stageScores.answer =
+          stageScoresList.answer.length > 0
+            ? Math.round(
+                stageScoresList.answer.reduce((a, b) => a + b, 0) /
+                  stageScoresList.answer.length
+              )
+            : null;
+        // essay 타입 시험에는 피드백 단계가 없음
+        if (!isEssayTypeOnly) {
+          stageScores.feedback =
+            stageScoresList.feedback.length > 0
+              ? Math.round(
+                  stageScoresList.feedback.reduce((a, b) => a + b, 0) /
+                    stageScoresList.feedback.length
+                )
+              : null;
         }
+      }
 
-        // 학생 프로필 정보 가져오기
-        const studentProfile = studentProfileMap.get(session.student_id);
+      // 루브릭 항목별 점수 추출
+      const rubricScoresMap = new Map<string, number[]>();
+      if (grades.length > 0) {
+        grades.forEach((grade) => {
+          if (grade.stage_grading && typeof grade.stage_grading === "object") {
+            const stageGrading = grade.stage_grading as {
+              chat?: { rubric_scores?: Record<string, number> };
+              answer?: { rubric_scores?: Record<string, number> };
+              feedback?: { rubric_scores?: Record<string, number> };
+            };
 
-        return {
-          sessionId,
-          studentId: session.student_id,
-          name:
-            studentProfile?.name || `Student ${session.student_id.slice(0, 8)}`,
-          studentNumber: studentProfile?.student_number || null,
-          school: studentProfile?.school || null,
-          score: averageScore,
-          questionCount,
-          answerLength: averageAnswerLength,
-          submittedAt: session.submitted_at,
-          createdAt: session.created_at,
-          examDuration: examDuration as number | null,
-          stageScores,
-          rubricScores,
-          questionTypeCount,
-        };
-      })
-    );
+            // 각 단계의 rubric_scores를 합산
+            // essay 타입 시험에는 피드백 단계가 없음
+            const stages = isEssayTypeOnly
+              ? [stageGrading.chat, stageGrading.answer]
+              : [stageGrading.chat, stageGrading.answer, stageGrading.feedback];
+            stages.filter(Boolean).forEach((stage) => {
+              if (stage?.rubric_scores) {
+                Object.entries(stage.rubric_scores).forEach(([key, value]) => {
+                  if (!rubricScoresMap.has(key)) {
+                    rubricScoresMap.set(key, []);
+                  }
+                  rubricScoresMap.get(key)?.push(value);
+                });
+              }
+            });
+          }
+        });
+      }
+
+      const rubricScores: Record<string, number> = {};
+      rubricScoresMap.forEach((scores, key) => {
+        const avg =
+          scores.length > 0
+            ? scores.reduce((a, b) => a + b, 0) / scores.length
+            : 0;
+        rubricScores[key] = Math.round(avg * 10) / 10; // 소수점 1자리
+      });
+
+      // 질문 유형별 카운트
+      const questionTypeCount = {
+        concept: 0,
+        calculation: 0,
+        strategy: 0,
+        other: 0,
+      };
+
+      messages.forEach((msg) => {
+        const type = msg.message_type || "other";
+        if (type === "concept") questionTypeCount.concept++;
+        else if (type === "calculation") questionTypeCount.calculation++;
+        else if (type === "strategy") questionTypeCount.strategy++;
+        else questionTypeCount.other++;
+      });
+
+      // 학생 프로필 정보 가져오기
+      const studentProfile = studentProfileMap.get(session.student_id);
+
+      return {
+        sessionId,
+        studentId: session.student_id,
+        name:
+          studentProfile?.name || `Student ${session.student_id.slice(0, 8)}`,
+        studentNumber: studentProfile?.student_number || null,
+        school: studentProfile?.school || null,
+        score: averageScore,
+        questionCount,
+        answerLength: averageAnswerLength,
+        submittedAt: session.submitted_at,
+        createdAt: session.created_at,
+        examDuration: examDuration as number | null,
+        stageScores,
+        rubricScores,
+        questionTypeCount,
+      };
+    });
 
     // 4. 통계 계산
     const submittedStudents = studentData.filter((s) => s.submittedAt);

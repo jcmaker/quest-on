@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
 import { createClerkClient } from "@clerk/nextjs/server";
 
@@ -22,7 +21,7 @@ async function getUserInfo(clerkUserId: string): Promise<{
 } | null> {
   try {
     const user = await clerk.users.getUser(clerkUserId);
-    
+
     // Get user name from firstName/lastName or fullName
     let name = "";
     if (user.firstName && user.lastName) {
@@ -35,11 +34,14 @@ async function getUserInfo(clerkUserId: string): Promise<{
       name = user.fullName;
     } else {
       // Fallback to email or ID
-      name = user.emailAddresses[0]?.emailAddress || `Student ${clerkUserId.slice(0, 8)}`;
+      name =
+        user.emailAddresses[0]?.emailAddress ||
+        `Student ${clerkUserId.slice(0, 8)}`;
     }
-    
-    const email = user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
-    
+
+    const email =
+      user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
+
     return {
       name,
       email,
@@ -101,7 +103,8 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Get all sessions for this exam
+    // Optimized: Only fetch minimal session data needed for student list
+    // Don't fetch submissions/messages as they're not needed for the list view
     const { data: sessions, error: sessionsError } = await supabase
       .from("sessions")
       .select(
@@ -110,28 +113,7 @@ export async function GET(
         student_id,
         submitted_at,
         used_clarifications,
-        created_at,
-        compressed_session_data,
-        compression_metadata,
-        submissions (
-          id,
-          q_idx,
-          answer,
-          ai_feedback,
-          student_reply,
-          compressed_answer_data,
-          compressed_feedback_data,
-          compression_metadata
-        ),
-        messages (
-          id,
-          q_idx,
-          role,
-          content,
-          compressed_content,
-          compression_metadata,
-          created_at
-        )
+        created_at
       `
       )
       .eq("exam_id", examId)
@@ -143,15 +125,18 @@ export async function GET(
 
     // Get unique student IDs
     const uniqueStudentIds = [...new Set(sessions.map((s) => s.student_id))];
-    
+
     // Fetch student profiles from database
     const { data: studentProfiles } = await supabase
       .from("student_profiles")
       .select("student_id, name, student_number, school")
       .in("student_id", uniqueStudentIds);
-    
+
     // Create a map of student profiles by student_id
-    const studentProfileMap = new Map<string, { name: string; student_number: string; school: string }>();
+    const studentProfileMap = new Map<
+      string,
+      { name: string; student_number: string; school: string }
+    >();
     if (studentProfiles) {
       studentProfiles.forEach((profile) => {
         studentProfileMap.set(profile.student_id, {
@@ -161,14 +146,17 @@ export async function GET(
         });
       });
     }
-    
+
     // Fetch student info for all students in parallel (for email)
-    const studentInfoMap = new Map<string, { name: string; email: string; student_number?: string; school?: string }>();
+    const studentInfoMap = new Map<
+      string,
+      { name: string; email: string; student_number?: string; school?: string }
+    >();
     await Promise.all(
       uniqueStudentIds.map(async (studentId) => {
         const info = await getUserInfo(studentId);
         const profile = studentProfileMap.get(studentId);
-        
+
         if (info) {
           studentInfoMap.set(studentId, {
             name: profile?.name || info.name,
@@ -180,124 +168,8 @@ export async function GET(
       })
     );
 
-    // Process sessions and decompress data
+    // Optimized: Process sessions without decompression (not needed for list view)
     const processedSessions = sessions.map((session) => {
-      // Decompress session data
-      let decompressedSessionData = null;
-      if (session.compressed_session_data) {
-        try {
-          decompressedSessionData = decompressData(
-            session.compressed_session_data
-          );
-        } catch (error) {
-          console.error(`Error decompressing session ${session.id}:`, error);
-        }
-      }
-
-      // Decompress submissions data
-      const decompressedSubmissions =
-        session.submissions?.map((submission: Record<string, unknown>) => {
-          let decompressedAnswerData = null;
-          let decompressedFeedbackData = null;
-
-          if (
-            submission.compressed_answer_data &&
-            typeof submission.compressed_answer_data === "string"
-          ) {
-            try {
-              decompressedAnswerData = decompressData(
-                submission.compressed_answer_data
-              );
-            } catch (error) {
-              console.error("Error decompressing answer data:", error);
-            }
-          }
-
-          if (
-            submission.compressed_feedback_data &&
-            typeof submission.compressed_feedback_data === "string"
-          ) {
-            try {
-              decompressedFeedbackData = decompressData(
-                submission.compressed_feedback_data
-              );
-            } catch (error) {
-              console.error("Error decompressing feedback data:", error);
-            }
-          }
-
-          return {
-            ...submission,
-            decompressed: {
-              answerData: decompressedAnswerData,
-              feedbackData: decompressedFeedbackData,
-            },
-          };
-        }) || [];
-
-      // Decompress messages data
-      const decompressedMessages =
-        session.messages?.map((message: Record<string, unknown>) => {
-          let decompressedContent = null;
-
-          if (
-            message.compressed_content &&
-            typeof message.compressed_content === "string"
-          ) {
-            try {
-              decompressedContent = decompressData(message.compressed_content);
-            } catch (error) {
-              console.error("Error decompressing message content:", error);
-            }
-          }
-
-          return {
-            ...message,
-            decompressed: {
-              content: decompressedContent,
-            },
-          };
-        }) || [];
-
-      // Calculate compression stats for this session
-      const sessionCompressionStats = {
-        session: session.compression_metadata || null,
-        submissions:
-          session.submissions
-            ?.map((s: Record<string, unknown>) => s.compression_metadata)
-            .filter(Boolean) || [],
-        messages:
-          session.messages
-            ?.map((m: Record<string, unknown>) => m.compression_metadata)
-            .filter(Boolean) || [],
-        totalOriginalSize: 0,
-        totalCompressedSize: 0,
-      };
-
-      // Calculate total compression stats for this session
-      if (session.compression_metadata) {
-        sessionCompressionStats.totalOriginalSize +=
-          session.compression_metadata.originalSize || 0;
-        sessionCompressionStats.totalCompressedSize +=
-          session.compression_metadata.compressedSize || 0;
-      }
-
-      sessionCompressionStats.submissions.forEach((meta) => {
-        const metaObj = meta as Record<string, unknown>;
-        sessionCompressionStats.totalOriginalSize +=
-          (metaObj.originalSize as number) || 0;
-        sessionCompressionStats.totalCompressedSize +=
-          (metaObj.compressedSize as number) || 0;
-      });
-
-      sessionCompressionStats.messages.forEach((meta) => {
-        const metaObj = meta as Record<string, unknown>;
-        sessionCompressionStats.totalOriginalSize +=
-          (metaObj.originalSize as number) || 0;
-        sessionCompressionStats.totalCompressedSize +=
-          (metaObj.compressedSize as number) || 0;
-      });
-
       // Get student info from map
       const studentInfo = studentInfoMap.get(session.student_id) || {
         name: `Student ${session.student_id.slice(0, 8)}`,
@@ -316,44 +188,15 @@ export async function GET(
         submitted_at: session.submitted_at,
         used_clarifications: session.used_clarifications,
         created_at: session.created_at,
-        // Decompressed data
-        decompressed: decompressedSessionData,
-        submissions: decompressedSubmissions,
-        messages: decompressedMessages,
-        // Compression stats
-        compressionStats: sessionCompressionStats,
       };
     });
-
-    // Calculate overall compression stats
-    const overallCompressionStats = {
-      totalSessions: sessions.length,
-      totalOriginalSize: 0,
-      totalCompressedSize: 0,
-      totalSpaceSaved: 0,
-    };
-
-    processedSessions.forEach((session) => {
-      overallCompressionStats.totalOriginalSize +=
-        session.compressionStats.totalOriginalSize;
-      overallCompressionStats.totalCompressedSize +=
-        session.compressionStats.totalCompressedSize;
-    });
-
-    overallCompressionStats.totalSpaceSaved =
-      overallCompressionStats.totalOriginalSize -
-      overallCompressionStats.totalCompressedSize;
 
     const requestDuration = Date.now() - requestStartTime;
     console.log(
       `⏱️  [PERFORMANCE] Exam sessions GET completed in ${requestDuration}ms`
     );
     console.log(
-      `✅ [SUCCESS] Exam sessions retrieved | Exam: ${exam.id} | Sessions: ${
-        sessions.length
-      } | Total space saved: ${(
-        overallCompressionStats.totalSpaceSaved / 1024
-      ).toFixed(2)}KB`
+      `✅ [SUCCESS] Exam sessions retrieved | Exam: ${exam.id} | Sessions: ${sessions.length}`
     );
 
     return NextResponse.json({
@@ -362,7 +205,6 @@ export async function GET(
         title: exam.title,
       },
       sessions: processedSessions,
-      compressionStats: overallCompressionStats,
     });
   } catch (error) {
     const requestDuration = Date.now() - requestStartTime;

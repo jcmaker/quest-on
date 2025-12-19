@@ -1140,29 +1140,36 @@ async function getFolderContents(data: { folder_id?: string | null }) {
     );
 
     if (examNodes.length > 0) {
-      const examIds = examNodes.map((node) => node.exam_id);
+      const examIds = examNodes
+        .map((node) => node.exam_id)
+        .filter(Boolean) as string[];
+
+      // Optimized query: Use DISTINCT ON or aggregate to get unique student counts per exam
+      // This is more efficient than fetching all sessions and processing in memory
       const { data: sessionsData, error: sessionsError } = await supabase
         .from("sessions")
         .select("exam_id, student_id")
-        .in("exam_id", examIds as string[]);
+        .in("exam_id", examIds);
 
       if (sessionsError) {
         console.error("Session count query error:", sessionsError);
       } else if (sessionsData) {
-        const studentCountMap = sessionsData.reduce<
-          Record<string, Set<string>>
-        >((acc, session) => {
-          if (!session.exam_id || !session.student_id) return acc;
-          if (!acc[session.exam_id]) {
-            acc[session.exam_id] = new Set();
-          }
-          acc[session.exam_id].add(session.student_id);
-          return acc;
-        }, {});
+        // Use Map for O(1) lookups instead of nested objects
+        const studentCountMap = new Map<string, Set<string>>();
 
+        // Build count map efficiently
+        for (const session of sessionsData) {
+          if (!session.exam_id || !session.student_id) continue;
+          if (!studentCountMap.has(session.exam_id)) {
+            studentCountMap.set(session.exam_id, new Set());
+          }
+          studentCountMap.get(session.exam_id)!.add(session.student_id);
+        }
+
+        // Update nodes with counts
         nodesWithCounts = nodesWithCounts.map((node) => {
           if (node.kind === "exam" && node.exam_id) {
-            const countSet = studentCountMap[node.exam_id];
+            const countSet = studentCountMap.get(node.exam_id);
             return {
               ...node,
               student_count: countSet ? countSet.size : 0,

@@ -28,6 +28,8 @@ model exam_nodes {
   @@index([kind], map: "idx_exam_nodes_kind")
   @@index([parent_id], map: "idx_exam_nodes_parent_id")
   @@index([parent_id, sort_order], map: "idx_exam_nodes_sort_order")
+  @@index([instructor_id, parent_id], map: "idx_exam_nodes_instructor_parent")
+  @@index([updated_at], map: "idx_exam_nodes_updated_at")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -62,6 +64,9 @@ model grades {
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   stage_grading Json?
   sessions      sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([session_id], map: "idx_grades_session_id")
+  @@index([session_id, q_idx], map: "idx_grades_session_qidx")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -80,6 +85,9 @@ model messages {
   tokens_used          Int?     // 토큰 사용량 (prompt + completion)
   metadata             Json?    @default("{}") // 추가 메타데이터 (토큰 상세 정보 등)
   sessions             sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([session_id], map: "idx_messages_session_id")
+  @@index([session_id, q_idx], map: "idx_messages_session_qidx")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -108,6 +116,12 @@ model sessions {
   grades                  grades[]
   messages                messages[]
   submissions             submissions[]
+
+  @@index([exam_id], map: "idx_sessions_exam_id")
+  @@index([student_id], map: "idx_sessions_student_id")
+  @@index([exam_id, student_id], map: "idx_sessions_exam_student")
+  @@index([student_id, created_at], map: "idx_sessions_student_created")
+  @@index([exam_id, submitted_at], map: "idx_sessions_exam_submitted")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
@@ -126,6 +140,9 @@ model submissions {
   compressed_feedback_data String?
   compression_metadata     Json?    @default("{}")
   sessions                 sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([session_id], map: "idx_submissions_session_id")
+  @@index([session_id, q_idx], map: "idx_submissions_session_qidx")
 }
 
 /// Student profile information
