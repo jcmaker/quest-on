@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -55,16 +55,54 @@ export function InstructorChatSidebar({
 function FloatingTrigger() {
   const { toggleSidebar, open, isMobile, openMobile } = useSidebar();
   const isOpen = isMobile ? openMobile : open;
+  const [scrollY, setScrollY] = useState(0);
+  const [delayedScrollY, setDelayedScrollY] = useState(0);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      setScrollY(currentScrollY);
+
+      // 기존 타이머가 있으면 취소
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      // 약간의 지연 후 위치 업데이트 (150ms 지연)
+      timeoutRef.current = setTimeout(() => {
+        setDelayedScrollY(currentScrollY);
+      }, 150);
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, []);
+
+  // 스크롤 차이에 따라 약간의 오프셋 적용 (최대 20px) - 방향 반대
+  const offsetY = (delayedScrollY - scrollY) * 0.3;
+  const clampedOffset = Math.max(-20, Math.min(20, offsetY));
+
   if (isOpen) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
+    <div
+      className="fixed bottom-6 right-6 z-50 transition-transform duration-300 ease-out"
+      style={{
+        transform: `translateY(${clampedOffset}px)`,
+      }}
+    >
       <AnimateIcon animateOnHover="path-loop" loop={true} asChild>
         <button
           type="button"
           onClick={toggleSidebar}
           aria-label="설정 사이드바 열기"
-          className="flex h-14 w-14 items-center justify-center rounded-3xl rounded-br-none bg-primary text-primary-foreground shadow-lg"
+          className="gradient-animated flex h-14 w-14 items-center justify-center rounded-3xl rounded-br-none text-white shadow-lg hover:shadow-xl transition-shadow"
         >
           <BotMessageSquare size={32} className="-scale-x-100" />
         </button>

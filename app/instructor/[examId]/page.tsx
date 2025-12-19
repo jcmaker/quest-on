@@ -443,35 +443,6 @@ export default function ExamDetail({
     setMonitoringStudent(null);
   };
 
-  const handleCopyExamCode = async () => {
-    if (!exam?.code) return;
-    try {
-      await navigator.clipboard.writeText(exam.code);
-    } catch (err) {
-      console.error("Failed to copy exam code:", err);
-    }
-  };
-
-  const handleOpenExamInfo = () => {
-    setExamInfoOpen(true);
-    requestAnimationFrame(() => {
-      document.getElementById("exam-info-section")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
-  };
-
-  const handleOpenQuestions = () => {
-    setQuestionsOpen(true);
-    requestAnimationFrame(() => {
-      document.getElementById("questions-section")?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-    });
-  };
-
   const getStudentStatusColor = (status: string) => {
     switch (status) {
       case "completed":
