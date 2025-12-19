@@ -99,6 +99,9 @@ export default function ExamDetail({
   );
   const [examInfoOpen, setExamInfoOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [questionsCount, setQuestionsCount] = useState<number | null>(null);
 
   // Fetch analytics data (for charts only, student scores are already in exam.students)
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
@@ -113,7 +116,14 @@ export default function ExamDetail({
       }
       return response.json();
     },
-    enabled: !!resolvedParams.examId && isLoaded && isSignedIn && !!exam,
+    enabled:
+      !!resolvedParams.examId &&
+      isLoaded &&
+      isSignedIn &&
+      !!exam &&
+      exam.students.length > 0, // 학생이 있을 때만 실행
+    staleTime: 30000, // 30초간 캐시 유지
+    gcTime: 5 * 60 * 1000, // 5분간 가비지 컬렉션 방지
   });
 
   // Redirect non-instructors
@@ -132,18 +142,20 @@ export default function ExamDetail({
       try {
         setLoading(true);
 
-        // Fetch exam details
-        console.log("Fetching exam details for ID:", resolvedParams.examId);
-        const examResponse = await fetch("/api/supa", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            action: "get_exam_by_id",
-            data: { id: resolvedParams.examId },
+        // 병렬로 필수 데이터 가져오기 (exam + sessions)
+        const [examResponse, sessionsResponse] = await Promise.all([
+          fetch("/api/supa", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "get_exam_by_id",
+              data: { id: resolvedParams.examId },
+            }),
           }),
-        });
+          fetch(`/api/exam/${resolvedParams.examId}/sessions`),
+        ]);
 
         if (!examResponse.ok) {
           const errorText = await examResponse.text();
@@ -155,62 +167,15 @@ export default function ExamDetail({
 
         const examResult = await examResponse.json();
 
-        // Fetch actual student submissions
-        const sessionsResponse = await fetch(
-          `/api/exam/${resolvedParams.examId}/sessions`
-        );
+        // Store questions count for display (from API response, but we won't use the actual questions data)
+        const questionsArray = examResult.exam.questions || [];
+        setQuestionsCount(questionsArray.length);
+
+        // 학생 데이터 처리 (sessions는 이미 가져옴)
         let students: Student[] = [];
-
-        // Analytics data will be fetched separately via useQuery
-        // For now, we'll fetch it here too to get scores immediately
-        let analyticsData: any = null;
-        try {
-          const analyticsResponse = await fetch(
-            `/api/analytics/exam/${resolvedParams.examId}/overview`
-          );
-          if (analyticsResponse.ok) {
-            analyticsData = await analyticsResponse.json();
-          }
-        } catch (err) {
-          console.error("Failed to fetch analytics:", err);
-        }
-
-        // Fetch final grades (교수가 최종 채점한 점수)
-        // 교수가 채점 페이지에서 수동으로 저장한 점수만 최종 채점으로 간주
-        // 자동 채점은 제외 (자동 채점은 가채점으로만 표시)
-        let finalGradesMap = new Map<string, number>();
-        try {
-          const gradesResponse = await fetch(
-            `/api/exam/${resolvedParams.examId}/final-grades`
-          );
-          if (gradesResponse.ok) {
-            const gradesData = await gradesResponse.json();
-            if (gradesData.grades) {
-              gradesData.grades.forEach(
-                (g: {
-                  session_id: string;
-                  score: number;
-                  isManual?: boolean;
-                }) => {
-                  // 교수가 수동으로 채점한 경우만 최종 채점으로 표시
-                  if (g.isManual) {
-                    finalGradesMap.set(g.session_id, g.score);
-                  }
-                }
-              );
-            }
-          }
-        } catch (err) {
-          console.error("Failed to fetch final grades:", err);
-        }
 
         if (sessionsResponse.ok) {
           const sessionsResult = await sessionsResponse.json();
-
-          // Analytics에서 점수 정보 가져오기 (한 번만 생성)
-          const analyticsStudentsMap = analyticsData?.students
-            ? new Map(analyticsData.students.map((s: any) => [s.sessionId, s]))
-            : new Map();
 
           // 학생별로 세션을 그룹화
           const sessionsByStudent = new Map<
@@ -297,20 +262,13 @@ export default function ExamDetail({
                     : String(selectedSession.created_at)
                   : undefined;
 
-              // Analytics에서 점수 정보 가져오기
-              const analyticsStudent = analyticsStudentsMap.get(sessionId);
-
-              // 최종 채점 점수 확인
-              const finalScore = finalGradesMap.get(sessionId);
-              const isGraded = finalScore !== undefined;
-
               return {
                 id: sessionId, // Use session ID for routing to grade page
                 name: studentName,
                 email: studentEmail,
                 status: submittedAt ? "completed" : "in-progress",
-                score: analyticsStudent?.score || undefined, // 가채점 점수
-                finalScore: finalScore, // 교수가 최종 채점한 점수
+                score: undefined, // Will be filled by analytics query
+                finalScore: undefined, // Will be filled by final grades query
                 submittedAt: submittedAt as string | undefined,
                 createdAt: createdAt as string | undefined,
                 student_number:
@@ -321,14 +279,15 @@ export default function ExamDetail({
                   typeof selectedSession.student_school === "string"
                     ? selectedSession.student_school
                     : undefined,
-                questionCount: analyticsStudent?.questionCount,
-                answerLength: analyticsStudent?.answerLength,
-                isGraded,
+                questionCount: undefined, // Will be filled by analytics query
+                answerLength: undefined, // Will be filled by analytics query
+                isGraded: false, // Will be filled by final grades query
               };
             }
           );
         }
 
+        // 초기 데이터 설정 (점수 정보는 나중에 업데이트)
         setExam({
           id: examResult.exam.id,
           title: examResult.exam.title,
@@ -337,7 +296,7 @@ export default function ExamDetail({
           duration: examResult.exam.duration,
           status: examResult.exam.status,
           createdAt: examResult.exam.created_at,
-          questions: examResult.exam.questions || [],
+          questions: [], // Don't load questions initially - will be loaded when questionsOpen is true
           students: students,
         });
       } catch (err) {
@@ -352,6 +311,152 @@ export default function ExamDetail({
 
     fetchExamData();
   }, [resolvedParams.examId]);
+
+  // Final grades를 별도로 로드하여 학생 데이터 업데이트
+  // Analytics는 useQuery에서 이미 처리되므로 여기서는 final grades만 처리
+  const [finalGradesLoaded, setFinalGradesLoaded] = useState(false);
+  const [analyticsProcessed, setAnalyticsProcessed] = useState(false);
+
+  // examId가 변경되면 플래그 리셋
+  useEffect(() => {
+    setFinalGradesLoaded(false);
+    setAnalyticsProcessed(false);
+  }, [resolvedParams.examId]);
+
+  useEffect(() => {
+    if (!exam || exam.students.length === 0 || finalGradesLoaded) return;
+
+    const updateFinalGrades = async () => {
+      try {
+        const gradesResponse = await fetch(
+          `/api/exam/${resolvedParams.examId}/final-grades`
+        ).catch(() => null);
+
+        if (!gradesResponse?.ok) return;
+
+        const gradesData = await gradesResponse.json();
+        const finalGradesMap = new Map<string, number>();
+
+        if (gradesData.grades) {
+          gradesData.grades.forEach(
+            (g: { session_id: string; score: number; isManual?: boolean }) => {
+              // 교수가 수동으로 채점한 경우만 최종 채점으로 표시
+              if (g.isManual) {
+                finalGradesMap.set(g.session_id, g.score);
+              }
+            }
+          );
+        }
+
+        // 학생 데이터 업데이트 (final grades만)
+        setExam((prev) => {
+          if (!prev) return prev;
+
+          const updatedStudents = prev.students.map((student) => {
+            const finalScore = finalGradesMap.get(student.id);
+            const isGraded = finalScore !== undefined;
+
+            return {
+              ...student,
+              finalScore:
+                finalScore !== undefined ? finalScore : student.finalScore,
+              isGraded,
+            };
+          });
+
+          return {
+            ...prev,
+            students: updatedStudents,
+          };
+        });
+
+        setFinalGradesLoaded(true);
+      } catch (err) {
+        console.error("Error updating final grades:", err);
+        // 에러가 발생해도 기본 데이터는 유지
+      }
+    };
+
+    updateFinalGrades();
+  }, [exam?.id, resolvedParams.examId, finalGradesLoaded]);
+
+  // Analytics 데이터가 로드되면 학생 점수 업데이트
+  useEffect(() => {
+    if (
+      !exam ||
+      !analyticsData ||
+      exam.students.length === 0 ||
+      analyticsProcessed
+    )
+      return;
+
+    const analyticsStudentsMap = analyticsData.students
+      ? new Map(analyticsData.students.map((s: any) => [s.sessionId, s]))
+      : new Map();
+
+    // 학생 데이터 업데이트 (analytics 점수만)
+    setExam((prev) => {
+      if (!prev) return prev;
+
+      const updatedStudents = prev.students.map((student) => {
+        const analyticsStudent = analyticsStudentsMap.get(student.id);
+
+        return {
+          ...student,
+          score: analyticsStudent?.score ?? student.score,
+          questionCount:
+            analyticsStudent?.questionCount ?? student.questionCount,
+          answerLength: analyticsStudent?.answerLength ?? student.answerLength,
+        };
+      });
+
+      return {
+        ...prev,
+        students: updatedStudents,
+      };
+    });
+
+    setAnalyticsProcessed(true);
+  }, [analyticsData, exam?.id, analyticsProcessed]); // analyticsData가 변경될 때만 실행
+
+  // Load questions when questionsOpen becomes true
+  useEffect(() => {
+    if (questionsOpen && exam && questions.length === 0 && !questionsLoading) {
+      const loadQuestions = async () => {
+        try {
+          setQuestionsLoading(true);
+          const examResponse = await fetch("/api/supa", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "get_exam_by_id",
+              data: { id: resolvedParams.examId },
+            }),
+          });
+
+          if (examResponse.ok) {
+            const examResult = await examResponse.json();
+            const questionsArray = examResult.exam.questions || [];
+            setQuestions(questionsArray);
+          }
+        } catch (err) {
+          console.error("Error loading questions:", err);
+        } finally {
+          setQuestionsLoading(false);
+        }
+      };
+
+      loadQuestions();
+    }
+  }, [
+    questionsOpen,
+    exam,
+    questions.length,
+    questionsLoading,
+    resolvedParams.examId,
+  ]);
 
   // Filtered and sorted students
   const filteredAndSortedStudents = useMemo(() => {
@@ -458,8 +563,8 @@ export default function ExamDetail({
 
   const examContext = useMemo(() => {
     if (!exam) return "";
-    return buildInstructorExamContext(exam);
-  }, [exam]);
+    return buildInstructorExamContext(exam, questions);
+  }, [exam, questions]);
 
   // Show loading while auth is loading
   if (!isLoaded) {
@@ -565,7 +670,9 @@ export default function ExamDetail({
                       <div className="flex items-center gap-3">
                         <h3 className="font-semibold">문제 보기</h3>
                         <span className="text-sm text-muted-foreground">
-                          {exam.questions.length}개 문제
+                          {questionsCount !== null
+                            ? `${questionsCount}개 문제`
+                            : "문제 로딩 중..."}
                         </span>
                       </div>
                       {questionsOpen ? (
@@ -577,7 +684,13 @@ export default function ExamDetail({
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="px-4 pb-4">
-                      <QuestionsListCard questions={exam.questions} />
+                      {questionsLoading ? (
+                        <div className="flex items-center justify-center py-8">
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                        </div>
+                      ) : (
+                        <QuestionsListCard questions={questions} />
+                      )}
                     </div>
                   </CollapsibleContent>
                 </div>
@@ -727,7 +840,7 @@ export default function ExamDetail({
   );
 }
 
-function buildInstructorExamContext(exam: Exam) {
+function buildInstructorExamContext(exam: Exam, questions: Question[] = []) {
   const total = exam.students?.length ?? 0;
   const completed = exam.students?.filter(
     (s) => s.status === "completed"
@@ -743,7 +856,7 @@ function buildInstructorExamContext(exam: Exam) {
     (s) => typeof s.score === "number"
   ).length;
 
-  const questionsPreview = (exam.questions ?? [])
+  const questionsPreview = questions
     .slice(0, 12)
     .map((q, i) => `${i + 1}. (${q.type}) ${q.text}`)
     .join("\n");
@@ -754,7 +867,7 @@ function buildInstructorExamContext(exam: Exam) {
     `시험 상태: ${exam.status}`,
     `시험 시간: ${exam.duration}분`,
     exam.description ? `시험 설명: ${exam.description}` : "",
-    `문항 수: ${(exam.questions ?? []).length}`,
+    `문항 수: ${questions.length}`,
     questionsPreview ? `문항(일부):\n${questionsPreview}` : "",
     `학생 수: ${total} (완료 ${completed}, 진행중 ${inProgress}, 미시작 ${notStarted})`,
     `최종채점 완료: ${graded}`,

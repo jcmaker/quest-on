@@ -25,7 +25,25 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { action, data } = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch (jsonError) {
+      console.error("JSON parsing error:", jsonError);
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
+
+    const { action, data } = body;
+
+    if (!action) {
+      return NextResponse.json(
+        { error: "Missing 'action' field in request" },
+        { status: 400 }
+      );
+    }
 
     switch (action) {
       case "create_exam":
@@ -73,12 +91,23 @@ export async function POST(request: NextRequest) {
       case "get_instructor_drive":
         return await getInstructorDrive();
       default:
-        return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+        return NextResponse.json(
+          { error: `Invalid action: ${action}` },
+          { status: 400 }
+        );
     }
   } catch (error) {
     console.error("Supabase API error:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Internal server error" },
+      {
+        error: "Internal server error",
+        details: errorMessage,
+        ...(process.env.NODE_ENV === "development" && {
+          stack: error instanceof Error ? error.stack : undefined,
+        }),
+      },
       { status: 500 }
     );
   }
@@ -382,44 +411,105 @@ async function getExamById(data: { id: string }) {
   try {
     console.log("API: getExamById called with data:", data);
 
+    // Validate input
+    if (!data || !data.id) {
+      console.error("API: Missing exam ID");
+      return NextResponse.json(
+        { error: "Missing exam ID", details: "The 'id' field is required" },
+        { status: 400 }
+      );
+    }
+
+    if (typeof data.id !== "string" || data.id.trim() === "") {
+      console.error("API: Invalid exam ID format:", data.id);
+      return NextResponse.json(
+        {
+          error: "Invalid exam ID",
+          details: "Exam ID must be a non-empty string",
+        },
+        { status: 400 }
+      );
+    }
+
     // Get current user
-    const user = await currentUser();
+    let user;
+    try {
+      user = await currentUser();
+    } catch (authError) {
+      console.error("API: Error getting current user:", authError);
+      return NextResponse.json(
+        {
+          error: "Authentication error",
+          details:
+            authError instanceof Error
+              ? authError.message
+              : "Unknown auth error",
+        },
+        { status: 401 }
+      );
+    }
+
     if (!user) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("API: No user found");
-      }
+      console.error("API: No user found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (process.env.NODE_ENV === "development") {
-      console.log("API: User found:", user.id);
-    }
+    console.log("API: User found:", user.id);
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
-    if (process.env.NODE_ENV === "development") {
-      console.log("API: User role:", userRole);
-    }
+    console.log("API: User role:", userRole);
 
     if (userRole !== "instructor") {
-      if (process.env.NODE_ENV === "development") {
-        console.log("API: User is not instructor");
-      }
+      console.error("API: User is not instructor");
       return NextResponse.json(
         { error: "Instructor access required" },
         { status: 403 }
       );
     }
 
-    if (process.env.NODE_ENV === "development") {
-      console.log(
-        "API: Querying exam with ID:",
-        data.id,
-        "for instructor:",
-        user.id
+    console.log(
+      "API: Querying exam with ID:",
+      data.id,
+      "for instructor:",
+      user.id
+    );
+
+    // First, check if exam exists at all (without instructor filter)
+    const { data: examExists, error: checkError } = await supabase
+      .from("exams")
+      .select("id, instructor_id")
+      .eq("id", data.id)
+      .single();
+
+    if (checkError) {
+      console.error("API: Error checking exam existence:", checkError);
+      if (checkError.code === "PGRST116") {
+        return NextResponse.json(
+          { error: "Exam not found", details: "No exam exists with this ID" },
+          { status: 404 }
+        );
+      }
+      throw checkError;
+    }
+
+    // Check if exam belongs to this instructor
+    if (examExists && examExists.instructor_id !== user.id) {
+      console.error("API: Exam belongs to different instructor:", {
+        examId: data.id,
+        examInstructorId: examExists.instructor_id,
+        currentUserId: user.id,
+      });
+      return NextResponse.json(
+        {
+          error: "Exam not found",
+          details: "Exam does not belong to this instructor",
+        },
+        { status: 404 }
       );
     }
 
+    // Now fetch the full exam data
     const { data: exam, error } = await supabase
       .from("exams")
       .select(
@@ -432,18 +522,42 @@ async function getExamById(data: { id: string }) {
     if (error) {
       console.error("API: Database error:", error);
       if (error.code === "PGRST116") {
-        return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+        return NextResponse.json(
+          {
+            error: "Exam not found",
+            details: "No exam found matching the criteria",
+          },
+          { status: 404 }
+        );
       }
       throw error;
     }
 
-    if (process.env.NODE_ENV === "development") {
-      console.log("API: Exam found:", exam);
+    if (!exam) {
+      console.error("API: Exam query returned no data");
+      return NextResponse.json(
+        { error: "Exam not found", details: "Exam data is null" },
+        { status: 404 }
+      );
     }
+
+    console.log("API: Exam found successfully:", exam.id);
     return NextResponse.json({ exam });
   } catch (error) {
     console.error("Get exam by ID error:", error);
-    return NextResponse.json({ error: "Failed to get exam" }, { status: 500 });
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    const errorDetails =
+      error instanceof Error && error.stack ? error.stack : undefined;
+    console.error("Error details:", { errorMessage, errorDetails });
+    return NextResponse.json(
+      {
+        error: "Failed to get exam",
+        details: errorMessage,
+        ...(process.env.NODE_ENV === "development" && { stack: errorDetails }),
+      },
+      { status: 500 }
+    );
   }
 }
 

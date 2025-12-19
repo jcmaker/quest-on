@@ -228,7 +228,7 @@ export default function LandingPage() {
                 animationDelay: "0.4s",
                 backgroundSize: "200% 200%",
                 animation:
-                  "fade-in-up 1s ease-out 0.4s both, gradient-shift 3s ease-in-out infinite",
+                  "fade-in-up 1s ease-out 0.4s both, gradient-shift 5s ease-in-out infinite",
               }}
             >
               Quest-On
