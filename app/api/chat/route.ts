@@ -9,6 +9,29 @@ import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
 import { searchRelevantMaterials } from "@/lib/material-search";
 
+// Some environments may send OPTIONS (preflight) or GET accidentally.
+// If we don't handle them, Next can return a non-JSON 405 which breaks clients expecting JSON.
+export async function OPTIONS(request: NextRequest) {
+  const origin = request.headers.get("origin") ?? "*";
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": origin,
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Max-Age": "86400",
+      Vary: "Origin",
+    },
+  });
+}
+
+export async function GET() {
+  return NextResponse.json(
+    { ok: true, route: "/api/chat", methods: ["POST", "OPTIONS"] },
+    { status: 200, headers: { Allow: "POST, OPTIONS" } }
+  );
+}
+
 // Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!, // 서버 전용 env 사용 (NEXT_PUBLIC은 브라우저에서도 접근 가능하지만 서버에서는 안전하게 사용)
