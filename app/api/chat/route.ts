@@ -1,11 +1,10 @@
+// Node.js Runtime 사용 (4MB → 25MB 업로드 한도 증가)
+export const runtime = "nodejs";
+
 import { NextRequest, NextResponse } from "next/server";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
 import { searchRelevantMaterials } from "@/lib/material-search";
-
-// Next.js App Router 설정
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 // Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
 const supabase = createClient(
