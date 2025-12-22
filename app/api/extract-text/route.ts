@@ -298,6 +298,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    // TypeScript narrowing helper (Vercel build strict mode)
+    const fileUrlStr: string = fileUrl;
 
     // Supabase Storage에서 파일 다운로드
     // fileUrl에서 storage path 추출
@@ -355,11 +357,11 @@ export async function POST(request: NextRequest) {
 
         if (chunks.length > 0) {
           // 2. 기존 청크 삭제 (파일 재처리 시)
-          await deleteChunksByFileUrl(examId, fileUrl);
+          await deleteChunksByFileUrl(examId, fileUrlStr);
 
           // 3. 청크 포맷팅
           const formattedChunks = chunks.map((chunk) =>
-            formatChunkMetadata(chunk, fileName || "unknown", fileUrl)
+            formatChunkMetadata(chunk, fileName || "unknown", fileUrlStr)
           );
 
           // 4. 임베딩 생성 (배치)
