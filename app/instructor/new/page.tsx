@@ -414,7 +414,6 @@ export default function CreateExam() {
       id: Date.now().toString(),
       text: "",
       type: "essay",
-      core_ability: "", // 문제 핵심 역량 초기화
     };
     setQuestions([...questions, newQuestion]);
   };

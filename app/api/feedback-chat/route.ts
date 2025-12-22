@@ -90,7 +90,6 @@ export async function POST(request: NextRequest) {
       id: string;
       text: string;
       type: string;
-      core_ability?: string;
     }
 
     const currentQuestion =

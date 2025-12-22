@@ -72,7 +72,7 @@ export async function GET(
         idx: q.idx,
         type: q.type,
         prompt: q.prompt || q.text,
-        ai_context: q.ai_context || q.core_ability,
+        ai_context: q.ai_context,
       }));
     }
 
@@ -180,9 +180,10 @@ export async function GET(
             );
             if (decompressed && typeof decompressed === "object") {
               const decompressedObj = decompressed as Record<string, unknown>;
-              answer = (typeof decompressedObj.answer === "string" 
-                ? decompressedObj.answer 
-                : answer) || answer;
+              answer =
+                (typeof decompressedObj.answer === "string"
+                  ? decompressedObj.answer
+                  : answer) || answer;
             }
           } catch (error) {
             console.error("Error decompressing answer:", error);

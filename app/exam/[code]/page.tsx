@@ -63,7 +63,7 @@ interface Question {
   text: string;
   type: string;
   points: number;
-  core_ability?: string; // 문제 핵심 역량 - AI 프롬프트에 사용
+  ai_context?: string; // AI 컨텍스트 (레거시 core_ability 제거)
 }
 
 interface Exam {
@@ -530,8 +530,8 @@ export default function ExamPage() {
           examId: exam?.id,
           studentId: user?.id,
           currentQuestionText: exam?.questions[currentQuestion]?.text,
-          currentQuestionCoreAbility:
-            exam?.questions[currentQuestion]?.core_ability,
+          currentQuestionAiContext:
+            exam?.questions[currentQuestion]?.ai_context,
         }),
       });
 

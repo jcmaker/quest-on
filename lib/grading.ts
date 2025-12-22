@@ -280,11 +280,7 @@ export async function autoGradeSession(
               ? q.text
               : undefined,
           ai_context:
-            typeof q.ai_context === "string"
-              ? q.ai_context
-              : typeof q.core_ability === "string"
-              ? q.core_ability
-              : undefined,
+            typeof q.ai_context === "string" ? q.ai_context : undefined,
         }))
       : []
     : [];

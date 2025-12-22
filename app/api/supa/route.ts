@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
 import { compressData } from "@/lib/compression";
+import { chunkText, formatChunkMetadata } from "@/lib/chunking";
+import { createEmbeddings } from "@/lib/embedding";
+import { saveChunksToDB, deleteChunksByFileUrl } from "@/lib/save-chunks";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -119,7 +122,6 @@ interface QuestionData {
   type: "multiple-choice" | "essay" | "short-answer";
   options?: string[];
   correctAnswer?: string;
-  core_ability?: string;
 }
 
 async function createExam(data: {
@@ -167,12 +169,20 @@ async function createExam(data: {
     }
 
     // Create exam with the correct schema
+    // NOTE: core_ability(핵심 역량) 필드는 제거되었으므로 저장 시 항상 제거한다.
+    const sanitizedQuestions = (data.questions || []).map((q) => {
+      const { core_ability, ...rest } = q as QuestionData & {
+        core_ability?: unknown;
+      };
+      return rest;
+    });
+
     const examData = {
       title: data.title,
       code: data.code,
       description: null, // description 필드는 nullable이므로 null로 설정
       duration: data.duration,
-      questions: data.questions,
+      questions: sanitizedQuestions,
       materials: data.materials || [],
       materials_text: data.materials_text || [], // 추출된 텍스트 저장
       rubric: data.rubric || [],
@@ -257,6 +267,143 @@ async function createExam(data: {
       console.error("Failed to create exam node:", nodeError);
       // Exam is created but node creation failed - this is not critical
       // but we should log it
+    }
+
+    // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
+    if (
+      examData.materials_text &&
+      Array.isArray(examData.materials_text) &&
+      examData.materials_text.length > 0
+    ) {
+      try {
+        console.log("🚀 [createExam] RAG 처리 시작:", {
+          examId: exam.id,
+          materialsCount: examData.materials_text.length,
+          materialsPreview: examData.materials_text.map((m: any) => ({
+            fileName: m.fileName || "unknown",
+            textLength: m.text?.length || 0,
+          })),
+        });
+
+        let totalChunksSaved = 0;
+
+        for (let idx = 0; idx < examData.materials_text.length; idx++) {
+          const material = examData.materials_text[idx];
+          const materialData = material as {
+            url: string;
+            text: string;
+            fileName: string;
+          };
+
+          console.log(
+            `📄 [createExam] 파일 ${idx + 1}/${
+              examData.materials_text.length
+            } 처리:`,
+            {
+              fileName: materialData.fileName,
+              url: materialData.url,
+              textLength: materialData.text?.length || 0,
+            }
+          );
+
+          if (!materialData.text || materialData.text.trim().length === 0) {
+            console.log(
+              `⚠️ [createExam] 텍스트가 비어있어 건너뜀: ${materialData.fileName}`
+            );
+            continue;
+          }
+
+          // 1. 텍스트 청킹
+          console.log(`✂️ [createExam] 청킹 시작: ${materialData.fileName}`);
+          const chunkStartTime = Date.now();
+          const chunks = chunkText(materialData.text, {
+            chunkSize: 800,
+            chunkOverlap: 200,
+          });
+          const chunkDuration = Date.now() - chunkStartTime;
+
+          if (chunks.length === 0) {
+            console.log(
+              `⚠️ [createExam] 청크 생성 실패: ${materialData.fileName}`
+            );
+            continue;
+          }
+
+          console.log(`✅ [createExam] 청킹 완료:`, {
+            fileName: materialData.fileName,
+            chunksCount: chunks.length,
+            duration: `${chunkDuration}ms`,
+            avgChunkSize: Math.round(
+              chunks.reduce((sum, c) => sum + c.text.length, 0) / chunks.length
+            ),
+          });
+
+          // 2. 기존 청크 삭제 (파일 재처리 시)
+          await deleteChunksByFileUrl(exam.id, materialData.url);
+
+          // 3. 청크 포맷팅
+          const formattedChunks = chunks.map((chunk) =>
+            formatChunkMetadata(chunk, materialData.fileName, materialData.url)
+          );
+
+          // 4. 임베딩 생성 (배치)
+          console.log(
+            `🧮 [createExam] 임베딩 생성 시작: ${materialData.fileName}`
+          );
+          const embeddingStartTime = Date.now();
+          const chunkTexts = formattedChunks.map((c) => c.content);
+          const embeddings = await createEmbeddings(chunkTexts);
+          const embeddingDuration = Date.now() - embeddingStartTime;
+
+          console.log(`✅ [createExam] 임베딩 생성 완료:`, {
+            fileName: materialData.fileName,
+            embeddingsCount: embeddings.length,
+            duration: `${embeddingDuration}ms`,
+            avgDurationPerEmbedding: `${Math.round(
+              embeddingDuration / embeddings.length
+            )}ms`,
+          });
+
+          // 5. DB에 저장
+          const chunksToSave = formattedChunks.map((chunk, index) => ({
+            content: chunk.content,
+            embedding: embeddings[index],
+            metadata: chunk.metadata,
+          }));
+
+          await saveChunksToDB(exam.id, chunksToSave);
+          totalChunksSaved += chunksToSave.length;
+
+          console.log(`💾 [createExam] 파일 처리 완료:`, {
+            fileName: materialData.fileName,
+            chunksSaved: chunksToSave.length,
+            totalChunksSaved,
+          });
+        }
+
+        console.log("🎉 [createExam] RAG 처리 완료:", {
+          examId: exam.id,
+          filesProcessed: examData.materials_text.length,
+          totalChunksSaved,
+        });
+      } catch (ragError) {
+        // RAG 처리 실패해도 시험 생성은 성공으로 처리
+        console.error("❌ [createExam] RAG 처리 실패 (시험 생성은 성공):", {
+          examId: exam.id,
+          error:
+            ragError instanceof Error ? ragError.message : String(ragError),
+          stack: ragError instanceof Error ? ragError.stack : undefined,
+        });
+      }
+    } else {
+      console.log("ℹ️ [createExam] RAG 처리 건너뜀:", {
+        examId: exam.id,
+        hasMaterialsText: !!examData.materials_text,
+        isArray: Array.isArray(examData.materials_text),
+        length: Array.isArray(examData.materials_text)
+          ? examData.materials_text.length
+          : 0,
+      });
     }
 
     return NextResponse.json({ exam, examNode });
@@ -730,6 +877,16 @@ async function initExamSession(data: {
 
     if (examError || !exam) {
       return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+    }
+
+    // core_ability(핵심 역량) 필드는 제거되었으므로, 세션 init 응답에서도 제거한다.
+    if (exam.questions && Array.isArray(exam.questions)) {
+      exam.questions = exam.questions.map((q: Record<string, unknown>) => {
+        const { core_ability, ...rest } = q as Record<string, unknown> & {
+          core_ability?: unknown;
+        };
+        return rest;
+      });
     }
 
     // 2. Get all existing sessions (most recent first)

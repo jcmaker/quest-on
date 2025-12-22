@@ -35,20 +35,21 @@ model exam_nodes {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model exams {
-  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title         String
-  code          String       @unique
-  description   String?
-  duration      Int
-  questions     Json
-  status        String?      @default("draft")
-  instructor_id String
-  student_count Int?         @default(0)
-  created_at    DateTime?    @default(now()) @db.Timestamptz(6)
-  updated_at    DateTime?    @default(now()) @db.Timestamptz(6)
-  materials     Json?        @default("[]")
-  rubric        Json?        @default("[]")
-  exam_nodes    exam_nodes[]
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title                String
+  code                 String                 @unique
+  description          String?
+  duration             Int
+  questions            Json
+  status               String?                @default("draft")
+  instructor_id        String
+  student_count        Int?                   @default(0)
+  created_at           DateTime?              @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime?              @default(now()) @db.Timestamptz(6)
+  materials            Json?                  @default("[]")
+  rubric               Json?                  @default("[]")
+  exam_nodes           exam_nodes[]
+  exam_material_chunks exam_material_chunks[]
 
   @@index([code], map: "idx_exams_code")
   @@index([instructor_id], map: "idx_exams_instructor_id")
@@ -80,9 +81,9 @@ model messages {
   created_at           DateTime @default(now()) @db.Timestamptz(6)
   compressed_content   String?
   compression_metadata Json?    @default("{}")
-  response_id          String?  // OpenAI Responses API response ID for chaining conversations
-  message_type         String?  // 질문 타입: "concept" | "calculation" | "strategy" | "other"
-  tokens_used          Int?     // 토큰 사용량 (prompt + completion)
+  response_id          String? // OpenAI Responses API response ID for chaining conversations
+  message_type         String? // 질문 타입: "concept" | "calculation" | "strategy" | "other"
+  tokens_used          Int? // 토큰 사용량 (prompt + completion)
   metadata             Json?    @default("{}") // 추가 메타데이터 (토큰 상세 정보 등)
   sessions             sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -112,7 +113,7 @@ model sessions {
   submitted_at            DateTime?     @db.Timestamptz(6)
   compressed_session_data String?
   compression_metadata    Json?         @default("{}")
-  ai_summary              Json?         // AI 자동 채점 요약 평가
+  ai_summary              Json? // AI 자동 채점 요약 평가
   grades                  grades[]
   messages                messages[]
   submissions             submissions[]
@@ -126,20 +127,20 @@ model sessions {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model submissions {
-  id                       String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  session_id               String   @db.Uuid
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  session_id               String    @db.Uuid
   q_idx                    Int
   answer                   String
   ai_feedback              Json?
   student_reply            String?
-  created_at               DateTime @default(now()) @db.Timestamptz(6)
+  created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime? @default(now()) @db.Timestamptz(6) // 답안 수정 시간
-  answer_history           Json?    @default("[]") // 답안 수정 이력: [{ text: string, timestamp: string }]
-  edit_count               Int?     @default(0) // 답안 수정 횟수
+  answer_history           Json?     @default("[]") // 답안 수정 이력: [{ text: string, timestamp: string }]
+  edit_count               Int?      @default(0) // 답안 수정 횟수
   compressed_answer_data   String?
   compressed_feedback_data String?
-  compression_metadata     Json?    @default("{}")
-  sessions                 sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  compression_metadata     Json?     @default("{}")
+  sessions                 sessions  @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([session_id], map: "idx_submissions_session_id")
   @@index([session_id, q_idx], map: "idx_submissions_session_qidx")
@@ -147,13 +148,29 @@ model submissions {
 
 /// Student profile information
 model student_profiles {
-  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  student_id String   @unique // Clerk user ID
-  name       String   // 학생 이름
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  student_id     String   @unique // Clerk user ID
+  name           String // 학생 이름
   student_number String // 학번
-  school     String   // 학교명
-  created_at DateTime @default(now()) @db.Timestamptz(6)
-  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  school         String // 학교명
+  created_at     DateTime @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime @default(now()) @db.Timestamptz(6)
 
   @@index([student_id], map: "idx_student_profiles_student_id")
+}
+
+/// RAG: 시험 자료 청크 및 벡터 임베딩 저장
+model exam_material_chunks {
+  id         String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  exam_id    String                       @db.Uuid
+  file_url   String
+  content    String                       @db.Text
+  embedding  Unsupported("vector(1536)")? // pgvector 확장 사용
+  metadata   Json?                        @default("{}")
+  created_at DateTime                     @default(now()) @db.Timestamptz(6)
+  exams      exams                        @relation(fields: [exam_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([exam_id], map: "idx_exam_material_chunks_exam_id")
+  @@index([file_url], map: "idx_exam_material_chunks_file_url")
+  @@map("exam_material_chunks")
 }

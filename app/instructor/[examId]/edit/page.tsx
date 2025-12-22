@@ -332,7 +332,6 @@ export default function EditExam({
       id: Date.now().toString(),
       text: "",
       type: "essay",
-      core_ability: "",
     };
     setQuestions([...questions, newQuestion]);
   };

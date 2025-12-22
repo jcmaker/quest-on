@@ -122,14 +122,14 @@ export async function GET(
       );
     }
 
-    // Normalize questions format (text -> prompt, core_ability -> ai_context)
+    // Normalize questions format (text -> prompt)
     if (exam.questions && Array.isArray(exam.questions)) {
       exam.questions = exam.questions.map((q: Record<string, unknown>) => ({
         id: q.id,
         idx: q.idx,
         type: q.type,
         prompt: q.prompt || q.text, // Support both field names
-        ai_context: q.ai_context || q.core_ability, // Support both field names
+        ai_context: q.ai_context,
       }));
     }
 
@@ -793,7 +793,7 @@ export async function PUT(
             idx: q.idx !== undefined ? (q.idx as number) : index,
             type: q.type,
             prompt: q.prompt || q.text,
-            ai_context: q.ai_context || q.core_ability,
+            ai_context: q.ai_context,
           }))
         : []
       : [];

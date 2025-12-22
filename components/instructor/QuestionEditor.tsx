@@ -1,6 +1,5 @@
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Hash, HelpCircle } from "lucide-react";
@@ -16,13 +15,16 @@ export interface Question {
   type: "multiple-choice" | "essay" | "short-answer";
   options?: string[];
   correctAnswer?: string;
-  core_ability?: string;
 }
 
 interface QuestionEditorProps {
   question: Question;
   index: number;
-  onUpdate: (id: string, field: keyof Question, value: string | boolean) => void;
+  onUpdate: (
+    id: string,
+    field: keyof Question,
+    value: string | boolean
+  ) => void;
   onRemove: (id: string) => void;
 }
 
@@ -36,11 +38,11 @@ export function QuestionEditor({
     <div className="border rounded-lg p-5 bg-card shadow-sm relative overflow-hidden">
       {/* 문제 번호 인디케이터 */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary/60"></div>
-      
+
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
-          <Badge 
-            variant="default" 
+          <Badge
+            variant="default"
             className="text-base font-semibold px-3 py-1 h-8 flex items-center gap-1.5"
           >
             <Hash className="h-4 w-4" />
@@ -80,9 +82,7 @@ export function QuestionEditor({
           </div>
           <select
             value={question.type}
-            onChange={(e) =>
-              onUpdate(question.id, "type", e.target.value)
-            }
+            onChange={(e) => onUpdate(question.id, "type", e.target.value)}
             className="w-full p-2 border rounded-md"
           >
             <option value="essay">Problem Solving Type</option>
@@ -100,9 +100,7 @@ export function QuestionEditor({
                 <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
               </TooltipTrigger>
               <TooltipContent>
-                <p className="max-w-xs">
-                  시험 문제를 입력하세요.
-                </p>
+                <p className="max-w-xs">시험 문제를 입력하세요.</p>
               </TooltipContent>
             </Tooltip>
           </div>
@@ -113,33 +111,7 @@ export function QuestionEditor({
             className="min-h-[300px]"
           />
         </div>
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Label>문제 핵심 역량</Label>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="max-w-xs">
-                  이 문제를 통해 평가하고자 하는 핵심 역량을 입력하세요. 예: &quot;비판적
-                  사고 능력&quot;, &quot;문제 해결 능력&quot;, &quot;논리적 추론 능력&quot; 등.
-                </p>
-              </TooltipContent>
-            </Tooltip>
-          </div>
-          <Textarea
-            value={question.core_ability}
-            onChange={(e) =>
-              onUpdate(question.id, "core_ability", e.target.value)
-            }
-            placeholder="여기에 문제 핵심 역량을 입력하세요..."
-            rows={7}
-            className="min-h-[100px]"
-          />
-        </div>
       </div>
     </div>
   );
 }
-
