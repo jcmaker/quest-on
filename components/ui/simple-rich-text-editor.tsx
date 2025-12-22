@@ -186,7 +186,7 @@ export function SimpleRichTextEditor({
       </div>
 
       {/* Editor Content */}
-      <div className="bg-background">
+      <div className="bg-background max-h-[600px] sm:max-h-[700px] overflow-y-auto">
         <EditorContent editor={editor} />
       </div>
     </div>
