@@ -26,17 +26,49 @@ function chunkText(
   chunkSize: number = 500,
   overlap: number = 100
 ): string[] {
+  // Defensive guards to prevent infinite loops / runaway memory usage
+  if (typeof text !== "string") {
+    return [];
+  }
+  if (!Number.isFinite(chunkSize) || chunkSize <= 0) {
+    return [];
+  }
+  if (!Number.isFinite(overlap) || overlap < 0) {
+    overlap = 0;
+  }
+  // If overlap >= chunkSize, the window won't advance and can infinite-loop.
+  if (overlap >= chunkSize) {
+    overlap = Math.max(0, chunkSize - 1);
+  }
+
+  // Hard cap extremely large inputs (protects memory/time in worst cases)
+  const MAX_INPUT_CHARS = 250_000;
+  if (text.length > MAX_INPUT_CHARS) {
+    text = text.slice(0, MAX_INPUT_CHARS);
+  }
+
   if (text.length <= chunkSize) {
     return [text];
   }
 
   const chunks: string[] = [];
   let start = 0;
+  // Hard cap number of chunks to avoid runaway memory even if something goes wrong
+  const MAX_CHUNKS = 2000;
 
   while (start < text.length) {
     const end = Math.min(start + chunkSize, text.length);
     chunks.push(text.slice(start, end));
-    start = end - overlap;
+    const nextStart = end - overlap;
+    // Ensure forward progress
+    if (nextStart <= start) {
+      break;
+    }
+    start = nextStart;
+
+    if (chunks.length >= MAX_CHUNKS) {
+      break;
+    }
   }
 
   return chunks;

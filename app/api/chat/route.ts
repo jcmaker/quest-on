@@ -200,8 +200,12 @@ export async function POST(request: NextRequest) {
       examId,
       studentId,
       currentQuestionText,
+      // Backward/forward compatible: client sometimes sends currentQuestionCoreAbility
       requestCoreAbility: requestCoreAbility,
+      currentQuestionCoreAbility,
     } = body;
+    const resolvedCoreAbility =
+      requestCoreAbility ?? currentQuestionCoreAbility;
 
     if (!message) {
       return NextResponse.json(
@@ -320,7 +324,7 @@ ${
 }
 ${questionId ? `현재 문제 ID: ${questionId}에 있습니다.` : ""}
 ${currentQuestionText ? `문제 내용: ${currentQuestionText}` : ""}
-${requestCoreAbility ? `문제 핵심 역량: ${requestCoreAbility}` : ""}
+${resolvedCoreAbility ? `문제 핵심 역량: ${resolvedCoreAbility}` : ""}
 ${relevantMaterialsText ? relevantMaterialsText : ""}
 
 **중요**: 위의 [수업 자료 참고 내용]이 제공된 경우, 반드시 그 내용을 기반으로 답변해야 합니다. 수업 자료의 내용을 참고하여 정확하고 구체적인 답변을 제공하세요.
@@ -591,8 +595,8 @@ ${
 ${questionId ? `현재 문제 ID: ${questionId}에 있습니다.` : ""}
 ${currentQuestionText ? `문제 내용: ${currentQuestionText}` : ""}
 ${
-  requestCoreAbility
-    ? `문제 핵심 역량: ${requestCoreAbility}`
+  resolvedCoreAbility
+    ? `문제 핵심 역량: ${resolvedCoreAbility}`
     : dbCoreAbility
     ? `문제 핵심 역량: ${dbCoreAbility}`
     : ""
