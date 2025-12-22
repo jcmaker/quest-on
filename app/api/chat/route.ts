@@ -1,6 +1,9 @@
 // Node.js Runtime 사용 (4MB → 25MB 업로드 한도 증가)
 export const runtime = "nodejs";
 
+// Route configuration
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from "next/server";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
