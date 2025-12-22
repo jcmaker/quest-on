@@ -13,6 +13,11 @@ import { searchRelevantMaterials } from "@/lib/material-search";
 // If we don't handle them, Next can return a non-JSON 405 which breaks clients expecting JSON.
 export async function OPTIONS(request: NextRequest) {
   const origin = request.headers.get("origin") ?? "*";
+  console.log("[chat] OPTIONS /api/chat (preflight)", {
+    origin,
+    contentType: request.headers.get("content-type"),
+    userAgent: request.headers.get("user-agent")?.slice(0, 80),
+  });
   return new NextResponse(null, {
     status: 204,
     headers: {
@@ -26,6 +31,7 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function GET() {
+  console.log("[chat] GET /api/chat (healthcheck)");
   return NextResponse.json(
     { ok: true, route: "/api/chat", methods: ["POST", "OPTIONS"] },
     { status: 200, headers: { Allow: "POST, OPTIONS" } }
@@ -164,6 +170,15 @@ async function getAIResponse(
 export async function POST(request: NextRequest) {
   const requestStartTime = Date.now();
   try {
+    console.log("[chat] incoming request", {
+      method: request.method,
+      path: request.nextUrl?.pathname,
+      contentType: request.headers.get("content-type"),
+      origin: request.headers.get("origin"),
+      referer: request.headers.get("referer"),
+      userAgent: request.headers.get("user-agent")?.slice(0, 80),
+    });
+
     const body = await request.json();
 
     // 📊 사용자 활동 로그
