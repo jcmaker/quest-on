@@ -206,9 +206,26 @@ function ChatPanel({
           studentId: userId,
         }),
       });
+
+      // 405 에러를 명시적으로 처리
+      if (res.status === 405) {
+        console.error(
+          "405 Method Not Allowed - API route may not be properly configured"
+        );
+        throw new Error(
+          "API 메서드가 허용되지 않습니다. 서버 설정을 확인해주세요."
+        );
+      }
+
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error || "Chat request failed");
+        console.error("Chat API error:", {
+          status: res.status,
+          statusText: res.statusText,
+          error: data?.error,
+          details: data?.details,
+        });
+        throw new Error(data?.error || `Chat request failed (${res.status})`);
       }
       return data as { response: string };
     },
@@ -220,15 +237,23 @@ function ChatPanel({
       scrollToBottom();
     },
     onError: (err) => {
+      console.error("Chat mutation error:", err);
+      const errorMessage =
+        err instanceof Error
+          ? err.message.includes("405") ||
+            err.message.includes("Method Not Allowed")
+            ? "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요."
+            : err.message.includes("API 메서드가 허용되지 않습니다")
+            ? "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요."
+            : `오류: ${err.message}`
+          : "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.";
+
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
           ts: Date.now(),
-          content:
-            err instanceof Error
-              ? `오류: ${err.message}`
-              : "오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+          content: errorMessage,
         },
       ]);
       scrollToBottom();

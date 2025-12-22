@@ -3,6 +3,10 @@ import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
 import { searchRelevantMaterials } from "@/lib/material-search";
 
+// Next.js App Router 설정
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 // Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!, // 서버 전용 env 사용 (NEXT_PUBLIC은 브라우저에서도 접근 가능하지만 서버에서는 안전하게 사용)
@@ -713,10 +717,22 @@ ${exam.rubric
     });
   } catch (error) {
     console.error("Chat API error:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    console.error("Chat API error details:", {
+      message: errorMessage,
+      stack: errorStack,
+      errorType: typeof error,
+    });
+
     return NextResponse.json(
       {
         error: "Internal server error",
-        details: (error as Error)?.message,
+        message:
+          "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.",
+        details:
+          process.env.NODE_ENV === "development" ? errorMessage : undefined,
       },
       { status: 500 }
     );
