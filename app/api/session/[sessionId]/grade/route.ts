@@ -144,9 +144,9 @@ export async function GET(
       questions: exam.questions,
     });
 
-    // Optimized: Fetch submissions, messages, and grades in parallel
-    const [submissionsResult, messagesResult, gradesResult] = await Promise.all(
-      [
+    // Optimized: Fetch submissions, messages, grades, and paste_logs in parallel
+    const [submissionsResult, messagesResult, gradesResult, pasteLogsResult] =
+      await Promise.all([
         supabase
           .from("submissions")
           .select(
@@ -190,12 +190,27 @@ export async function GET(
         `
           )
           .eq("session_id", sessionId),
-      ]
-    );
+        supabase
+          .from("paste_logs")
+          .select(
+            `
+          id,
+          question_id,
+          length,
+          is_internal,
+          suspicious,
+          timestamp,
+          created_at
+        `
+          )
+          .eq("session_id", sessionId)
+          .order("timestamp", { ascending: true }),
+      ]);
 
     const { data: submissions, error: submissionsError } = submissionsResult;
     const { data: messages, error: messagesError } = messagesResult;
     const { data: grades, error: gradesError } = gradesResult;
+    const { data: pasteLogs, error: pasteLogsError } = pasteLogsResult;
 
     if (submissionsError) {
       console.log("⚠️ Error fetching submissions:", submissionsError);
@@ -215,6 +230,15 @@ export async function GET(
 
     if (gradesError) {
       console.log("⚠️ Error fetching grades:", gradesError);
+    }
+
+    if (pasteLogsError) {
+      console.log("⚠️ Error fetching paste logs:", pasteLogsError);
+    } else {
+      console.log("📋 Paste logs fetched:", {
+        count: pasteLogs?.length || 0,
+        suspiciousCount: pasteLogs?.filter((log) => log.suspicious).length || 0,
+      });
     }
 
     // Check if instructor owns the exam
@@ -390,6 +414,20 @@ export async function GET(
       });
     }
 
+    // Organize paste logs by question_id
+    const pasteLogsByQuestion: Record<string, unknown[]> = {};
+    if (pasteLogs) {
+      pasteLogs.forEach((log: Record<string, unknown>) => {
+        const questionId = log.question_id as string;
+        if (questionId) {
+          if (!pasteLogsByQuestion[questionId]) {
+            pasteLogsByQuestion[questionId] = [];
+          }
+          pasteLogsByQuestion[questionId].push(log);
+        }
+      });
+    }
+
     // Calculate overall score if grades exist
     let overallScore = null;
     if (grades && grades.length > 0) {
@@ -418,6 +456,7 @@ export async function GET(
       submissions: submissionsByQuestion,
       messages: messagesByQuestion,
       grades: gradesByQuestion, // 서버 사이드 자동 채점 점수
+      pasteLogs: pasteLogsByQuestion, // 부정행위 의심 로그 (question_id별로 그룹화)
       overallScore,
       aiSummary: session.ai_summary || null, // 하위 호환성을 위해 유지
     };

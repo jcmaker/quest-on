@@ -21,6 +21,7 @@ import {
 } from "@/components/instructor/AIOverallSummary";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
+import { PasteLogsCard } from "@/components/instructor/PasteLogsCard";
 
 interface Conversation {
   id: string;
@@ -63,6 +64,16 @@ interface Grade {
 
 type StageKey = "chat" | "answer" | "feedback";
 
+interface PasteLog {
+  id: string;
+  question_id: string;
+  length: number;
+  is_internal: boolean;
+  suspicious: boolean;
+  timestamp: string;
+  created_at: string;
+}
+
 interface SessionData {
   session: {
     id: string;
@@ -88,6 +99,7 @@ interface SessionData {
   submissions: Record<string, Submission>;
   messages: Record<string, Conversation[]>;
   grades: Record<string, Grade>;
+  pasteLogs?: Record<string, PasteLog[]>; // question_id별로 그룹화된 paste 로그
   overallScore: number | null;
 }
 
@@ -466,6 +478,16 @@ export default function GradeStudentPage({
               <AIConversationsCard messages={duringExamMessages} />
 
               <FinalAnswerCard submission={currentSubmission} />
+
+              {currentQuestion && (
+                <PasteLogsCard
+                  pasteLogs={
+                    sessionData.pasteLogs?.[currentQuestion.id] ||
+                    sessionData.pasteLogs?.[String(selectedQuestionIdx)]
+                  }
+                  questionId={currentQuestion.id}
+                />
+              )}
             </div>
 
             <div className="space-y-6">

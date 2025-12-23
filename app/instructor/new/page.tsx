@@ -556,7 +556,26 @@ export default function CreateExam() {
 
             // 안전한 파일명 생성
             const timestamp = new Date().toISOString().slice(0, 10);
-            const randomId = crypto.randomUUID();
+            // UUID 생성 (fallback 포함)
+            let randomId: string;
+            if (typeof crypto !== "undefined" && crypto.randomUUID) {
+              randomId = crypto.randomUUID();
+            } else if (
+              typeof crypto !== "undefined" &&
+              crypto.getRandomValues
+            ) {
+              // Fallback: crypto.getRandomValues를 사용한 UUID 생성
+              const array = new Uint8Array(16);
+              crypto.getRandomValues(array);
+              randomId = Array.from(array)
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("");
+            } else {
+              // 최종 fallback: timestamp + random number
+              randomId = `${Date.now()}_${Math.random()
+                .toString(36)
+                .substring(2, 15)}`;
+            }
             const fileExtension =
               file.name.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase() ||
               "bin";

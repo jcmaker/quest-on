@@ -636,13 +636,14 @@ export default function ExamPage() {
             ts: Date.now(),
             examCode,
             questionId: exam?.questions[currentQuestion]?.id,
+            sessionId: sessionId,
           }),
         });
       } catch (err) {
         console.error("Failed to log paste event", err);
       }
     },
-    [examCode, exam, currentQuestion]
+    [examCode, exam, currentQuestion, sessionId]
   );
 
   const handleSubmitClick = () => {
