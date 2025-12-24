@@ -21,7 +21,7 @@ export function GradeHeader({
   school,
 }: GradeHeaderProps) {
   return (
-    <div className="mb-8">
+    <div>
       <div className="flex items-center gap-4 mb-4">
         <Link href={`/instructor/${examId}`}>
           <Button variant="outline" size="sm">
@@ -46,12 +46,8 @@ export function GradeHeader({
           <h1 className="text-3xl font-bold">{studentName} 학생 채점</h1>
           <div className="text-muted-foreground space-y-1 mt-2">
             <p>제출일: {new Date(submittedAt).toLocaleString()}</p>
-            {studentNumber && (
-              <p>학번: {studentNumber}</p>
-            )}
-            {school && (
-              <p>학교: {school}</p>
-            )}
+            {studentNumber && <p>학번: {studentNumber}</p>}
+            {school && <p>학교: {school}</p>}
           </div>
           {overallScore !== null && (
             <p className="text-lg font-semibold mt-2">
@@ -59,14 +55,7 @@ export function GradeHeader({
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="text-green-600">
-            <CheckCircle className="w-4 h-4 mr-1" />
-            제출 완료
-          </Badge>
-        </div>
       </div>
     </div>
   );
 }
-

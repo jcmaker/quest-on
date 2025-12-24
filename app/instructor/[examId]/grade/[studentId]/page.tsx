@@ -445,14 +445,29 @@ export default function GradeStudentPage({
       />
       <SidebarInset>
         <div className="container mx-auto p-6 max-w-7xl">
-          <GradeHeader
-            studentName={sessionData.student.name}
-            submittedAt={sessionData.session.submitted_at}
-            overallScore={sessionData.overallScore}
-            examId={resolvedParams.examId}
-            studentNumber={sessionData.student.student_number}
-            school={sessionData.student.school}
-          />
+          <div className="flex gap-6 mb-8 w-full">
+            <div className="flex-1">
+              <GradeHeader
+                studentName={sessionData.student.name}
+                submittedAt={sessionData.session.submitted_at}
+                overallScore={sessionData.overallScore}
+                examId={resolvedParams.examId}
+                studentNumber={sessionData.student.student_number}
+                school={sessionData.student.school}
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              {currentQuestion && (
+                <PasteLogsCard
+                  pasteLogs={
+                    sessionData.pasteLogs?.[currentQuestion.id] ||
+                    sessionData.pasteLogs?.[String(selectedQuestionIdx)]
+                  }
+                  questionId={currentQuestion.id}
+                />
+              )}
+            </div>
+          </div>
 
           <div className="mb-6">
             <AIOverallSummary
@@ -477,17 +492,16 @@ export default function GradeStudentPage({
 
               <AIConversationsCard messages={duringExamMessages} />
 
-              <FinalAnswerCard submission={currentSubmission} />
-
-              {currentQuestion && (
-                <PasteLogsCard
-                  pasteLogs={
-                    sessionData.pasteLogs?.[currentQuestion.id] ||
-                    sessionData.pasteLogs?.[String(selectedQuestionIdx)]
-                  }
-                  questionId={currentQuestion.id}
-                />
-              )}
+              <FinalAnswerCard
+                submission={currentSubmission}
+                pasteLogs={
+                  currentQuestion
+                    ? sessionData.pasteLogs?.[currentQuestion.id] ||
+                      sessionData.pasteLogs?.[String(selectedQuestionIdx)]
+                    : undefined
+                }
+                questionId={currentQuestion?.id}
+              />
             </div>
 
             <div className="space-y-6">
