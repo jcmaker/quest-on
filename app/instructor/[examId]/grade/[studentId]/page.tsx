@@ -68,6 +68,10 @@ interface PasteLog {
   id: string;
   question_id: string;
   length: number;
+  pasted_text?: string;
+  paste_start?: number;
+  paste_end?: number;
+  answer_length_before?: number;
   is_internal: boolean;
   suspicious: boolean;
   timestamp: string;

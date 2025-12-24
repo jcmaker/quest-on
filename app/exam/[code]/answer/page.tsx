@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
-import { SimpleRichTextEditor } from "@/components/ui/simple-rich-text-editor";
+import { AnswerTextarea } from "@/components/ui/answer-textarea";
 import { Label } from "@/components/ui/label";
 import {
   ResizablePanelGroup,
@@ -681,21 +681,22 @@ export default function AnswerSubmission() {
 
   // Handle paste event for logging
   const handlePaste = useCallback(
-    async (e: ClipboardEvent) => {
-      const clipboard = e.clipboardData;
-      if (!clipboard) return;
-
-      const text = clipboard.getData("text/plain");
-      const isInternal = clipboard.types.includes(
-        "application/x-queston-internal"
-      );
+    async (pasteData: {
+      pastedText: string;
+      pasteStart: number;
+      pasteEnd: number;
+      answerLengthBefore: number;
+      answerTextBefore: string;
+      isInternal: boolean;
+    }) => {
+      const { pastedText, pasteStart, pasteEnd, answerLengthBefore, isInternal } = pasteData;
 
       if (isInternal) {
         console.log(
           "%c[Paste Check] ✅ Internal Copy Detected",
-          "color: green; font-weight: bold; font-size: 12px;"
+          "color: blue; font-weight: bold; font-size: 12px;"
         );
-        console.log("Source: Internal content");
+        console.log("Source: Internal content (from exam page)");
       } else {
         console.warn(
           "%c[Paste Check] ⚠️ External Copy Detected",
@@ -703,7 +704,13 @@ export default function AnswerSubmission() {
         );
         console.warn("Source: External clipboard");
       }
-      console.log("Content Length:", text.length);
+      console.log("Paste details:", {
+        length: pastedText.length,
+        start: pasteStart,
+        end: pasteEnd,
+        answerLengthBefore,
+        isInternal,
+      });
 
       // Log to server
       try {
@@ -711,7 +718,11 @@ export default function AnswerSubmission() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            length: text.length,
+            length: pastedText.length,
+            pasted_text: pastedText,
+            paste_start: pasteStart,
+            paste_end: pasteEnd,
+            answer_length_before: answerLengthBefore,
             isInternal,
             ts: Date.now(),
             examCode,
@@ -941,7 +952,7 @@ export default function AnswerSubmission() {
                         </p>
                       </div>
 
-                      <SimpleRichTextEditor
+                      <AnswerTextarea
                         placeholder="피드백에 대한 답변을 작성하세요..."
                         value={chatMessage}
                         onChange={(value) => setChatMessage(value)}
@@ -1174,7 +1185,7 @@ export default function AnswerSubmission() {
                 {/* Answer Editor */}
                 <div className="space-y-4 mb-12">
                   <Label className="text-base font-semibold">최종 답안</Label>
-                  <SimpleRichTextEditor
+                  <AnswerTextarea
                     placeholder="여기에 상세한 답안을 작성하세요..."
                     value={answers[currentQuestion]?.text || ""}
                     onChange={(value) =>

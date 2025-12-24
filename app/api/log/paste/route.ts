@@ -10,7 +10,18 @@ const supabase = createClient(
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { length, isInternal, ts, examCode, questionId, sessionId } = body;
+    const {
+      length,
+      pasted_text,
+      paste_start,
+      paste_end,
+      answer_length_before,
+      isInternal,
+      ts,
+      examCode,
+      questionId,
+      sessionId,
+    } = body;
 
     const suspicious = !isInternal;
     const timestamp = new Date(ts);
@@ -20,6 +31,10 @@ export async function POST(request: Request) {
       timestamp: timestamp.toISOString(),
       isInternal,
       length,
+      pasted_text: pasted_text ? `${pasted_text.substring(0, 50)}...` : null,
+      paste_start,
+      paste_end,
+      answer_length_before,
       examCode,
       questionId,
       sessionId,
@@ -33,6 +48,10 @@ export async function POST(request: Request) {
         exam_code: examCode,
         question_id: questionId,
         length: length,
+        pasted_text: pasted_text || null,
+        paste_start: paste_start ?? null,
+        paste_end: paste_end ?? null,
+        answer_length_before: answer_length_before ?? null,
         is_internal: isInternal,
         suspicious: suspicious,
         timestamp: timestamp.toISOString(),

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/input-group";
 import { Separator } from "@/components/ui/separator";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
-import { SimpleRichTextEditor } from "@/components/ui/simple-rich-text-editor";
+import { AnswerTextarea } from "@/components/ui/answer-textarea";
 import { Label } from "@/components/ui/label";
 import {
   ResizablePanelGroup,
@@ -605,33 +605,48 @@ export default function ExamPage() {
 
   // Handle paste event for logging
   const handlePaste = useCallback(
-    async (e: ClipboardEvent) => {
-      const clipboard = e.clipboardData;
-      if (!clipboard) return;
-
-      const text = clipboard.getData("text/plain");
-      const isInternal = clipboard.types.includes(
-        "application/x-queston-internal"
-      );
+    async (pasteData: {
+      pastedText: string;
+      pasteStart: number;
+      pasteEnd: number;
+      answerLengthBefore: number;
+      answerTextBefore: string;
+      isInternal: boolean;
+    }) => {
+      const { pastedText, pasteStart, pasteEnd, answerLengthBefore, isInternal } = pasteData;
 
       if (isInternal) {
         console.log(
           "%c[Paste Check] ✅ Internal Copy Detected",
-          "color: green; font-weight: bold; font-size: 12px;"
+          "color: blue; font-weight: bold; font-size: 12px;"
         );
+        console.log("Source: Internal content (from exam page)");
       } else {
         console.warn(
           "%c[Paste Check] ⚠️ External Copy Detected",
           "color: red; font-weight: bold; font-size: 12px;"
         );
+        console.warn("Source: External clipboard");
       }
+
+      console.log("Paste details:", {
+        length: pastedText.length,
+        start: pasteStart,
+        end: pasteEnd,
+        answerLengthBefore,
+        isInternal,
+      });
 
       try {
         await fetch("/api/log/paste", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            length: text.length,
+            length: pastedText.length,
+            pasted_text: pastedText,
+            paste_start: pasteStart,
+            paste_end: pasteEnd,
+            answer_length_before: answerLengthBefore,
             isInternal,
             ts: Date.now(),
             examCode,
@@ -1313,7 +1328,7 @@ export default function ExamPage() {
                       {/* Answer Editor */}
                       <div className="space-y-4 mb-6 sm:mb-8">
                         <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-                          <SimpleRichTextEditor
+                          <AnswerTextarea
                             placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
                             value={draftAnswers[currentQuestion]?.text || ""}
                             onChange={(value) =>
@@ -1401,7 +1416,7 @@ export default function ExamPage() {
                   {/* Answer Editor */}
                   <div className="space-y-4 mb-6 sm:mb-8">
                     <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-                      <SimpleRichTextEditor
+                      <AnswerTextarea
                         placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
                         value={draftAnswers[currentQuestion]?.text || ""}
                         onChange={(value) =>
