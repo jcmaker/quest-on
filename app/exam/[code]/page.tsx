@@ -613,7 +613,13 @@ export default function ExamPage() {
       answerTextBefore: string;
       isInternal: boolean;
     }) => {
-      const { pastedText, pasteStart, pasteEnd, answerLengthBefore, isInternal } = pasteData;
+      const {
+        pastedText,
+        pasteStart,
+        pasteEnd,
+        answerLengthBefore,
+        isInternal,
+      } = pasteData;
 
       if (isInternal) {
         console.log(
@@ -1115,38 +1121,56 @@ export default function ExamPage() {
                   </Button>
                 </div>
 
-                {/* Navigation */}
+                {/* Navigation and Submit Button */}
                 <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setCurrentQuestion((prev) => Math.max(0, prev - 1))
+                      }
+                      disabled={currentQuestion === 0}
+                      className="min-h-[44px] px-3 sm:px-4"
+                      aria-label="이전 문제"
+                    >
+                      <span className="hidden sm:inline">← 이전</span>
+                      <span className="sm:hidden">←</span>
+                    </Button>
+                    <span className="text-xs sm:text-sm text-muted-foreground font-medium px-2 sm:px-3">
+                      {currentQuestion + 1} / {exam.questions.length}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setCurrentQuestion((prev) =>
+                          Math.min(exam.questions.length - 1, prev + 1)
+                        )
+                      }
+                      disabled={currentQuestion === exam.questions.length - 1}
+                      className="min-h-[44px] px-3 sm:px-4"
+                      aria-label="다음 문제"
+                    >
+                      <span className="hidden sm:inline">다음 →</span>
+                      <span className="sm:hidden">→</span>
+                    </Button>
+                  </div>
                   <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setCurrentQuestion((prev) => Math.max(0, prev - 1))
-                    }
-                    disabled={currentQuestion === 0}
-                    className="min-h-[44px] px-3 sm:px-4"
-                    aria-label="이전 문제"
+                    onClick={handleSubmitClick}
+                    disabled={isSubmitting}
+                    className="min-h-[44px] sm:min-h-[48px] text-sm sm:text-base font-semibold shadow-md hover:shadow-lg transition-all duration-200 px-4 sm:px-6"
+                    size="lg"
+                    aria-label="시험 제출하기"
                   >
-                    <span className="hidden sm:inline">← 이전</span>
-                    <span className="sm:hidden">←</span>
-                  </Button>
-                  <span className="text-xs sm:text-sm text-muted-foreground font-medium px-2 sm:px-3">
-                    {currentQuestion + 1} / {exam.questions.length}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setCurrentQuestion((prev) =>
-                        Math.min(exam.questions.length - 1, prev + 1)
-                      )
-                    }
-                    disabled={currentQuestion === exam.questions.length - 1}
-                    className="min-h-[44px] px-3 sm:px-4"
-                    aria-label="다음 문제"
-                  >
-                    <span className="hidden sm:inline">다음 →</span>
-                    <span className="sm:hidden">→</span>
+                    {isSubmitting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent mr-2"></div>
+                        제출 중...
+                      </>
+                    ) : (
+                      "시험 제출하기"
+                    )}
                   </Button>
                 </div>
               </div>
@@ -1342,26 +1366,6 @@ export default function ExamPage() {
                           />
                         </div>
                       </div>
-
-                      {/* Submit Button */}
-                      <div className="mt-6 pb-4">
-                        <Button
-                          onClick={handleSubmitClick}
-                          disabled={isSubmitting}
-                          className="w-full min-h-[44px] sm:min-h-[48px] text-sm sm:text-base font-semibold shadow-md hover:shadow-lg transition-all duration-200"
-                          size="lg"
-                          aria-label="시험 제출하기"
-                        >
-                          {isSubmitting ? (
-                            <>
-                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent mr-2"></div>
-                              제출 중...
-                            </>
-                          ) : (
-                            "시험 제출하기"
-                          )}
-                        </Button>
-                      </div>
                     </div>
                   </ResizablePanel>
                 </ResizablePanelGroup>
@@ -1429,26 +1433,6 @@ export default function ExamPage() {
                         className="min-h-[300px] sm:min-h-[400px]"
                       />
                     </div>
-                  </div>
-
-                  {/* Submit Button */}
-                  <div className="mt-6 pb-4">
-                    <Button
-                      onClick={handleSubmitClick}
-                      disabled={isSubmitting}
-                      className="w-full min-h-[44px] sm:min-h-[48px] text-sm sm:text-base font-semibold shadow-md hover:shadow-lg transition-all duration-200"
-                      size="lg"
-                      aria-label="시험 제출하기"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent mr-2"></div>
-                          제출 중...
-                        </>
-                      ) : (
-                        "시험 제출하기"
-                      )}
-                    </Button>
                   </div>
                 </div>
               )}
