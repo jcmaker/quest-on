@@ -28,41 +28,10 @@ export default function RegradePage() {
       if (!isLoaded || !user || !examId || !studentId) return;
 
       try {
-        // 1. 학생의 세션 찾기 (제출된 가장 최근 세션)
-        const sessionResponse = await fetch(`/api/exam/${examId}/sessions`);
-        if (!sessionResponse.ok) {
-          throw new Error("세션 정보를 가져올 수 없습니다");
-        }
+        // Note: studentId in URL is actually sessionId (see grade page.tsx:148)
+        const sessionId = studentId;
 
-        const sessionsData = await sessionResponse.json();
-        
-        // sessions 배열에서 해당 studentId의 제출된 세션 찾기
-        const studentSessions = sessionsData.sessions?.filter(
-          (s: { student_id: string; submitted_at?: string | null }) =>
-            s.student_id === studentId && s.submitted_at
-        );
-
-        if (!studentSessions || studentSessions.length === 0) {
-          setStatus("no-session");
-          setMessage("제출된 시험이 없습니다.");
-          return;
-        }
-
-        // 가장 최근에 제출된 세션 사용 (submitted_at 기준 내림차순 정렬 후 첫 번째)
-        const latestSession = studentSessions.sort(
-          (a: { submitted_at: string }, b: { submitted_at: string }) =>
-            new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
-        )[0];
-
-        const sessionId = latestSession.id;
-        
-        if (!sessionId) {
-          setStatus("no-session");
-          setMessage("세션 ID를 찾을 수 없습니다.");
-          return;
-        }
-
-        // 2. AI 채점 재실행
+        // AI 채점 재실행
         const gradeResponse = await fetch(`/api/session/${sessionId}/grade`, {
           method: "PUT",
           headers: {
