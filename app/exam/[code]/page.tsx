@@ -50,6 +50,7 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
+  ChevronsDown,
 } from "lucide-react";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { ExamHeader } from "@/components/ExamHeader";
@@ -1275,22 +1276,21 @@ export default function ExamPage() {
                       {questionScrollTop === 0 && (
                         <div className="sticky bottom-0 left-0 right-0 z-20 flex justify-center pb-2 pt-2 bg-gradient-to-t from-muted/20 via-muted/20 to-transparent pointer-events-none">
                           <Button
-                            variant="outline"
-                            size="sm"
+                            variant="ghost"
+                            size="icon"
                             onClick={() => {
                               questionScrollRef.current?.scrollTo({
                                 top: 100,
                                 behavior: "smooth",
                               });
                             }}
-                            className="rounded-full shadow-lg bg-background/95 backdrop-blur-sm border-border hover:bg-muted min-h-[44px] px-4 gap-2 pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-300"
+                            className="rounded-full bg-transparent hover:bg-transparent border-transparent hover:border-transparent min-h-[44px] px-4 gap-2 pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-300"
                             aria-label="더 읽기"
                           >
-                            <ChevronDown
-                              className="w-4 h-4"
+                            <ChevronsDown
+                              className="w-4 h-4 animate-bounce"
                               aria-hidden="true"
                             />
-                            <span className="text-xs sm:text-sm">더 읽기</span>
                           </Button>
                         </div>
                       )}
