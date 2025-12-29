@@ -19,6 +19,14 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarHeader,
+  SidebarProvider,
+  SidebarInset,
+  useSidebar,
+} from "@/components/ui/sidebar";
 import { CopyProtector } from "@/components/exam/CopyProtector";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
@@ -52,6 +60,8 @@ import {
   CheckCircle2,
   ChevronsDown,
 } from "lucide-react";
+import { Sparkle } from "@/components/animate-ui/icons/sparkle";
+import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { ExamHeader } from "@/components/ExamHeader";
 import {
@@ -93,6 +103,270 @@ interface DraftAnswer {
 
 import { cn } from "@/lib/utils";
 import { getDeviceFingerprint } from "@/lib/device-fingerprint";
+import { X } from "lucide-react";
+
+// Exam Chat Sidebar Component
+function ExamChatSidebar({
+  chatHistory,
+  chatMessage,
+  setChatMessage,
+  sendChatMessage,
+  isLoading,
+  isTyping,
+  sessionError,
+  setSessionError,
+  chatEndRef,
+  currentQuestion,
+}: {
+  chatHistory: Array<{
+    type: "user" | "assistant";
+    message: string;
+    timestamp: string;
+    qIdx: number;
+  }>;
+  chatMessage: string;
+  setChatMessage: (value: string) => void;
+  sendChatMessage: () => void;
+  isLoading: boolean;
+  isTyping: boolean;
+  sessionError: boolean;
+  setSessionError: (value: boolean) => void;
+  chatEndRef: React.RefObject<HTMLDivElement | null>;
+  currentQuestion: number;
+}) {
+  const { setOpen, isMobile, setOpenMobile } = useSidebar();
+
+  return (
+    <>
+      <Sidebar side="right" variant="floating" collapsible="offcanvas">
+        <SidebarHeader className="p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold bg-primary/10 text-primary border border-primary/20">
+                <MessageCircle className="w-4 h-4" aria-hidden="true" />
+                <span>AI 도우미</span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                문제 {currentQuestion + 1} 관련 대화
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => (isMobile ? setOpenMobile(false) : setOpen(false))}
+              aria-label="채팅 사이드바 닫기"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </SidebarHeader>
+
+        <SidebarContent className="flex flex-col">
+          {/* Chat Messages */}
+          <div className="flex-1 overflow-y-auto hide-scrollbar p-4 sm:p-6 pb-28 sm:pb-32 space-y-4 sm:space-y-6 min-h-0">
+            <CopyProtector className="min-h-full flex flex-col gap-4 sm:gap-6">
+              {chatHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center my-auto px-4">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-primary/10 rounded-full flex items-center justify-center mb-4 sm:mb-6 shadow-sm">
+                    <MessageCircle
+                      className="w-8 h-8 sm:w-10 sm:h-10 text-primary"
+                      aria-hidden="true"
+                    />
+                  </div>
+                  <h3 className="text-base sm:text-lg font-semibold text-foreground mb-2">
+                    AI와 대화를 시작하세요
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground max-w-md leading-relaxed">
+                    안녕하세요! 시험 문제에 대해 궁금한 점이 있으시면 언제든지
+                    질문해주세요.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {chatHistory.map((msg, index) => (
+                    <div
+                      key={index}
+                      className={`flex ${
+                        msg.type === "user" ? "justify-end" : "justify-start"
+                      } animate-in fade-in slide-in-from-bottom-2 duration-300`}
+                    >
+                      {msg.type === "user" ? (
+                        <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 sm:px-5 py-3 sm:py-3.5 max-w-[85%] sm:max-w-[70%] shadow-lg shadow-primary/20 relative transition-all duration-200 hover:shadow-xl hover:shadow-primary/30">
+                          <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
+                            {msg.message}
+                          </p>
+                          <p className="text-xs mt-2 sm:mt-2.5 opacity-80 text-right font-medium">
+                            {new Date(msg.timestamp).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </p>
+                        </div>
+                      ) : (
+                        <AIMessageRenderer
+                          content={msg.message}
+                          timestamp={msg.timestamp}
+                        />
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Typing Indicator */}
+                  <div className="flex justify-start">
+                    <ChatLoadingIndicator isTyping={isTyping} />
+                  </div>
+                </>
+              )}
+            </CopyProtector>
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Error Message */}
+          {sessionError && (
+            <div className="px-4 sm:px-6 py-3 bg-destructive/10 border-t border-destructive/20 backdrop-blur-sm">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle
+                    className="w-4 h-4 text-destructive shrink-0"
+                    aria-hidden="true"
+                  />
+                  <p className="text-sm text-destructive font-medium">
+                    세션 연결에 문제가 있습니다.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSessionError(false);
+                    window.location.reload();
+                  }}
+                  className="text-destructive border-destructive/30 hover:bg-destructive/5 min-h-[44px] px-4 w-full sm:w-auto"
+                  aria-label="연결 재시도"
+                >
+                  재시도
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Chat Input */}
+          <div className="border-t border-border p-2 sm:p-3 bg-background">
+            <InputGroup className="bg-background shadow-md">
+              <InputGroupTextarea
+                placeholder="AI에게 질문하기..."
+                value={chatMessage}
+                onChange={(e) => setChatMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !isLoading) {
+                    e.preventDefault();
+                    sendChatMessage();
+                  }
+                }}
+                disabled={isLoading || sessionError}
+                className="min-h-[40px] sm:min-h-[44px] text-sm resize-none"
+                aria-label="AI에게 질문 입력"
+                rows={1}
+              />
+              <InputGroupAddon align="block-end">
+                <InputGroupText className="text-xs text-muted-foreground flex flex-wrap items-center gap-1.5 px-2">
+                  <span className="hidden sm:flex items-center gap-1">
+                    <Kbd>Enter</Kbd>
+                    <span>전송</span>
+                  </span>
+                  <span className="hidden sm:inline">•</span>
+                  <span className="hidden sm:flex items-center gap-1">
+                    <KbdGroup>
+                      <Kbd>Shift</Kbd>
+                      <span>+</span>
+                      <Kbd>Enter</Kbd>
+                    </KbdGroup>
+                    <span>줄바꿈</span>
+                  </span>
+                  {sessionError && (
+                    <>
+                      <span className="hidden sm:inline">•</span>
+                      <span className="text-destructive">연결 오류</span>
+                    </>
+                  )}
+                </InputGroupText>
+                <InputGroupText className="ml-auto text-xs text-muted-foreground px-2">
+                  {chatMessage.length}자
+                </InputGroupText>
+                <Separator orientation="vertical" className="!h-5 sm:!h-6" />
+                <InputGroupButton
+                  variant="default"
+                  className="rounded-full min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px]"
+                  size="icon-xs"
+                  onClick={sendChatMessage}
+                  disabled={isLoading || !chatMessage.trim() || sessionError}
+                  aria-label="메시지 전송"
+                >
+                  <ArrowUp className="w-4 h-4" aria-hidden="true" />
+                  <span className="sr-only">전송</span>
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
+          </div>
+        </SidebarContent>
+      </Sidebar>
+
+      {/* Floating Chat Button */}
+      <FloatingChatButton />
+    </>
+  );
+}
+
+// Main Content Wrapper - 중앙 정렬 처리
+function MainContentWrapper({ children }: { children: React.ReactNode }) {
+  const { open, isMobile, openMobile } = useSidebar();
+  const isOpen = isMobile ? openMobile : open;
+
+  return (
+    <div
+      className={cn(
+        "flex-1 min-h-0 overflow-hidden transition-all duration-75 ease-out",
+        // 사이드바가 닫혀있을 때만 중앙 정렬
+        !isOpen && "flex items-center justify-center"
+      )}
+    >
+      <div className="h-full w-full">{children}</div>
+    </div>
+  );
+}
+
+// Floating Chat Button Component
+function FloatingChatButton() {
+  const { toggleSidebar, open, isMobile, openMobile } = useSidebar();
+  const isOpen = isMobile ? openMobile : open;
+
+  if (isOpen) return null;
+
+  return (
+    <Button
+      onClick={toggleSidebar}
+      className="fixed bottom-6 right-6 h-auto px-4 py-3 rounded-full rounded-br-none shadow-lg hover:shadow-xl transition-all duration-200 z-40 border-2 border-primary flex items-center justify-center"
+      aria-label="AI 채팅 열기"
+    >
+      <span className="text-lg font-bold relative inline-block">
+        AI
+        <AnimateIcon
+          animateOnHover="path-loop"
+          animation="path-loop"
+          loop={true}
+          persistOnAnimateEnd={true}
+        >
+          <Sparkle
+            size={10}
+            className="absolute -top-1 -right-2.5 text-white fill-white scale-70"
+          />
+        </AnimateIcon>
+      </span>
+    </Button>
+  );
+}
 
 export default function ExamPage() {
   const params = useParams();
@@ -882,208 +1156,57 @@ export default function ExamPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
-      <SubmissionOverlay isSubmitting={isSubmitting} />
-      {/* Top Header */}
-      <ExamHeader
-        examCode={examCode}
-        duration={exam?.duration || 60}
-        currentStep="exam"
-        user={user}
-        onExit={() => {
-          if (
-            confirm("정말로 시험을 그만두시겠습니까? 진행한 내용은 저장됩니다.")
-          ) {
-            router.push("/");
-          }
-        }}
+    <SidebarProvider
+      defaultOpen={false}
+      className="flex-row-reverse"
+      style={
+        {
+          "--sidebar-width": "40vw",
+          "--sidebar-width-icon": "3rem",
+        } as React.CSSProperties & { [key: string]: string }
+      }
+    >
+      {/* Chat Sidebar */}
+      <ExamChatSidebar
+        chatHistory={currentQuestionChatHistory}
+        chatMessage={chatMessage}
+        setChatMessage={setChatMessage}
+        sendChatMessage={sendChatMessage}
+        isLoading={isLoading}
+        isTyping={isTyping}
+        sessionError={sessionError}
+        setSessionError={setSessionError}
+        chatEndRef={chatEndRef}
+        currentQuestion={currentQuestion}
       />
 
-      {/* Main Content - Resizable Layout */}
-      <div className="flex-1 min-h-0">
-        <ResizablePanelGroup direction="horizontal" className="h-full">
-          {/* Left Side - Chat */}
-          <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
-            <div className="bg-background flex flex-col h-full relative border-r border-border">
-              <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b border-border px-4 sm:px-6 py-3">
-                <div className="flex items-center justify-between">
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold bg-primary/10 text-primary border border-primary/20">
-                    <MessageCircle className="w-4 h-4" aria-hidden="true" />
-                    <span>AI와 대화하기</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    문제 {currentQuestion + 1} 관련 대화
-                  </div>
-                </div>
-              </div>
+      {/* Main Content - Document Style Layout */}
+      <SidebarInset className="flex-1 min-h-0 overflow-hidden transition-all duration-75 ease-out">
+        <div className="h-screen flex flex-col bg-background">
+          <SubmissionOverlay isSubmitting={isSubmitting} />
+          {/* Top Header */}
+          <ExamHeader
+            examCode={examCode}
+            duration={exam?.duration || 60}
+            currentStep="exam"
+            user={user}
+            onExit={() => {
+              if (
+                confirm(
+                  "정말로 시험을 그만두시겠습니까? 진행한 내용은 저장됩니다."
+                )
+              ) {
+                router.push("/");
+              }
+            }}
+          />
 
-              {/* Chat Messages */}
-              <div className="flex-1 overflow-y-auto hide-scrollbar p-4 sm:p-6 pb-28 sm:pb-32 space-y-4 sm:space-y-6 min-h-0">
-                <CopyProtector className="min-h-full flex flex-col gap-4 sm:gap-6">
-                  {currentQuestionChatHistory.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center my-auto px-4">
-                      <div className="w-16 h-16 sm:w-20 sm:h-20 bg-primary/10 rounded-full flex items-center justify-center mb-4 sm:mb-6 shadow-sm">
-                        <MessageCircle
-                          className="w-8 h-8 sm:w-10 sm:h-10 text-primary"
-                          aria-hidden="true"
-                        />
-                      </div>
-                      <h3 className="text-base sm:text-lg font-semibold text-foreground mb-2">
-                        AI와 대화를 시작하세요
-                      </h3>
-                      <p className="text-sm sm:text-base text-muted-foreground max-w-md leading-relaxed">
-                        안녕하세요! 시험을 시작하겠습니다. 문제를 읽고 자유롭게
-                        질문해주세요.
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      {currentQuestionChatHistory.map((msg, index) => (
-                        <div
-                          key={index}
-                          className={`flex ${
-                            msg.type === "user"
-                              ? "justify-end"
-                              : "justify-start"
-                          } animate-in fade-in slide-in-from-bottom-2 duration-300`}
-                        >
-                          {msg.type === "user" ? (
-                            <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 sm:px-5 py-3 sm:py-3.5 max-w-[85%] sm:max-w-[70%] shadow-lg shadow-primary/20 relative transition-all duration-200 hover:shadow-xl hover:shadow-primary/30">
-                              <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
-                                {msg.message}
-                              </p>
-                              <p className="text-xs mt-2 sm:mt-2.5 opacity-80 text-right font-medium">
-                                {new Date(msg.timestamp).toLocaleTimeString(
-                                  [],
-                                  {
-                                    hour: "2-digit",
-                                    minute: "2-digit",
-                                  }
-                                )}
-                              </p>
-                            </div>
-                          ) : (
-                            <AIMessageRenderer
-                              content={msg.message}
-                              timestamp={msg.timestamp}
-                            />
-                          )}
-                        </div>
-                      ))}
-
-                      {/* Typing Indicator */}
-                      <div className="flex justify-start">
-                        <ChatLoadingIndicator isTyping={isTyping} />
-                      </div>
-                    </>
-                  )}
-                </CopyProtector>
-                <div ref={chatEndRef} />
-              </div>
-
-              {/* Error Message */}
-              {sessionError && (
-                <div className="sticky bottom-0 z-30 px-4 sm:px-6 py-3 bg-destructive/10 border-t border-destructive/20 backdrop-blur-sm">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle
-                        className="w-4 h-4 text-destructive shrink-0"
-                        aria-hidden="true"
-                      />
-                      <p className="text-sm text-destructive font-medium">
-                        세션 연결에 문제가 있습니다.
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setSessionError(false);
-                        window.location.reload();
-                      }}
-                      className="text-destructive border-destructive/30 hover:bg-destructive/5 min-h-[44px] px-4 w-full sm:w-auto"
-                      aria-label="연결 재시도"
-                    >
-                      재시도
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Chat Input */}
-              <div className="sticky bottom-0 z-20 bg-background/95 backdrop-blur-sm border-t border-border p-2 sm:p-3">
-                <InputGroup className="bg-background shadow-md">
-                  <InputGroupTextarea
-                    placeholder="AI에게 질문하기..."
-                    value={chatMessage}
-                    onChange={(e) => setChatMessage(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && !isLoading) {
-                        e.preventDefault();
-                        sendChatMessage();
-                      }
-                    }}
-                    disabled={isLoading || sessionError}
-                    className="min-h-[40px] sm:min-h-[44px] text-sm resize-none"
-                    aria-label="AI에게 질문 입력"
-                    rows={1}
-                  />
-                  <InputGroupAddon align="block-end">
-                    <InputGroupText className="text-xs text-muted-foreground flex flex-wrap items-center gap-1.5 px-2">
-                      <span className="hidden sm:flex items-center gap-1">
-                        <Kbd>Enter</Kbd>
-                        <span>전송</span>
-                      </span>
-                      <span className="hidden sm:inline">•</span>
-                      <span className="hidden sm:flex items-center gap-1">
-                        <KbdGroup>
-                          <Kbd>Shift</Kbd>
-                          <span>+</span>
-                          <Kbd>Enter</Kbd>
-                        </KbdGroup>
-                        <span>줄바꿈</span>
-                      </span>
-                      {sessionError && (
-                        <>
-                          <span className="hidden sm:inline">•</span>
-                          <span className="text-destructive">연결 오류</span>
-                        </>
-                      )}
-                    </InputGroupText>
-                    <InputGroupText className="ml-auto text-xs text-muted-foreground px-2">
-                      {chatMessage.length}자
-                    </InputGroupText>
-                    <Separator
-                      orientation="vertical"
-                      className="!h-5 sm:!h-6"
-                    />
-                    <InputGroupButton
-                      variant="default"
-                      className="rounded-full min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px]"
-                      size="icon-xs"
-                      onClick={sendChatMessage}
-                      disabled={
-                        isLoading || !chatMessage.trim() || sessionError
-                      }
-                      aria-label="메시지 전송"
-                    >
-                      <ArrowUp className="w-4 h-4" aria-hidden="true" />
-                      <span className="sr-only">전송</span>
-                    </InputGroupButton>
-                  </InputGroupAddon>
-                </InputGroup>
-              </div>
-            </div>
-          </ResizablePanel>
-
-          {/* Resizable Handle */}
-          <ResizableHandle withHandle />
-
-          {/* Right Side - Question & Answer */}
-          <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
+          {/* Question & Answer Section */}
+          <MainContentWrapper>
+            {/* Question & Answer Section */}
             <div className="bg-background h-full flex flex-col">
               {/* Top Bar with Question Toggle */}
-              <div className="sticky top-0 z-10 border-b border-border p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-background/95 backdrop-blur-sm shadow-sm">
+              <div className="sticky top-0 z-[5] border-b border-border p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-background/95 backdrop-blur-sm shadow-sm">
                 <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
                   <Button
                     variant={hasOpenedQuestion ? "outline" : "default"}
@@ -1302,10 +1425,95 @@ export default function ExamPage() {
 
                   {/* Answer Section - Resizable */}
                   <ResizablePanel defaultSize={60} minSize={30}>
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 hide-scrollbar min-h-0">
+                    <div className="flex-1 overflow-y-auto hide-scrollbar min-h-0 bg-muted/20">
+                      {/* Document-style container with max-width and center alignment */}
+                      <div className="max-w-4xl mx-auto bg-background min-h-full">
+                        <div className="p-4 sm:p-6 lg:p-8">
+                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
+                            <Label className="text-base sm:text-lg font-semibold text-foreground flex items-center gap-2">
+                              <span className="text-muted-foreground">
+                                답안 작성
+                              </span>
+                            </Label>
+
+                            {/* Save Status Indicator */}
+                            <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                              {isSaving ? (
+                                <div className="flex items-center gap-2">
+                                  <div className="animate-spin rounded-full h-3 w-3 sm:h-4 sm:w-4 border-2 border-primary border-t-transparent"></div>
+                                  <span className="font-medium">
+                                    저장 중...
+                                  </span>
+                                </div>
+                              ) : lastSaved ? (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <Save
+                                      className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400"
+                                      aria-hidden="true"
+                                    />
+                                    <span className="font-medium text-green-600 dark:text-green-400">
+                                      저장됨
+                                    </span>
+                                  </div>
+                                  <span className="hidden sm:inline">•</span>
+                                  <span className="text-xs">{lastSaved}</span>
+                                  <span className="hidden sm:flex items-center gap-1 text-xs">
+                                    <span>•</span>
+                                    {saveShortcut}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <Save
+                                    className="w-3 h-3 sm:w-4 sm:h-4"
+                                    aria-hidden="true"
+                                  />
+                                  <span>자동 저장</span>
+                                  <span className="hidden sm:flex items-center gap-1 text-xs">
+                                    <span>•</span>
+                                    {saveShortcut}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Answer Editor - Word/Google Docs style */}
+                          <div className="w-full space-y-4 mb-6 sm:mb-8">
+                            {/* Paper-like container - A4 format */}
+                            <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-sm shadow-sm min-h-[1123px] sm:min-h-[1123px] lg:min-h-[1123px] w-full">
+                              <AnswerTextarea
+                                placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
+                                value={
+                                  draftAnswers[currentQuestion]?.text || ""
+                                }
+                                onChange={(value) =>
+                                  updateAnswer(
+                                    exam.questions[currentQuestion].id,
+                                    value
+                                  )
+                                }
+                                onPaste={handlePaste}
+                                className="!min-h-[1123px] !border-0 !shadow-none !focus:ring-0 !p-4 sm:!p-6 lg:!p-8 !text-base sm:!text-lg !leading-relaxed !font-sans !resize-none !bg-transparent !w-full"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              ) : (
+                <div className="flex-1 overflow-y-auto hide-scrollbar min-h-0 bg-muted/20">
+                  {/* Document-style container with max-width and center alignment */}
+                  <div className="max-w-4xl mx-auto bg-background min-h-full">
+                    <div className="p-4 sm:p-6 lg:p-8">
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
-                        <Label className="text-base sm:text-lg font-semibold text-foreground">
-                          답안 작성
+                        <Label className="text-base sm:text-lg font-semibold text-foreground flex items-center gap-2">
+                          <span className="text-muted-foreground">
+                            답변 작성
+                          </span>
                         </Label>
 
                         {/* Save Status Indicator */}
@@ -1349,9 +1557,10 @@ export default function ExamPage() {
                         </div>
                       </div>
 
-                      {/* Answer Editor */}
-                      <div className="space-y-4 mb-6 sm:mb-8">
-                        <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+                      {/* Answer Editor - Word/Google Docs style */}
+                      <div className="w-full space-y-4 mb-6 sm:mb-8">
+                        {/* Paper-like container - A4 format */}
+                        <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-sm shadow-sm min-h-[1123px] sm:min-h-[1123px] lg:min-h-[1123px] w-full">
                           <AnswerTextarea
                             placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
                             value={draftAnswers[currentQuestion]?.text || ""}
@@ -1362,111 +1571,50 @@ export default function ExamPage() {
                               )
                             }
                             onPaste={handlePaste}
-                            className="min-h-[300px] sm:min-h-[400px]"
+                            className="!min-h-[1123px] !border-0 !shadow-none !focus:ring-0 !p-4 sm:!p-6 lg:!p-8 !text-base sm:!text-lg !leading-relaxed !font-sans !resize-none !bg-transparent !w-full"
                           />
                         </div>
                       </div>
-                    </div>
-                  </ResizablePanel>
-                </ResizablePanelGroup>
-              ) : (
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 hide-scrollbar min-h-0">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
-                    <Label className="text-base sm:text-lg font-semibold text-foreground">
-                      답안 작성
-                    </Label>
-
-                    {/* Save Status Indicator */}
-                    <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
-                      {isSaving ? (
-                        <div className="flex items-center gap-2">
-                          <div className="animate-spin rounded-full h-3 w-3 sm:h-4 sm:w-4 border-2 border-primary border-t-transparent"></div>
-                          <span className="font-medium">저장 중...</span>
-                        </div>
-                      ) : lastSaved ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="flex items-center gap-1.5">
-                            <Save
-                              className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400"
-                              aria-hidden="true"
-                            />
-                            <span className="font-medium text-green-600 dark:text-green-400">
-                              저장됨
-                            </span>
-                          </div>
-                          <span className="hidden sm:inline">•</span>
-                          <span className="text-xs">{lastSaved}</span>
-                          <span className="hidden sm:flex items-center gap-1 text-xs">
-                            <span>•</span>
-                            {saveShortcut}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <Save
-                            className="w-3 h-3 sm:w-4 sm:h-4"
-                            aria-hidden="true"
-                          />
-                          <span>자동 저장</span>
-                          <span className="hidden sm:flex items-center gap-1 text-xs">
-                            <span>•</span>
-                            {saveShortcut}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Answer Editor */}
-                  <div className="space-y-4 mb-6 sm:mb-8">
-                    <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
-                      <AnswerTextarea
-                        placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
-                        value={draftAnswers[currentQuestion]?.text || ""}
-                        onChange={(value) =>
-                          updateAnswer(
-                            exam.questions[currentQuestion].id,
-                            value
-                          )
-                        }
-                        onPaste={handlePaste}
-                        className="min-h-[300px] sm:min-h-[400px]"
-                      />
                     </div>
                   </div>
                 </div>
               )}
             </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      </div>
+          </MainContentWrapper>
 
-      {/* Submit Confirmation Dialog */}
-      <AlertDialog open={showSubmitConfirm} onOpenChange={setShowSubmitConfirm}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-lg sm:text-xl font-bold">
-              시험 제출 확인
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-sm sm:text-base">
-              정말로 시험을 제출하시겠습니까?
-              <br />
-              <span className="font-semibold text-foreground mt-2 block">
-                제출 후에는 답안을 수정할 수 없습니다.
-              </span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="gap-2 sm:gap-3">
-            <AlertDialogCancel className="min-h-[44px]">취소</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleSubmit}
-              className="min-h-[44px] bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              제출하기
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+          {/* Submit Confirmation Dialog */}
+          <AlertDialog
+            open={showSubmitConfirm}
+            onOpenChange={setShowSubmitConfirm}
+          >
+            <AlertDialogContent className="max-w-md">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-lg sm:text-xl font-bold">
+                  시험 제출 확인
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-sm sm:text-base">
+                  정말로 시험을 제출하시겠습니까?
+                  <br />
+                  <span className="font-semibold text-foreground mt-2 block">
+                    제출 후에는 답안을 수정할 수 없습니다.
+                  </span>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter className="gap-2 sm:gap-3">
+                <AlertDialogCancel className="min-h-[44px]">
+                  취소
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleSubmit}
+                  className="min-h-[44px] bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  제출하기
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
