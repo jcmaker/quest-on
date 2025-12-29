@@ -195,15 +195,15 @@ function ChatPanel({
 
   const mutation = useMutation({
     mutationFn: async (message: string) => {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/instructor/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message,
           sessionId,
-          questionIdx: 0,
-          currentQuestionText: context,
-          studentId: userId,
+          context,
+          scopeDescription,
+          userId,
         }),
       });
 

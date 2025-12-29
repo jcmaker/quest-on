@@ -718,6 +718,7 @@ ${submission.student_reply}
       exam,
       questions,
       submissionsByQuestion,
+      messagesByQuestion,
       grades
     );
   } catch (error) {
@@ -741,6 +742,7 @@ async function generateSummary(
   exam: { title: string; rubric?: unknown },
   questions: Array<{ idx: number; prompt?: string; ai_context?: string }>,
   submissionsByQuestion: Record<number, { answer: string }>,
+  messagesByQuestion: Record<number, Array<{ role: string; content: string }>>,
   grades: GradeResult[]
 ): Promise<SummaryResult | null> {
   try {
@@ -770,34 +772,51 @@ ${exam.rubric
         const qIdx = q.idx;
         const submission = submissionsByQuestion[qIdx];
         const grade = grades.find((g) => g.q_idx === qIdx);
+        const questionMessages = messagesByQuestion[qIdx] || [];
+        
+        // 채팅 대화 기록 포맷팅
+        const chatHistoryText =
+          questionMessages.length > 0
+            ? `\n\n**학생과 AI의 대화 기록:**
+${questionMessages
+  .map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`)
+  .join("\n\n")}`
+            : "";
+
         return `문제 ${index + 1}:
 ${q.prompt || ""}
 
 답안:
 ${submission?.answer || "답안 없음"}
+${chatHistoryText}
 
 점수: ${grade?.score || 0}점
+${grade?.stage_grading?.chat ? `채팅 단계 점수: ${grade.stage_grading.chat.score}점` : ""}
+${grade?.stage_grading?.answer ? `답안 단계 점수: ${grade.stage_grading.answer.score}점` : ""}
+${grade?.stage_grading?.feedback ? `피드백 단계 점수: ${grade.stage_grading.feedback.score}점` : ""}
 `;
       })
       .join("\n---\n\n");
 
-    const systemPrompt = `당신은 전문 평가위원입니다. 학생의 전체 답안을 종합적으로 분석하여 요약 평가를 생성합니다.`;
+    const systemPrompt = `당신은 전문 평가위원입니다. 학생의 전체 답안과 채팅 대화 기록을 종합적으로 분석하여 요약 평가를 생성합니다.`;
 
     const userPrompt = `
 시험 제목: ${exam.title}
 
 ${rubricText}
 
-[학생의 답안 및 점수]
+[학생의 답안, 채팅 대화 기록 및 점수]
 ${questionsText}
 
 위 내용을 바탕으로 학생의 전체적인 수행 능력을 상세하게 분석하여 요약 평가해주세요.
+**중요**: 채팅 대화 기록이 있는 경우, 학생이 AI와의 대화에서 보여준 질문의 질, 문제 이해도, 개념 파악 수준, 학습 태도 등을 종합적으로 고려하여 평가하세요.
+
 다음 항목을 반드시 포함해야 합니다:
 1. 전체적인 평가 (긍정적/부정적/중립적)
-2. 종합 의견: 학생의 답안 전반에 대한 깊이 있는 분석. 답안의 논리성, 정확성, 창의성 등을 종합적으로 고려하세요.
-3. 주요 강점 (3가지 이내): 구체적인 예시를 들어 설명하세요.
-4. 개선이 필요한 점 (3가지 이내): 구체적인 개선 방안과 함께 제시하세요.
-5. 핵심 인용구 (2가지): 학생의 답안 중 평가에 결정적인 영향을 미친 문장이나 구절을 2개 뽑아주세요.
+2. 종합 의견: 학생의 답안과 채팅 대화 기록을 종합하여 전반에 대한 깊이 있는 분석. 답안의 논리성, 정확성, 창의성뿐만 아니라 채팅에서 보여준 학습 과정과 이해도도 함께 고려하세요.
+3. 주요 강점 (3가지 이내): 구체적인 예시를 들어 설명하세요. 채팅에서 보여준 학습 태도나 질문의 질도 강점으로 포함할 수 있습니다.
+4. 개선이 필요한 점 (3가지 이내): 구체적인 개선 방안과 함께 제시하세요. 채팅에서 드러난 문제 이해 부족이나 개념 파악의 어려움도 포함할 수 있습니다.
+5. 핵심 인용구 (2가지): 학생의 답안 또는 채팅 대화 중 평가에 결정적인 영향을 미친 문장이나 구절을 2개 뽑아주세요.
 
 JSON 형식으로 응답해주세요:
 {
