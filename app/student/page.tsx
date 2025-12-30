@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -35,6 +36,7 @@ import {
   LayoutDashboard,
   History,
 } from "lucide-react";
+import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
 import { UserMenu } from "@/components/auth/UserMenu";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
@@ -432,28 +434,19 @@ export default function StudentDashboard() {
     <div className="flex flex-col h-full bg-sidebar">
       {/* Sidebar Header */}
       <div className="p-4 sm:p-5 border-b border-sidebar-border">
-        <div className="flex items-center space-x-3 mb-4">
-          <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shrink-0 shadow-sm">
-            <User
-              className="w-5 h-5 text-primary-foreground"
-              aria-hidden="true"
-            />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-base sm:text-lg font-bold text-sidebar-foreground truncate">
-              학생 대시보드
-            </h2>
-            <p className="text-xs text-sidebar-foreground/70 truncate">
-              {user?.firstName || user?.emailAddresses[0]?.emailAddress}
-            </p>
-          </div>
-        </div>
-        <Badge
-          variant="outline"
-          className="bg-primary/10 text-primary border-primary/20 text-xs w-fit"
-        >
-          학생 모드
-        </Badge>
+        <Link href="/student" className="flex items-center justify-center">
+          <Image
+            src="/qlogo_icon.png"
+            alt="Quest-On Logo"
+            width={40}
+            height={40}
+            className="w-10 h-10"
+            priority
+          />
+          <span className="text-xl font-bold text-sidebar-foreground ml-2">
+            Quest-On
+          </span>
+        </Link>
       </div>
 
       {/* Navigation */}
@@ -484,9 +477,7 @@ export default function StudentDashboard() {
       </nav>
 
       {/* Sidebar Footer */}
-      <div className="p-4 border-t border-sidebar-border">
-        <UserMenu />
-      </div>
+      <SidebarFooter />
     </div>
   );
 

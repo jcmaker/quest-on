@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,32 @@ export default function LandingPage() {
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
+  // Auto-redirect logged-in users to their dashboard
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    if (isSignedIn) {
+      // Logged in - redirect based on role
+      if (!user?.unsafeMetadata?.role) {
+        router.replace("/onboarding");
+      } else {
+        switch (userRole) {
+          case "instructor":
+            router.replace("/instructor");
+            break;
+          case "student":
+            router.replace("/student");
+            break;
+          case "admin":
+            router.replace("/admin");
+            break;
+          default:
+            router.replace("/student");
+        }
+      }
+    }
+  }, [isLoaded, isSignedIn, userRole, user, router]);
+
   // Handle button click based on user state
   const handleQuestOnClick = () => {
     if (!isLoaded) return;
@@ -70,6 +96,18 @@ export default function LandingPage() {
       }
     }
   };
+
+  // Show loading state while checking auth
+  if (isLoaded && isSignedIn) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center space-y-4">
+          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm text-muted-foreground">리다이렉트 중...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950/50">
