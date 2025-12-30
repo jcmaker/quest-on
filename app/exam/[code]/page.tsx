@@ -74,6 +74,7 @@ interface Question {
   text: string;
   type: string;
   points: number;
+  title?: string; // 문제 제목
   ai_context?: string; // AI 컨텍스트 (레거시 core_ability 제거)
 }
 
@@ -179,8 +180,7 @@ function ExamChatSidebar({
                     AI와 대화를 시작하세요
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground max-w-md leading-relaxed">
-                    안녕하세요! 시험 문제에 대해 궁금한 점이 있으시면 언제든지
-                    질문해주세요.
+                    AI를 통해 솔루션을 도출하세요!
                   </p>
                 </div>
               ) : (
@@ -347,7 +347,7 @@ function FloatingChatButton() {
   return (
     <Button
       onClick={toggleSidebar}
-      className="fixed bottom-6 right-6 h-auto px-4 py-3 rounded-full rounded-br-none shadow-lg hover:shadow-xl transition-all duration-200 z-40 border-2 border-primary flex items-center justify-center"
+      className="ai-chat-button fixed bottom-6 right-6 h-auto px-4 py-3 rounded-full rounded-br-none shadow-lg hover:shadow-xl transition-all duration-200 z-40 border-2 border-primary flex items-center justify-center"
       aria-label="AI 채팅 열기"
     >
       <span className="text-lg font-bold relative inline-block">
@@ -1243,6 +1243,10 @@ export default function ExamPage() {
                       />
                     )}
                   </Button>
+                  {/* Exam Title - Next to Question Toggle Button */}
+                  <h2 className="text-sm sm:text-base font-semibold text-foreground truncate max-w-[200px] sm:max-w-none">
+                    {exam.title}
+                  </h2>
                 </div>
 
                 {/* Navigation and Submit Button */}
@@ -1330,6 +1334,15 @@ export default function ExamPage() {
                               배점: {exam.questions[currentQuestion]?.points}점
                             </span>
                           </div>
+
+                          {/* Question Title */}
+                          {exam.questions[currentQuestion]?.title && (
+                            <div className="bg-muted/40 p-3 sm:p-4 rounded-lg border border-border">
+                              <h3 className="text-base sm:text-lg font-semibold text-foreground">
+                                {exam.questions[currentQuestion]?.title}
+                              </h3>
+                            </div>
+                          )}
 
                           {/* Question Content */}
                           <div className="bg-card p-4 sm:p-5 rounded-lg border border-border shadow-sm">
@@ -1425,9 +1438,9 @@ export default function ExamPage() {
 
                   {/* Answer Section - Resizable */}
                   <ResizablePanel defaultSize={60} minSize={30}>
-                    <div className="flex-1 overflow-y-auto hide-scrollbar min-h-0 bg-muted/20">
+                    <div className="h-full overflow-y-auto hide-scrollbar bg-muted/20">
                       {/* Document-style container with max-width and center alignment */}
-                      <div className="max-w-4xl mx-auto bg-background min-h-full">
+                      <div className="max-w-4xl mx-auto bg-background">
                         <div className="p-4 sm:p-6 lg:p-8">
                           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
                             <Label className="text-base sm:text-lg font-semibold text-foreground flex items-center gap-2">
@@ -1562,7 +1575,7 @@ export default function ExamPage() {
                         {/* Paper-like container - A4 format */}
                         <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-sm shadow-sm min-h-[1123px] sm:min-h-[1123px] lg:min-h-[1123px] w-full">
                           <AnswerTextarea
-                            placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
+                            placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;&#10;&#10; AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
                             value={draftAnswers[currentQuestion]?.text || ""}
                             onChange={(value) =>
                               updateAnswer(
