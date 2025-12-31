@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, CheckCircle } from "lucide-react";
@@ -10,6 +9,7 @@ interface GradeHeaderProps {
   examId: string;
   studentNumber?: string;
   school?: string;
+  onBackClick?: () => void;
 }
 
 export function GradeHeader({
@@ -19,16 +19,21 @@ export function GradeHeader({
   examId,
   studentNumber,
   school,
+  onBackClick,
 }: GradeHeaderProps) {
   return (
     <div>
       <div className="flex items-center gap-4 mb-4">
-        <Link href={`/instructor/${examId}`}>
-          <Button variant="outline" size="sm">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            시험으로 돌아가기
-          </Button>
-        </Link>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onBackClick || (() => {
+            window.location.href = `/instructor/${examId}`;
+          })}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          시험으로 돌아가기
+        </Button>
         {/* <Button
           variant="outline"
           size="sm"

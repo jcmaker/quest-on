@@ -45,6 +45,16 @@ import {
   Copy,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Conversation {
   id: string;
@@ -84,6 +94,14 @@ interface Grade {
     answer?: { score: number; comment: string };
     feedback?: { score: number; comment: string };
   };
+}
+
+// 가채점 여부 판단 함수 (comment 패턴으로 확인)
+function isAiGraded(grade: Grade): boolean {
+  if (!grade.comment) return false;
+  // 자동 채점 comment 패턴: "채팅 단계:", "답안 단계:", "피드백 단계:" 포함
+  const autoGradePattern = /(채팅 단계|답안 단계|피드백 단계)/;
+  return autoGradePattern.test(grade.comment);
 }
 
 type StageKey = "chat" | "answer" | "feedback";
@@ -150,6 +168,10 @@ export default function GradeStudentPage({
   >({});
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
   const [examStatsOpen, setExamStatsOpen] = useState<boolean>(true);
+  const [showBackConfirm, setShowBackConfirm] = useState<boolean>(false);
+  const [acceptedAiScores, setAcceptedAiScores] = useState<
+    Record<number, boolean>
+  >({}); // 가채점 점수를 승인한 문제들
 
   // Use state for summary to combine DB data and fresh generation
   const [overallSummary, setOverallSummary] = useState<SummaryData | null>(
@@ -362,7 +384,99 @@ export default function GradeStudentPage({
   });
 
   const handleSaveGrade = (questionIdx: number) => {
+    // 가채점만 있는 경우 저장 방지
+    const currentGrade = sessionData?.grades?.[questionIdx] as
+      | Grade
+      | undefined;
+    if (currentGrade && isAiGraded(currentGrade)) {
+      // 교수가 점수를 직접 수정했는지 또는 승인했는지 확인
+      const originalScore = currentGrade.score;
+      const currentScore = scores[questionIdx] || 0;
+      const isAccepted = acceptedAiScores[questionIdx] || false;
+
+      // 점수가 변경되지 않았고 승인도 안 했으면 저장 불가
+      if (originalScore === currentScore && !isAccepted) {
+        toast.error(
+          "가채점 점수를 승인하거나 직접 입력한 후 저장할 수 있습니다.",
+          {
+            duration: 4000,
+          }
+        );
+        return;
+      }
+    }
     saveGradeMutation.mutate(questionIdx);
+  };
+
+  // 현재 선택된 문제가 가채점만 있는지 확인
+  const isCurrentQuestionAiGradedOnly = useMemo(() => {
+    if (!sessionData) return false;
+    const currentGrade = sessionData.grades?.[selectedQuestionIdx] as
+      | Grade
+      | undefined;
+    if (!currentGrade) return false;
+
+    if (isAiGraded(currentGrade)) {
+      // 교수가 점수를 수정했는지 또는 승인했는지 확인
+      const originalScore = currentGrade.score;
+      const currentScore = scores[selectedQuestionIdx] || 0;
+      const isAccepted = acceptedAiScores[selectedQuestionIdx] || false;
+      return originalScore === currentScore && !isAccepted;
+    }
+    return false;
+  }, [sessionData, selectedQuestionIdx, scores, acceptedAiScores]);
+
+  // 현재 문제의 가채점 점수
+  const currentAiGradedScore = useMemo(() => {
+    if (!sessionData) return undefined;
+    const currentGrade = sessionData.grades?.[selectedQuestionIdx] as
+      | Grade
+      | undefined;
+    if (!currentGrade || !isAiGraded(currentGrade)) return undefined;
+    return currentGrade.score;
+  }, [sessionData, selectedQuestionIdx]);
+
+  // 가채점 점수 승인 핸들러
+  const handleAcceptAiScore = () => {
+    if (currentAiGradedScore !== undefined) {
+      setScores({
+        ...scores,
+        [selectedQuestionIdx]: currentAiGradedScore,
+      });
+      // 가채점 점수 승인 표시
+      setAcceptedAiScores({
+        ...acceptedAiScores,
+        [selectedQuestionIdx]: true,
+      });
+      toast.success(
+        `가채점 점수 ${currentAiGradedScore}점으로 설정되었습니다. 저장 버튼을 눌러 채점을 완료하세요.`,
+        {
+          duration: 3000,
+        }
+      );
+    }
+  };
+
+  // 뒤로 가기 핸들러
+  const handleBackClick = () => {
+    // 가채점만 있는 문제가 있는지 확인
+    const hasAiGradedOnly = Object.entries(sessionData?.grades || {}).some(
+      ([qIdx, grade]) => {
+        const typedGrade = grade as Grade;
+        if (!isAiGraded(typedGrade)) return false;
+        const originalScore = typedGrade.score;
+        const currentScore = scores[parseInt(qIdx)] || 0;
+        const isAccepted = acceptedAiScores[parseInt(qIdx)] || false;
+        return originalScore === currentScore && !isAccepted;
+      }
+    );
+
+    if (hasAiGradedOnly) {
+      setShowBackConfirm(true);
+    } else {
+      // 가채점만 있는 문제가 없으면 바로 이동
+      window.location.href = `/instructor/${resolvedParams.examId}`;
+    }
   };
 
   const handleStageScoreChange = (stage: StageKey, value: number) => {
@@ -614,6 +728,7 @@ export default function GradeStudentPage({
               examId={resolvedParams.examId}
               studentNumber={sessionData.student.student_number}
               school={sessionData.student.school}
+              onBackClick={handleBackClick}
             />
           </div>
 
@@ -912,6 +1027,8 @@ export default function GradeStudentPage({
                 overallScore={scores[selectedQuestionIdx] || 0}
                 overallFeedback={feedbacks[selectedQuestionIdx] || ""}
                 isGraded={!!sessionData.grades[selectedQuestionIdx]}
+                isAiGradedOnly={isCurrentQuestionAiGradedOnly}
+                aiGradedScore={currentAiGradedScore}
                 saving={saveGradeMutation.isPending}
                 onStageScoreChange={handleStageScoreChange}
                 onStageCommentChange={handleStageCommentChange}
@@ -927,6 +1044,7 @@ export default function GradeStudentPage({
                     [selectedQuestionIdx]: value,
                   })
                 }
+                onAcceptAiScore={handleAcceptAiScore}
                 onSave={() => handleSaveGrade(selectedQuestionIdx)}
               />
 
@@ -982,6 +1100,30 @@ export default function GradeStudentPage({
           </div>
         </div>
       </SidebarInset>
+
+      {/* 뒤로 가기 확인 다이얼로그 */}
+      <AlertDialog open={showBackConfirm} onOpenChange={setShowBackConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>채점이 완료되지 않았습니다</AlertDialogTitle>
+            <AlertDialogDescription>
+              가채점만 있는 문제가 있습니다. 반드시 교수가 직접 점수를 입력해야
+              합니다. 그래도 뒤로 가시겠습니까?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowBackConfirm(false);
+                window.location.href = `/instructor/${resolvedParams.examId}`;
+              }}
+            >
+              뒤로 가기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }

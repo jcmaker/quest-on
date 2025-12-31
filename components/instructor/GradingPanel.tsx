@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Star } from "lucide-react";
+import { Star, Check } from "lucide-react";
 import { useState, useEffect } from "react";
 
 type StageKey = "chat" | "answer" | "feedback";
@@ -20,11 +20,14 @@ interface GradingPanelProps {
   overallScore: number;
   overallFeedback: string;
   isGraded: boolean;
+  isAiGradedOnly?: boolean; // 가채점만 있는 경우
+  aiGradedScore?: number; // 가채점 점수
   saving: boolean;
   onStageScoreChange: (stage: StageKey, value: number) => void;
   onStageCommentChange: (stage: StageKey, value: string) => void;
   onOverallScoreChange: (value: number) => void;
   onOverallFeedbackChange: (value: string) => void;
+  onAcceptAiScore?: () => void; // 가채점 점수 승인 핸들러
   onSave: () => void;
 }
 
@@ -35,11 +38,14 @@ export function GradingPanel({
   overallScore,
   overallFeedback,
   isGraded,
+  isAiGradedOnly = false,
+  aiGradedScore,
   saving,
   // onStageScoreChange,
   // onStageCommentChange,
   onOverallScoreChange,
   onOverallFeedbackChange,
+  onAcceptAiScore,
   onSave,
 }: GradingPanelProps) {
   // 입력 중에는 문자열로 관리하여 "020" 같은 문제 방지
@@ -58,7 +64,9 @@ export function GradingPanel({
           문제 {questionNumber} 채점
         </CardTitle>
         <CardDescription>
-          {isGraded && overallScore > 0
+          {isAiGradedOnly
+            ? "가채점만 있습니다. 반드시 점수를 직접 입력해야 합니다."
+            : isGraded && overallScore > 0
             ? "AI 가채점 완료. 점수와 피드백을 수정할 수 있습니다."
             : "이 문제에 대한 점수와 피드백을 입력하세요"}
         </CardDescription>
@@ -141,7 +149,7 @@ export function GradingPanel({
             <Label htmlFor="score" className="text-sm font-medium">
               종합 점수 (0-100)
             </Label>
-            <div className="mt-1">
+            <div className="mt-1 flex gap-2">
               <input
                 type="number"
                 id="score"
@@ -206,9 +214,28 @@ export function GradingPanel({
                   setScoreInput(clampedValue.toString());
                   onOverallScoreChange(clampedValue);
                 }}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className={`flex-1 rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                  isAiGradedOnly ? "bg-gray-100 text-gray-500" : ""
+                }`}
               />
+              {isAiGradedOnly && aiGradedScore !== undefined && onAcceptAiScore && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={onAcceptAiScore}
+                  className="shrink-0"
+                  title="가채점 점수로 채점하기"
+                >
+                  <Check className="h-4 w-4" />
+                </Button>
+              )}
             </div>
+            {isAiGradedOnly && aiGradedScore !== undefined && (
+              <p className="text-xs text-gray-500 mt-1">
+                가채점 점수: {aiGradedScore}점. 체크 버튼을 눌러 가채점 점수로 채점하거나 직접 입력해주세요.
+              </p>
+            )}
           </div>
 
           <div>
@@ -225,13 +252,33 @@ export function GradingPanel({
           </div>
         </div>
 
-        <Button onClick={onSave} disabled={saving} className="w-full">
-          {saving ? "저장 중..." : "문제 채점 저장"}
+        <Button
+          onClick={onSave}
+          disabled={saving || isAiGradedOnly}
+          className="w-full"
+        >
+          {saving
+            ? "저장 중..."
+            : isAiGradedOnly
+            ? "점수를 입력해주세요"
+            : "문제 채점 저장"}
         </Button>
 
         {isGraded && (
-          <div className="text-sm text-green-600 text-center">
-            ✓ {overallScore > 0 ? "AI 가채점 완료" : "채점 완료됨"}
+          <div
+            className={`text-sm text-center ${
+              isAiGradedOnly
+                ? "text-gray-500"
+                : overallScore > 0
+                ? "text-green-600"
+                : "text-green-600"
+            }`}
+          >
+            {isAiGradedOnly
+              ? "⚠ 가채점만 있습니다"
+              : overallScore > 0
+              ? "✓ AI 가채점 완료"
+              : "✓ 채점 완료됨"}
           </div>
         )}
       </CardContent>

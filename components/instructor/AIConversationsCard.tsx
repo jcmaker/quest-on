@@ -5,7 +5,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { MessageSquare, User, Bot } from "lucide-react";
+import { MessageSquare } from "lucide-react";
+import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 
 interface Conversation {
   id: string;
@@ -32,47 +33,32 @@ export function AIConversationsCard({
       </CardHeader>
       <CardContent>
         {messages.length > 0 ? (
-          <div className="space-y-4 max-h-96 overflow-y-auto">
+          <div className="space-y-4 sm:space-y-6 max-h-96 overflow-y-auto p-2 sm:p-4">
             {messages.map((message) => (
               <div
                 key={message.id}
-                className={`flex gap-3 ${
+                className={`flex ${
                   message.role === "user" ? "justify-end" : "justify-start"
-                }`}
+                } animate-in fade-in slide-in-from-bottom-2 duration-300`}
               >
-                <div
-                  className={`flex gap-2 max-w-[80%] ${
-                    message.role === "user" ? "flex-row-reverse" : "flex-row"
-                  }`}
-                >
-                  <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      message.role === "user"
-                        ? "bg-blue-600"
-                        : "bg-gray-600"
-                    }`}
-                  >
-                    {message.role === "user" ? (
-                      <User className="w-4 h-4 text-white" />
-                    ) : (
-                      <Bot className="w-4 h-4 text-white" />
-                    )}
-                  </div>
-                  <div
-                    className={`rounded-lg p-3 ${
-                      message.role === "user"
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-100 text-gray-900"
-                    }`}
-                  >
-                    <p className="text-sm whitespace-pre-wrap">
+                {message.role === "user" ? (
+                  <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 sm:px-5 py-3 sm:py-3.5 max-w-[85%] sm:max-w-[70%] shadow-lg shadow-primary/20 relative transition-all duration-200 hover:shadow-xl hover:shadow-primary/30">
+                    <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
                       {message.content}
                     </p>
-                    <p className="text-xs mt-1 opacity-70">
-                      {new Date(message.created_at).toLocaleTimeString()}
+                    <p className="text-xs mt-2 sm:mt-2.5 opacity-80 text-right font-medium">
+                      {new Date(message.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </p>
                   </div>
-                </div>
+                ) : (
+                  <AIMessageRenderer
+                    content={message.content}
+                    timestamp={message.created_at}
+                  />
+                )}
               </div>
             ))}
           </div>
