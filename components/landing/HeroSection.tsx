@@ -43,25 +43,25 @@ interface HeroSectionProps {
 const COLORS = {
     light: {
         bg: "#FFFFFF",
-        text: "#1F1F1F",
-        textSec: "#6B7280",
+        text: "#1A1A1A",
+        textSec: "#666666",
         primary: "#3B82F6",
-        card: "#F5F5F5",
-        cardBorder: "#E5E5E5",
+        card: "#F9F9F9",
+        cardBorder: "#EEEEEE",
         editorBg: "#FFFFFF",
-        chromeBg: "#FAFAFA",
+        chromeBg: "#F7F7F7",
         glass: "backdrop-blur-md bg-white/70 border border-black/5",
         navBg: "rgba(255, 255, 255, 0.8)",
     },
     dark: {
         bg: "#0A0A0A",
-        text: "#E4E4E4",
-        textSec: "#A1A1AA",
+        text: "#EDEDED",
+        textSec: "#999999",
         primary: "#3B82F6",
-        card: "rgba(255, 255, 255, 0.05)",
-        cardBorder: "rgba(255, 255, 255, 0.1)",
+        card: "#161616",
+        cardBorder: "#262626",
         editorBg: "#0F0F0F",
-        chromeBg: "#141414",
+        chromeBg: "#121212",
         glass: "backdrop-blur-md bg-white/5 border border-white/10",
         navBg: "rgba(0, 0, 0, 0.5)",
     },
@@ -136,77 +136,57 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
 
                 {/* LEFT PANEL: EXAM (3 cols) - Redesigned as Student Final Answer & Cheating Detection */}
                 <motion.div
-                    initial={{ opacity: 0, x: -20, y: 20 }}
-                    animate={{ opacity: 1, x: 0, y: 0 }}
-                    whileHover={{ y: -5, transition: { duration: 0.3 } }}
-                    transition={{ duration: 0.6, delay: 0.2 }}
-                    className="lg:col-span-3 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px]"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                    transition={{ duration: 0.5, delay: 0.2 }}
+                    className="lg:col-span-3 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[520px]"
                     style={cardStyle}
                 >
                     {/* Header */}
-                    <div className="h-14 border-b flex items-center justify-between px-4 bg-white dark:bg-black/20" style={{ borderColor: colors.cardBorder }}>
+                    <div className="h-12 border-b flex items-center justify-between px-4 bg-white/50 dark:bg-black/10" style={{ borderColor: colors.cardBorder }}>
                         <div className="flex items-center gap-2">
-                            <div className="p-1.5 rounded-md bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                <ShieldCheck className="w-4 h-4" />
-                            </div>
-                            <div>
-                                <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">최종 답안</div>
-                                <div className="text-[9px] text-zinc-500">학생이 제출한 최종 답안입니다</div>
-                            </div>
+                            <ShieldCheck className="w-4 h-4 text-zinc-400" />
+                            <span className="text-xs font-semibold tracking-tight">최종 답안 분석</span>
                         </div>
                     </div>
 
                     {/* Content */}
-                    <div className="p-3 flex-1 flex flex-col gap-3 overflow-hidden text-xs bg-zinc-50/50 dark:bg-transparent">
+                    <div className="p-4 flex-1 flex flex-col gap-4 overflow-hidden text-xs">
 
                         {/* Status Badges */}
-                        <div className="flex gap-2">
-                            <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded border bg-red-50 border-red-200 text-red-600 dark:bg-red-900/20 dark:border-red-900/50 dark:text-red-400">
-                                <TriangleAlert className="w-3 h-3" />
-                                <span className="font-semibold text-[10px]">외부 붙여넣기 4건</span>
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="flex flex-col gap-1 p-2 rounded-lg border bg-red-500/5 border-red-500/10">
+                                <span className="text-[10px] text-red-500/70 font-medium">부정 의심</span>
+                                <span className="text-sm font-bold text-red-500">4건</span>
                             </div>
-                            <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded border bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/20 dark:border-blue-900/50 dark:text-blue-400">
-                                <Copy className="w-3 h-3" />
-                                <span className="font-semibold text-[10px]">내부 복사 10건</span>
+                            <div className="flex flex-col gap-1 p-2 rounded-lg border bg-blue-500/5 border-blue-500/10">
+                                <span className="text-[10px] text-blue-500/70 font-medium">복사 활동</span>
+                                <span className="text-sm font-bold text-blue-500">10건</span>
                             </div>
                         </div>
 
                         {/* Suspicious Activity Box (Red) */}
-                        <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:bg-red-900/10 dark:border-red-900/30">
-                            <div className="flex items-center gap-1.5 mb-2 text-red-700 dark:text-red-400">
+                        <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                            <div className="flex items-center gap-1.5 mb-2 text-red-600 dark:text-red-400">
                                 <TriangleAlert className="w-3.5 h-3.5" />
-                                <span className="font-bold text-[11px]">부정행위 의심 활동 감지</span>
+                                <span className="font-bold text-[11px]">외부 붙여넣기 감지</span>
                             </div>
-                            <ul className="space-y-1 text-[10px] text-red-600/80 dark:text-red-400/80 font-mono">
-                                <li>• 84자 외부 붙여넣기 (오전 12:18:12)</li>
-                                <li>• 380자 외부 붙여넣기 (오전 12:35:10)</li>
-                                <li>• 112자 외부 붙여넣기 (오전 12:38:22)</li>
-                            </ul>
-                        </div>
-
-                        {/* Internal Copy Box (Blue) */}
-                        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:bg-blue-900/10 dark:border-blue-900/30">
-                            <div className="flex items-center gap-1.5 mb-2 text-blue-700 dark:text-blue-400">
-                                <Copy className="w-3.5 h-3.5" />
-                                <span className="font-bold text-[11px]">내부 복사 활동</span>
+                            <div className="space-y-1 text-[10px] text-zinc-500 font-mono">
+                                <div className="flex justify-between"><span>• 380자 외부 유입</span> <span>12:35</span></div>
+                                <div className="flex justify-between"><span>• 112자 외부 유입</span> <span>12:38</span></div>
                             </div>
-                            <ul className="space-y-1 text-[10px] text-blue-600/80 dark:text-blue-400/80 font-mono">
-                                <li>• 149자 내부 복사 (오전 12:22:23)</li>
-                                <li>• 116자 내부 복사 (오전 12:23:08)</li>
-                                <li>• 80자 내부 복사 (오전 12:23:39)</li>
-                            </ul>
                         </div>
 
                         {/* Answer Content Snippet */}
-                        <div className="flex-1 rounded-lg border bg-white dark:bg-zinc-900/50 p-3 space-y-2 overflow-hidden shadow-sm" style={{ borderColor: colors.cardBorder }}>
-                            <div className="font-bold text-zinc-700 dark:text-zinc-300 text-[11px]">0. 문제 제시 후 사고 과정</div>
-                            <div className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-                                - 뛰어난 기술을 돋보이게 할 수 있는 프로모션(마케팅)이 필요하고...
+                        <div className="flex-1 rounded-lg border bg-white dark:bg-zinc-900/30 p-3 space-y-2 overflow-hidden" style={{ borderColor: colors.cardBorder }}>
+                            <div className="font-semibold text-zinc-400 text-[10px] uppercase tracking-wider">사고 과정 분석</div>
+                            <div className="text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                                기술력을 시각화할 수 있는 마케팅 전략이 필요하다고 판단함...
                                 <br />
-                                <span className="bg-red-200/80 dark:bg-red-900/60 text-red-900 dark:text-red-100 px-1 py-0.5 rounded box-decoration-clone">
-                                    - 프리미엄 전기자전거라면 불가피하게 가격을 고가로 설정하거나, 프리미엄 이미지를 설정해야 하고
+                                <span className="bg-red-500/10 text-red-600 dark:text-red-400 px-1 rounded box-decoration-clone">
+                                    프리미엄 세그먼트를 타겟으로 고가 정책을 유지하면서도...
                                 </span>
-                                이에 따라 그 가격을 받아들일 타겟을 설정해야겠다고 생각함.
                             </div>
                         </div>
                     </div>
@@ -216,116 +196,118 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
 
                 {/* CENTER PANEL: CHAT HISTORY (5 cols) */}
                 <motion.div
-                    initial={{ opacity: 0, y: 0, scale: 0.95 }}
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
-                    whileHover={{ y: -5, transition: { duration: 0.3 } }}
-                    transition={{ duration: 0.6 }}
-                    className="lg:col-span-5 rounded-xl overflow-hidden border flex flex-col min-h-[500px] lg:h-[700px] shadow-2xl z-10 relative bg-white dark:bg-zinc-900"
+                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                    transition={{ duration: 0.5 }}
+                    className="lg:col-span-5 rounded-xl overflow-hidden border flex flex-col min-h-[500px] lg:h-[720px] shadow-2xl z-10 relative"
                     style={{
-                        backgroundColor: mode === 'dark' ? colors.chromeBg : '#ffffff',
-                        boxShadow: mode === 'dark' ? "0 0 60px -15px rgba(59, 130, 246, 0.2)" : "0 20px 60px -15px rgba(0, 0, 0, 0.15)",
-                        borderColor: mode === 'dark' ? 'rgba(59, 130, 246, 0.3)' : colors.cardBorder
+                        backgroundColor: colors.bg,
+                        boxShadow: mode === 'dark' ? "0 20px 40px -10px rgba(0, 0, 0, 0.8)" : "0 20px 40px -10px rgba(0, 0, 0, 0.1)",
+                        borderColor: colors.cardBorder
                     }}
                 >
                     {/* Header */}
-                    <div className="h-16 border-b flex items-center justify-between px-5 bg-white dark:bg-zinc-900/90 backdrop-blur-sm" style={{ borderColor: colors.cardBorder }}>
-                        <div className="flex items-center gap-3">
-                            <MessageSquare className="w-5 h-5 text-blue-600" />
-                            <div>
-                                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">AI와의 대화 기록</div>
-                                <div className="text-[10px] text-zinc-500">학생이 AI와 나눈 대화 내용입니다</div>
-                            </div>
+                    <div className="h-14 border-b flex items-center justify-between px-5 bg-white dark:bg-zinc-900/50" style={{ borderColor: colors.cardBorder }}>
+                        <div className="flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4 text-zinc-400" />
+                            <span className="text-sm font-semibold tracking-tight">AI 사고 평가 과정</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-blue-500/10 border border-blue-500/20">
+                            <Sparkles className="w-3 h-3 text-blue-500" />
+                            <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest">AI Agent</span>
                         </div>
                     </div>
 
                     {/* Chat Content */}
-                    <div className="flex-1 p-5 overflow-y-auto space-y-6 bg-zinc-50/50 dark:bg-black/20 font-sans">
-
-                        {/* Timestamp Separator */}
-                        <div className="flex justify-center">
-                            <span className="text-[10px] text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-full">오전 1:07:08</span>
-                        </div>
+                    <div className="flex-1 p-6 overflow-y-auto space-y-8 font-sans">
 
                         {/* Message 1: Student */}
                         <motion.div
-                            initial={{ opacity: 0, y: 10 }}
+                            initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.5 }}
-                            className="flex justify-end gap-2"
+                            transition={{ delay: 0.4 }}
+                            className="flex justify-end gap-3"
                         >
                             <div className="flex flex-col items-end max-w-[85%]">
-                                <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm text-xs leading-relaxed shadow-sm">
-                                    경쟁사 제품 대비 그린휠의 제품은 얼마나 가벼워? 얼마나 경량화가 됐어?
+                                <div className="bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 px-4 py-3 rounded-2xl rounded-tr-sm text-[13px] leading-relaxed border border-zinc-200 dark:border-zinc-700">
+                                    경쟁사 대비 제품의 경량화 수준이 어느 정도야?
                                 </div>
-                                <span className="text-[9px] text-zinc-400 mt-1 mr-1">오전 1:08:57</span>
-                            </div>
-                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                                <div className="w-4 h-4 rounded-full border-2 border-blue-500" />
+                                <span className="text-[10px] text-zinc-500 mt-1.5 mr-1">오전 1:08</span>
                             </div>
                         </motion.div>
 
                         {/* Message 2: AI */}
                         <motion.div
-                            initial={{ opacity: 0, y: 10 }}
+                            initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 1.5 }}
-                            className="flex justify-start gap-2"
+                            transition={{ delay: 1.2 }}
+                            className="flex justify-start gap-3"
                         >
-                            <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
-                                <Brain className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center shrink-0">
+                                <Sparkles className="w-4 h-4 text-white" />
                             </div>
                             <div className="flex flex-col items-start max-w-[85%]">
-                                <div className="bg-white dark:bg-zinc-800 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm">
-                                    그린휠 E-Prime One은 평균 <span className="font-bold">17kg</span>으로 경쟁사 평균(약 21~23kg) 대비 <span className="font-bold">약 20% 경량화</span>되었습니다.
+                                <div className="bg-white dark:bg-zinc-900 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm border-blue-500/20">
+                                    E-Prime One은 <span className="font-bold text-blue-500">17kg</span>으로 경쟁사 대비 <span className="font-bold text-blue-500">20% 더 가볍습니다.</span> 이를 마케팅 포인트로 활용할 수 있습니다.
                                 </div>
-                                <span className="text-[9px] text-zinc-400 mt-1 ml-1">오전 1:08:58</span>
+                                <span className="text-[10px] text-zinc-500 mt-1.5 ml-1">오전 1:08</span>
+                            </div>
+                        </motion.div>
+
+                        {/* Thought Process */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: 2.0 }}
+                            className="flex justify-center"
+                        >
+                            <div className="px-4 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-[10px] text-zinc-500 font-medium">
+                                AI가 학생의 질문 의도를 분석 중입니다...
                             </div>
                         </motion.div>
 
                         {/* Message 3: Student */}
                         <motion.div
-                            initial={{ opacity: 0, y: 10 }}
+                            initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 3.0 }}
-                            className="flex justify-end gap-2"
+                            className="flex justify-end gap-3"
                         >
                             <div className="flex flex-col items-end max-w-[85%]">
-                                <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm text-xs leading-relaxed shadow-sm">
-                                    전기 자전거가 경량화가 되면 뭐가 좋아?
+                                <div className="bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 px-4 py-3 rounded-2xl rounded-tr-sm text-[13px] leading-relaxed border border-zinc-200 dark:border-zinc-700">
+                                    경량화가 실제 타겟 고객에게 어떤 실용적 가치를 주지?
                                 </div>
-                                <span className="text-[9px] text-zinc-400 mt-1 mr-1">오전 1:13:00</span>
-                            </div>
-                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                                <div className="w-4 h-4 rounded-full border-2 border-blue-500" />
+                                <span className="text-[10px] text-zinc-500 mt-1.5 mr-1">오전 1:13</span>
                             </div>
                         </motion.div>
 
                         {/* Message 4: AI */}
                         <motion.div
-                            initial={{ opacity: 0, y: 10 }}
+                            initial={{ opacity: 0, y: 8 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 4.5 }}
-                            className="flex justify-start gap-2"
+                            transition={{ delay: 4.2 }}
+                            className="flex justify-start gap-3"
                         >
-                            <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
-                                <Brain className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-500 to-purple-500 flex items-center justify-center shrink-0">
+                                <Sparkles className="w-4 h-4 text-white" />
                             </div>
                             <div className="flex flex-col items-start max-w-[85%]">
-                                <div className="bg-white dark:bg-zinc-800 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm">
-                                    전기자전거가 경량화되면 <span className="font-bold">휴대성·가속성·주행 효율성이 향상되고 배터리 소모가 감소</span>합니다.
+                                <div className="bg-white dark:bg-zinc-900 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-[13px] leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm border-purple-500/20">
+                                    단순한 무게 감소를 넘어, <span className="font-semibold text-purple-500">배터리 효율 증대와 휴대성 극대화</span>라는 실질적 편익을 제공합니다.
                                 </div>
-                                <span className="text-[9px] text-zinc-400 mt-1 ml-1">오전 1:13:03</span>
+                                <span className="text-[10px] text-zinc-500 mt-1.5 ml-1">오전 1:13</span>
                             </div>
                         </motion.div>
 
                     </div>
 
                     {/* Input Area (Mock) */}
-                    <div className="p-3 border-t bg-white dark:bg-zinc-900" style={{ borderColor: colors.cardBorder }}>
-                        <div className="h-10 rounded-full border bg-zinc-50 dark:bg-zinc-800/50 flex items-center px-4 justify-between" style={{ borderColor: colors.cardBorder }}>
-                            <span className="text-xs text-zinc-400">메시지를 입력하세요...</span>
-                            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center">
-                                <ArrowRight className="w-3 h-3 text-white" />
+                    <div className="p-4 border-t bg-white/50 dark:bg-black/10 backdrop-blur-sm" style={{ borderColor: colors.cardBorder }}>
+                        <div className="h-11 rounded-xl border bg-white dark:bg-zinc-950 flex items-center px-4 justify-between" style={{ borderColor: colors.cardBorder }}>
+                            <span className="text-xs text-zinc-400">AI와 대화하며 사고를 확장하세요...</span>
+                            <div className="w-7 h-7 rounded-lg bg-zinc-900 dark:bg-zinc-100 flex items-center justify-center">
+                                <ArrowRight className="w-3.5 h-3.5 text-white dark:text-black" />
                             </div>
                         </div>
                     </div>
@@ -333,71 +315,75 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
 
                 {/* RIGHT PANEL: GRADING (4 cols) */}
                 <motion.div
-                    initial={{ opacity: 0, x: 20, y: 20 }}
-                    animate={{ opacity: 1, x: 0, y: 0 }}
-                    whileHover={{ y: -5, transition: { duration: 0.3 } }}
-                    transition={{ duration: 0.6, delay: 0.4 }}
-                    className="lg:col-span-4 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px]"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                    transition={{ duration: 0.5, delay: 0.4 }}
+                    className="lg:col-span-4 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[520px]"
                     style={cardStyle}
                 >
                     {/* Header */}
-                    <div className="h-10 border-b flex items-center px-4 gap-2" style={{ borderColor: colors.cardBorder }}>
-                        <Sparkles className="w-4 h-4 text-purple-500" />
-                        <span className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">AI 종합 평가</span>
+                    <div className="h-12 border-b flex items-center px-4 gap-2 bg-white/50 dark:bg-black/10" style={{ borderColor: colors.cardBorder }}>
+                        <div className="flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-purple-400" />
+                            <span className="text-xs font-semibold tracking-tight">AI 역량 평가 리포트</span>
+                        </div>
                     </div>
 
                     {/* Content */}
-                    <div className="p-4 flex-1 flex flex-col gap-3 text-xs overflow-hidden">
+                    <div className="p-4 flex-1 flex flex-col gap-5 text-xs">
 
                         {/* 1. Score & Opinion */}
-                        <div className="flex gap-4 items-start">
-                            <div className="flex flex-col items-center justify-center bg-zinc-100 dark:bg-zinc-800/50 rounded-lg p-3 min-w-[70px]">
-                                <div className="text-2xl font-black font-mono text-zinc-800 dark:text-white">
+                        <div className="flex gap-4 items-center">
+                            <div className="flex flex-col items-center justify-center bg-zinc-100 dark:bg-zinc-900 rounded-xl p-4 border border-zinc-200 dark:border-zinc-800">
+                                <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
                                     <CountUp to={92} />
                                 </div>
-                                <div className="text-[9px] opacity-60 uppercase tracking-tight">Total Score</div>
+                                <div className="text-[9px] font-medium text-zinc-500 uppercase">점수</div>
                             </div>
-                            <div className="flex-1 opacity-80 leading-relaxed line-clamp-3">
-                                <span className="font-bold text-zinc-900 dark:text-zinc-100">종합 의견: </span>
-                                이 학생의 답안은 전반적으로 논리적이며 마케팅 이론의 구조를 충실히 따르고 있습니다. 3C와 SWOT 분석이 구체적으로 연결되어 높은 설득력을 가집니다.
-                            </div>
-                        </div>
-
-                        {/* 2. Key Quote (Yellow) */}
-                        <div className="rounded-lg bg-yellow-400/10 border border-yellow-400/20 p-3 text-yellow-700 dark:text-yellow-400 relative">
-                            <div className="flex items-center gap-1.5 mb-1.5 opacity-80">
-                                <MessageSquare className="w-3 h-3 fill-current" />
-                                <span className="text-[10px] font-bold uppercase">핵심 인용구 (Highlight)</span>
-                            </div>
-                            <div className="italic leading-relaxed opacity-90">
-                                &quot;기술 중심 브랜드를 선호하면서도 친환경 소비에 민감한 MZ세대를 타겟으로 설정...&quot;
+                            <div className="flex-1 text-[11px] leading-relaxed text-zinc-500">
+                                <span className="font-bold text-zinc-900 dark:text-zinc-200">종합 의견: </span>
+                                마케팅 이론의 논리적 구심점이 명확하며, 타겟 세분화 수준이 매우 구체적입니다.
                             </div>
                         </div>
 
-                        {/* 3. Strengths & Improvements Grid */}
-                        <div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
-                            {/* Strengths (Blue) */}
-                            <div className="bg-blue-500/5 border border-blue-500/10 rounded-lg p-3 flex flex-col gap-2">
-                                <div className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
-                                    <Plus className="w-3 h-3" /> 강점
-                                </div>
-                                <ul className="list-disc pl-3 space-y-1.5 opacity-80 leading-snug">
-                                    <li>3C 및 SWOT 분석 간 논리적 일관성 우수</li>
-                                    <li>타겟 세그먼트 선정의 구체성</li>
-                                    <li>차별점 명확히 제시함</li>
-                                </ul>
+                        {/* 2. Highlight Box */}
+                        <div className="rounded-xl bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-pink-500/10 border border-blue-500/10 p-4">
+                            <div className="flex items-center gap-1.5 mb-2 font-bold text-blue-500 uppercase tracking-widest text-[9px]">
+                                AI 분석 하이라이트
                             </div>
+                            <div className="text-[11px] text-zinc-600 dark:text-zinc-300 italic leading-relaxed">
+                                &quot;MZ세대의 라이프스타일과 경량화의 실질적 효용을 연결한 점이 탁월합니다.&quot;
+                            </div>
+                        </div>
 
-                            {/* Improvements (Orange) */}
-                            <div className="bg-orange-500/5 border border-orange-500/10 rounded-lg p-3 flex flex-col gap-2">
-                                <div className="text-orange-600 dark:text-orange-400 font-bold flex items-center gap-1">
-                                    <div className="w-2.5 h-0.5 bg-current rounded-full" /> 개선점
+                        {/* 3. Metrics */}
+                        <div className="space-y-3">
+                            <div className="space-y-1.5">
+                                <div className="flex justify-between text-[10px] font-medium text-zinc-400">
+                                    <span>비판적 사고</span>
+                                    <span>High</span>
                                 </div>
-                                <ul className="list-disc pl-3 space-y-1.5 opacity-80 leading-snug">
-                                    <li>유통전략(Place)의 구체성 부족</li>
-                                    <li>옴니채널 전략 미흡</li>
-                                    <li>프로모션 실행 메커니즘 모호</li>
-                                </ul>
+                                <div className="h-1 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: "95%" }}
+                                        className="h-full bg-blue-500"
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-1.5">
+                                <div className="flex justify-between text-[10px] font-medium text-zinc-400">
+                                    <span>문제 해결력</span>
+                                    <span>Upper</span>
+                                </div>
+                                <div className="h-1 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                                    <motion.div
+                                        initial={{ width: 0 }}
+                                        animate={{ width: "88%" }}
+                                        className="h-full bg-purple-500"
+                                    />
+                                </div>
                             </div>
                         </div>
                     </div>
