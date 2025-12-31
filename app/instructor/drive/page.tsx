@@ -881,6 +881,7 @@ export default function InstructorDrive() {
   }
 
   return (
+    <>
     <SignedIn>
       <div className="min-h-screen bg-background">
         {/* Header */}
@@ -1090,33 +1091,34 @@ export default function InstructorDrive() {
       </div>
     </SignedIn>
 
-    {/* 삭제 확인 다이얼로그 */}
-    <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-      <AlertDialogPopup>
-        <AlertDialogHeader>
-          <AlertDialogTitle>삭제 확인</AlertDialogTitle>
-          <AlertDialogDescription>
-            {nodeToDelete
-              ? `"${nodeToDelete.name}"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`
-              : ""}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>취소</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => {
-              if (nodeToDelete) {
-                handleDeleteNode(nodeToDelete);
-                setDeleteDialogOpen(false);
-                setNodeToDelete(null);
-              }
-            }}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            삭제
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogPopup>
-    </AlertDialog>
+      {/* 삭제 확인 다이얼로그 */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>삭제 확인</AlertDialogTitle>
+            <AlertDialogDescription>
+              {nodeToDelete
+                ? `"${nodeToDelete.name}"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (nodeToDelete) {
+                  handleDeleteNode(nodeToDelete);
+                  setDeleteDialogOpen(false);
+                  setNodeToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
+    </>
   );
 }
