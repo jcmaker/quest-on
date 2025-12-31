@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import toast from "react-hot-toast";
+import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import { useUser } from "@clerk/nextjs";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
@@ -484,10 +485,13 @@ export default function CreateExam() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          `Failed to create exam: ${errorData.error || "Unknown error"}`
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = extractErrorMessage(
+          errorData,
+          "시험 생성에 실패했습니다",
+          response.status
         );
+        throw new Error(errorMessage);
       }
 
       return await response.json();
@@ -687,12 +691,14 @@ export default function CreateExam() {
           console.error("[client] File upload failed:", uploadError);
 
           // 에러 메시지 추출 및 표시
-          const errorMessage =
-            uploadError instanceof Error
-              ? uploadError.message
-              : "파일 업로드 중 오류가 발생했습니다.";
+          const errorMessage = getErrorMessage(
+            uploadError,
+            "파일 업로드 중 오류가 발생했습니다"
+          );
 
-          toast.error(errorMessage);
+          toast.error(errorMessage, {
+            duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+          });
           throw uploadError; // Re-throw to prevent exam creation
         }
 
@@ -926,7 +932,9 @@ export default function CreateExam() {
                   size="sm"
                   onClick={() => {
                     navigator.clipboard.writeText(createdExamCode);
-                    toast.success("시험 코드가 복사되었습니다.");
+                    toast.success("시험 코드가 복사되었습니다.", {
+                      id: "copy-exam-code", // 중복 방지
+                    });
                   }}
                 >
                   복사

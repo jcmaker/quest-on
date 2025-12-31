@@ -3,7 +3,8 @@
 import { useState, useEffect, use } from "react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
-import { toast } from "sonner";
+import toast from "react-hot-toast";
+import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import { useUser } from "@clerk/nextjs";
 import { ExamInfoForm } from "@/components/instructor/ExamInfoForm";
 import { FileUpload } from "@/components/instructor/FileUpload";
@@ -499,12 +500,14 @@ export default function EditExam({
           toast.dismiss(loadingToast);
         } catch (uploadError) {
           toast.dismiss(loadingToast);
-          const errorMessage =
-            uploadError instanceof Error
-              ? uploadError.message
-              : "파일 업로드 중 오류가 발생했습니다.";
+          const errorMessage = getErrorMessage(
+            uploadError,
+            "파일 업로드 중 오류가 발생했습니다"
+          );
 
-          toast.error(errorMessage);
+          toast.error(errorMessage, {
+            duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+          });
           throw uploadError;
         }
       }
@@ -537,11 +540,14 @@ export default function EditExam({
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({}));
         console.error("API Error:", errorData);
-        throw new Error(
-          `Failed to update exam: ${errorData.error || "Unknown error"}`
+        const errorMessage = extractErrorMessage(
+          errorData,
+          "시험 수정에 실패했습니다",
+          response.status
         );
+        throw new Error(errorMessage);
       }
 
       const result = await response.json();
@@ -551,7 +557,13 @@ export default function EditExam({
       router.push(`/instructor/${resolvedParams.examId}`);
     } catch (error) {
       console.error("Error updating exam:", error);
-      toast.error("시험 수정 중 오류가 발생했습니다. 다시 시도해주세요.");
+      const errorMessage = getErrorMessage(
+        error,
+        "시험 수정 중 오류가 발생했습니다. 다시 시도해주세요"
+      );
+      toast.error(errorMessage, {
+        duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+      });
     } finally {
       setIsLoading(false);
     }

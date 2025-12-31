@@ -14,7 +14,8 @@ import { AIConversationsCard } from "@/components/instructor/AIConversationsCard
 import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
 import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
-import { toast } from "sonner";
+import toast from "react-hot-toast";
+import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import {
   AIOverallSummary,
   SummaryData,
@@ -331,7 +332,13 @@ export default function GradeStudentPage({
       );
 
       if (!response.ok) {
-        throw new Error("Failed to save grade");
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = extractErrorMessage(
+          errorData,
+          "채점 저장 중 오류가 발생했습니다",
+          response.status
+        );
+        throw new Error(errorMessage);
       }
       return response.json();
     },
@@ -344,7 +351,13 @@ export default function GradeStudentPage({
     },
     onError: (error: Error) => {
       console.error("Error saving grade:", error);
-      toast.error("채점 저장 중 오류가 발생했습니다.");
+      const errorMessage = getErrorMessage(
+        error,
+        "채점 저장 중 오류가 발생했습니다"
+      );
+      toast.error(errorMessage, {
+        duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+      });
     },
   });
 

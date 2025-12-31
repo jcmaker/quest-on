@@ -30,7 +30,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { toast } from "sonner";
+import toast from "react-hot-toast";
+import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
 
 // 무거운 컴포넌트는 동적 임포트로 지연 로딩
@@ -255,10 +256,14 @@ export default function InstructorHome() {
     }
     try {
       await navigator.clipboard.writeText(code);
-      toast.success("시험 코드가 복사되었습니다.");
+      toast.success("시험 코드가 복사되었습니다.", {
+        id: "copy-exam-code", // 중복 방지
+      });
     } catch (error) {
       console.error("Copy exam code error:", error);
-      toast.error("시험 코드를 복사하지 못했습니다.");
+      toast.error("시험 코드를 복사하지 못했습니다.", {
+        id: "copy-exam-code-error",
+      });
     }
   };
 
@@ -300,12 +305,40 @@ export default function InstructorHome() {
         toast.success("삭제되었습니다.");
         refetchFolderContents(); // TanStack Query 캐시 무효화 및 재조회
       } else {
-        const errorData = await response.json();
-        toast.error(errorData.error || "삭제에 실패했습니다.");
+        const errorData = await response.json().catch(() => ({}));
+        // 에러 메시지 추출 (여러 필드 확인)
+        const errorMsg =
+          errorData.error ||
+          errorData.message ||
+          errorData.details ||
+          `HTTP ${response.status}: ${response.statusText}`;
+
+        // 영어 메시지인 경우 기본 한글 메시지 사용
+        const isEnglish =
+          errorMsg && /[a-zA-Z]/.test(errorMsg) && !/[가-힣]/.test(errorMsg);
+        toast.error(
+          isEnglish
+            ? `삭제에 실패했습니다. (${errorMsg})`
+            : errorMsg || "삭제에 실패했습니다.",
+          {
+            duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+          }
+        );
       }
     } catch (error) {
       console.error("Error deleting node:", error);
-      toast.error("삭제에 실패했습니다.");
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const isEnglish =
+        /[a-zA-Z]/.test(errorMessage) && !/[가-힣]/.test(errorMessage);
+      toast.error(
+        isEnglish
+          ? `삭제에 실패했습니다. (${errorMessage})`
+          : errorMessage || "삭제에 실패했습니다.",
+        {
+          duration: 5000,
+        }
+      );
     }
   };
 

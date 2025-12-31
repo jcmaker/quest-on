@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Copy } from "lucide-react";
-import { toast } from "sonner";
+import toast from "react-hot-toast";
 
 interface ExamDetailsCardProps {
   description: string;
@@ -22,10 +22,14 @@ export function ExamDetailsCard({
   const handleCopyCode = async () => {
     try {
       await navigator.clipboard.writeText(examCode);
-      toast.success("시험 코드가 복사되었습니다.");
+      toast.success("시험 코드가 복사되었습니다.", {
+        id: "copy-exam-code", // 중복 방지
+      });
     } catch (error) {
       console.error("Copy exam code error:", error);
-      toast.error("시험 코드를 복사하지 못했습니다.");
+      toast.error("시험 코드를 복사하지 못했습니다.", {
+        id: "copy-exam-code-error",
+      });
     }
   };
 

@@ -39,7 +39,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { toast } from "sonner";
+import toast from "react-hot-toast";
+import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 
 interface ExamNode {
   id: string;
@@ -552,12 +553,22 @@ export default function InstructorDrive() {
           queryKey: qk.drive.folderContents(currentFolderId, user?.id),
         });
       } else {
-        const errorData = await response.json();
-        toast.error(errorData.error || "폴더 생성에 실패했습니다.");
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = extractErrorMessage(
+          errorData,
+          "폴더 생성에 실패했습니다",
+          response.status
+        );
+        toast.error(errorMessage, {
+          duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+        });
       }
     } catch (error) {
       console.error("Error creating folder:", error);
-      toast.error("폴더 생성에 실패했습니다.");
+      const errorMessage = getErrorMessage(error, "폴더 생성에 실패했습니다");
+      toast.error(errorMessage, {
+        duration: 5000,
+      });
     } finally {
       setIsCreatingFolder(false);
     }
@@ -604,12 +615,22 @@ export default function InstructorDrive() {
           queryKey: qk.drive.folderContents(currentFolderId, user?.id),
         });
       } else {
-        const errorData = await response.json();
-        toast.error(errorData.error || "삭제에 실패했습니다.");
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = extractErrorMessage(
+          errorData,
+          "삭제에 실패했습니다",
+          response.status
+        );
+        toast.error(errorMessage, {
+          duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+        });
       }
     } catch (error) {
       console.error("Error deleting node:", error);
-      toast.error("삭제에 실패했습니다.");
+      const errorMessage = getErrorMessage(error, "삭제에 실패했습니다");
+      toast.error(errorMessage, {
+        duration: 5000,
+      });
     }
   };
 
@@ -628,10 +649,14 @@ export default function InstructorDrive() {
     }
     try {
       await navigator.clipboard.writeText(code);
-      toast.success("시험 코드가 복사되었습니다.");
+      toast.success("시험 코드가 복사되었습니다.", {
+        id: "copy-exam-code", // 중복 방지
+      });
     } catch (error) {
       console.error("Copy exam code error:", error);
-      toast.error("시험 코드를 복사하지 못했습니다.");
+      toast.error("시험 코드를 복사하지 못했습니다.", {
+        id: "copy-exam-code-error",
+      });
     }
   };
 
@@ -734,12 +759,22 @@ export default function InstructorDrive() {
           queryKey: qk.drive.folderContents(currentFolderId, user?.id),
         });
       } else {
-        const errorData = await response.json();
-        toast.error(errorData.error || "이동에 실패했습니다.");
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = extractErrorMessage(
+          errorData,
+          "이동에 실패했습니다",
+          response.status
+        );
+        toast.error(errorMessage, {
+          duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+        });
       }
     } catch (error) {
       console.error("Error moving node:", error);
-      toast.error("이동에 실패했습니다.");
+      const errorMessage = getErrorMessage(error, "이동에 실패했습니다");
+      toast.error(errorMessage, {
+        duration: 5000,
+      });
     } finally {
       setIsMoving(false);
       setDraggedNode(null);
@@ -785,12 +820,22 @@ export default function InstructorDrive() {
           queryKey: qk.drive.folderContents(currentFolderId, user?.id),
         });
       } else {
-        const errorData = await response.json();
-        toast.error(errorData.error || "이동에 실패했습니다.");
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = extractErrorMessage(
+          errorData,
+          "이동에 실패했습니다",
+          response.status
+        );
+        toast.error(errorMessage, {
+          duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+        });
       }
     } catch (error) {
       console.error("Error moving node:", error);
-      toast.error("이동에 실패했습니다.");
+      const errorMessage = getErrorMessage(error, "이동에 실패했습니다");
+      toast.error(errorMessage, {
+        duration: 5000,
+      });
     } finally {
       setIsMoving(false);
       setDraggedNode(null);
