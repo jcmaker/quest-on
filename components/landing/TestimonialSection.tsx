@@ -12,7 +12,7 @@ const TESTIMONIALS = [
     },
     {
         quote: "기존의 온라인 시험은 부정행위 방지가 가장 큰 고민이었습니다. Quest-On의 실시간 사고 과정 트래킹 기술은 대면 시험보다 더 입체적인 데이터를 제공하여 공정한 평가를 가능하게 합니다.",
-        name: "권효찬",
+        name: "권효찬 교수",
         title: "경기과학기술대학교",
         avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=ProfessorKwon"
     },
@@ -75,7 +75,7 @@ export default function TestimonialSection({ mode = "light" }: { mode?: "light" 
                                 </div>
                                 <div>
                                     <div className={`text-lg font-bold tracking-tight ${isDark ? "text-white" : "text-[#1F1F1F]"}`}>
-                                        {testimonial.name} 교수
+                                        {testimonial.name}
                                     </div>
                                     <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-[0.2em] opacity-60">
                                         {testimonial.title}
