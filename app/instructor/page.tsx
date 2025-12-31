@@ -33,6 +33,16 @@ import {
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "@/components/animate-ui/components/base/alert-dialog";
 
 // 무거운 컴포넌트는 동적 임포트로 지연 로딩
 const BookOpen = dynamic(() =>
@@ -115,6 +125,8 @@ export default function InstructorHome() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [nodeToDelete, setNodeToDelete] = useState<ExamNode | null>(null);
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
@@ -267,8 +279,9 @@ export default function InstructorHome() {
     }
   };
 
-  const handleDeleteNode = async (node: ExamNode) => {
+  const handleDeleteClick = (node: ExamNode) => {
     if (node.kind === "exam" && node.exams?.code) {
+      // 시험인 경우는 여전히 prompt 사용 (시험 코드 입력 필요)
       const input = prompt(
         `"${node.name}" 시험을 삭제하려면 시험 코드를 입력하세요.`
       );
@@ -279,16 +292,16 @@ export default function InstructorHome() {
         toast.error("시험 코드가 일치하지 않습니다.");
         return;
       }
+      // 시험 코드가 맞으면 바로 삭제
+      handleDeleteNode(node);
     } else {
-      if (
-        !confirm(
-          `"${node.name}"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`
-        )
-      ) {
-        return;
-      }
+      // 폴더인 경우 AlertDialog 사용
+      setNodeToDelete(node);
+      setDeleteDialogOpen(true);
     }
+  };
 
+  const handleDeleteNode = async (node: ExamNode) => {
     try {
       const response = await fetch("/api/supa", {
         method: "POST",
@@ -423,7 +436,7 @@ export default function InstructorHome() {
         <DropdownMenuItem
           onClick={(e) => {
             e.stopPropagation();
-            handleDeleteNode(node);
+            handleDeleteClick(node);
           }}
           className="text-destructive focus:text-destructive"
         >
@@ -1000,6 +1013,35 @@ export default function InstructorHome() {
           </div>
         </div>
       </SignedIn>
+
+      {/* 삭제 확인 다이얼로그 */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>삭제 확인</AlertDialogTitle>
+            <AlertDialogDescription>
+              {nodeToDelete
+                ? `"${nodeToDelete.name}"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (nodeToDelete) {
+                  handleDeleteNode(nodeToDelete);
+                  setDeleteDialogOpen(false);
+                  setNodeToDelete(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </div>
   );
 }

@@ -12,6 +12,7 @@
     "perf:prod": "./scripts/check-performance.sh https://your-production-url.com"
   },
   "dependencies": {
+    "@base-ui-components/react": "^1.0.0-rc.0",
     "@clerk/nextjs": "^6.36.0",
     "@prisma/client": "^5.22.0",
     "@radix-ui/react-accordion": "^1.2.12",
