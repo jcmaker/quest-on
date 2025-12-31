@@ -34,6 +34,7 @@ import {
   Award,
   Mail,
 } from "lucide-react";
+import HeroSection from "@/components/landing/HeroSection";
 
 export default function LandingPage() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -112,211 +113,20 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950/50">
       {/* Hero Section */}
-      <section className="relative overflow-hidden text-foreground min-h-screen">
-        {/* Animated Background Elements */}
-        <div className="absolute inset-0">
-          {/* Floating Particles */}
-          {/* <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-white/20 rounded-full animate-pulse"></div>
-          <div className="absolute top-1/3 right-1/3 w-1 h-1 bg-white/30 rounded-full animate-bounce"></div>
-          <div className="absolute top-2/3 left-1/2 w-3 h-3 bg-white/10 rounded-full animate-pulse"></div>
-          <div className="absolute top-1/2 right-1/4 w-1.5 h-1.5 bg-white/25 rounded-full animate-bounce"></div>
-          <div className="absolute bottom-1/4 left-1/3 w-2.5 h-2.5 bg-white/15 rounded-full animate-pulse"></div> */}
+      <div className="relative z-10">
+        <HeroSection
+          headline={
+            <>
+              100년 된 객관식 시험,<br />
+              이제 <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">작별을 고할 시간</span>입니다.
+            </>
+          }
+          subheadline="대학의 경쟁력은 평가 방식에서 시작됩니다. 정답 찾기 놀이에서 벗어나, AI와의 대화를 통해 진짜 문제를 해결하는 인재를 길러내세요. 교육 혁신, Quest-On이 시작합니다."
 
-          {/* Geometric Shapes */}
-          {/* <div
-            className="absolute top-20 left-20 w-20 h-20 border border-white/10 rotate-45 animate-spin"
-            style={{ animationDuration: "20s" }}
-          ></div>
-          <div className="absolute top-40 right-32 w-16 h-16 border border-white/20 rounded-full animate-pulse"></div>
-          <div
-            className="absolute bottom-32 left-16 w-24 h-24 border border-white/5 rotate-12 animate-spin"
-            style={{ animationDuration: "15s" }}
-          ></div>
-          <div className="absolute bottom-20 right-20 w-12 h-12 bg-white/5 rotate-45 animate-bounce"></div> */}
-
-          {/* Gradient Orbs */}
-          <div className="absolute top-1/4 right-1/4 w-64 h-64 bg-gradient-to-r from-chart-1/20 to-chart-2/20 rounded-full blur-3xl animate-pulse"></div>
-          <div
-            className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-gradient-to-r from-chart-3/15 to-primary/15 rounded-full blur-3xl animate-pulse"
-            style={{ animationDelay: "1s" }}
-          ></div>
-          <div
-            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-gradient-to-r from-chart-2/10 to-chart-1/10 rounded-full blur-3xl animate-pulse"
-            style={{ animationDelay: "2s" }}
-          ></div>
-        </div>
-
-        {/* Animated Grid Pattern */}
-        {/* <div className="absolute inset-0 opacity-10">
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255,255,255,0.3) 1px, transparent 0)`,
-              backgroundSize: "50px 50px",
-            }}
-          ></div>
-        </div> */}
-
-        {/* Moving Light Rays */}
-        {/* <div className="absolute inset-0">
-          <div className="absolute top-0 left-1/4 w-px h-full bg-gradient-to-b from-transparent via-white/20 to-transparent animate-pulse"></div>
-          <div
-            className="absolute top-0 right-1/3 w-px h-full bg-gradient-to-b from-transparent via-white/15 to-transparent animate-pulse"
-            style={{ animationDelay: "1s" }}
-          ></div>
-          <div
-            className="absolute top-0 left-2/3 w-px h-full bg-gradient-to-b from-transparent via-white/10 to-transparent animate-pulse"
-            style={{ animationDelay: "2s" }}
-          ></div>
-        </div> */}
-
-        {/* AI Neural Network Pattern */}
-        <div className="absolute inset-0 opacity-20">
-          <svg
-            className="w-full h-full"
-            viewBox="0 0 100 100"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <defs>
-              <pattern
-                id="neural-net"
-                x="0"
-                y="0"
-                width="10"
-                height="10"
-                patternUnits="userSpaceOnUse"
-              >
-                <circle
-                  cx="2"
-                  cy="2"
-                  r="1"
-                  fill="white"
-                  opacity="0.3"
-                  className="animate-pulse"
-                ></circle>
-                <circle
-                  cx="8"
-                  cy="8"
-                  r="1"
-                  fill="white"
-                  opacity="0.3"
-                  className="animate-pulse"
-                  style={{ animationDelay: "0.5s" }}
-                ></circle>
-                <line
-                  x1="2"
-                  y1="2"
-                  x2="8"
-                  y2="8"
-                  stroke="white"
-                  strokeWidth="0.5"
-                  opacity="0.2"
-                ></line>
-              </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#neural-net)"></rect>
-          </svg>
-        </div>
-
-        {/* Floating AI Icons */}
-        {/* <div className="absolute inset-0 pointer-events-none">
-          <div
-            className="absolute top-1/3 right-1/4 animate-float"
-            style={{ animationDelay: "0s" }}
-          >
-            <div className="w-8 h-8 bg-white/10 rounded-lg flex items-center justify-center backdrop-blur-sm">
-              <Brain className="w-4 h-4 text-white/60" />
-            </div>
-          </div>
-          <div
-            className="absolute top-2/3 left-1/3 animate-float"
-            style={{ animationDelay: "1s" }}
-          >
-            <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center backdrop-blur-sm">
-              <Zap className="w-3 h-3 text-white/60" />
-            </div>
-          </div>
-          <div
-            className="absolute bottom-1/3 right-1/3 animate-float"
-            style={{ animationDelay: "2s" }}
-          >
-            <div className="w-7 h-7 bg-white/10 rounded-lg flex items-center justify-center backdrop-blur-sm">
-              <Target className="w-4 h-4 text-white/60" />
-            </div>
-          </div>
-        </div> */}
-
-        <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24 lg:py-32 min-h-screen flex items-center">
-          <div className="text-center max-w-5xl mx-auto w-full">
-            <Badge
-              variant="secondary"
-              className="mb-6 sm:mb-8 bg-transparent text-foreground transition-all duration-200 animate-fade-in-up px-4 py-2 text-sm sm:text-base min-h-[44px] inline-flex items-center"
-              style={{ animationDelay: "0.2s" }}
-              aria-label="AI 기반 시험 출제 및 대화형 평가 플랫폼"
-            >
-              <Sparkles
-                className="w-4 h-4 sm:w-5 sm:h-5 mr-2 animate-pulse"
-                aria-hidden="true"
-              />
-              AI 기반 시험 출제 & 대화형 평가 플랫폼
-            </Badge>
-            <h1
-              className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold mb-4 sm:mb-6 bg-gradient-to-r from-cyan-300 via-blue-500 to-purple-600 bg-clip-text text-transparent animate-fade-in-up leading-tight"
-              style={{
-                animationDelay: "0.4s",
-                backgroundSize: "200% 200%",
-                animation:
-                  "fade-in-up 1s ease-out 0.4s both, gradient-shift 5s ease-in-out infinite",
-              }}
-            >
-              Quest-On
-            </h1>
-            <h2
-              className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-bold mb-6 sm:mb-8 text-foreground animate-fade-in-up leading-tight px-4"
-              style={{ animationDelay: "0.6s" }}
-            >
-              AI와 함께하는 새로운 시험 경험
-            </h2>
-            <p
-              className="text-base sm:text-lg md:text-xl lg:text-2xl text-muted-foreground mb-8 sm:mb-12 max-w-3xl mx-auto leading-relaxed animate-fade-in-up px-4"
-              style={{ animationDelay: "0.8s" }}
-            >
-              교수자는 쉽게 시험을 출제하고, 학생은 AI와 대화하며 새로운 평가를
-              경험합니다. 전통적인 시험의 한계를 넘어서는 혁신적인 평가 방법을
-              만나보세요.
-            </p>
-            <div
-              className="flex flex-col sm:flex-row justify-center items-center gap-4 mb-12 animate-fade-in-up px-4"
-              style={{ animationDelay: "1s" }}
-            >
-              <Button
-                onClick={handleQuestOnClick}
-                size="lg"
-                className="w-full sm:w-auto bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white hover:scale-105 hover:shadow-xl transition-all duration-300 text-base sm:text-lg px-8 sm:px-12 py-6 sm:py-4 group min-h-[56px] sm:min-h-[48px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-                aria-label="Quest-On 이용해보기"
-              >
-                <Sparkles
-                  className="w-5 h-5 mr-2 group-hover:animate-bounce"
-                  aria-hidden="true"
-                />
-                Quest-on 이용해보기
-                <ArrowRight
-                  className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform duration-300"
-                  aria-hidden="true"
-                />
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom Gradient Transition */}
-        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background via-background/50 to-transparent dark:from-background dark:via-background/50"></div>
-
-        {/* Interactive Mouse Follow Effect */}
-        <div className="absolute inset-0 opacity-30 pointer-events-none">
-          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-white/5 rounded-full animate-pulse blur-3xl"></div>
-        </div>
-      </section>
+          ctaText="무료로 체험하기"
+          onCtaClick={handleQuestOnClick}
+        />
+      </div>
 
       {/* About Section */}
       <section className="py-16 sm:py-20 lg:py-24 bg-muted/50 dark:bg-muted/30">
@@ -834,11 +644,10 @@ export default function LandingPage() {
           </div>
 
           <div
-            className={`grid gap-6 sm:gap-8 max-w-4xl mx-auto ${
-              !isSignedIn || userRole === "instructor"
-                ? "sm:grid-cols-2"
-                : "sm:grid-cols-1"
-            }`}
+            className={`grid gap-6 sm:gap-8 max-w-4xl mx-auto ${!isSignedIn || userRole === "instructor"
+              ? "sm:grid-cols-2"
+              : "sm:grid-cols-1"
+              }`}
           >
             {(!isSignedIn || userRole === "instructor") && (
               <Card className="p-6 sm:p-8 text-center hover:shadow-xl transition-all duration-300 border border-border/50 bg-gradient-to-br from-muted/80 to-accent/30 dark:from-muted/50 dark:to-accent/20 hover:-translate-y-1">
