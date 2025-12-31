@@ -124,6 +124,8 @@ export default function ExamDetail({
       exam.students.length > 0, // 학생이 있을 때만 실행
     staleTime: 30000, // 30초간 캐시 유지
     gcTime: 5 * 60 * 1000, // 5분간 가비지 컬렉션 방지
+    refetchOnMount: true, // 컴포넌트가 마운트될 때마다 재요청 (새로고침 시 최신 데이터 보장)
+    refetchOnWindowFocus: true, // 창 포커스 시 재요청 (다른 탭에서 돌아올 때 최신 데이터 보장)
   });
 
   // Redirect non-instructors
@@ -315,12 +317,11 @@ export default function ExamDetail({
   // Final grades를 별도로 로드하여 학생 데이터 업데이트
   // Analytics는 useQuery에서 이미 처리되므로 여기서는 final grades만 처리
   const [finalGradesLoaded, setFinalGradesLoaded] = useState(false);
-  const [analyticsProcessed, setAnalyticsProcessed] = useState(false);
+  // analyticsProcessed 플래그 제거 - analyticsData가 변경될 때마다 업데이트하도록 변경
 
   // examId가 변경되면 플래그 리셋
   useEffect(() => {
     setFinalGradesLoaded(false);
-    setAnalyticsProcessed(false);
   }, [resolvedParams.examId]);
 
   useEffect(() => {
@@ -381,32 +382,40 @@ export default function ExamDetail({
   }, [exam?.id, resolvedParams.examId, finalGradesLoaded]);
 
   // Analytics 데이터가 로드되면 학생 점수 업데이트
+  // analyticsData가 변경될 때마다 재실행하여 최신 데이터 반영
   useEffect(() => {
-    if (
-      !exam ||
-      !analyticsData ||
-      exam.students.length === 0 ||
-      analyticsProcessed
-    )
-      return;
+    if (!exam || !analyticsData || exam.students.length === 0) return;
 
     const analyticsStudentsMap = analyticsData.students
       ? new Map(analyticsData.students.map((s: any) => [s.sessionId, s]))
       : new Map();
 
     // 학생 데이터 업데이트 (analytics 점수만)
+    // analyticsData가 로드될 때마다 항상 업데이트하여 최신 점수 반영
     setExam((prev) => {
       if (!prev) return prev;
 
       const updatedStudents = prev.students.map((student) => {
         const analyticsStudent = analyticsStudentsMap.get(student.id);
 
+        // analytics에서 점수를 가져올 수 있으면 업데이트
+        // null이 아닌 경우에만 업데이트 (null은 점수가 없다는 의미)
         return {
           ...student,
-          score: analyticsStudent?.score ?? student.score,
+          score:
+            analyticsStudent?.score !== null && analyticsStudent?.score !== undefined
+              ? analyticsStudent.score
+              : student.score,
           questionCount:
-            analyticsStudent?.questionCount ?? student.questionCount,
-          answerLength: analyticsStudent?.answerLength ?? student.answerLength,
+            analyticsStudent?.questionCount !== null &&
+            analyticsStudent?.questionCount !== undefined
+              ? analyticsStudent.questionCount
+              : student.questionCount,
+          answerLength:
+            analyticsStudent?.answerLength !== null &&
+            analyticsStudent?.answerLength !== undefined
+              ? analyticsStudent.answerLength
+              : student.answerLength,
         };
       });
 
@@ -415,9 +424,7 @@ export default function ExamDetail({
         students: updatedStudents,
       };
     });
-
-    setAnalyticsProcessed(true);
-  }, [analyticsData, exam?.id, analyticsProcessed]); // analyticsData가 변경될 때만 실행
+  }, [analyticsData, exam?.id]); // analyticsData가 변경될 때마다 재실행
 
   // Load questions when questionsOpen becomes true
   useEffect(() => {
