@@ -21,13 +21,36 @@ import {
 } from "@/components/instructor/AIOverallSummary";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
-import { PasteLogsCard } from "@/components/instructor/PasteLogsCard";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  Clock,
+  MessageSquare,
+  FileText,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Copy,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface Conversation {
   id: string;
   role: "user" | "ai";
   content: string;
   created_at: string;
+  message_type?: "concept" | "calculation" | "strategy" | "other";
 }
 
 interface Question {
@@ -125,6 +148,7 @@ export default function GradeStudentPage({
     Record<number, Partial<Record<StageKey, string>>>
   >({});
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
+  const [examStatsOpen, setExamStatsOpen] = useState<boolean>(true);
 
   // Use state for summary to combine DB data and fresh generation
   const [overallSummary, setOverallSummary] = useState<SummaryData | null>(
@@ -373,6 +397,126 @@ export default function GradeStudentPage({
       .join("\n");
   }, [sessionData, selectedQuestionIdx]);
 
+  // Calculate exam participation statistics
+  const examStats = useMemo(() => {
+    if (!sessionData) return null;
+
+    const { session, submissions, messages, exam } = sessionData;
+
+    // 시험 소요 시간 계산 (분 단위)
+    const examDuration =
+      session.submitted_at && session.created_at
+        ? Math.round(
+            (new Date(session.submitted_at).getTime() -
+              new Date(session.created_at).getTime()) /
+              60000
+          )
+        : null;
+
+    // 전체 질문 갯수 (used_clarifications 또는 messages의 총 개수)
+    const totalQuestions = session.used_clarifications || 0;
+    const totalMessages = Object.values(messages).reduce(
+      (sum, msgs) => sum + (msgs?.length || 0),
+      0
+    );
+    const questionCount = totalQuestions || totalMessages;
+
+    // 답안 길이 계산
+    let totalAnswerLength = 0;
+    let answerCount = 0;
+    const answerLengthsByQuestion: Record<number, number> = {};
+
+    Object.entries(submissions).forEach(([qIdx, submission]) => {
+      const typedSubmission = submission as Submission;
+      const answer = typedSubmission.answer || "";
+      const length = answer.length;
+      totalAnswerLength += length;
+      answerCount++;
+      answerLengthsByQuestion[parseInt(qIdx)] = length;
+    });
+
+    const averageAnswerLength =
+      answerCount > 0 ? Math.round(totalAnswerLength / answerCount) : 0;
+
+    // 학생이 AI에게 한 질문 유형 분포 (messages에서 user role의 message_type 분석)
+    const questionTypeCount: Record<string, number> = {
+      concept: 0,
+      calculation: 0,
+      strategy: 0,
+      other: 0,
+    };
+
+    Object.values(messages).forEach((msgs) => {
+      if (Array.isArray(msgs)) {
+        msgs.forEach((msg) => {
+          if (msg.role === "user" && msg.message_type) {
+            const type = msg.message_type;
+            if (
+              type === "concept" ||
+              type === "calculation" ||
+              type === "strategy" ||
+              type === "other"
+            ) {
+              questionTypeCount[type] = (questionTypeCount[type] || 0) + 1;
+            }
+          }
+        });
+      }
+    });
+
+    // 문항별 질문 수
+    const questionsByQuestion: Record<number, number> = {};
+    Object.entries(messages).forEach(([qIdx, msgs]) => {
+      const idx = parseInt(qIdx);
+      if (!isNaN(idx)) {
+        questionsByQuestion[idx] = (msgs?.length || 0) / 2; // user와 ai 메시지 쌍
+      }
+    });
+
+    // 부정 행위 의심 통계 (전체 문항)
+    let totalPasteLogs = 0;
+    let suspiciousPasteLogs = 0;
+    const pasteLogsByQuestion: Record<
+      number,
+      { total: number; suspicious: number }
+    > = {};
+
+    if (sessionData.pasteLogs) {
+      Object.entries(sessionData.pasteLogs).forEach(([qIdOrIdx, logs]) => {
+        if (!Array.isArray(logs)) return;
+
+        const logsArray = logs as PasteLog[];
+        const questionIdx =
+          exam.questions?.findIndex((q) => q.id === qIdOrIdx) ??
+          parseInt(qIdOrIdx);
+
+        if (!isNaN(questionIdx) && questionIdx >= 0) {
+          const total = logsArray.length;
+          const suspicious = logsArray.filter((log) => log.suspicious).length;
+
+          totalPasteLogs += total;
+          suspiciousPasteLogs += suspicious;
+          pasteLogsByQuestion[questionIdx] = { total, suspicious };
+        }
+      });
+    }
+
+    return {
+      examDuration,
+      questionCount,
+      totalAnswerLength,
+      averageAnswerLength,
+      answerLengthsByQuestion,
+      questionTypeCount,
+      questionsByQuestion,
+      startTime: session.created_at,
+      submittedTime: session.submitted_at,
+      totalPasteLogs,
+      suspiciousPasteLogs,
+      pasteLogsByQuestion,
+    };
+  }, [sessionData]);
+
   // Show loading while auth is loading
   if (!isLoaded) {
     return (
@@ -449,29 +593,268 @@ export default function GradeStudentPage({
       />
       <SidebarInset>
         <div className="container mx-auto p-6 max-w-7xl">
-          <div className="flex gap-6 mb-8 w-full">
-            <div className="flex-1">
-              <GradeHeader
-                studentName={sessionData.student.name}
-                submittedAt={sessionData.session.submitted_at}
-                overallScore={sessionData.overallScore}
-                examId={resolvedParams.examId}
-                studentNumber={sessionData.student.student_number}
-                school={sessionData.student.school}
-              />
-            </div>
-            <div className="flex-1 min-w-0">
-              {currentQuestion && (
-                <PasteLogsCard
-                  pasteLogs={
-                    sessionData.pasteLogs?.[currentQuestion.id] ||
-                    sessionData.pasteLogs?.[String(selectedQuestionIdx)]
-                  }
-                  questionId={currentQuestion.id}
-                />
-              )}
-            </div>
+          <div className="mb-8">
+            <GradeHeader
+              studentName={sessionData.student.name}
+              submittedAt={sessionData.session.submitted_at}
+              overallScore={sessionData.overallScore}
+              examId={resolvedParams.examId}
+              studentNumber={sessionData.student.student_number}
+              school={sessionData.student.school}
+            />
           </div>
+
+          {/* 데이터 표시 */}
+          {examStats && (
+            <div className="mb-6">
+              <Collapsible open={examStatsOpen} onOpenChange={setExamStatsOpen}>
+                <Card>
+                  <CollapsibleTrigger className="w-full">
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <BarChart3 className="h-5 w-5" />
+                          <CardTitle>시험 응시 데이터</CardTitle>
+                        </div>
+                        {examStatsOpen ? (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      <CardDescription>
+                        학생의 시험 응시 과정에서 수집된 데이터입니다
+                      </CardDescription>
+                    </CardHeader>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <CardContent>
+                      <div className="grid gap-6 md:grid-cols-3">
+                        {/* 시험 소요 시간 */}
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Clock className="h-4 w-4" />
+                            <span>시험 소요 시간</span>
+                          </div>
+                          <div className="text-2xl font-semibold">
+                            {examStats.examDuration !== null
+                              ? `${examStats.examDuration}분`
+                              : "미제출"}
+                          </div>
+                          {examStats.startTime && (
+                            <div className="text-xs text-muted-foreground">
+                              시작:{" "}
+                              {new Date(examStats.startTime).toLocaleString(
+                                "ko-KR"
+                              )}
+                            </div>
+                          )}
+                          {examStats.submittedTime && (
+                            <div className="text-xs text-muted-foreground">
+                              제출:{" "}
+                              {new Date(examStats.submittedTime).toLocaleString(
+                                "ko-KR"
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 질문 갯수 */}
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <MessageSquare className="h-4 w-4" />
+                            <span>AI 질문 수</span>
+                          </div>
+                          <div className="text-2xl font-semibold">
+                            {examStats.questionCount}개
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            평균:{" "}
+                            {sessionData.exam.questions.length > 0
+                              ? Math.round(
+                                  examStats.questionCount /
+                                    sessionData.exam.questions.length
+                                )
+                              : 0}
+                            개/문항
+                          </div>
+                        </div>
+
+                        {/* 답안 길이 */}
+                        <div className="flex flex-col gap-2">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <FileText className="h-4 w-4" />
+                            <span>답안 길이</span>
+                          </div>
+                          <div className="text-2xl font-semibold">
+                            {examStats.totalAnswerLength.toLocaleString()}자
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            평균:{" "}
+                            {examStats.averageAnswerLength.toLocaleString()}자
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 질문 유형 분포 */}
+                      {Object.values(examStats.questionTypeCount).some(
+                        (count) => count > 0
+                      ) && (
+                        <div className="mt-6 pt-6 border-t">
+                          <h4 className="text-sm font-semibold mb-3">
+                            질문 유형 분포
+                          </h4>
+                          <div className="flex flex-wrap gap-3">
+                            {Object.entries(examStats.questionTypeCount)
+                              .filter(([_, count]) => count > 0)
+                              .map(([type, count]) => (
+                                <div
+                                  key={type}
+                                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted"
+                                >
+                                  <span className="text-sm font-medium">
+                                    {type === "concept"
+                                      ? "개념 질문"
+                                      : type === "calculation"
+                                      ? "계산 질문"
+                                      : type === "strategy"
+                                      ? "전략 질문"
+                                      : "기타"}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {count}개
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 부정 행위 의심 통계 */}
+                      {examStats.totalPasteLogs > 0 && (
+                        <div className="mt-6 pt-6 border-t">
+                          <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                            {examStats.suspiciousPasteLogs > 0 ? (
+                              <>
+                                <AlertTriangle className="h-4 w-4 text-red-600" />
+                                <span className="text-red-800">
+                                  부정행위 의심
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-4 w-4 text-orange-600" />
+                                <span>붙여넣기 활동</span>
+                              </>
+                            )}
+                          </h4>
+                          <div
+                            className={`p-4 rounded-lg border ${
+                              examStats.suspiciousPasteLogs > 0
+                                ? "bg-red-50 border-red-200"
+                                : "bg-orange-50 border-orange-200"
+                            }`}
+                          >
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-muted-foreground">
+                                  전체 붙여넣기:
+                                </span>
+                                <Badge variant="outline" className="text-sm">
+                                  {examStats.totalPasteLogs}회
+                                </Badge>
+                              </div>
+                              {examStats.suspiciousPasteLogs > 0 && (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-semibold text-red-800">
+                                    외부 복사-붙여넣기:
+                                  </span>
+                                  <Badge
+                                    variant="destructive"
+                                    className="text-sm"
+                                  >
+                                    {examStats.suspiciousPasteLogs}회
+                                  </Badge>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 문항별 상세 정보 */}
+                      {sessionData.exam.questions.length > 0 && (
+                        <div className="mt-6 pt-6 border-t">
+                          <h4 className="text-sm font-semibold mb-3">
+                            문항별 상세 정보
+                          </h4>
+                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {sessionData.exam.questions.map((q, idx) => {
+                              const answerLength =
+                                examStats.answerLengthsByQuestion[idx] || 0;
+                              const questionCount =
+                                examStats.questionsByQuestion[idx] || 0;
+                              const pasteLogs =
+                                examStats.pasteLogsByQuestion[idx];
+                              const hasAnswer = answerLength > 0;
+
+                              return (
+                                <div
+                                  key={q.id}
+                                  className="p-3 rounded-lg border bg-muted/30"
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm font-medium">
+                                      {idx + 1}번 문항
+                                    </span>
+                                  </div>
+                                  <div className="space-y-1 text-xs">
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">
+                                        답안 길이:
+                                      </span>
+                                      <span className="font-medium">
+                                        {hasAnswer
+                                          ? `${answerLength.toLocaleString()}자`
+                                          : "미제출"}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">
+                                        질문 수:
+                                      </span>
+                                      <span className="font-medium">
+                                        {questionCount}개
+                                      </span>
+                                    </div>
+                                    {pasteLogs && pasteLogs.total > 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">
+                                          붙여넣기:
+                                        </span>
+                                        <span className="font-medium">
+                                          {pasteLogs.total}회
+                                          {pasteLogs.suspicious > 0 && (
+                                            <span className="text-red-600 ml-1">
+                                              (의심 {pasteLogs.suspicious}회)
+                                            </span>
+                                          )}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            </div>
+          )}
 
           <div className="mb-6">
             <AIOverallSummary
