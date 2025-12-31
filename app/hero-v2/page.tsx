@@ -6,7 +6,6 @@ import { Zap } from "lucide-react";
 export default function HeroV2() {
     return (
         <HeroSection
-            variant="grading"
             headline={
                 <>
                     서술형 채점 100명분,<br />

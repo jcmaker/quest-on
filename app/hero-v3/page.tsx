@@ -6,7 +6,6 @@ import { Sparkles } from "lucide-react";
 export default function HeroV3() {
     return (
         <HeroSection
-            variant="innovation"
             headline={
                 <>
                     100년 된 객관식 시험,<br />

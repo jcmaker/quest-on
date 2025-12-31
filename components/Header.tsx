@@ -35,8 +35,8 @@ export function Header() {
     return cn(
       "flex items-center space-x-2 text-sm font-medium transition-colors",
       isActive
-        ? "text-zinc-900 dark:text-zinc-100 font-bold"
-        : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        ? "text-primary font-bold"
+        : "text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
     );
   };
 
@@ -45,7 +45,7 @@ export function Header() {
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         {/* Logo + Separator + Navigation */}
         <div className="flex items-center space-x-4">
-          <Link href="/" className="flex items-center space-x-2 group">
+          <Link href="/" className="flex items-center space-x-2">
             <div className="flex items-center space-x-2">
               <Image
                 src="/qlogo_icon.png"
@@ -54,7 +54,7 @@ export function Header() {
                 height={32}
                 className="h-8 w-8"
               />
-              <span className="text-xl font-bold text-zinc-900 dark:text-zinc-100 italic tracking-tight group-hover:opacity-80 transition-opacity">
+              <span className="text-xl font-bold text-gray-900 dark:text-white">
                 Quest-On
               </span>
             </div>

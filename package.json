@@ -73,6 +73,7 @@
     "pdfjs-dist": "^5.4.449",
     "radix-ui": "^1.4.3",
     "react": "^19.2.3",
+    "react-countup": "^6.5.3",
     "react-dom": "^19.2.3",
     "react-hot-toast": "^2.6.0",
     "react-intersection-observer": "^10.0.0",
