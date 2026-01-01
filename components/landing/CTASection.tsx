@@ -43,7 +43,7 @@ export default function CTASection({ mode = "light", onCtaClick }: CTASectionPro
                     <div className="pt-6">
                         <button
                             onClick={onCtaClick}
-                            className={`group relative inline-flex items-center gap-2 px-8 py-4 text-sm font-semibold transition-all hover:scale-105 active:scale-95 ${isDark
+                            className={`group relative inline-flex items-center gap-2 px-8 py-4 text-sm font-semibold rounded-full transition-all hover:scale-105 active:scale-95 ${isDark
                                 ? "bg-white text-black hover:bg-zinc-100 shadow-[0_0_30px_rgba(255,255,255,0.2)]"
                                 : "bg-zinc-900 text-white hover:bg-zinc-800 shadow-[0_15px_30px_rgba(0,0,0,0.15)]"
                                 }`}

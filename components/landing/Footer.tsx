@@ -1,6 +1,7 @@
 "use client";
 
 import { ShieldCheck } from "lucide-react";
+import Image from "next/image";
 
 interface FooterProps {
     mode?: "light" | "dark";
@@ -66,7 +67,13 @@ export default function Footer({ mode = "light" }: FooterProps) {
                 <div className="grid grid-cols-2 gap-12 md:grid-cols-5 lg:gap-16 mb-20">
                     <div className="col-span-2 md:col-span-1 border-r pr-8" style={{ borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}>
                         <div className="flex items-center gap-2 mb-6 text-zinc-900 dark:text-white">
-                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-lg italic shadow-lg shadow-blue-500/20">Q</div>
+                            <Image
+                                src="/qlogo_icon.png"
+                                alt="Quest-On Logo"
+                                width={32}
+                                height={32}
+                                className="h-8 w-8"
+                            />
                             <span className="font-bold text-xl tracking-tight" style={{ color: colors.text }}>Quest-On</span>
                         </div>
                         <p className="text-sm leading-relaxed max-w-[160px] font-medium" style={{ color: colors.textSec }}>
