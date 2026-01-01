@@ -44,3 +44,8 @@ next-env.d.ts
 *.sql
 # SQL files in database directory (can be committed if needed)
 # database/*.sql
+.git_corrupted_bak/
+
+# Reference files (not for deployment)
+REFERENCE_CURSOR/
+REFERENCE_PROFESSOR_WORKFLOW/

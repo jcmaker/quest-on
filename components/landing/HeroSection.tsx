@@ -1,0 +1,503 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+    ChevronRight,
+    Play,
+    MessageSquare,
+    CheckCircle2,
+    Sparkles,
+    Brain,
+    Clock,
+    ShieldCheck,
+    ArrowRight,
+    GraduationCap,
+    Plus,
+    Check,
+    Star,
+    TriangleAlert,
+    Copy
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import Link from "next/link";
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface HeroSectionProps {
+    headline: React.ReactNode;
+    subheadline: string;
+
+    ctaText?: string;
+    onCtaClick?: () => void;
+    variant?: "default" | "cheating" | "grading" | "innovation";
+    mode?: "light" | "dark";
+}
+
+// ============================================================================
+// STYLES & CONFIG
+// ============================================================================
+
+const COLORS = {
+    light: {
+        bg: "#FFFFFF",
+        text: "#1F1F1F",
+        textSec: "#6B7280",
+        primary: "#3B82F6",
+        card: "#F5F5F5",
+        cardBorder: "#E5E5E5",
+        editorBg: "#FFFFFF",
+        chromeBg: "#FAFAFA",
+        glass: "backdrop-blur-md bg-white/70 border border-black/5",
+        navBg: "rgba(255, 255, 255, 0.8)",
+    },
+    dark: {
+        bg: "#0A0A0A",
+        text: "#E4E4E4",
+        textSec: "#A1A1AA",
+        primary: "#3B82F6",
+        card: "rgba(255, 255, 255, 0.05)",
+        cardBorder: "rgba(255, 255, 255, 0.1)",
+        editorBg: "#0F0F0F",
+        chromeBg: "#141414",
+        glass: "backdrop-blur-md bg-white/5 border border-white/10",
+        navBg: "rgba(0, 0, 0, 0.5)",
+    },
+} as const;
+
+// ============================================================================
+// COMPONENTS
+// ============================================================================
+
+
+// Number count up animation component
+const CountUp = ({ to, duration = 2 }: { to: number; duration?: number }) => {
+    const [count, setCount] = useState(0);
+
+    useEffect(() => {
+        let startTime: number;
+        let animationFrame: number;
+
+        const animate = (timestamp: number) => {
+            if (!startTime) startTime = timestamp;
+            const progress = timestamp - startTime;
+            const percentage = Math.min(progress / (duration * 1000), 1);
+
+            // Ease out quart
+            const ease = 1 - Math.pow(1 - percentage, 4);
+
+            setCount(Math.floor(to * ease));
+
+            if (progress < duration * 1000) {
+                animationFrame = requestAnimationFrame(animate);
+            }
+        };
+
+        animationFrame = requestAnimationFrame(animate);
+        return () => cancelAnimationFrame(animationFrame);
+    }, [to, duration]);
+
+    return <>{count}</>;
+};
+
+const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
+    const colors = COLORS[mode];
+    const [chatStep, setChatStep] = useState(0);
+
+    // Sequence the chat
+    useEffect(() => {
+        const timers: NodeJS.Timeout[] = [];
+        // Step 0: Initial (empty)
+        timers.push(setTimeout(() => setChatStep(1), 1000)); // Student 1 appears
+        timers.push(setTimeout(() => setChatStep(2), 2500)); // AI 1 appears
+        timers.push(setTimeout(() => setChatStep(3), 4000)); // Student 2 appears
+        timers.push(setTimeout(() => setChatStep(4), 5000)); // AI Analyzing appears
+
+        return () => timers.forEach(clearTimeout);
+    }, []);
+
+    // Helper for card styling
+    const cardStyle = {
+        backgroundColor: colors.chromeBg,
+        borderColor: colors.cardBorder,
+        boxShadow: mode === 'dark' ? "0 4px 20px -5px rgba(0, 0, 0, 0.5)" : "0 10px 30px -10px rgba(0, 0, 0, 0.1)",
+    };
+
+    const innerCardStyle = {
+        backgroundColor: colors.card,
+        borderColor: colors.cardBorder,
+    };
+
+    return (
+        <div className="relative w-full max-w-[1400px] mx-auto mt-16 lg:mt-24 perspective-1000 px-4">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+                {/* LEFT PANEL: EXAM (3 cols) - Redesigned as Student Final Answer & Cheating Detection */}
+                <motion.div
+                    initial={{ opacity: 0, x: -20, y: 20 }}
+                    animate={{ opacity: 1, x: 0, y: 0 }}
+                    whileHover={{ y: -5, transition: { duration: 0.3 } }}
+                    transition={{ duration: 0.6, delay: 0.2 }}
+                    className="lg:col-span-3 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px]"
+                    style={cardStyle}
+                >
+                    {/* Header */}
+                    <div className="h-14 border-b flex items-center justify-between px-4 bg-white dark:bg-black/20" style={{ borderColor: colors.cardBorder }}>
+                        <div className="flex items-center gap-2">
+                            <div className="p-1.5 rounded-md bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
+                                <ShieldCheck className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">최종 답안</div>
+                                <div className="text-[9px] text-zinc-500">학생이 제출한 최종 답안입니다</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Content */}
+                    <div className="p-3 flex-1 flex flex-col gap-3 overflow-hidden text-xs bg-zinc-50/50 dark:bg-transparent">
+
+                        {/* Status Badges */}
+                        <div className="flex gap-2">
+                            <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded border bg-red-50 border-red-200 text-red-600 dark:bg-red-900/20 dark:border-red-900/50 dark:text-red-400">
+                                <TriangleAlert className="w-3 h-3" />
+                                <span className="font-semibold text-[10px]">외부 붙여넣기 4건</span>
+                            </div>
+                            <div className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded border bg-blue-50 border-blue-200 text-blue-600 dark:bg-blue-900/20 dark:border-blue-900/50 dark:text-blue-400">
+                                <Copy className="w-3 h-3" />
+                                <span className="font-semibold text-[10px]">내부 복사 10건</span>
+                            </div>
+                        </div>
+
+                        {/* Suspicious Activity Box (Red) */}
+                        <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:bg-red-900/10 dark:border-red-900/30">
+                            <div className="flex items-center gap-1.5 mb-2 text-red-700 dark:text-red-400">
+                                <TriangleAlert className="w-3.5 h-3.5" />
+                                <span className="font-bold text-[11px]">부정행위 의심 활동 감지</span>
+                            </div>
+                            <ul className="space-y-1 text-[10px] text-red-600/80 dark:text-red-400/80 font-mono">
+                                <li>• 84자 외부 붙여넣기 (오전 12:18:12)</li>
+                                <li>• 380자 외부 붙여넣기 (오전 12:35:10)</li>
+                                <li>• 112자 외부 붙여넣기 (오전 12:38:22)</li>
+                            </ul>
+                        </div>
+
+                        {/* Internal Copy Box (Blue) */}
+                        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:bg-blue-900/10 dark:border-blue-900/30">
+                            <div className="flex items-center gap-1.5 mb-2 text-blue-700 dark:text-blue-400">
+                                <Copy className="w-3.5 h-3.5" />
+                                <span className="font-bold text-[11px]">내부 복사 활동</span>
+                            </div>
+                            <ul className="space-y-1 text-[10px] text-blue-600/80 dark:text-blue-400/80 font-mono">
+                                <li>• 149자 내부 복사 (오전 12:22:23)</li>
+                                <li>• 116자 내부 복사 (오전 12:23:08)</li>
+                                <li>• 80자 내부 복사 (오전 12:23:39)</li>
+                            </ul>
+                        </div>
+
+                        {/* Answer Content Snippet */}
+                        <div className="flex-1 rounded-lg border bg-white dark:bg-zinc-900/50 p-3 space-y-2 overflow-hidden shadow-sm" style={{ borderColor: colors.cardBorder }}>
+                            <div className="font-bold text-zinc-700 dark:text-zinc-300 text-[11px]">0. 문제 제시 후 사고 과정</div>
+                            <div className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                                - 뛰어난 기술을 돋보이게 할 수 있는 프로모션(마케팅)이 필요하고...
+                                <br />
+                                <span className="bg-red-200/80 dark:bg-red-900/60 text-red-900 dark:text-red-100 px-1 py-0.5 rounded box-decoration-clone">
+                                    - 프리미엄 전기자전거라면 불가피하게 가격을 고가로 설정하거나, 프리미엄 이미지를 설정해야 하고
+                                </span>
+                                이에 따라 그 가격을 받아들일 타겟을 설정해야겠다고 생각함.
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+
+
+
+                {/* CENTER PANEL: CHAT HISTORY (5 cols) */}
+                <motion.div
+                    initial={{ opacity: 0, y: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    whileHover={{ y: -5, transition: { duration: 0.3 } }}
+                    transition={{ duration: 0.6 }}
+                    className="lg:col-span-5 rounded-xl overflow-hidden border flex flex-col min-h-[500px] lg:h-[700px] shadow-2xl z-10 relative bg-white dark:bg-zinc-900"
+                    style={{
+                        backgroundColor: mode === 'dark' ? colors.chromeBg : '#ffffff',
+                        boxShadow: mode === 'dark' ? "0 0 60px -15px rgba(59, 130, 246, 0.2)" : "0 20px 60px -15px rgba(0, 0, 0, 0.15)",
+                        borderColor: mode === 'dark' ? 'rgba(59, 130, 246, 0.3)' : colors.cardBorder
+                    }}
+                >
+                    {/* Header */}
+                    <div className="h-16 border-b flex items-center justify-between px-5 bg-white dark:bg-zinc-900/90 backdrop-blur-sm" style={{ borderColor: colors.cardBorder }}>
+                        <div className="flex items-center gap-3">
+                            <MessageSquare className="w-5 h-5 text-blue-600" />
+                            <div>
+                                <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100">AI와의 대화 기록</div>
+                                <div className="text-[10px] text-zinc-500">학생이 AI와 나눈 대화 내용입니다</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Chat Content */}
+                    <div className="flex-1 p-5 overflow-y-auto space-y-6 bg-zinc-50/50 dark:bg-black/20 font-sans">
+
+                        {/* Timestamp Separator */}
+                        <div className="flex justify-center">
+                            <span className="text-[10px] text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-full">오전 1:07:08</span>
+                        </div>
+
+                        {/* Message 1: Student */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.5 }}
+                            className="flex justify-end gap-2"
+                        >
+                            <div className="flex flex-col items-end max-w-[85%]">
+                                <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm text-xs leading-relaxed shadow-sm">
+                                    경쟁사 제품 대비 그린휠의 제품은 얼마나 가벼워? 얼마나 경량화가 됐어?
+                                </div>
+                                <span className="text-[9px] text-zinc-400 mt-1 mr-1">오전 1:08:57</span>
+                            </div>
+                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                                <div className="w-4 h-4 rounded-full border-2 border-blue-500" />
+                            </div>
+                        </motion.div>
+
+                        {/* Message 2: AI */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 1.5 }}
+                            className="flex justify-start gap-2"
+                        >
+                            <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
+                                <Brain className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
+                            </div>
+                            <div className="flex flex-col items-start max-w-[85%]">
+                                <div className="bg-white dark:bg-zinc-800 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm">
+                                    그린휠 E-Prime One은 평균 <span className="font-bold">17kg</span>으로 경쟁사 평균(약 21~23kg) 대비 <span className="font-bold">약 20% 경량화</span>되었습니다.
+                                </div>
+                                <span className="text-[9px] text-zinc-400 mt-1 ml-1">오전 1:08:58</span>
+                            </div>
+                        </motion.div>
+
+                        {/* Message 3: Student */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 3.0 }}
+                            className="flex justify-end gap-2"
+                        >
+                            <div className="flex flex-col items-end max-w-[85%]">
+                                <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm text-xs leading-relaxed shadow-sm">
+                                    전기 자전거가 경량화가 되면 뭐가 좋아?
+                                </div>
+                                <span className="text-[9px] text-zinc-400 mt-1 mr-1">오전 1:13:00</span>
+                            </div>
+                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                                <div className="w-4 h-4 rounded-full border-2 border-blue-500" />
+                            </div>
+                        </motion.div>
+
+                        {/* Message 4: AI */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 4.5 }}
+                            className="flex justify-start gap-2"
+                        >
+                            <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
+                                <Brain className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
+                            </div>
+                            <div className="flex flex-col items-start max-w-[85%]">
+                                <div className="bg-white dark:bg-zinc-800 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm">
+                                    전기자전거가 경량화되면 <span className="font-bold">휴대성·가속성·주행 효율성이 향상되고 배터리 소모가 감소</span>합니다.
+                                </div>
+                                <span className="text-[9px] text-zinc-400 mt-1 ml-1">오전 1:13:03</span>
+                            </div>
+                        </motion.div>
+
+                    </div>
+
+                    {/* Input Area (Mock) */}
+                    <div className="p-3 border-t bg-white dark:bg-zinc-900" style={{ borderColor: colors.cardBorder }}>
+                        <div className="h-10 rounded-full border bg-zinc-50 dark:bg-zinc-800/50 flex items-center px-4 justify-between" style={{ borderColor: colors.cardBorder }}>
+                            <span className="text-xs text-zinc-400">메시지를 입력하세요...</span>
+                            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center">
+                                <ArrowRight className="w-3 h-3 text-white" />
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+
+                {/* RIGHT PANEL: GRADING (4 cols) */}
+                <motion.div
+                    initial={{ opacity: 0, x: 20, y: 20 }}
+                    animate={{ opacity: 1, x: 0, y: 0 }}
+                    whileHover={{ y: -5, transition: { duration: 0.3 } }}
+                    transition={{ duration: 0.6, delay: 0.4 }}
+                    className="lg:col-span-4 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px]"
+                    style={cardStyle}
+                >
+                    {/* Header */}
+                    <div className="h-10 border-b flex items-center px-4 gap-2" style={{ borderColor: colors.cardBorder }}>
+                        <Sparkles className="w-4 h-4 text-purple-500" />
+                        <span className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">AI 종합 평가</span>
+                    </div>
+
+                    {/* Content */}
+                    <div className="p-4 flex-1 flex flex-col gap-3 text-xs overflow-hidden">
+
+                        {/* 1. Score & Opinion */}
+                        <div className="flex gap-4 items-start">
+                            <div className="flex flex-col items-center justify-center bg-zinc-100 dark:bg-zinc-800/50 rounded-lg p-3 min-w-[70px]">
+                                <div className="text-2xl font-black font-mono text-zinc-800 dark:text-white">
+                                    <CountUp to={92} />
+                                </div>
+                                <div className="text-[9px] opacity-60 uppercase tracking-tight">Total Score</div>
+                            </div>
+                            <div className="flex-1 opacity-80 leading-relaxed line-clamp-3">
+                                <span className="font-bold text-zinc-900 dark:text-zinc-100">종합 의견: </span>
+                                이 학생의 답안은 전반적으로 논리적이며 마케팅 이론의 구조를 충실히 따르고 있습니다. 3C와 SWOT 분석이 구체적으로 연결되어 높은 설득력을 가집니다.
+                            </div>
+                        </div>
+
+                        {/* 2. Key Quote (Yellow) */}
+                        <div className="rounded-lg bg-yellow-400/10 border border-yellow-400/20 p-3 text-yellow-700 dark:text-yellow-400 relative">
+                            <div className="flex items-center gap-1.5 mb-1.5 opacity-80">
+                                <MessageSquare className="w-3 h-3 fill-current" />
+                                <span className="text-[10px] font-bold uppercase">핵심 인용구 (Highlight)</span>
+                            </div>
+                            <div className="italic leading-relaxed opacity-90">
+                                &quot;기술 중심 브랜드를 선호하면서도 친환경 소비에 민감한 MZ세대를 타겟으로 설정...&quot;
+                            </div>
+                        </div>
+
+                        {/* 3. Strengths & Improvements Grid */}
+                        <div className="grid grid-cols-2 gap-3 flex-1 min-h-0">
+                            {/* Strengths (Blue) */}
+                            <div className="bg-blue-500/5 border border-blue-500/10 rounded-lg p-3 flex flex-col gap-2">
+                                <div className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
+                                    <Plus className="w-3 h-3" /> 강점
+                                </div>
+                                <ul className="list-disc pl-3 space-y-1.5 opacity-80 leading-snug">
+                                    <li>3C 및 SWOT 분석 간 논리적 일관성 우수</li>
+                                    <li>타겟 세그먼트 선정의 구체성</li>
+                                    <li>차별점 명확히 제시함</li>
+                                </ul>
+                            </div>
+
+                            {/* Improvements (Orange) */}
+                            <div className="bg-orange-500/5 border border-orange-500/10 rounded-lg p-3 flex flex-col gap-2">
+                                <div className="text-orange-600 dark:text-orange-400 font-bold flex items-center gap-1">
+                                    <div className="w-2.5 h-0.5 bg-current rounded-full" /> 개선점
+                                </div>
+                                <ul className="list-disc pl-3 space-y-1.5 opacity-80 leading-snug">
+                                    <li>유통전략(Place)의 구체성 부족</li>
+                                    <li>옴니채널 전략 미흡</li>
+                                    <li>프로모션 실행 메커니즘 모호</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </motion.div>
+            </div>
+
+            {/* Background Decor Elements */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full max-w-4xl max-h-[500px] bg-blue-500/5 rounded-full blur-[100px] -z-10 pointer-events-none" />
+        </div >
+    );
+};
+
+
+export default function HeroSection({
+    headline,
+    subheadline,
+
+    ctaText = "무료로 시작하기",
+    onCtaClick,
+    mode = "light",
+}: HeroSectionProps) {
+    const colors = COLORS[mode];
+
+    return (
+        <div
+            className="min-h-screen overflow-x-hidden transition-colors duration-300"
+            style={{ backgroundColor: colors.bg, color: colors.text }}
+        >
+            {/* Navbar removed to use global Header */}
+
+            <main className="container mx-auto px-4 pt-24 pb-20 md:pt-32 md:pb-32 relative">
+                {/* Text Content */}
+                <div className="max-w-5xl mx-auto text-center space-y-8 relative z-10">
+
+                    {/* Badge removed */}
+
+                    {/* Headline */}
+                    <motion.h1
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.1 }}
+                        className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1]"
+                        style={{ color: colors.text }}
+                    >
+                        {headline}
+                    </motion.h1>
+
+                    {/* Subheadline */}
+                    <motion.p
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.2 }}
+                        className="text-lg md:text-xl max-w-2xl mx-auto leading-relaxed"
+                        style={{ color: colors.textSec }}
+                    >
+                        {subheadline}
+                    </motion.p>
+
+                    {/* Buttons */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.3 }}
+                        className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4"
+                    >
+                        <button
+                            onClick={onCtaClick}
+                            className={cn(
+                                "group relative inline-flex items-center justify-center gap-2 px-8 py-4 text-sm font-semibold transition-all duration-300 rounded-full",
+                                mode === 'dark'
+                                    ? "bg-white/10 hover:bg-white/20 border-white/10 text-white"
+                                    : "bg-black text-white hover:bg-zinc-800 border-transparent shadow-lg"
+                            )}
+                        >
+                            {ctaText}
+                            <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        </button>
+
+                        <button
+                            className="text-sm font-medium px-6 py-4 flex items-center gap-2 transition-all hover:opacity-100 opacity-70 border rounded-full"
+                            style={{
+                                color: colors.text,
+                                borderColor: mode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'
+                            }}
+                        >
+                            <Play className="w-4 h-4 fill-current" />
+                            데모 영상 보기
+                        </button>
+                    </motion.div>
+                </div>
+
+                {/* Hero Visual (Simulating Quest-On) */}
+                <ProductSimulation mode={mode} />
+            </main>
+
+            {/* Global Background Particles/Grid */}
+            <div className="fixed inset-0 pointer-events-none -z-50 opacity-[0.03] mix-blend-multiply bg-[url('/noise.png')]" />
+            {mode === 'dark' && (
+                <div className="fixed inset-0 pointer-events-none -z-50 bg-gradient-to-b from-black via-transparent to-black" />
+            )}
+        </div>
+    );
+}
