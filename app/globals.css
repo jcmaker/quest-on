@@ -226,6 +226,91 @@
   opacity: 0;
 }
 
+/* Fade in up with smaller translateY (for hero section) */
+@keyframes fade-in-up-sm {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up-sm {
+  animation: fade-in-up-sm 0.5s ease-out forwards;
+  opacity: 0;
+}
+
+/* Slide in from left */
+@keyframes slide-in-left {
+  0% {
+    opacity: 0;
+    transform: translate(-20px, 20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.6s ease-out forwards;
+  opacity: 0;
+}
+
+/* Slide in from right */
+@keyframes slide-in-right {
+  0% {
+    opacity: 0;
+    transform: translate(20px, 20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.6s ease-out forwards;
+  opacity: 0;
+}
+
+/* Fade in with scale */
+@keyframes fade-in-scale {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in-scale {
+  animation: fade-in-scale 0.6s ease-out forwards;
+  opacity: 0;
+}
+
+/* Fade in from bottom (for chat messages) */
+@keyframes fade-in-up-xs {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up-xs {
+  animation: fade-in-up-xs 0.5s ease-out forwards;
+  opacity: 0;
+}
+
 /* Floating animation for particles */
 @keyframes float {
   0%,
@@ -273,6 +358,105 @@
   background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
   background-size: 200% 200%;
   animation: gradient-shift 4s ease infinite;
+}
+
+/* Diagonal strikethrough for "AI 부정행위" text - X pattern */
+.text-strikethrough-diagonal {
+  position: relative;
+  color: #000;
+  display: inline-block;
+}
+
+.text-strikethrough-diagonal::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(to right, #dc2626, #ea580c, #f97316);
+  transform: translateY(-50%) rotate(12deg);
+  transform-origin: center;
+}
+
+.text-strikethrough-diagonal::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 4px;
+  background: linear-gradient(to right, #dc2626, #ea580c, #f97316);
+  transform: translateY(-50%) rotate(-12deg);
+  transform-origin: center;
+}
+
+/* Quest-On Blue gradient animation for "평가의 일부" text */
+@keyframes gradient-shift-blue {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.gradient-animated-blue {
+  background: linear-gradient(
+    90deg,
+    #2563eb 0%,
+    #3b82f6 25%,
+    #60a5fa 50%,
+    #93c5fd 75%,
+    #60a5fa 100%
+  );
+  background-size: 200% 200%;
+  animation: gradient-shift-blue 3s ease infinite;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Quest-On Blue-Purple gradient for button background */
+@keyframes gradient-shift-blue-purple {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.bg-gradient-queston-blue-purple {
+  background: linear-gradient(
+    135deg,
+    #3b82f6 0%,
+    #6366f1 25%,
+    #8b5cf6 50%,
+    #a855f7 75%,
+    #9333ea 100%
+  );
+  background-size: 200% 200%;
+  animation: gradient-shift-blue-purple 4s ease infinite;
+}
+
+.bg-gradient-queston-blue-purple:hover {
+  background: linear-gradient(
+    135deg,
+    #2563eb 0%,
+    #4f46e5 25%,
+    #7c3aed 50%,
+    #9333ea 75%,
+    #7e22ce 100%
+  );
+  background-size: 200% 200%;
 }
 
 @-webkit-keyframes wobble-ver-right {
