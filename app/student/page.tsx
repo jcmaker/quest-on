@@ -38,6 +38,15 @@ import {
 } from "lucide-react";
 import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
 import { UserMenu } from "@/components/auth/UserMenu";
+import {
+  Sidebar,
+  SidebarContent as ShadcnSidebarContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import { useInView } from "react-intersection-observer";
@@ -430,56 +439,69 @@ export default function StudentDashboard() {
     },
   ];
 
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-sidebar">
-      {/* Sidebar Header */}
-      <div className="p-4 sm:p-5 border-b border-sidebar-border">
-        <Link href="/student" className="flex items-center justify-center">
-          <Image
-            src="/qlogo_icon.png"
-            alt="Quest-On Logo"
-            width={40}
-            height={40}
-            className="w-10 h-10"
-            priority
-          />
-          <span className="text-xl font-bold text-sidebar-foreground ml-2">
-            Quest-On
-          </span>
-        </Link>
-      </div>
+  const SidebarContent = () => {
+    const { state } = useSidebar();
+    const isCollapsed = state === "collapsed";
 
-      {/* Navigation */}
-      <nav
-        className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
-        aria-label="주요 네비게이션"
-      >
-        {navigationItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setSidebarOpen(false)}
-              className={cn(
-                "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar",
-                item.active
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
-              aria-current={item.active ? "page" : undefined}
-            >
-              <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
-              <span>{item.title}</span>
-            </Link>
-          );
-        })}
-      </nav>
+    return (
+      <>
+        <SidebarHeader className="p-4 sm:p-5 border-b border-sidebar-border">
+          <Link
+            href="/student"
+            className={cn(
+              "flex items-center",
+              isCollapsed ? "justify-center" : "justify-start"
+            )}
+          >
+            <Image
+              src="/qstn_logo_svg.svg"
+              alt="Quest-On Logo"
+              width={40}
+              height={40}
+              className="w-10 h-10 shrink-0"
+              priority
+            />
+            {!isCollapsed && (
+              <span className="text-xl font-bold text-sidebar-foreground ml-2">
+                Quest-On
+              </span>
+            )}
+          </Link>
+        </SidebarHeader>
 
-      {/* Sidebar Footer */}
-      <SidebarFooter />
-    </div>
-  );
+        <ShadcnSidebarContent>
+          <nav
+            className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
+            aria-label="주요 네비게이션"
+          >
+            {navigationItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar group-data-[collapsible=icon]:justify-center",
+                    item.active
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  )}
+                  aria-current={item.active ? "page" : undefined}
+                  title={isCollapsed ? item.title : undefined}
+                >
+                  <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                  {!isCollapsed && <span>{item.title}</span>}
+                </Link>
+              );
+            })}
+          </nav>
+        </ShadcnSidebarContent>
+
+        <SidebarFooter />
+      </>
+    );
+  };
 
   // Skeleton loading components
   const StatCardSkeleton = () => (
@@ -548,14 +570,23 @@ export default function StudentDashboard() {
       </SignedOut>
 
       <SignedIn>
-        <div className="flex h-screen overflow-hidden">
-          {/* Desktop Sidebar */}
-          <aside
-            className="hidden lg:flex lg:flex-shrink-0 lg:w-64 lg:flex-col lg:border-r lg:border-sidebar-border"
-            aria-label="사이드바 네비게이션"
+        <SidebarProvider
+          defaultOpen={true}
+          style={
+            {
+              "--sidebar-width": "16rem",
+              "--sidebar-width-icon": "4rem",
+            } as React.CSSProperties
+          }
+        >
+          <Sidebar
+            side="left"
+            variant="sidebar"
+            collapsible="icon"
+            className="border-r border-sidebar-border"
           >
             <SidebarContent />
-          </aside>
+          </Sidebar>
 
           {/* Mobile Sidebar Sheet */}
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -563,30 +594,79 @@ export default function StudentDashboard() {
               <SheetHeader className="sr-only">
                 <SheetTitle>메뉴</SheetTitle>
               </SheetHeader>
-              <SidebarContent />
+              <div className="flex flex-col h-full bg-sidebar">
+                <div className="p-4 sm:p-5 border-b border-sidebar-border">
+                  <Link
+                    href="/student"
+                    className="flex items-center justify-center"
+                  >
+                    <Image
+                      src="/qstn_logo_svg.svg"
+                      alt="Quest-On Logo"
+                      width={40}
+                      height={40}
+                      className="w-10 h-10"
+                      priority
+                    />
+                    <span className="text-xl font-bold text-sidebar-foreground ml-2">
+                      Quest-On
+                    </span>
+                  </Link>
+                </div>
+                <nav
+                  className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
+                  aria-label="주요 네비게이션"
+                >
+                  {navigationItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={cn(
+                          "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar",
+                          item.active
+                            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        )}
+                        aria-current={item.active ? "page" : undefined}
+                      >
+                        <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                        <span>{item.title}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+                <SidebarFooter />
+              </div>
             </SheetContent>
           </Sheet>
 
-          {/* Main Content Area */}
-          <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            {/* Top Header */}
-            <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200">
-              <div className="px-4 sm:px-6 lg:px-8 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
-                    {/* Mobile Menu Button */}
-                    <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-                      <SheetTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="lg:hidden min-h-[44px] min-w-[44px] p-0"
-                          aria-label="메뉴 열기"
-                        >
-                          <Menu className="w-5 h-5" aria-hidden="true" />
-                        </Button>
-                      </SheetTrigger>
-                    </Sheet>
+          <SidebarInset>
+            {/* Main Content Area */}
+            <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+              {/* Top Header */}
+              <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200">
+                <div className="px-4 sm:px-6 lg:px-8 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
+                      {/* Mobile Menu Button */}
+                      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+                        <SheetTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="lg:hidden min-h-[44px] min-w-[44px] p-0"
+                            aria-label="메뉴 열기"
+                          >
+                            <Menu className="w-5 h-5" aria-hidden="true" />
+                          </Button>
+                        </SheetTrigger>
+                      </Sheet>
+
+                      {/* Desktop Sidebar Toggle */}
+                      <SidebarTrigger className="hidden lg:flex" />
 
                     <div className="min-w-0">
                       <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
@@ -625,7 +705,7 @@ export default function StudentDashboard() {
                     <div className="flex items-center justify-between gap-4">
                       <div className="space-y-2 flex-1 min-w-0">
                         <h2 className="text-xl sm:text-2xl font-bold">
-                          안녕하세요, 학생님!
+                          안녕하세요, {user?.firstName || user?.fullName || ""} 학생님!
                         </h2>
                         <p className="text-sm sm:text-base text-primary-foreground/90 leading-relaxed">
                           시험 코드를 입력하여 시험을 시작하거나, 완료한 시험의
@@ -1213,7 +1293,8 @@ export default function StudentDashboard() {
               </div>
             </main>
           </div>
-        </div>
+        </SidebarInset>
+        </SidebarProvider>
       </SignedIn>
     </div>
   );

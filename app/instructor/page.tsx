@@ -43,6 +43,15 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "@/components/animate-ui/components/base/alert-dialog";
+import {
+  Sidebar,
+  SidebarContent as ShadcnSidebarContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
 
 // 무거운 컴포넌트는 동적 임포트로 지연 로딩
 const BookOpen = dynamic(() =>
@@ -658,56 +667,69 @@ export default function InstructorHome() {
     },
   ];
 
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-sidebar">
-      {/* Sidebar Header */}
-      <div className="p-4 sm:p-5 border-b border-sidebar-border">
-        <Link href="/instructor" className="flex items-center justify-center">
-          <Image
-            src="/qlogo_icon.png"
-            alt="Quest-On Logo"
-            width={40}
-            height={40}
-            className="w-10 h-10"
-            priority
-          />
-          <span className="text-xl font-bold text-sidebar-foreground ml-2">
-            Quest-On
-          </span>
-        </Link>
-      </div>
+  const SidebarContent = () => {
+    const { state } = useSidebar();
+    const isCollapsed = state === "collapsed";
 
-      {/* Navigation */}
-      <nav
-        className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
-        aria-label="주요 네비게이션"
-      >
-        {navigationItems.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setSidebarOpen(false)}
-              className={cn(
-                "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar",
-                item.active
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              )}
-              aria-current={item.active ? "page" : undefined}
-            >
-              <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
-              <span>{item.title}</span>
-            </Link>
-          );
-        })}
-      </nav>
+    return (
+      <>
+        <SidebarHeader className="p-4 sm:p-5 border-b border-sidebar-border">
+          <Link
+            href="/instructor"
+            className={cn(
+              "flex items-center",
+              isCollapsed ? "justify-center" : "justify-start"
+            )}
+          >
+            <Image
+              src="/qstn_logo_svg.svg"
+              alt="Quest-On Logo"
+              width={40}
+              height={40}
+              className="w-10 h-10 shrink-0"
+              priority
+            />
+            {!isCollapsed && (
+              <span className="text-xl font-bold text-sidebar-foreground ml-2">
+                Quest-On
+              </span>
+            )}
+          </Link>
+        </SidebarHeader>
 
-      {/* Sidebar Footer */}
-      <SidebarFooter />
-    </div>
-  );
+        <ShadcnSidebarContent>
+          <nav
+            className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
+            aria-label="주요 네비게이션"
+          >
+            {navigationItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar group-data-[collapsible=icon]:justify-center",
+                    item.active
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  )}
+                  aria-current={item.active ? "page" : undefined}
+                  title={isCollapsed ? item.title : undefined}
+                >
+                  <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                  {!isCollapsed && <span>{item.title}</span>}
+                </Link>
+              );
+            })}
+          </nav>
+        </ShadcnSidebarContent>
+
+        <SidebarFooter />
+      </>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -742,14 +764,23 @@ export default function InstructorHome() {
       </SignedOut>
 
       <SignedIn>
-        <div className="flex h-screen overflow-hidden">
-          {/* Desktop Sidebar */}
-          <aside
-            className="hidden lg:flex lg:flex-shrink-0 lg:w-64 lg:flex-col lg:border-r lg:border-sidebar-border"
-            aria-label="사이드바 네비게이션"
+        <SidebarProvider
+          defaultOpen={true}
+          style={
+            {
+              "--sidebar-width": "16rem",
+              "--sidebar-width-icon": "4rem",
+            } as React.CSSProperties
+          }
+        >
+          <Sidebar
+            side="left"
+            variant="sidebar"
+            collapsible="icon"
+            className="border-r border-sidebar-border"
           >
             <SidebarContent />
-          </aside>
+          </Sidebar>
 
           {/* Mobile Sidebar Sheet */}
           <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
@@ -757,261 +788,317 @@ export default function InstructorHome() {
               <SheetHeader className="sr-only">
                 <SheetTitle>메뉴</SheetTitle>
               </SheetHeader>
-              <SidebarContent />
+              <div className="flex flex-col h-full bg-sidebar">
+                <div className="p-4 sm:p-5 border-b border-sidebar-border">
+                  <Link
+                    href="/instructor"
+                    className="flex items-center justify-center"
+                  >
+                    <Image
+                      src="/qstn_logo_svg.svg"
+                      alt="Quest-On Logo"
+                      width={40}
+                      height={40}
+                      className="w-10 h-10"
+                      priority
+                    />
+                    <span className="text-xl font-bold text-sidebar-foreground ml-2">
+                      Quest-On
+                    </span>
+                  </Link>
+                </div>
+                <nav
+                  className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
+                  aria-label="주요 네비게이션"
+                >
+                  {navigationItems.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setSidebarOpen(false)}
+                        className={cn(
+                          "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar",
+                          item.active
+                            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                        )}
+                        aria-current={item.active ? "page" : undefined}
+                      >
+                        <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                        <span>{item.title}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+                <SidebarFooter />
+              </div>
             </SheetContent>
           </Sheet>
 
-          {/* Main Content Area */}
-          <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            {/* Top Header */}
-            <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200">
-              <div className="px-4 sm:px-6 lg:px-8 py-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
-                    {/* Mobile Menu Button */}
-                    <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-                      <SheetTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="lg:hidden min-h-[44px] min-w-[44px] p-0"
-                          aria-label="메뉴 열기"
-                        >
-                          <Menu className="w-5 h-5" aria-hidden="true" />
-                        </Button>
-                      </SheetTrigger>
-                    </Sheet>
+          <SidebarInset>
+            {/* Main Content Area */}
+            <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+              {/* Top Header */}
+              <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200">
+                <div className="px-4 sm:px-6 lg:px-8 py-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
+                      {/* Mobile Menu Button */}
+                      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+                        <SheetTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="lg:hidden min-h-[44px] min-w-[44px] p-0"
+                            aria-label="메뉴 열기"
+                          >
+                            <Menu className="w-5 h-5" aria-hidden="true" />
+                          </Button>
+                        </SheetTrigger>
+                      </Sheet>
 
-                    <div className="min-w-0">
-                      <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
-                        강사 콘솔
-                      </h1>
-                      <p className="text-xs text-muted-foreground truncate hidden sm:block">
-                        환영합니다,{" "}
-                        {user?.firstName ||
-                          user?.emailAddresses[0]?.emailAddress}
-                        님
-                      </p>
+                      {/* Desktop Sidebar Toggle */}
+                      <SidebarTrigger className="hidden lg:flex" />
+
+                      <div className="min-w-0">
+                        <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
+                          강사 콘솔
+                        </h1>
+                        <p className="text-xs text-muted-foreground truncate hidden sm:block">
+                          환영합니다,{" "}
+                          {user?.firstName ||
+                            user?.emailAddresses[0]?.emailAddress}
+                          님
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center space-x-2 shrink-0">
-                    <Badge
-                      variant="outline"
-                      className="bg-primary/10 text-primary border-primary/20 text-xs hidden sm:inline-flex"
-                      aria-label="강사 모드"
-                    >
-                      강사 모드
-                    </Badge>
-                    <div className="lg:hidden">
-                      <UserMenu />
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <Badge
+                        variant="outline"
+                        className="bg-primary/10 text-primary border-primary/20 text-xs hidden sm:inline-flex"
+                        aria-label="강사 모드"
+                      >
+                        강사 모드
+                      </Badge>
+                      <div className="lg:hidden">
+                        <UserMenu />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            </header>
+              </header>
 
-            {/* Main Content */}
-            <main className="flex-1 overflow-y-auto bg-background">
-              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
-                {/* Welcome Section */}
-                <Card className="border-0 shadow-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground overflow-hidden">
-                  <CardContent className="p-6 sm:p-8">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="space-y-2 flex-1 min-w-0">
-                        <h2 className="text-xl sm:text-2xl font-bold">
-                          안녕하세요, 강사님!
-                        </h2>
-                        <p className="text-sm sm:text-base text-primary-foreground/90 leading-relaxed">
-                          AI 기반 인터랙티브 시험을 생성하고 관리하세요
-                        </p>
-                      </div>
-                      <div className="hidden md:block shrink-0">
-                        <BookOpen
-                          className="w-16 h-16 text-primary-foreground/60"
-                          aria-hidden="true"
-                        />
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* 시험 관리 */}
-                <Card className="border-0 shadow-xl">
-                  <CardHeader className="space-y-4">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <CardTitle className="flex items-center space-x-2 text-lg sm:text-xl">
-                          <BookOpen
-                            className="w-5 h-5 text-primary shrink-0"
-                            aria-hidden="true"
-                          />
-                          <span>시험 관리</span>
-                        </CardTitle>
-                      </div>
-                      <div className="flex items-center gap-3 sm:gap-4 shrink-0 w-full sm:w-auto justify-between sm:justify-end">
-                        <div className="flex items-center space-x-2 text-xs sm:text-sm text-muted-foreground">
-                          <Calendar
-                            className="w-4 h-4 shrink-0"
-                            aria-hidden="true"
-                          />
-                          <span className="whitespace-nowrap">
-                            총 {nodes.length}개
-                          </span>
+              {/* Main Content */}
+              <main className="flex-1 overflow-y-auto bg-background">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
+                  {/* Welcome Section */}
+                  <Card className="border-0 shadow-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground overflow-hidden">
+                    <CardContent className="p-6 sm:p-8">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-2 flex-1 min-w-0">
+                          <h2 className="text-xl sm:text-2xl font-bold">
+                            안녕하세요,{" "}
+                            {user?.firstName || user?.fullName || ""} 강사님!
+                          </h2>
+                          <p className="text-sm sm:text-base text-primary-foreground/90 leading-relaxed">
+                            AI 기반 인터랙티브 시험을 생성하고 관리하세요
+                          </p>
                         </div>
-                        <Link
-                          href="/instructor/drive"
-                          className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
-                        >
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="min-h-[44px] px-4"
-                          >
-                            드라이브에서 보기
-                          </Button>
-                        </Link>
+                        <div className="hidden md:block shrink-0">
+                          <BookOpen
+                            className="w-16 h-16 text-primary-foreground/60"
+                            aria-hidden="true"
+                          />
+                        </div>
                       </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-4 sm:space-y-6">
-                    {/* 액션 바 */}
-                    <div className="bg-card/80 border border-border rounded-2xl p-4 shadow-sm">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-                        <div className="flex items-center gap-2">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button className="gap-2 bg-primary text-primary-foreground min-h-[44px]">
-                                <Plus className="w-4 h-4" />새 항목
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start" className="w-48">
-                              <DropdownMenuItem
-                                onSelect={() =>
-                                  router.push("/instructor/drive")
-                                }
-                              >
-                                <FolderPlus className="w-4 h-4 mr-2" />새 폴더
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onSelect={() => router.push("/instructor/new")}
-                              >
-                                <FileText className="w-4 h-4 mr-2" />새 시험
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                          <Link href="/instructor/drive">
+                    </CardContent>
+                  </Card>
+
+                  {/* 시험 관리 */}
+                  <Card className="border-0 shadow-xl">
+                    <CardHeader className="space-y-4">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <CardTitle className="flex items-center space-x-2 text-lg sm:text-xl">
+                            <BookOpen
+                              className="w-5 h-5 text-primary shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span>시험 관리</span>
+                          </CardTitle>
+                        </div>
+                        <div className="flex items-center gap-3 sm:gap-4 shrink-0 w-full sm:w-auto justify-between sm:justify-end">
+                          <div className="flex items-center space-x-2 text-xs sm:text-sm text-muted-foreground">
+                            <Calendar
+                              className="w-4 h-4 shrink-0"
+                              aria-hidden="true"
+                            />
+                            <span className="whitespace-nowrap">
+                              총 {nodes.length}개
+                            </span>
+                          </div>
+                          <Link
+                            href="/instructor/drive"
+                            className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
+                          >
                             <Button
                               variant="outline"
-                              className="gap-2 min-h-[44px]"
+                              size="sm"
+                              className="min-h-[44px] px-4"
                             >
-                              <FolderOpen className="w-4 h-4" />
-                              드라이브 열기
+                              드라이브에서 보기
                             </Button>
                           </Link>
                         </div>
-                        <div className="flex flex-1 flex-wrap items-center gap-3 min-w-[260px]">
-                          <div className="relative flex-1 min-w-[220px]">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                            <Input
-                              value={searchQuery}
-                              onChange={(e) => setSearchQuery(e.target.value)}
-                              placeholder="시험 및 폴더 검색"
-                              className="pl-9 min-h-[44px]"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1 rounded-full border border-border bg-background/90 p-1 shadow-sm">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className={getViewButtonClasses("grid")}
-                              onClick={() => setViewMode("grid")}
-                              aria-pressed={viewMode === "grid"}
-                            >
-                              <LayoutGrid className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className={getViewButtonClasses("list")}
-                              onClick={() => setViewMode("list")}
-                              aria-pressed={viewMode === "list"}
-                            >
-                              <List className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </div>
                       </div>
-                    </div>
-
-                    {/* 콘텐츠 */}
-                    {isLoading ? (
-                      <div className="flex items-center justify-center py-16">
-                        <div className="flex flex-col items-center gap-3">
-                          <Loader2
-                            className="w-10 h-10 animate-spin text-primary"
-                            aria-hidden="true"
-                          />
-                          <p className="text-sm text-muted-foreground">
-                            시험 목록을 불러오는 중...
-                          </p>
-                        </div>
-                      </div>
-                    ) : !hasResults ? (
-                      <div className="text-center py-16 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-card/40">
-                        <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                        <p className="text-muted-foreground mb-2">
-                          {isFiltering
-                            ? "검색 결과가 없습니다."
-                            : "아직 시험이나 폴더가 없습니다."}
-                        </p>
-                        <p className="text-sm text-muted-foreground mb-6">
-                          {isFiltering
-                            ? "다른 검색어를 시도해보세요."
-                            : "새 폴더를 만들거나 시험을 생성해보세요."}
-                        </p>
-                        {!isFiltering && (
-                          <div className="flex items-center justify-center space-x-2">
+                    </CardHeader>
+                    <CardContent className="space-y-4 sm:space-y-6">
+                      {/* 액션 바 */}
+                      <div className="bg-card/80 border border-border rounded-2xl p-4 shadow-sm">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                          <div className="flex items-center gap-2">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button className="gap-2 bg-primary text-primary-foreground min-h-[44px]">
+                                  <Plus className="w-4 h-4" />새 항목
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent
+                                align="start"
+                                className="w-48"
+                              >
+                                <DropdownMenuItem
+                                  onSelect={() =>
+                                    router.push("/instructor/drive")
+                                  }
+                                >
+                                  <FolderPlus className="w-4 h-4 mr-2" />새 폴더
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onSelect={() =>
+                                    router.push("/instructor/new")
+                                  }
+                                >
+                                  <FileText className="w-4 h-4 mr-2" />새 시험
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                             <Link href="/instructor/drive">
                               <Button
                                 variant="outline"
-                                size="sm"
-                                className="min-h-[44px]"
+                                className="gap-2 min-h-[44px]"
                               >
-                                <FolderPlus className="w-4 h-4 mr-2" />
-                                폴더 만들기
-                              </Button>
-                            </Link>
-                            <Link href="/instructor/new">
-                              <Button size="sm" className="min-h-[44px]">
-                                <Plus className="w-4 h-4 mr-2" />
-                                시험 만들기
+                                <FolderOpen className="w-4 h-4" />
+                                드라이브 열기
                               </Button>
                             </Link>
                           </div>
-                        )}
+                          <div className="flex flex-1 flex-wrap items-center gap-3 min-w-[260px]">
+                            <div className="relative flex-1 min-w-[220px]">
+                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="시험 및 폴더 검색"
+                                className="pl-9 min-h-[44px]"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1 rounded-full border border-border bg-background/90 p-1 shadow-sm">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className={getViewButtonClasses("grid")}
+                                onClick={() => setViewMode("grid")}
+                                aria-pressed={viewMode === "grid"}
+                              >
+                                <LayoutGrid className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className={getViewButtonClasses("list")}
+                                onClick={() => setViewMode("list")}
+                                aria-pressed={viewMode === "list"}
+                              >
+                                <List className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    ) : (
-                      <div className="space-y-10">
-                        {renderSection("폴더", folderNodes, {
-                          emptyLabel: "폴더가 없습니다.",
-                          emptyFilteredLabel:
-                            "검색 조건에 맞는 폴더가 없습니다.",
-                        })}
-                        {renderSection("시험", examNodes, {
-                          emptyLabel: "시험이 없습니다.",
-                          emptyFilteredLabel:
-                            "검색 조건에 맞는 시험이 없습니다.",
-                        })}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-            </main>
-          </div>
-        </div>
+
+                      {/* 콘텐츠 */}
+                      {isLoading ? (
+                        <div className="flex items-center justify-center py-16">
+                          <div className="flex flex-col items-center gap-3">
+                            <Loader2
+                              className="w-10 h-10 animate-spin text-primary"
+                              aria-hidden="true"
+                            />
+                            <p className="text-sm text-muted-foreground">
+                              시험 목록을 불러오는 중...
+                            </p>
+                          </div>
+                        </div>
+                      ) : !hasResults ? (
+                        <div className="text-center py-16 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-card/40">
+                          <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                          <p className="text-muted-foreground mb-2">
+                            {isFiltering
+                              ? "검색 결과가 없습니다."
+                              : "아직 시험이나 폴더가 없습니다."}
+                          </p>
+                          <p className="text-sm text-muted-foreground mb-6">
+                            {isFiltering
+                              ? "다른 검색어를 시도해보세요."
+                              : "새 폴더를 만들거나 시험을 생성해보세요."}
+                          </p>
+                          {!isFiltering && (
+                            <div className="flex items-center justify-center space-x-2">
+                              <Link href="/instructor/drive">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="min-h-[44px]"
+                                >
+                                  <FolderPlus className="w-4 h-4 mr-2" />
+                                  폴더 만들기
+                                </Button>
+                              </Link>
+                              <Link href="/instructor/new">
+                                <Button size="sm" className="min-h-[44px]">
+                                  <Plus className="w-4 h-4 mr-2" />
+                                  시험 만들기
+                                </Button>
+                              </Link>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-10">
+                          {renderSection("폴더", folderNodes, {
+                            emptyLabel: "폴더가 없습니다.",
+                            emptyFilteredLabel:
+                              "검색 조건에 맞는 폴더가 없습니다.",
+                          })}
+                          {renderSection("시험", examNodes, {
+                            emptyLabel: "시험이 없습니다.",
+                            emptyFilteredLabel:
+                              "검색 조건에 맞는 시험이 없습니다.",
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </main>
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
       </SignedIn>
 
       {/* 삭제 확인 다이얼로그 */}
