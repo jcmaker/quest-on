@@ -18,6 +18,10 @@ import {
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { SlidingNumber } from "@/components/animate-ui/primitives/texts/sliding-number";
+import {
+  TypingText,
+  TypingTextCursor,
+} from "@/components/animate-ui/primitives/texts/typing";
 
 // ============================================================================
 // TYPES
@@ -101,16 +105,69 @@ const COLORS = {
 
 const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
   const colors = COLORS[mode];
-  const [chatStep, setChatStep] = useState(0);
+  const [typingState, setTypingState] = useState<{
+    isTyping: boolean;
+    text: string;
+    messageId: number;
+  } | null>(null);
+  const [shownStudentMessages, setShownStudentMessages] = useState<Set<number>>(
+    new Set()
+  );
+  const [shownAIResponses, setShownAIResponses] = useState<Set<number>>(
+    new Set()
+  );
+
+  const studentMessages = [
+    "경쟁사 제품 대비 그린휠의 제품은 얼마나 가벼워? 얼마나 경량화가 됐어?",
+    "전기 자전거가 경량화가 되면 뭐가 좋아?",
+    "배터리 수명은 어느 정도야?",
+  ];
 
   // Sequence the chat
   useEffect(() => {
     const timers: NodeJS.Timeout[] = [];
-    // Step 0: Initial (empty)
-    timers.push(setTimeout(() => setChatStep(1), 1000)); // Student 1 appears
-    timers.push(setTimeout(() => setChatStep(2), 2500)); // AI 1 appears
-    timers.push(setTimeout(() => setChatStep(3), 4000)); // Student 2 appears
-    timers.push(setTimeout(() => setChatStep(4), 5000)); // AI Analyzing appears
+    let currentTime = 1000; // 1초 후 시작
+
+    // 각 학생 메시지를 순차적으로 타이핑 시작
+    studentMessages.forEach((message, index) => {
+      const typingDuration = message.length * 50; // 각 글자당 50ms
+
+      // 타이핑 시작
+      timers.push(
+        setTimeout(() => {
+          setTypingState({
+            isTyping: true,
+            text: message,
+            messageId: index,
+          });
+        }, currentTime)
+      );
+
+      // 타이핑 완료 후 메시지 표시
+      currentTime += typingDuration;
+      timers.push(
+        setTimeout(() => {
+          setTypingState(null);
+          setShownStudentMessages((prev) => new Set([...prev, index]));
+        }, currentTime)
+      );
+
+      // 메시지 표시 후 다음 단계를 위한 딜레이
+      // 마지막 메시지가 아닌 경우: AI 응답 표시
+      if (index < studentMessages.length - 1) {
+        currentTime += 800; // 메시지 전송 후 AI 응답까지의 대기 시간
+        timers.push(
+          setTimeout(() => {
+            setShownAIResponses((prev) => new Set([...prev, index]));
+          }, currentTime)
+        );
+        // AI 응답 표시 후 다음 학생 메시지까지의 대기 시간
+        currentTime += 1200;
+      } else {
+        // 마지막 메시지 후 약간의 딜레이 후 "메시지를 입력하세요" 다시 표시 (이미 typingState가 null이므로 자동으로 표시됨)
+        currentTime += 500;
+      }
+    });
 
     return () => timers.forEach(clearTimeout);
   }, []);
@@ -263,84 +320,98 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
             </div>
 
             {/* Message 1: Student */}
-            <div
-              className="flex justify-end gap-2 animate-fade-in-up-xs"
-              style={{ animationDelay: "0.5s" }}
-            >
-              <div className="flex flex-col items-end max-w-[85%]">
-                <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm text-xs leading-relaxed shadow-sm">
-                  경쟁사 제품 대비 그린휠의 제품은 얼마나 가벼워? 얼마나
-                  경량화가 됐어?
+            {shownStudentMessages.has(0) && (
+              <div className="flex justify-end gap-2 animate-fade-in-up-xs">
+                <div className="flex flex-col items-end max-w-[85%]">
+                  <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm text-xs leading-relaxed shadow-sm">
+                    경쟁사 제품 대비 그린휠의 제품은 얼마나 가벼워? 얼마나
+                    경량화가 됐어?
+                  </div>
+                  <span className="text-[9px] text-zinc-400 mt-1 mr-1">
+                    오전 1:08:57
+                  </span>
                 </div>
-                <span className="text-[9px] text-zinc-400 mt-1 mr-1">
-                  오전 1:08:57
-                </span>
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                  <div className="w-4 h-4 rounded-full border-2 border-blue-500" />
+                </div>
               </div>
-              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                <div className="w-4 h-4 rounded-full border-2 border-blue-500" />
-              </div>
-            </div>
+            )}
 
             {/* Message 2: AI */}
-            <div
-              className="flex justify-start gap-2 animate-fade-in-up-xs"
-              style={{ animationDelay: "1.5s" }}
-            >
-              <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
-                <Brain className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
-              </div>
-              <div className="flex flex-col items-start max-w-[85%]">
-                <div className="bg-white dark:bg-zinc-800 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm">
-                  그린휠 E-Prime One은 평균{" "}
-                  <span className="font-bold">17kg</span>으로 경쟁사 평균(약
-                  21~23kg) 대비 <span className="font-bold">약 20% 경량화</span>
-                  되었습니다.
+            {shownAIResponses.has(0) && (
+              <div className="flex justify-start gap-2 animate-fade-in-up-xs">
+                <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
+                  <Brain className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
                 </div>
-                <span className="text-[9px] text-zinc-400 mt-1 ml-1">
-                  오전 1:08:58
-                </span>
+                <div className="flex flex-col items-start max-w-[85%]">
+                  <div className="bg-white dark:bg-zinc-800 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm">
+                    그린휠 E-Prime One은 평균{" "}
+                    <span className="font-bold">17kg</span>으로 경쟁사 평균(약
+                    21~23kg) 대비{" "}
+                    <span className="font-bold">약 20% 경량화</span>
+                    되었습니다.
+                  </div>
+                  <span className="text-[9px] text-zinc-400 mt-1 ml-1">
+                    오전 1:08:58
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Message 3: Student */}
-            <div
-              className="flex justify-end gap-2 animate-fade-in-up-xs"
-              style={{ animationDelay: "3.0s" }}
-            >
-              <div className="flex flex-col items-end max-w-[85%]">
-                <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm text-xs leading-relaxed shadow-sm">
-                  전기 자전거가 경량화가 되면 뭐가 좋아?
+            {shownStudentMessages.has(1) && (
+              <div className="flex justify-end gap-2 animate-fade-in-up-xs">
+                <div className="flex flex-col items-end max-w-[85%]">
+                  <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm text-xs leading-relaxed shadow-sm">
+                    전기 자전거가 경량화가 되면 뭐가 좋아?
+                  </div>
+                  <span className="text-[9px] text-zinc-400 mt-1 mr-1">
+                    오전 1:13:00
+                  </span>
                 </div>
-                <span className="text-[9px] text-zinc-400 mt-1 mr-1">
-                  오전 1:13:00
-                </span>
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                  <div className="w-4 h-4 rounded-full border-2 border-blue-500" />
+                </div>
               </div>
-              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
-                <div className="w-4 h-4 rounded-full border-2 border-blue-500" />
-              </div>
-            </div>
+            )}
 
             {/* Message 4: AI */}
-            <div
-              className="flex justify-start gap-2 animate-fade-in-up-xs"
-              style={{ animationDelay: "4.5s" }}
-            >
-              <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
-                <Brain className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
-              </div>
-              <div className="flex flex-col items-start max-w-[85%]">
-                <div className="bg-white dark:bg-zinc-800 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm">
-                  전기자전거가 경량화되면{" "}
-                  <span className="font-bold">
-                    휴대성·가속성·주행 효율성이 향상되고 배터리 소모가 감소
-                  </span>
-                  합니다.
+            {shownAIResponses.has(1) && (
+              <div className="flex justify-start gap-2 animate-fade-in-up-xs">
+                <div className="w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
+                  <Brain className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
                 </div>
-                <span className="text-[9px] text-zinc-400 mt-1 ml-1">
-                  오전 1:13:03
-                </span>
+                <div className="flex flex-col items-start max-w-[85%]">
+                  <div className="bg-white dark:bg-zinc-800 border dark:border-zinc-700 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed text-zinc-800 dark:text-zinc-200 shadow-sm">
+                    전기자전거가 경량화되면{" "}
+                    <span className="font-bold">
+                      휴대성·가속성·주행 효율성이 향상되고 배터리 소모가 감소
+                    </span>
+                    합니다.
+                  </div>
+                  <span className="text-[9px] text-zinc-400 mt-1 ml-1">
+                    오전 1:13:03
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
+
+            {/* New Student Message (last - after typing) */}
+            {shownStudentMessages.has(2) && (
+              <div className="flex justify-end gap-2 animate-fade-in-up-xs">
+                <div className="flex flex-col items-end max-w-[85%]">
+                  <div className="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-tr-sm text-xs leading-relaxed shadow-sm">
+                    배터리 수명은 어느 정도야?
+                  </div>
+                  <span className="text-[9px] text-zinc-400 mt-1 mr-1">
+                    오전 1:13:45
+                  </span>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0">
+                  <div className="w-4 h-4 rounded-full border-2 border-blue-500" />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Input Area (Mock) */}
@@ -352,9 +423,23 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
               className="h-10 rounded-full border bg-zinc-50 dark:bg-zinc-800/50 flex items-center px-4 justify-between"
               style={{ borderColor: colors.cardBorder }}
             >
-              <span className="text-xs text-zinc-400">
-                메시지를 입력하세요...
-              </span>
+              {typingState ? (
+                <span className="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-1">
+                  <TypingText
+                    text={typingState.text}
+                    duration={50}
+                    delay={0}
+                    inView={true}
+                    inViewOnce={false}
+                  >
+                    <TypingTextCursor />
+                  </TypingText>
+                </span>
+              ) : (
+                <span className="text-xs text-zinc-400">
+                  메시지를 입력하세요...
+                </span>
+              )}
               <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center">
                 <ArrowRight className="w-3 h-3 text-white" />
               </div>

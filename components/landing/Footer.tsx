@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import { Mail } from "lucide-react";
 import Image from "next/image";
 
 interface FooterProps {
@@ -29,20 +29,20 @@ const FOOTER_LINKS = {
     { label: "파트너십", href: "#partners" },
     { label: "무료로 시작하기", href: "/sign-up" },
   ],
-  리소스: [
-    { label: "시작 가이드", href: "/docs/getting-started" },
-    { label: "업데이트 소식", href: "/changelog" },
-    { label: "API 문서", href: "/docs/api" },
-    { label: "도움말 센터", href: "/help" },
-    { label: "시스템 현황", href: "/status" },
-  ],
-  회사: [
-    { label: "팀 소개", href: "/about" },
-    { label: "블로그", href: "/blog" },
-    { label: "채용 안내", href: "/careers" },
-    { label: "파트너십", href: "/partners" },
-    { label: "문의하기", href: "mailto:questonkr@gmail.com" },
-  ],
+  //   리소스: [
+  //     { label: "시작 가이드", href: "/docs/getting-started" },
+  //     { label: "업데이트 소식", href: "/changelog" },
+  //     { label: "API 문서", href: "/docs/api" },
+  //     { label: "도움말 센터", href: "/help" },
+  //     { label: "시스템 현황", href: "/status" },
+  //   ],
+  //   회사: [
+  //     { label: "팀 소개", href: "/about" },
+  //     { label: "블로그", href: "/blog" },
+  //     { label: "채용 안내", href: "/careers" },
+  //     { label: "파트너십", href: "/partners" },
+  //     { label: "문의하기", href: "mailto:questonkr@gmail.com" },
+  //   ],
   법적고지: [
     { label: "이용약관", href: "/legal/terms" },
     { label: "개인정보처리방침", href: "/legal/privacy" },
@@ -55,114 +55,141 @@ export default function Footer({ mode = "light" }: FooterProps) {
   const colors = COLORS[mode];
   const isDark = mode === "dark";
 
+  const handleContactClick = () => {
+    window.location.href = "mailto:questonkr@gmail.com?subject=문의사항";
+  };
+
+  const footerLinksEntries = Object.entries(FOOTER_LINKS);
+  //   const linksPerColumn = Math.ceil(footerLinksEntries.length / 2);
+
   return (
     <footer
-      className="w-full px-6 py-16 lg:px-12 lg:py-24 border-t"
-      style={{ backgroundColor: colors.bg, borderColor: colors.border }}
+      className={`relative w-full py-8 ${
+        isDark
+          ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950/50"
+          : "bg-gradient-to-br from-slate-50 via-white to-slate-50/50"
+      }`}
     >
-      <div className="mx-auto max-w-7xl">
-        {/* Brand & Links Grid */}
-        <div className="grid grid-cols-2 gap-12 md:grid-cols-5 lg:gap-16 mb-20">
-          <div
-            className="col-span-2 md:col-span-1 border-r pr-8"
-            style={{
-              borderColor: isDark
-                ? "rgba(255,255,255,0.05)"
-                : "rgba(0,0,0,0.05)",
-            }}
-          >
-            <div className="flex items-center gap-2 mb-6 text-zinc-900 dark:text-white">
+      <div className="container mx-auto px-4 lg:px-8 max-w-7xl">
+        <div className="flex flex-wrap lg:flex-nowrap gap-12 lg:gap-16 mb-16">
+          {/* Left Section - Logo & Contact */}
+          <div className="w-full lg:w-1/2">
+            {/* Logo */}
+            <div className="flex items-center gap-3 mb-8">
               <Image
                 src="/qlogo_icon.png"
                 alt="Quest-On Logo"
-                width={32}
-                height={32}
-                className="h-8 w-8"
+                width={40}
+                height={40}
+                className="h-10 w-10"
               />
               <span
-                className="font-bold text-xl tracking-tight"
+                className="font-bold text-2xl tracking-tight"
                 style={{ color: colors.text }}
               >
                 Quest-On
               </span>
             </div>
+
+            {/* Description */}
             <p
-              className="text-sm leading-relaxed max-w-[160px] font-medium"
+              className="text-lg lg:text-xl mb-8 leading-relaxed max-w-lg"
               style={{ color: colors.textSec }}
             >
-              AI와 함께하는 차세대 교육 평가 시스템. 사고의 과정을 데이터로
-              증명합니다.
+              AI와 함께하는 차세대 교육 평가 시스템.
+              <br />
+              사고의 과정을 데이터로 증명합니다.
             </p>
+
+            {/* Contact Button */}
+            <button
+              onClick={handleContactClick}
+              className="px-8 py-3.5 rounded-full font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:scale-105 flex items-center gap-2"
+              style={{
+                background:
+                  "linear-gradient(135deg, #3b82f6 0%, #6366f1 25%, #8b5cf6 50%, #a855f7 75%, #9333ea 100%)",
+                backgroundSize: "200% 200%",
+                animation: "gradient-shift-blue-purple 4s ease infinite",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background =
+                  "linear-gradient(135deg, #2563eb 0%, #4f46e5 25%, #7c3aed 50%, #9333ea 75%, #7e22ce 100%)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background =
+                  "linear-gradient(135deg, #3b82f6 0%, #6366f1 25%, #8b5cf6 50%, #a855f7 75%, #9333ea 100%)";
+              }}
+            >
+              <Mail className="w-5 h-5" />
+              문의하기
+            </button>
           </div>
 
-          {Object.entries(FOOTER_LINKS).map(([category, links]) => (
-            <div key={category}>
-              <h3
-                className="mb-6 text-sm font-bold uppercase tracking-widest opacity-40"
-                style={{ color: colors.text }}
-              >
-                {category}
-              </h3>
-              <ul className="space-y-4">
-                {links.map((link) => {
-                  const isAnchorLink = link.href.startsWith("#");
-                  const handleClick = (
-                    e: React.MouseEvent<HTMLAnchorElement>
-                  ) => {
-                    if (isAnchorLink) {
-                      e.preventDefault();
-                      const targetId = link.href.substring(1);
-                      const element = document.getElementById(targetId);
-                      if (element) {
-                        element.scrollIntoView({
-                          behavior: "smooth",
-                          block: "start",
-                        });
-                      }
-                    }
-                  };
+          {/* Right Section - Links */}
+          <div className="w-full lg:w-1/2">
+            <div className="grid grid-cols-2 gap-8 lg:gap-12">
+              {footerLinksEntries.map(([category, links]) => (
+                <div key={category}>
+                  <h5
+                    className="text-xs font-bold uppercase tracking-widest mb-6 opacity-60"
+                    style={{ color: colors.text }}
+                  >
+                    {category}
+                  </h5>
+                  <ul className="space-y-3">
+                    {links.map((link) => {
+                      const isAnchorLink = link.href.startsWith("#");
+                      const handleClick = (
+                        e: React.MouseEvent<HTMLAnchorElement>
+                      ) => {
+                        if (isAnchorLink) {
+                          e.preventDefault();
+                          const targetId = link.href.substring(1);
+                          const element = document.getElementById(targetId);
+                          if (element) {
+                            element.scrollIntoView({
+                              behavior: "smooth",
+                              block: "start",
+                            });
+                          }
+                        }
+                      };
 
-                  return (
-                    <li key={link.label}>
-                      <a
-                        href={link.href}
-                        onClick={handleClick}
-                        className="text-sm transition-all hover:text-blue-600 font-medium cursor-pointer"
-                        style={{ color: colors.textSec }}
-                      >
-                        {link.label}
-                      </a>
-                    </li>
-                  );
-                })}
-              </ul>
+                      return (
+                        <li key={link.label}>
+                          <a
+                            href={link.href}
+                            onClick={handleClick}
+                            className="text-sm font-medium transition-all cursor-pointer hover:text-blue-600 dark:hover:text-blue-400"
+                            style={{ color: colors.textSec }}
+                          >
+                            {link.label}
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
 
-        {/* Bottom Bar */}
+        {/* Bottom Bar - Copyright */}
         <div
-          className="pt-12 border-t flex flex-col items-start justify-between gap-8 md:flex-row md:items-center"
+          className="pt-8 border-t"
           style={{
             borderColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)",
           }}
         >
-          {/* Copyright & Badges */}
-          <div
-            className="flex flex-wrap items-center gap-6 text-sm"
-            style={{ color: colors.textSec }}
-          >
-            <span className="font-bold opacity-60">© 2025 Quest-On Inc.</span>
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-              <ShieldCheck className="w-3 h-3 text-blue-500" />
-              <span className="text-[10px] font-bold">
-                SOC 2 TYPE II 정식 인증
-              </span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-[10px] font-bold uppercase tracking-tighter">
-                All Systems Operational
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div
+              className="text-sm font-medium"
+              style={{ color: colors.textSec }}
+            >
+              Copyright © 2025{" "}
+              <span className="font-semibold" style={{ color: colors.text }}>
+                Quest-On Inc.
               </span>
             </div>
           </div>
