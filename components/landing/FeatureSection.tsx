@@ -24,31 +24,30 @@ const COLORS = {
 
 const FOOTER_LINKS = {
   제품: [
-    { label: "주요 기능", href: "#" },
-    { label: "기관용 솔루션", href: "#" },
-    { label: "AI 채점 기술", href: "#" },
-    { label: "보안 및 신뢰성", href: "#" },
-    { label: "가격 안내", href: "#" },
+    { label: "메인", href: "#hero" },
+    { label: "고객 후기", href: "#features" },
+    { label: "파트너십", href: "#partners" },
+    { label: "무료로 시작하기", href: "/sign-up" },
   ],
   리소스: [
-    { label: "이용 가이드", href: "#" },
+    { label: "시작 가이드", href: "/docs/getting-started" },
     { label: "업데이트 소식", href: "/changelog" },
-    { label: "문서 도구", href: "#" },
-    { label: "도움말 센터", href: "#" },
-    { label: "시스템 현황", href: "#" },
+    { label: "API 문서", href: "/docs/api" },
+    { label: "도움말 센터", href: "/help" },
+    { label: "시스템 현황", href: "/status" },
   ],
   회사: [
-    { label: "팀 소개", href: "#" },
-    { label: "블로그", href: "#" },
-    { label: "채용 안내", href: "#" },
-    { label: "브랜드 가이드", href: "#" },
+    { label: "팀 소개", href: "/about" },
+    { label: "블로그", href: "/blog" },
+    { label: "채용 안내", href: "/careers" },
+    { label: "파트너십", href: "/partners" },
     { label: "문의하기", href: "mailto:questonkr@gmail.com" },
   ],
   법적고지: [
-    { label: "이용약관", href: "#" },
-    { label: "개인정보처리방침", href: "#" },
-    { label: "데이터 보안", href: "#" },
-    { label: "쿠키 정책", href: "#" },
+    { label: "이용약관", href: "/legal/terms" },
+    { label: "개인정보처리방침", href: "/legal/privacy" },
+    { label: "데이터 보안", href: "/legal/security" },
+    { label: "쿠키 정책", href: "/legal/cookies" },
   ],
 } as const;
 
@@ -105,17 +104,37 @@ export default function Footer({ mode = "light" }: FooterProps) {
                 {category}
               </h3>
               <ul className="space-y-4">
-                {links.map((link) => (
-                  <li key={link.label}>
-                    <a
-                      href={link.href}
-                      className="text-sm transition-all hover:text-blue-600 font-medium"
-                      style={{ color: colors.textSec }}
-                    >
-                      {link.label}
-                    </a>
-                  </li>
-                ))}
+                {links.map((link) => {
+                  const isAnchorLink = link.href.startsWith("#");
+                  const handleClick = (
+                    e: React.MouseEvent<HTMLAnchorElement>
+                  ) => {
+                    if (isAnchorLink) {
+                      e.preventDefault();
+                      const targetId = link.href.substring(1);
+                      const element = document.getElementById(targetId);
+                      if (element) {
+                        element.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        });
+                      }
+                    }
+                  };
+
+                  return (
+                    <li key={link.label}>
+                      <a
+                        href={link.href}
+                        onClick={handleClick}
+                        className="text-sm transition-all hover:text-blue-600 font-medium cursor-pointer"
+                        style={{ color: colors.textSec }}
+                      >
+                        {link.label}
+                      </a>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           ))}

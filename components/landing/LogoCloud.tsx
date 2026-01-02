@@ -16,9 +16,14 @@ export default function LogoCloud({
   const isDark = mode === "dark";
 
   return (
-    <div className={`py-12 lg:py-16 ${isDark ? "bg-black" : "bg-white"}`}>
-      <div className="container mx-auto px-6">
-        <div className="flex flex-col items-center gap-8">
+    <section
+      id="partners"
+      className={`min-h-[400px] lg:min-h-[500px] flex items-center py-12 lg:py-16 ${
+        isDark ? "bg-black" : "bg-white"
+      }`}
+    >
+      <div className="container mx-auto px-6 w-full">
+        <div className="flex flex-col items-center justify-center gap-8">
           <p
             className={`text-xs font-bold uppercase tracking-[0.2em] ${
               isDark ? "text-zinc-500" : "text-zinc-400"
@@ -51,6 +56,6 @@ export default function LogoCloud({
           </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 }

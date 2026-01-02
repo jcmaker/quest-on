@@ -55,21 +55,25 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950/50">
-      {/* Hero Section */}
-      <HeroSection
-        headline={
-          <>
-            <span className="text-strikethrough-diagonal">AI 부정행위</span>,
-            막을 수 없다면 <br />
-            <span className="gradient-animated-blue">평가의 일부</span>로
-            만드세요.
-          </>
-        }
-        subheadline="Quest-On은 생성형 AI를 '컨닝 도구'가 아닌 '사고력 파트너'로 전환시킵니다. 결과만 보는 시험이 아니라, 사고하는 과정 전체를 평가합니다."
-      />
-      {/* Testimonial Section */}
-      <TestimonialSection mode="light" />
-      {/* Logo Cloud */}
+      {/* Hero Section - AI 사고 과정 추적 */}
+      <section id="hero">
+        <HeroSection
+          headline={
+            <>
+              <span className="text-strikethrough-diagonal">AI 부정행위</span>,
+              막을 수 없다면 <br />
+              <span className="gradient-animated-blue">평가의 일부</span>로
+              만드세요.
+            </>
+          }
+          subheadline="Quest-On은 생성형 AI를 '컨닝 도구'가 아닌 '사고력 파트너'로 전환시킵니다. 결과만 보는 시험이 아니라, 사고하는 과정 전체를 평가합니다."
+        />
+      </section>
+      {/* Features Section - 실시간 평가 시스템 */}
+      <section id="features">
+        <TestimonialSection mode="light" />
+      </section>
+      {/* Partners Section - 파트너십 */}
       <LogoCloud mode="light" />
       {/* Footer */}
       <Footer mode="light" />

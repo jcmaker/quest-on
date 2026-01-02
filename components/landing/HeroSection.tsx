@@ -130,6 +130,7 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* LEFT PANEL: EXAM (3 cols) - Redesigned as Student Final Answer & Cheating Detection */}
         <div
+          id="cheating-detection-panel"
           className="lg:col-span-3 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px] animate-slide-in-left transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.3)]"
           style={{ ...cardStyle, animationDelay: "0.2s" }}
         >
@@ -363,6 +364,7 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
 
         {/* RIGHT PANEL: GRADING (4 cols) */}
         <div
+          id="ai-grading-panel"
           className="lg:col-span-4 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px] animate-slide-in-right transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.3)]"
           style={{ ...cardStyle, animationDelay: "0.4s" }}
         >
