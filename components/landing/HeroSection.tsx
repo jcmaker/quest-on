@@ -628,8 +628,6 @@ export default function HeroSection({
         <ProductSimulation mode={mode} />
       </main>
 
-      {/* Global Background Particles/Grid */}
-      <div className="fixed inset-0 pointer-events-none -z-50 opacity-[0.03] mix-blend-multiply bg-[url('/noise.png')]" />
       {mode === "dark" && (
         <div className="fixed inset-0 pointer-events-none -z-50 bg-gradient-to-b from-black via-transparent to-black" />
       )}
