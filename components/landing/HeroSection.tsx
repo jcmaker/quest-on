@@ -547,7 +547,7 @@ export default function HeroSection({
   headline,
   subheadline,
 
-  ctaText = "무료로 시작하기",
+  ctaText = "지금 시작하기",
   onCtaClick,
   mode = "light",
 }: HeroSectionProps) {
@@ -586,31 +586,20 @@ export default function HeroSection({
             className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4 animate-fade-in-up-sm"
             style={{ animationDelay: "0.3s" }}
           >
-            <button
-              onClick={onCtaClick}
+            <Link
+              href="/sign-up"
               className={cn(
-                "group relative inline-flex items-center justify-center gap-2 px-8 py-4 text-sm font-semibold transition-all duration-300 rounded-full text-white border-transparent shadow-lg"
+                "group relative inline-flex items-center justify-center gap-2 px-8 py-4 text-sm font-semibold transition-all duration-300 rounded-full text-white border-transparent shadow-lg",
+                "bg-gradient-to-r from-primary via-primary/90 to-primary/80",
+                "hover:from-primary/90 hover:via-primary hover:to-primary/90",
+                "hover:shadow-xl"
               )}
-              style={{
-                background:
-                  "linear-gradient(135deg, #3b82f6 0%, #6366f1 25%, #8b5cf6 50%, #a855f7 75%, #9333ea 100%)",
-                backgroundSize: "200% 200%",
-                animation: "gradient-shift-blue-purple 4s ease infinite",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background =
-                  "linear-gradient(135deg, #2563eb 0%, #4f46e5 25%, #7c3aed 50%, #9333ea 75%, #7e22ce 100%)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background =
-                  "linear-gradient(135deg, #3b82f6 0%, #6366f1 25%, #8b5cf6 50%, #a855f7 75%, #9333ea 100%)";
-              }}
             >
               {ctaText}
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </button>
+            </Link>
 
-            <button
+            {/* <button
               className="text-sm font-medium px-6 py-4 flex items-center gap-2 transition-all hover:opacity-100 opacity-70 border rounded-full"
               style={{
                 color: colors.text,
@@ -620,7 +609,7 @@ export default function HeroSection({
             >
               <Play className="w-4 h-4 fill-current" />
               데모 영상 보기
-            </button>
+            </button> */}
           </div>
         </div>
 
