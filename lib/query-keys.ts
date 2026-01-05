@@ -88,4 +88,22 @@ export const qk = {
      */
     breadcrumb: (folderId: string) => ["drive-breadcrumb", folderId] as const,
   },
+
+  admin: {
+    /**
+     * 관리자 에러 로그 목록
+     * @param options - 쿼리 옵션 (limit, offset, level)
+     */
+    errorLogs: (options?: {
+      limit?: number;
+      offset?: number;
+      level?: "error" | "warn" | "info";
+    }) => {
+      const key = ["admin-error-logs"] as const;
+      if (options) {
+        return [...key, options] as const;
+      }
+      return key;
+    },
+  },
 } as const;

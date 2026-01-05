@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image";
 import {
   Card,
   CardContent,
@@ -20,15 +22,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
+  Sidebar,
+  SidebarContent as ShadcnSidebarContent,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
+import {
   Shield,
   Users,
   UserCheck,
   UserX,
   Search,
   RefreshCw,
-  LogOut,
   Settings,
+  FileText,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { AdminSidebarFooter } from "@/components/admin/AdminSidebarFooter";
 
 interface User {
   id: string;
@@ -60,7 +80,9 @@ export default function AdminDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [error, setError] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
 
   const fetchUsers = async () => {
     try {
@@ -110,13 +132,83 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch("/api/admin/auth", { method: "DELETE" });
-      router.push("/admin/login");
-    } catch (error) {
-      console.error("Logout error:", error);
-    }
+  const navigationItems = [
+    {
+      title: "대시보드",
+      href: "/admin",
+      icon: Shield,
+      active: pathname === "/admin",
+    },
+    {
+      title: "로그 기록",
+      href: "/admin/logs",
+      icon: FileText,
+      active: pathname === "/admin/logs",
+    },
+  ];
+
+  const SidebarContent = () => {
+    const { state } = useSidebar();
+    const isCollapsed = state === "collapsed";
+
+    return (
+      <>
+        <SidebarHeader className="p-4 sm:p-5 border-b border-sidebar-border">
+          <Link
+            href="/admin"
+            className={cn(
+              "flex items-center",
+              isCollapsed ? "justify-center" : "justify-start"
+            )}
+          >
+            <Image
+              src="/qstn_logo_svg.svg"
+              alt="Quest-On Logo"
+              width={40}
+              height={40}
+              className="w-10 h-10 shrink-0"
+              priority
+            />
+            {!isCollapsed && (
+              <span className="text-xl font-bold text-sidebar-foreground ml-2">
+                Quest-On
+              </span>
+            )}
+          </Link>
+        </SidebarHeader>
+
+        <ShadcnSidebarContent>
+          <nav
+            className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
+            aria-label="주요 네비게이션"
+          >
+            {navigationItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={cn(
+                    "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar group-data-[collapsible=icon]:justify-center",
+                    item.active
+                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  )}
+                  aria-current={item.active ? "page" : undefined}
+                  title={isCollapsed ? item.title : undefined}
+                >
+                  <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                  {!isCollapsed && <span>{item.title}</span>}
+                </Link>
+              );
+            })}
+          </nav>
+        </ShadcnSidebarContent>
+
+        <AdminSidebarFooter />
+      </>
+    );
   };
 
   useEffect(() => {
@@ -195,42 +287,90 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="bg-card/80 backdrop-blur-sm border-b border-border shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-                <Shield className="w-6 h-6 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">
-                  관리자 대시보드
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                  Quest-On 사용자 관리
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <Badge
-                variant="outline"
-                className="bg-primary/10 text-primary border-primary/20"
-              >
-                관리자 모드
-              </Badge>
-              <Button variant="outline" size="sm" onClick={handleLogout}>
-                <LogOut className="w-4 h-4 mr-2" />
-                로그아웃
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <SidebarProvider
+      defaultOpen={true}
+      style={
+        {
+          "--sidebar-width": "16rem",
+          "--sidebar-width-icon": "4rem",
+        } as React.CSSProperties
+      }
+    >
+      <Sidebar
+        side="left"
+        variant="sidebar"
+        collapsible="icon"
+        className="border-r border-sidebar-border"
+      >
+        <SidebarContent />
+      </Sidebar>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto p-6 space-y-8">
+      {/* Mobile Sidebar Sheet */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="left" className="w-64 p-0">
+          <SheetHeader className="sr-only">
+            <SheetTitle>메뉴</SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-col h-full bg-sidebar">
+            <div className="p-4 sm:p-5 border-b border-sidebar-border">
+              <Link
+                href="/admin"
+                className="flex items-center justify-center"
+              >
+                <Image
+                  src="/qstn_logo_svg.svg"
+                  alt="Quest-On Logo"
+                  width={40}
+                  height={40}
+                  className="w-10 h-10"
+                  priority
+                />
+                <span className="text-xl font-bold text-sidebar-foreground ml-2">
+                  Quest-On
+                </span>
+              </Link>
+            </div>
+            <nav
+              className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
+              aria-label="주요 네비게이션"
+            >
+              {navigationItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={cn(
+                      "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px]",
+                      item.active
+                        ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                    )}
+                    aria-current={item.active ? "page" : undefined}
+                  >
+                    <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                    <span>{item.title}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+            <AdminSidebarFooter />
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-muted-foreground" />
+            <h1 className="text-lg font-semibold">관리자 대시보드</h1>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="flex flex-1 flex-col gap-4 p-4 md:p-6">
         {/* Stats Overview */}
         <div className="grid gap-6 md:grid-cols-4">
           <Card>
@@ -394,7 +534,8 @@ export default function AdminDashboard() {
             </div>
           </CardContent>
         </Card>
-      </main>
-    </div>
+        </main>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
