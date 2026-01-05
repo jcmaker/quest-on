@@ -855,7 +855,6 @@ export async function PUT(
       stage_grading?: {
         chat?: { score: number; comment: string };
         answer?: { score: number; comment: string };
-        feedback?: { score: number; comment: string };
       };
     }> = [];
 
@@ -906,7 +905,6 @@ ${exam.rubric
       const stageGrading: {
         chat?: { score: number; comment: string };
         answer?: { score: number; comment: string };
-        feedback?: { score: number; comment: string };
       } = {};
 
       // 1. Chat stage grading
@@ -1058,86 +1056,6 @@ ${submission.answer || "답안이 없습니다."}
         }
       }
 
-      // 3. Feedback stage grading (only if student replied)
-      if (submission.ai_feedback && submission.student_reply) {
-        try {
-          const feedbackSystemPrompt = `당신은 전문 평가위원입니다. AI 피드백에 대한 학생의 반박 답변을 루브릭 기준에 따라 평가하고 점수를 부여합니다.
-
-${rubricText}
-
-평가 지침:
-1. 제공된 루브릭의 각 평가 영역과 기준을 정확히 검토하세요.
-2. 학생이 AI 피드백을 제대로 이해하고 반박했는지 평가하세요.
-3. 학생의 반박 내용이 논리적이고 타당한지 평가하세요.
-4. 피드백을 통해 학생이 얼마나 성장했는지 평가하세요.
-5. 점수는 0-100점 사이의 정수로 부여하세요.
-6. 구체적이고 건설적인 피드백을 제공하세요.
-
-응답 형식 (JSON):
-{
-  "score": 75,
-  "comment": "피드백에 대한 학생의 반박 답변을 루브릭 기준에 따라 평가한 내용을 한국어로 작성하세요."
-}`;
-
-          const feedbackUserPrompt = `다음 정보를 바탕으로 피드백 대응 단계를 평가해주세요:
-
-**문제:**
-${question.prompt || ""}
-
-${question.ai_context ? `**문제 컨텍스트:**\n${question.ai_context}\n` : ""}
-
-**학생의 최종 답안:**
-${submission.answer || "답안이 없습니다."}
-
-**AI 피드백:**
-${submission.ai_feedback}
-
-**학생의 반박 답변:**
-${submission.student_reply}
-
-위 정보를 바탕으로 루브릭 기준에 따라 피드백 대응 단계의 점수와 피드백을 제공해주세요.`;
-
-          const feedbackCompletion = await openai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [
-              { role: "system", content: feedbackSystemPrompt },
-              { role: "user", content: feedbackUserPrompt },
-            ],
-            response_format: { type: "json_object" },
-          });
-
-          const feedbackResponseContent =
-            feedbackCompletion.choices[0]?.message?.content || "";
-          let feedbackParsedResponse;
-          try {
-            feedbackParsedResponse = JSON.parse(feedbackResponseContent);
-          } catch (parseError) {
-            console.error(
-              `❌ [AUTO_GRADE] JSON parse error for feedback stage question ${qIdx}:`,
-              parseError
-            );
-            throw new Error(`JSON parse error: ${parseError}`);
-          }
-
-          stageGrading.feedback = {
-            score: Math.max(
-              0,
-              Math.min(100, Math.round(feedbackParsedResponse.score || 0))
-            ),
-            comment: feedbackParsedResponse.comment || "피드백 대응 평가 완료",
-          };
-
-          console.log(
-            `✅ [AUTO_GRADE] Question ${qIdx} feedback stage graded: ${stageGrading.feedback.score}점`
-          );
-        } catch (error) {
-          console.error(
-            `❌ [AUTO_GRADE] Error grading feedback stage for question ${qIdx}:`,
-            error
-          );
-        }
-      }
-
       // Calculate overall score from stage scores
       let overallScore = 0;
       let stageCount = 0;
@@ -1149,18 +1067,12 @@ ${submission.student_reply}
         overallScore += stageGrading.answer.score;
         stageCount++;
       }
-      if (stageGrading.feedback) {
-        overallScore += stageGrading.feedback.score;
-        stageCount++;
-      }
 
       const finalScore =
         stageCount > 0 ? Math.round(overallScore / stageCount) : 0;
       const overallComment = `채팅 단계: ${
         stageGrading.chat?.score || "N/A"
-      }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점, 피드백 단계: ${
-        stageGrading.feedback?.score || "N/A"
-      }점`;
+      }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점`;
 
       // Only add grade if at least one stage was graded
       if (Object.keys(stageGrading).length > 0) {

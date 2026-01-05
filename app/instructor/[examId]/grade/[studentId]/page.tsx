@@ -55,6 +55,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { StageKey } from "@/lib/types/grading";
 
 interface Conversation {
   id: string;
@@ -92,19 +93,16 @@ interface Grade {
   stage_grading?: {
     chat?: { score: number; comment: string };
     answer?: { score: number; comment: string };
-    feedback?: { score: number; comment: string };
   };
 }
 
 // 가채점 여부 판단 함수 (comment 패턴으로 확인)
 function isAiGraded(grade: Grade): boolean {
   if (!grade.comment) return false;
-  // 자동 채점 comment 패턴: "채팅 단계:", "답안 단계:", "피드백 단계:" 포함
-  const autoGradePattern = /(채팅 단계|답안 단계|피드백 단계)/;
+  // 자동 채점 comment 패턴: "채팅 단계:", "답안 단계:" 포함
+  const autoGradePattern = /(채팅 단계|답안 단계)/;
   return autoGradePattern.test(grade.comment);
 }
-
-type StageKey = "chat" | "answer" | "feedback";
 
 interface PasteLog {
   id: string;
@@ -261,16 +259,6 @@ export default function GradeStudentPage({
               answer: stageGrading.answer.comment,
             };
           }
-          if (stageGrading.feedback) {
-            initialStageScores[parseInt(qIdx)] = {
-              ...initialStageScores[parseInt(qIdx)],
-              feedback: stageGrading.feedback.score,
-            };
-            initialStageComments[parseInt(qIdx)] = {
-              ...initialStageComments[parseInt(qIdx)],
-              feedback: stageGrading.feedback.comment,
-            };
-          }
         }
       });
 
@@ -340,12 +328,6 @@ export default function GradeStudentPage({
                 ? {
                     score: stageScores[questionIdx]?.answer || 0,
                     comment: stageComments[questionIdx]?.answer || "",
-                  }
-                : undefined,
-              feedback: stageScores[questionIdx]?.feedback
-                ? {
-                    score: stageScores[questionIdx]?.feedback || 0,
-                    comment: stageComments[questionIdx]?.feedback || "",
                   }
                 : undefined,
             },
@@ -1025,7 +1007,6 @@ export default function GradeStudentPage({
                 stageScores={stageScores[selectedQuestionIdx] || {}}
                 stageComments={stageComments[selectedQuestionIdx] || {}}
                 overallScore={scores[selectedQuestionIdx] || 0}
-                overallFeedback={feedbacks[selectedQuestionIdx] || ""}
                 isGraded={!!sessionData.grades[selectedQuestionIdx]}
                 isAiGradedOnly={isCurrentQuestionAiGradedOnly}
                 aiGradedScore={currentAiGradedScore}
@@ -1035,12 +1016,6 @@ export default function GradeStudentPage({
                 onOverallScoreChange={(value) =>
                   setScores({
                     ...scores,
-                    [selectedQuestionIdx]: value,
-                  })
-                }
-                onOverallFeedbackChange={(value) =>
-                  setFeedbacks({
-                    ...feedbacks,
                     [selectedQuestionIdx]: value,
                   })
                 }

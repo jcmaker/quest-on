@@ -10,15 +10,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Star, Check } from "lucide-react";
 import { useState, useEffect } from "react";
-
-type StageKey = "chat" | "answer" | "feedback";
+import { StageKey } from "@/lib/types/grading";
 
 interface GradingPanelProps {
   questionNumber: number;
   stageScores: Partial<Record<StageKey, number>>;
   stageComments: Partial<Record<StageKey, string>>;
   overallScore: number;
-  overallFeedback: string;
   isGraded: boolean;
   isAiGradedOnly?: boolean; // 가채점만 있는 경우
   aiGradedScore?: number; // 가채점 점수
@@ -26,7 +24,6 @@ interface GradingPanelProps {
   onStageScoreChange: (stage: StageKey, value: number) => void;
   onStageCommentChange: (stage: StageKey, value: string) => void;
   onOverallScoreChange: (value: number) => void;
-  onOverallFeedbackChange: (value: string) => void;
   onAcceptAiScore?: () => void; // 가채점 점수 승인 핸들러
   onSave: () => void;
 }
@@ -36,7 +33,6 @@ export function GradingPanel({
   // stageScores,
   // stageComments,
   overallScore,
-  overallFeedback,
   isGraded,
   isAiGradedOnly = false,
   aiGradedScore,
@@ -44,7 +40,6 @@ export function GradingPanel({
   // onStageScoreChange,
   // onStageCommentChange,
   onOverallScoreChange,
-  onOverallFeedbackChange,
   onAcceptAiScore,
   onSave,
 }: GradingPanelProps) {
@@ -238,18 +233,6 @@ export function GradingPanel({
             )}
           </div>
 
-          <div>
-            <Label htmlFor="feedback" className="text-sm font-medium">
-              종합 피드백
-            </Label>
-            <Textarea
-              id="feedback"
-              value={overallFeedback}
-              onChange={(e) => onOverallFeedbackChange(e.target.value)}
-              placeholder="학생의 전체 답안에 대한 종합 피드백을 입력하세요..."
-              className="mt-1 min-h-[120px] resize-none"
-            />
-          </div>
         </div>
 
         <Button
