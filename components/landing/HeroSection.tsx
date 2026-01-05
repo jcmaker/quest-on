@@ -29,7 +29,7 @@ import {
 
 interface HeroSectionProps {
   headline: React.ReactNode;
-  subheadline: string;
+  subheadline: React.ReactNode;
 
   ctaText?: string;
   onCtaClick?: () => void;
@@ -548,7 +548,7 @@ export default function HeroSection({
   subheadline,
 
   ctaText = "지금 시작하기",
-  onCtaClick,
+  //   onCtaClick,
   mode = "light",
 }: HeroSectionProps) {
   const colors = COLORS[mode];

@@ -60,13 +60,20 @@ export default function LandingPage() {
         <HeroSection
           headline={
             <>
-              <span className="text-strikethrough-diagonal">AI 부정행위</span>,
+              <span className="text-strikethrough-bottom">AI 부정행위</span>,
               막을 수 없다면 <br />
               <span className="gradient-animated-blue">평가의 일부</span>로
               만드세요.
             </>
           }
-          subheadline="Quest-On은 생성형 AI를 '컨닝 도구'가 아닌 '사고력 파트너'로 전환시킵니다. 결과만 보는 시험이 아니라, 사고하는 과정 전체를 평가합니다."
+          subheadline={
+            <>
+              Quest-On은 생성형 AI를 '컨닝 도구'가 아닌 '사고력 파트너'로
+              전환시킵니다.
+              <br />
+              결과만 보는 시험이 아니라, 사고하는 과정 전체를 평가합니다.
+            </>
+          }
         />
       </section>
       {/* Features Section - 실시간 평가 시스템 */}
