@@ -56,8 +56,11 @@ export default function QueryProvider({
                 ? window.location.pathname
                 : undefined;
 
-            // 뮤테이션 키에서 정보 추출
-            const mutationKey = mutation?.mutationKey || [];
+            // 뮤테이션 키에서 정보 추출 (TanStack Query v5에서는 options를 통해 접근)
+            const mutationKey =
+              mutation?.options?.mutationKey ||
+              (mutation as any)?.mutationKey ||
+              [];
             const mutationKeyString = JSON.stringify(mutationKey);
 
             logError(
