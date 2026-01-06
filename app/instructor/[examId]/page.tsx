@@ -962,6 +962,10 @@ function StudentListItem({
     averageQuestions?: number;
     averageAnswerLength?: number;
     averageExamDuration?: number;
+    standardDeviationScore?: number;
+    standardDeviationQuestions?: number;
+    standardDeviationAnswerLength?: number;
+    standardDeviationExamDuration?: number;
   } | null;
 }) {
   return (
