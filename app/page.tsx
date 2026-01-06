@@ -60,10 +60,15 @@ export default function LandingPage() {
         <HeroSection
           headline={
             <>
-              <span className="text-strikethrough-bottom">AI 부정행위</span>,
-              막을 수 없다면 <br />
-              <span className="gradient-animated-blue">평가의 일부</span>로
-              만드세요.
+              <span className="text-strikethrough-bottom text-gray-800">
+                AI 부정행위
+              </span>
+              <span className="text-gray-700 text-[68px]">
+                , 막을 수 없다면
+              </span>{" "}
+              <br />
+              <span className="gradient-animated-blue">평가의 일부</span>
+              <span className="text-gray-700 text-[68px]">로 만드세요.</span>
             </>
           }
           subheadline={

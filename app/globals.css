@@ -367,7 +367,6 @@
 /* Bottom strikethrough for "AI 부정행위" text - horizontal line at bottom */
 .text-strikethrough-bottom {
   position: relative;
-  color: #000;
   display: inline-block;
 }
 
