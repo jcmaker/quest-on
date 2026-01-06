@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { useState, useEffect, use, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { qk } from "@/lib/query-keys";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -45,6 +46,22 @@ import {
   Copy,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from "@/components/ui/chart";
+import {
+  Bar,
+  BarChart,
+  XAxis,
+  YAxis,
+  Area,
+  AreaChart,
+  ReferenceLine,
+  ReferenceDot,
+  CartesianGrid,
+} from "recharts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -153,8 +170,38 @@ export default function GradeStudentPage({
   params: Promise<{ examId: string; studentId: string }>;
 }) {
   const resolvedParams = use(params);
+  const searchParams = useSearchParams();
   const { isSignedIn, isLoaded, user } = useUser();
   const queryClient = useQueryClient();
+
+  // URL 쿼리 파라미터에서 전체 평균 및 표준편차 데이터 읽기
+  const averageStats = useMemo(() => {
+    const avgScore = searchParams.get("avgScore");
+    const avgQuestions = searchParams.get("avgQuestions");
+    const avgAnswerLength = searchParams.get("avgAnswerLength");
+    const avgExamDuration = searchParams.get("avgExamDuration");
+    const stdDevScore = searchParams.get("stdDevScore");
+    const stdDevQuestions = searchParams.get("stdDevQuestions");
+    const stdDevAnswerLength = searchParams.get("stdDevAnswerLength");
+    const stdDevExamDuration = searchParams.get("stdDevExamDuration");
+
+    return {
+      averageScore: avgScore ? parseFloat(avgScore) : null,
+      averageQuestions: avgQuestions ? parseFloat(avgQuestions) : null,
+      averageAnswerLength: avgAnswerLength ? parseFloat(avgAnswerLength) : null,
+      averageExamDuration: avgExamDuration ? parseFloat(avgExamDuration) : null,
+      standardDeviationScore: stdDevScore ? parseFloat(stdDevScore) : null,
+      standardDeviationQuestions: stdDevQuestions
+        ? parseFloat(stdDevQuestions)
+        : null,
+      standardDeviationAnswerLength: stdDevAnswerLength
+        ? parseFloat(stdDevAnswerLength)
+        : null,
+      standardDeviationExamDuration: stdDevExamDuration
+        ? parseFloat(stdDevExamDuration)
+        : null,
+    };
+  }, [searchParams]);
 
   const [scores, setScores] = useState<Record<number, number>>({});
   const [feedbacks, setFeedbacks] = useState<Record<number, string>>({});
@@ -719,27 +766,32 @@ export default function GradeStudentPage({
             <div className="mb-6">
               <Collapsible open={examStatsOpen} onOpenChange={setExamStatsOpen}>
                 <Card>
-                  <CollapsibleTrigger className="w-full">
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <BarChart3 className="h-5 w-5" />
-                          <CardTitle>시험 응시 데이터</CardTitle>
-                        </div>
-                        {examStatsOpen ? (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        )}
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="h-5 w-5" />
+                        <CardTitle>시험 응시 데이터</CardTitle>
                       </div>
-                      <CardDescription>
-                        학생의 시험 응시 과정에서 수집된 데이터입니다
-                      </CardDescription>
-                    </CardHeader>
-                  </CollapsibleTrigger>
+                      <CollapsibleTrigger asChild>
+                        <button
+                          type="button"
+                          className="p-1 hover:bg-accent rounded-md transition-colors"
+                        >
+                          {examStatsOpen ? (
+                            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </button>
+                      </CollapsibleTrigger>
+                    </div>
+                    <CardDescription>
+                      학생의 시험 응시 과정에서 수집된 데이터입니다
+                    </CardDescription>
+                  </CardHeader>
                   <CollapsibleContent>
-                    <CardContent>
-                      <div className="grid gap-6 md:grid-cols-3">
+                    <CardContent className="pt-0">
+                      <div className="grid gap-4 md:grid-cols-3 mb-6">
                         {/* 시험 소요 시간 */}
                         <div className="flex flex-col gap-2">
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -751,6 +803,12 @@ export default function GradeStudentPage({
                               ? `${examStats.examDuration}분`
                               : "미제출"}
                           </div>
+                          {averageStats.averageExamDuration !== null && (
+                            <div className="text-xs text-muted-foreground">
+                              전체 평균:{" "}
+                              {Math.round(averageStats.averageExamDuration)}분
+                            </div>
+                          )}
                           {examStats.startTime && (
                             <div className="text-xs text-muted-foreground">
                               시작:{" "}
@@ -778,8 +836,14 @@ export default function GradeStudentPage({
                           <div className="text-2xl font-semibold">
                             {examStats.questionCount}개
                           </div>
+                          {averageStats.averageQuestions !== null && (
+                            <div className="text-xs text-muted-foreground">
+                              전체 평균:{" "}
+                              {Math.round(averageStats.averageQuestions)}개
+                            </div>
+                          )}
                           <div className="text-xs text-muted-foreground">
-                            평균:{" "}
+                            문항당 평균:{" "}
                             {sessionData.exam.questions.length > 0
                               ? Math.round(
                                   examStats.questionCount /
@@ -799,12 +863,549 @@ export default function GradeStudentPage({
                           <div className="text-2xl font-semibold">
                             {examStats.totalAnswerLength.toLocaleString()}자
                           </div>
+                          {averageStats.averageAnswerLength !== null && (
+                            <div className="text-xs text-muted-foreground">
+                              전체 평균:{" "}
+                              {Math.round(
+                                averageStats.averageAnswerLength
+                              ).toLocaleString()}
+                              자
+                            </div>
+                          )}
                           <div className="text-xs text-muted-foreground">
-                            평균:{" "}
+                            문항당 평균:{" "}
                             {examStats.averageAnswerLength.toLocaleString()}자
                           </div>
                         </div>
                       </div>
+
+                      {/* 전체 분포에서의 위치 (Bell Curve) */}
+                      {(averageStats.averageScore !== null ||
+                        averageStats.averageQuestions !== null ||
+                        averageStats.averageAnswerLength !== null ||
+                        averageStats.averageExamDuration !== null) && (
+                        <div className="pt-4 border-t">
+                          <h4 className="text-sm font-semibold mb-3 text-muted-foreground">
+                            전체 분포에서의 위치
+                          </h4>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {/* 시험 소요 시간 Bell Curve */}
+                            {averageStats.averageExamDuration !== null &&
+                              averageStats.standardDeviationExamDuration !==
+                                null &&
+                              examStats.examDuration !== null && (
+                                <div className="p-3 rounded-lg border bg-muted/30">
+                                  <h5 className="text-xs font-medium mb-2 text-muted-foreground">
+                                    시험 소요 시간
+                                  </h5>
+                                  {(() => {
+                                    const avg = Math.round(
+                                      averageStats.averageExamDuration
+                                    );
+                                    const stdDev = Math.max(
+                                      averageStats.standardDeviationExamDuration,
+                                      1
+                                    );
+                                    const studentValue = examStats.examDuration;
+                                    // 평균 ± 3σ 범위
+                                    const min = Math.max(0, avg - stdDev * 3);
+                                    const max = avg + stdDev * 3;
+                                    const points = 200;
+
+                                    // 정규분포 곡선 데이터 생성 (중복 제거)
+                                    const bellCurveDataMap = new Map<
+                                      number,
+                                      number
+                                    >();
+                                    for (let i = 0; i < points; i++) {
+                                      const x =
+                                        min + (max - min) * (i / (points - 1));
+                                      const roundedX = Math.round(x * 10) / 10;
+                                      const normalizedX = (x - avg) / stdDev;
+                                      const y =
+                                        Math.exp(
+                                          -0.5 * normalizedX * normalizedX
+                                        ) * 100;
+                                      // 중복 제거: 같은 x 값이면 더 큰 y 값 사용
+                                      if (
+                                        !bellCurveDataMap.has(roundedX) ||
+                                        bellCurveDataMap.get(roundedX)! < y
+                                      ) {
+                                        bellCurveDataMap.set(roundedX, y);
+                                      }
+                                    }
+                                    const bellCurveData = Array.from(
+                                      bellCurveDataMap.entries()
+                                    )
+                                      .map(([x, y]) => ({ x, y }))
+                                      .sort((a, b) => a.x - b.x);
+
+                                    return (
+                                      <ChartContainer
+                                        config={{
+                                          distribution: {
+                                            label: "분포",
+                                            color: "#3B82F6",
+                                          },
+                                          student: {
+                                            label: "이 학생",
+                                            color: "hsl(var(--destructive))",
+                                          },
+                                        }}
+                                        className="h-[140px]"
+                                      >
+                                        <AreaChart
+                                          data={bellCurveData}
+                                          margin={{
+                                            top: 5,
+                                            right: 5,
+                                            left: 5,
+                                            bottom: 5,
+                                          }}
+                                        >
+                                          <defs>
+                                            <linearGradient
+                                              id="colorDuration"
+                                              x1="0"
+                                              y1="0"
+                                              x2="0"
+                                              y2="1"
+                                            >
+                                              <stop
+                                                offset="5%"
+                                                stopColor="#3B82F6"
+                                                stopOpacity={0.3}
+                                              />
+                                              <stop
+                                                offset="95%"
+                                                stopColor="#3B82F6"
+                                                stopOpacity={0}
+                                              />
+                                            </linearGradient>
+                                          </defs>
+                                          <CartesianGrid
+                                            strokeDasharray="3 3"
+                                            stroke="hsl(var(--border))"
+                                            opacity={0.2}
+                                          />
+                                          <XAxis
+                                            dataKey="x"
+                                            type="number"
+                                            scale="linear"
+                                            domain={[min, max]}
+                                            tickLine={false}
+                                            axisLine={false}
+                                            tick={{ fontSize: 10 }}
+                                            tickCount={3}
+                                            allowDecimals={false}
+                                            tickFormatter={(value) =>
+                                              `${Math.round(value)}분`
+                                            }
+                                          />
+                                          <YAxis
+                                            tickLine={false}
+                                            axisLine={false}
+                                            tick={false}
+                                            domain={[0, 110]}
+                                          />
+                                          <Area
+                                            type="natural"
+                                            dataKey="y"
+                                            stroke="#3B82F6"
+                                            strokeWidth={2}
+                                            fill="url(#colorDuration)"
+                                            activeDot={false}
+                                          />
+                                          <ReferenceLine
+                                            x={studentValue}
+                                            stroke="#1E40AF"
+                                            strokeWidth={2}
+                                            strokeDasharray="5 5"
+                                            label={{
+                                              position: "top",
+                                              fill: "#1E40AF",
+                                              fontSize: 10,
+                                            }}
+                                          />
+                                          <ReferenceDot
+                                            x={studentValue}
+                                            y={(() => {
+                                              // bell curve에서 학생 위치의 정확한 y 값 계산
+                                              const normalizedX =
+                                                (studentValue - avg) / stdDev;
+                                              return (
+                                                Math.exp(
+                                                  -0.5 *
+                                                    normalizedX *
+                                                    normalizedX
+                                                ) * 100
+                                              );
+                                            })()}
+                                            r={5}
+                                            fill="#1E40AF"
+                                            stroke="white"
+                                            strokeWidth={2}
+                                          />
+                                          <ReferenceLine
+                                            x={avg}
+                                            stroke="hsl(var(--muted-foreground))"
+                                            strokeWidth={1.5}
+                                            strokeDasharray="3 3"
+                                            label={{
+                                              position: "top",
+                                              fill: "hsl(var(--muted-foreground))",
+                                              fontSize: 9,
+                                            }}
+                                          />
+                                        </AreaChart>
+                                      </ChartContainer>
+                                    );
+                                  })()}
+                                </div>
+                              )}
+
+                            {/* 질문 수 Bell Curve */}
+                            {averageStats.averageQuestions !== null &&
+                              averageStats.standardDeviationQuestions !==
+                                null && (
+                                <div className="p-3 rounded-lg border bg-muted/30">
+                                  <h5 className="text-xs font-medium mb-2 text-muted-foreground">
+                                    AI 질문 수
+                                  </h5>
+                                  {(() => {
+                                    const avg = Math.round(
+                                      averageStats.averageQuestions
+                                    );
+                                    const stdDev = Math.max(
+                                      averageStats.standardDeviationQuestions,
+                                      1
+                                    );
+                                    const studentValue =
+                                      examStats.questionCount;
+                                    const min = Math.max(0, avg - stdDev * 3);
+                                    const max = avg + stdDev * 3;
+                                    const points = 200;
+
+                                    // 정규분포 곡선 데이터 생성 (중복 제거)
+                                    const bellCurveDataMap = new Map<
+                                      number,
+                                      number
+                                    >();
+                                    for (let i = 0; i < points; i++) {
+                                      const x =
+                                        min + (max - min) * (i / (points - 1));
+                                      const roundedX = Math.round(x);
+                                      const normalizedX = (x - avg) / stdDev;
+                                      const y =
+                                        Math.exp(
+                                          -0.5 * normalizedX * normalizedX
+                                        ) * 100;
+                                      // 중복 제거: 같은 x 값이면 더 큰 y 값 사용
+                                      if (
+                                        !bellCurveDataMap.has(roundedX) ||
+                                        bellCurveDataMap.get(roundedX)! < y
+                                      ) {
+                                        bellCurveDataMap.set(roundedX, y);
+                                      }
+                                    }
+                                    const bellCurveData = Array.from(
+                                      bellCurveDataMap.entries()
+                                    )
+                                      .map(([x, y]) => ({ x, y }))
+                                      .sort((a, b) => a.x - b.x);
+
+                                    return (
+                                      <ChartContainer
+                                        config={{
+                                          student: {
+                                            color: "hsl(var(--destructive))",
+                                          },
+                                        }}
+                                        className="h-[140px]"
+                                      >
+                                        <AreaChart
+                                          data={bellCurveData}
+                                          margin={{
+                                            top: 5,
+                                            right: 5,
+                                            left: 5,
+                                            bottom: 5,
+                                          }}
+                                        >
+                                          <defs>
+                                            <linearGradient
+                                              id="colorQuestions"
+                                              x1="0"
+                                              y1="0"
+                                              x2="0"
+                                              y2="1"
+                                            >
+                                              <stop
+                                                offset="5%"
+                                                stopColor="#60A5FA"
+                                                stopOpacity={0.3}
+                                              />
+                                              <stop
+                                                offset="95%"
+                                                stopColor="#60A5FA"
+                                                stopOpacity={0}
+                                              />
+                                            </linearGradient>
+                                          </defs>
+                                          <CartesianGrid
+                                            strokeDasharray="3 3"
+                                            stroke="hsl(var(--border))"
+                                            opacity={0.2}
+                                          />
+                                          <XAxis
+                                            dataKey="x"
+                                            type="number"
+                                            scale="linear"
+                                            domain={[min, max]}
+                                            tickLine={false}
+                                            axisLine={false}
+                                            tick={{ fontSize: 10 }}
+                                            tickCount={3}
+                                            allowDecimals={false}
+                                          />
+                                          <YAxis
+                                            tickLine={false}
+                                            axisLine={false}
+                                            tick={false}
+                                            domain={[0, 110]}
+                                          />
+                                          <Area
+                                            type="natural"
+                                            dataKey="y"
+                                            stroke="#60A5FA"
+                                            strokeWidth={2}
+                                            fill="url(#colorQuestions)"
+                                            activeDot={false}
+                                          />
+                                          <ReferenceLine
+                                            x={studentValue}
+                                            stroke="#1E40AF"
+                                            strokeWidth={2}
+                                            strokeDasharray="5 5"
+                                            label={{
+                                              position: "top",
+                                              fill: "#1E40AF",
+                                              fontSize: 10,
+                                            }}
+                                          />
+                                          <ReferenceDot
+                                            x={studentValue}
+                                            y={(() => {
+                                              // bell curve에서 학생 위치의 정확한 y 값 계산
+                                              const normalizedX =
+                                                (studentValue - avg) / stdDev;
+                                              return (
+                                                Math.exp(
+                                                  -0.5 *
+                                                    normalizedX *
+                                                    normalizedX
+                                                ) * 100
+                                              );
+                                            })()}
+                                            r={5}
+                                            fill="#1E40AF"
+                                            stroke="white"
+                                            strokeWidth={2}
+                                          />
+                                          <ReferenceLine
+                                            x={avg}
+                                            stroke="hsl(var(--muted-foreground))"
+                                            strokeWidth={1.5}
+                                            strokeDasharray="3 3"
+                                            label={{
+                                              position: "top",
+                                              fill: "hsl(var(--muted-foreground))",
+                                              fontSize: 9,
+                                            }}
+                                          />
+                                        </AreaChart>
+                                      </ChartContainer>
+                                    );
+                                  })()}
+                                </div>
+                              )}
+
+                            {/* 답안 길이 Bell Curve */}
+                            {averageStats.averageAnswerLength !== null &&
+                              averageStats.standardDeviationAnswerLength !==
+                                null && (
+                                <div className="p-3 rounded-lg border bg-muted/30">
+                                  <h5 className="text-xs font-medium mb-2 text-muted-foreground">
+                                    답안 길이
+                                  </h5>
+                                  {(() => {
+                                    const avg = Math.round(
+                                      averageStats.averageAnswerLength
+                                    );
+                                    const stdDev = Math.max(
+                                      averageStats.standardDeviationAnswerLength,
+                                      1
+                                    );
+                                    const studentValue =
+                                      examStats.averageAnswerLength;
+                                    const min = Math.max(0, avg - stdDev * 3);
+                                    const max = avg + stdDev * 3;
+                                    const points = 200;
+
+                                    // 정규분포 곡선 데이터 생성 (중복 제거)
+                                    const bellCurveDataMap = new Map<
+                                      number,
+                                      number
+                                    >();
+                                    for (let i = 0; i < points; i++) {
+                                      const x =
+                                        min + (max - min) * (i / (points - 1));
+                                      const roundedX = Math.round(x);
+                                      const normalizedX = (x - avg) / stdDev;
+                                      const y =
+                                        Math.exp(
+                                          -0.5 * normalizedX * normalizedX
+                                        ) * 100;
+                                      // 중복 제거: 같은 x 값이면 더 큰 y 값 사용
+                                      if (
+                                        !bellCurveDataMap.has(roundedX) ||
+                                        bellCurveDataMap.get(roundedX)! < y
+                                      ) {
+                                        bellCurveDataMap.set(roundedX, y);
+                                      }
+                                    }
+                                    const bellCurveData = Array.from(
+                                      bellCurveDataMap.entries()
+                                    )
+                                      .map(([x, y]) => ({ x, y }))
+                                      .sort((a, b) => a.x - b.x);
+
+                                    return (
+                                      <ChartContainer
+                                        config={{
+                                          distribution: {
+                                            label: "분포",
+                                            color: "#93C5FD",
+                                          },
+                                          student: {
+                                            label: "이 학생",
+                                            color: "hsl(var(--destructive))",
+                                          },
+                                        }}
+                                        className="h-[140px]"
+                                      >
+                                        <AreaChart
+                                          data={bellCurveData}
+                                          margin={{
+                                            top: 5,
+                                            right: 5,
+                                            left: 5,
+                                            bottom: 5,
+                                          }}
+                                        >
+                                          <defs>
+                                            <linearGradient
+                                              id="colorAnswerLength"
+                                              x1="0"
+                                              y1="0"
+                                              x2="0"
+                                              y2="1"
+                                            >
+                                              <stop
+                                                offset="5%"
+                                                stopColor="#93C5FD"
+                                                stopOpacity={0.3}
+                                              />
+                                              <stop
+                                                offset="95%"
+                                                stopColor="#93C5FD"
+                                                stopOpacity={0}
+                                              />
+                                            </linearGradient>
+                                          </defs>
+                                          <CartesianGrid
+                                            strokeDasharray="3 3"
+                                            stroke="hsl(var(--border))"
+                                            opacity={0.2}
+                                          />
+                                          <XAxis
+                                            dataKey="x"
+                                            type="number"
+                                            scale="linear"
+                                            domain={[min, max]}
+                                            tickLine={false}
+                                            axisLine={false}
+                                            tick={{ fontSize: 10 }}
+                                            tickCount={3}
+                                            allowDecimals={false}
+                                            tickFormatter={(value) =>
+                                              `${Math.round(value / 100)}00`
+                                            }
+                                          />
+                                          <YAxis
+                                            tickLine={false}
+                                            axisLine={false}
+                                            tick={false}
+                                            domain={[0, 110]}
+                                          />
+                                          <Area
+                                            type="natural"
+                                            dataKey="y"
+                                            stroke="#93C5FD"
+                                            strokeWidth={2}
+                                            fill="url(#colorAnswerLength)"
+                                            activeDot={false}
+                                          />
+                                          <ReferenceLine
+                                            x={studentValue}
+                                            stroke="#1E40AF"
+                                            strokeWidth={2}
+                                            strokeDasharray="5 5"
+                                            label={{
+                                              position: "top",
+                                              fill: "#1E40AF",
+                                              fontSize: 10,
+                                            }}
+                                          />
+                                          <ReferenceDot
+                                            x={studentValue}
+                                            y={(() => {
+                                              // bell curve에서 학생 위치의 정확한 y 값 계산
+                                              const normalizedX =
+                                                (studentValue - avg) / stdDev;
+                                              return (
+                                                Math.exp(
+                                                  -0.5 *
+                                                    normalizedX *
+                                                    normalizedX
+                                                ) * 100
+                                              );
+                                            })()}
+                                            r={5}
+                                            fill="#1E40AF"
+                                            stroke="white"
+                                            strokeWidth={2}
+                                          />
+                                          <ReferenceLine
+                                            x={avg}
+                                            stroke="hsl(var(--muted-foreground))"
+                                            strokeWidth={1.5}
+                                            strokeDasharray="3 3"
+                                            label={{
+                                              position: "top",
+                                              fill: "hsl(var(--muted-foreground))",
+                                              fontSize: 9,
+                                            }}
+                                          />
+                                        </AreaChart>
+                                      </ChartContainer>
+                                    );
+                                  })()}
+                                </div>
+                              )}
+                          </div>
+                        </div>
+                      )}
 
                       {/* 질문 유형 분포 */}
                       {Object.values(examStats.questionTypeCount).some(
@@ -842,7 +1443,7 @@ export default function GradeStudentPage({
 
                       {/* 부정 행위 의심 통계 */}
                       {examStats.totalPasteLogs > 0 && (
-                        <div className="mt-6 pt-6 border-t">
+                        <div className="pt-4 border-t">
                           <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
                             {examStats.suspiciousPasteLogs > 0 ? (
                               <>
@@ -865,8 +1466,8 @@ export default function GradeStudentPage({
                                 : "bg-orange-50 border-orange-200"
                             }`}
                           >
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              <div className="flex items-center justify-between">
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-3">
                                 <span className="text-sm text-muted-foreground">
                                   전체 붙여넣기:
                                 </span>
@@ -875,7 +1476,7 @@ export default function GradeStudentPage({
                                 </Badge>
                               </div>
                               {examStats.suspiciousPasteLogs > 0 && (
-                                <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3 pt-3 border-t border-red-200">
                                   <span className="text-sm font-semibold text-red-800">
                                     외부 복사-붙여넣기:
                                   </span>

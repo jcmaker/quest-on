@@ -416,6 +416,43 @@ export async function GET(
           )
         : 0;
 
+    // 표준편차 계산 함수
+    const calculateStandardDeviation = (values: number[]): number => {
+      if (values.length === 0) return 0;
+      const mean = values.reduce((a, b) => a + b, 0) / values.length;
+      const variance =
+        values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) /
+        values.length;
+      return Math.sqrt(variance);
+    };
+
+    // 각 메트릭의 표준편차 계산
+    const scoreValues = studentsWithScores
+      .map((s) => s.score)
+      .filter((s): s is number => s !== null);
+    const standardDeviationScore =
+      scoreValues.length > 0
+        ? Math.round(calculateStandardDeviation(scoreValues))
+        : 0;
+
+    const questionCountValues = studentData.map((s) => s.questionCount);
+    const standardDeviationQuestions = Math.round(
+      calculateStandardDeviation(questionCountValues)
+    );
+
+    const answerLengthValues = studentData.map((s) => s.answerLength);
+    const standardDeviationAnswerLength = Math.round(
+      calculateStandardDeviation(answerLengthValues)
+    );
+
+    const examDurationValues = studentData
+      .map((s) => s.examDuration)
+      .filter((d): d is number => d !== null);
+    const standardDeviationExamDuration =
+      examDurationValues.length > 0
+        ? Math.round(calculateStandardDeviation(examDurationValues))
+        : 0;
+
     // 점수 분포 (0-20, 21-40, 41-60, 61-80, 81-100)
     const scoreDistribution = [
       { range: "0-20", count: 0 },
@@ -672,6 +709,10 @@ export async function GET(
       averageQuestions,
       averageAnswerLength,
       averageExamDuration,
+      standardDeviationScore,
+      standardDeviationQuestions,
+      standardDeviationAnswerLength,
+      standardDeviationExamDuration,
       students: sortedStudents,
       statistics: {
         scoreDistribution,

@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   FileText,
   Activity,
@@ -769,46 +770,77 @@ export default function ExamDetail({
               </div>
 
               {/* 최종 채점 학생 목록 - 교수가 실제로 채점한 경우만 표시 */}
-              {gradedStudents.length > 0 && (
+              {loading || analyticsLoading || !exam ? (
                 <div className="border rounded-lg flex flex-col max-h-[300px]">
                   <div className="p-4 border-b bg-muted/50 flex-shrink-0">
-                    <h3 className="font-semibold">
-                      최종 채점 완료 ({gradedStudents.length}명)
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      교수가 최종 채점한 학생 (점수 순)
-                    </p>
+                    <Skeleton className="h-6 w-40" />
+                    <Skeleton className="h-4 w-32 mt-2" />
                   </div>
-                  <div className="divide-y overflow-y-auto flex-1">
-                    {gradedStudents.map((student) => (
-                      <StudentListItem
-                        key={student.id}
-                        student={student}
-                        examId={exam.id}
-                        onLiveMonitoring={handleLiveMonitoring}
-                        getStudentStatusColor={getStudentStatusColor}
-                        showFinalScore={true}
-                      />
+                  <div className="divide-y overflow-y-auto flex-1 p-4 space-y-4">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <StudentListItemSkeleton key={index} />
                     ))}
                   </div>
                 </div>
+              ) : (
+                gradedStudents.length > 0 && (
+                  <div className="border rounded-lg flex flex-col max-h-[300px]">
+                    <div className="p-4 border-b bg-muted/50 flex-shrink-0">
+                      <h3 className="font-semibold">
+                        최종 채점 완료 ({gradedStudents.length}명)
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        교수가 최종 채점한 학생 (점수 순)
+                      </p>
+                    </div>
+                    <div className="divide-y overflow-y-auto flex-1">
+                      {gradedStudents.map((student) => (
+                        <StudentListItem
+                          key={student.id}
+                          student={student}
+                          examId={exam.id}
+                          onLiveMonitoring={handleLiveMonitoring}
+                          getStudentStatusColor={getStudentStatusColor}
+                          showFinalScore={true}
+                          analyticsData={analyticsData}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
               )}
 
               {/* 가채점 학생 목록 */}
               <div className="border rounded-lg flex flex-col h-[calc(100vh-400px)] min-h-[600px]">
                 <div className="p-4 border-b bg-muted/50 flex-shrink-0">
                   <h3 className="font-semibold">
-                    학생 목록 ({nonGradedStudents.length}명)
+                    {loading || analyticsLoading || !exam ? (
+                      <Skeleton className="h-6 w-32" />
+                    ) : (
+                      `학생 목록 (${nonGradedStudents.length}명)`
+                    )}
                   </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {sortOption === "score" && "가채점 점수 순"}
-                    {sortOption === "questionCount" && "질문 갯수 순"}
-                    {sortOption === "answerLength" && "답안 길이 순"}
-                    {sortOption === "submittedAt" && "제출 빠른 순"}
-                  </p>
+                  {loading || analyticsLoading || !exam ? (
+                    <div className="text-sm text-muted-foreground">
+                      <Skeleton className="h-4 w-24 mt-2" />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {sortOption === "score" && "가채점 점수 순"}
+                      {sortOption === "questionCount" && "질문 갯수 순"}
+                      {sortOption === "answerLength" && "답안 길이 순"}
+                      {sortOption === "submittedAt" && "제출 빠른 순"}
+                    </p>
+                  )}
                 </div>
                 <div className="divide-y overflow-y-auto flex-1">
-                  {nonGradedStudents.length === 0 ? (
+                  {loading || analyticsLoading || !exam ? (
+                    <div className="p-4 space-y-4">
+                      {Array.from({ length: 5 }).map((_, index) => (
+                        <StudentListItemSkeleton key={index} />
+                      ))}
+                    </div>
+                  ) : nonGradedStudents.length === 0 ? (
                     <div className="p-8 text-center text-muted-foreground">
                       <p>표시할 학생이 없습니다.</p>
                     </div>
@@ -821,6 +853,7 @@ export default function ExamDetail({
                         onLiveMonitoring={handleLiveMonitoring}
                         getStudentStatusColor={getStudentStatusColor}
                         showFinalScore={false}
+                        analyticsData={analyticsData}
                       />
                     ))
                   )}
@@ -884,6 +917,32 @@ function buildInstructorExamContext(exam: Exam, questions: Question[] = []) {
     .join("\n");
 }
 
+// Student List Item Skeleton Component
+function StudentListItemSkeleton() {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4">
+      <div className="flex items-start gap-4 min-w-0 flex-1">
+        <Skeleton className="h-10 w-10 rounded-full flex-shrink-0" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-5 w-24" />
+            <Skeleton className="h-5 w-16 rounded-full" />
+          </div>
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-3 w-40" />
+        </div>
+      </div>
+      <div className="flex items-center gap-2 sm:gap-4 self-end sm:self-auto flex-shrink-0">
+        <div className="text-right min-w-[100px] sm:min-w-[120px] space-y-1">
+          <Skeleton className="h-6 w-12 ml-auto" />
+          <Skeleton className="h-3 w-16 ml-auto" />
+        </div>
+        <Skeleton className="h-8 w-16 sm:w-20" />
+      </div>
+    </div>
+  );
+}
+
 // Student List Item Component
 function StudentListItem({
   student,
@@ -891,12 +950,19 @@ function StudentListItem({
   onLiveMonitoring,
   getStudentStatusColor,
   showFinalScore,
+  analyticsData,
 }: {
   student: Student;
   examId: string;
   onLiveMonitoring: (student: Student) => void;
   getStudentStatusColor: (status: string) => string;
   showFinalScore: boolean;
+  analyticsData?: {
+    averageScore?: number;
+    averageQuestions?: number;
+    averageAnswerLength?: number;
+    averageExamDuration?: number;
+  } | null;
 }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4 hover:bg-muted/50 transition-colors overflow-hidden">
@@ -992,9 +1058,23 @@ function StudentListItem({
                 size="sm"
                 variant="outline"
                 className="text-blue-600 border-blue-600 hover:bg-blue-50 h-8 px-2 sm:px-3 text-xs sm:text-sm whitespace-nowrap"
-                onClick={() =>
-                  (window.location.href = `/instructor/${examId}/grade/${student.id}`)
-                }
+                onClick={() => {
+                  // 통계 데이터를 URL 쿼리 파라미터로 전달
+                  const params = new URLSearchParams();
+                  if (analyticsData) {
+                    params.set("avgScore", String(analyticsData.averageScore || 0));
+                    params.set("avgQuestions", String(analyticsData.averageQuestions || 0));
+                    params.set("avgAnswerLength", String(analyticsData.averageAnswerLength || 0));
+                    params.set("avgExamDuration", String(analyticsData.averageExamDuration || 0));
+                    // 표준편차 추가
+                    params.set("stdDevScore", String(analyticsData.standardDeviationScore || 0));
+                    params.set("stdDevQuestions", String(analyticsData.standardDeviationQuestions || 0));
+                    params.set("stdDevAnswerLength", String(analyticsData.standardDeviationAnswerLength || 0));
+                    params.set("stdDevExamDuration", String(analyticsData.standardDeviationExamDuration || 0));
+                  }
+                  const queryString = params.toString();
+                  window.location.href = `/instructor/${examId}/grade/${student.id}${queryString ? `?${queryString}` : ""}`;
+                }}
               >
                 <ClipboardCheck size={14} className="sm:mr-1" />
                 <span className="hidden sm:inline">

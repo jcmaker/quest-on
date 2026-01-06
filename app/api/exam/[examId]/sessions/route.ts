@@ -65,7 +65,19 @@ export async function GET(
     const { examId } = await params;
     console.log(`📊 [EXAM_SESSIONS] Request received | Exam: ${examId}`);
 
-    const user = await currentUser();
+    let user;
+    try {
+      user = await currentUser();
+    } catch (clerkError) {
+      console.error(
+        `❌ [AUTH] Clerk API error | Exam: ${examId}`,
+        clerkError
+      );
+      return NextResponse.json(
+        { error: "Authentication service error" },
+        { status: 500 }
+      );
+    }
 
     if (!user) {
       console.error(
