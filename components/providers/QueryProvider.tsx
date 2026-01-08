@@ -7,7 +7,7 @@ import {
   MutationCache,
 } from "@tanstack/react-query";
 import { useState } from "react";
-import { logError } from "@/lib/logger";
+// import { logError } from "@/lib/logger"; // 에러 로그 수집 중단 (성능 최적화)
 
 export default function QueryProvider({
   children,
@@ -19,65 +19,20 @@ export default function QueryProvider({
       new QueryClient({
         queryCache: new QueryCache({
           onError: (error, query) => {
-            // 전역 에러 핸들러: 쿼리 에러 발생 시 자동으로 로그 저장
-            // 에러 로그 저장 (비동기로 실행, 실패해도 쿼리 동작에 영향 없음)
-            const path =
-              typeof window !== "undefined"
-                ? window.location.pathname
-                : undefined;
-
-            // 쿼리 키에서 정보 추출
-            const queryKey = query?.queryKey || [];
-            const queryKeyString = JSON.stringify(queryKey);
-
-            logError(
-              `Query error: ${error instanceof Error ? error.message : String(error)}`,
-              error,
-              {
-                path,
-                additionalData: {
-                  queryKey: queryKeyString,
-                  queryHash: query?.queryHash,
-                  queryType: "query",
-                },
-              }
-            ).catch((logError) => {
-              // 로그 저장 실패는 무시 (무한 루프 방지)
-              console.error("Failed to log query error:", logError);
+            // 에러 로그 수집 중단됨 (성능 최적화를 위해)
+            // 필요시 다시 활성화: logError 호출 복원
+            console.error("Query error:", error, {
+              queryKey: query?.queryKey,
+              queryHash: query?.queryHash,
             });
           },
         }),
         mutationCache: new MutationCache({
           onError: (error, variables, context, mutation) => {
-            // 전역 에러 핸들러: 뮤테이션 에러 발생 시 자동으로 로그 저장
-            // 에러 로그 저장 (비동기로 실행, 실패해도 뮤테이션 동작에 영향 없음)
-            const path =
-              typeof window !== "undefined"
-                ? window.location.pathname
-                : undefined;
-
-            // 뮤테이션 키에서 정보 추출 (TanStack Query v5에서는 options를 통해 접근)
-            const mutationKey =
-              mutation?.options?.mutationKey ||
-              (mutation as any)?.mutationKey ||
-              [];
-            const mutationKeyString = JSON.stringify(mutationKey);
-
-            logError(
-              `Mutation error: ${error instanceof Error ? error.message : String(error)}`,
-              error,
-              {
-                path,
-                additionalData: {
-                  mutationKey: mutationKeyString,
-                  mutationType: "mutation",
-                  // variables는 민감한 정보가 포함될 수 있으므로 선택적으로만 포함
-                  // variables: variables ? JSON.stringify(variables).substring(0, 500) : undefined,
-                },
-              }
-            ).catch((logError) => {
-              // 로그 저장 실패는 무시 (무한 루프 방지)
-              console.error("Failed to log mutation error:", logError);
+            // 에러 로그 수집 중단됨 (성능 최적화를 위해)
+            // 필요시 다시 활성화: logError 호출 복원
+            console.error("Mutation error:", error, {
+              mutationKey: mutation?.options?.mutationKey,
             });
           },
         }),

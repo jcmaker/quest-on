@@ -18,7 +18,9 @@ import {
   Shield,
   GraduationCap,
   Hash,
+  Palette,
 } from "lucide-react";
+import { ThemeTogglerButton } from "@/components/animate-ui/components/buttons/theme-toggler";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -287,6 +289,34 @@ export default function ProfilePage() {
                     <p className="text-sm text-muted-foreground">{roleLabel}</p>
                   </div>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Theme Settings */}
+          <Card>
+            <CardHeader>
+              <CardTitle>테마 설정</CardTitle>
+              <CardDescription>화면 테마를 변경할 수 있습니다</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between py-2">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-muted rounded-lg flex items-center justify-center">
+                    <Palette className="w-5 h-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="font-medium">테마 모드</p>
+                    <p className="text-sm text-muted-foreground">
+                      라이트 모드 또는 다크 모드를 선택하세요
+                    </p>
+                  </div>
+                </div>
+                <ThemeTogglerButton
+                  modes={["light", "dark"]}
+                  variant="outline"
+                  size="default"
+                />
               </div>
             </CardContent>
           </Card>

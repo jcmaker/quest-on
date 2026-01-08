@@ -5,6 +5,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { ConditionalHeader } from "@/components/ConditionalHeader";
 import { Toaster } from "@/components/ui/sonner";
 import QueryProvider from "@/components/providers/QueryProvider";
+import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { Analytics } from "@vercel/analytics/next";
 
 const geistSans = Geist({
@@ -67,12 +68,14 @@ export default function RootLayout({
           className={`${geistSans.variable} ${geistMono.variable} ${robotoMono.variable} antialiased`}
           suppressHydrationWarning={true}
         >
-          <QueryProvider>
-            <ConditionalHeader />
-            {children}
-            <Toaster />
-          </QueryProvider>
-          <Analytics />
+          <ThemeProvider>
+            <QueryProvider>
+              <ConditionalHeader />
+              {children}
+              <Toaster />
+            </QueryProvider>
+            <Analytics />
+          </ThemeProvider>
         </body>
       </ClerkProvider>
     </html>
