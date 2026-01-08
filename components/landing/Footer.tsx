@@ -1,6 +1,6 @@
 "use client";
 
-import { Mail } from "lucide-react";
+import { Mail, Phone } from "lucide-react";
 import Image from "next/image";
 
 interface FooterProps {
@@ -123,6 +123,36 @@ export default function Footer({ mode = "light" }: FooterProps) {
               <Mail className="w-5 h-5" />
               문의하기
             </button>
+
+            {/* Contact Info */}
+            <div className="mt-6 space-y-2">
+              <p
+                className="text-sm font-medium flex items-center gap-2"
+                style={{ color: colors.textSec }}
+              >
+                <Mail className="w-4 h-4 font-bold" />:{" "}
+                <a
+                  href="mailto:questonkr@gmail.com"
+                  className="hover:underline"
+                  style={{ color: colors.text }}
+                >
+                  questonkr@gmail.com
+                </a>
+              </p>
+              <p
+                className="text-sm font-medium flex items-center gap-2"
+                style={{ color: colors.textSec }}
+              >
+                <Phone className="w-4 h-4 font-bold" />:{" "}
+                <a
+                  href="tel:010-5096-8981"
+                  className="hover:underline"
+                  style={{ color: colors.text }}
+                >
+                  010-5096-8981
+                </a>
+              </p>
+            </div>
           </div>
 
           {/* Right Section - Links */}
