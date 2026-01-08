@@ -63,26 +63,38 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Filter: For each exam, keep only the most recent unsubmitted session
-    // Submitted sessions are kept separately (they represent past attempts)
-    const examSessionMap = new Map<string, (typeof allSessions)[0]>();
+    // ✅ 필터링 로직 개선: 같은 시험에 제출된 세션이 있으면 미제출 세션 제외
+    // 1. 먼저 제출된 세션이 있는 시험 ID 수집
+    const examsWithSubmittedSessions = new Set<string>();
     const submittedSessions: typeof allSessions = [];
 
     for (const session of allSessions) {
       if (session.submitted_at) {
-        // Submitted sessions: keep all (they are historical records)
+        // 제출된 세션: 모두 보관하고, 해당 시험 ID 기록
         submittedSessions.push(session);
-      } else {
-        // Unsubmitted sessions: keep only the most recent one per exam
+        examsWithSubmittedSessions.add(session.exam_id);
+      }
+    }
+
+    // 2. 미제출 세션 중에서 제출된 세션이 없는 시험의 세션만 유지
+    const examSessionMap = new Map<string, (typeof allSessions)[0]>();
+    for (const session of allSessions) {
+      if (!session.submitted_at) {
         const examId = session.exam_id;
-        // Since sessions are already sorted by created_at desc, first one is most recent
+        
+        // ✅ 같은 시험에 제출된 세션이 있으면 미제출 세션 무시
+        if (examsWithSubmittedSessions.has(examId)) {
+          continue; // 제출된 세션이 있는 시험이면 미제출 세션 건너뛰기
+        }
+        
+        // 제출된 세션이 없는 시험의 미제출 세션만 유지 (시험당 최신 1개)
         if (!examSessionMap.has(examId)) {
           examSessionMap.set(examId, session);
         }
       }
     }
 
-    // Combine: unsubmitted (one per exam) + all submitted sessions
+    // 3. 결합: 미제출 세션(제출된 세션이 없는 시험만) + 모든 제출된 세션
     const unsubmittedSessions = Array.from(examSessionMap.values());
     const filteredSessions = [
       ...unsubmittedSessions,

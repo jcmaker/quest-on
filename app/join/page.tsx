@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -32,7 +32,21 @@ export default function ExamCodeEntry() {
   const [examCode, setExamCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+
+  // URL에서 에러 파라미터 확인
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const errorParam = params.get("error");
+    if (errorParam === "already_submitted") {
+      setError("이미 제출한 시험입니다. 재시험은 불가능합니다.");
+    } else if (errorParam === "exam_not_found") {
+      setError("시험을 찾을 수 없습니다. 시험 코드를 확인해주세요.");
+    } else if (errorParam === "network_error") {
+      setError("네트워크 오류가 발생했습니다. 다시 시도해주세요.");
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,13 +78,21 @@ export default function ExamCodeEntry() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
+                {error && (
+                  <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm">
+                    {error}
+                  </div>
+                )}
                 <div className="space-y-2 mb-12">
                   <div className="flex justify-center">
                     <InputOTP
                       maxLength={6}
                       pattern={REGEXP_ONLY_DIGITS_AND_CHARS}
                       value={examCode}
-                      onChange={(value) => setExamCode(value.toUpperCase())}
+                      onChange={(value) => {
+                        setExamCode(value.toUpperCase());
+                        setError(null); // 입력 시 에러 메시지 초기화
+                      }}
                       className="gap-1"
                     >
                       <InputOTPGroup>

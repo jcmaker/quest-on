@@ -256,8 +256,23 @@ export default function StudentDashboard() {
     (session) => session.status === "in-progress"
   );
 
+  // ✅ 같은 시험 코드에 제출된 세션이 있으면 미제출 세션 제외
+  const examCodesWithSubmittedSessions = new Set(
+    allSessions
+      .filter((s) => s.status === "completed")
+      .map((s) => s.examCode)
+  );
+
   // Filter sessions based on search query and filter
   const filteredSessions = allSessions.filter((session) => {
+    // ✅ 추가 보안: 같은 시험 코드에 제출된 세션이 있으면 미제출 세션 숨기기
+    if (
+      session.status === "in-progress" &&
+      examCodesWithSubmittedSessions.has(session.examCode)
+    ) {
+      return false; // 제출된 세션이 있는 시험의 미제출 세션은 표시하지 않음
+    }
+
     // Apply filter
     if (filter === "graded") {
       if (session.status !== "completed" || !session.isGraded) return false;

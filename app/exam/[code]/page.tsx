@@ -400,6 +400,8 @@ export default function ExamPage() {
   const [isQuestionVisible, setIsQuestionVisible] = useState(true);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [questionScrollTop, setQuestionScrollTop] = useState(0);
+  const [sessionStartTime, setSessionStartTime] = useState<string | null>(null);
+  const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -480,6 +482,27 @@ export default function ExamPage() {
           if (result.exam) {
             setExam(result.exam);
 
+            // ✅ 재시험 차단: 이미 제출된 시험이 있으면 제출 화면으로 리다이렉트
+            if (result.isRetakeBlocked) {
+              setIsSubmitted(true);
+              setSessionId(result.session.id);
+              if (result.messages) {
+                setChatHistory(result.messages);
+              }
+              return;
+            }
+
+            // ✅ 시간 종료로 자동 제출된 경우
+            if (result.autoSubmitted || result.timeExpired) {
+              setIsSubmitted(true);
+              setSessionId(result.session.id);
+              if (result.messages) {
+                setChatHistory(result.messages);
+              }
+              // 알림은 ExamHeader에서 처리
+              return;
+            }
+
             // Initialize draft answers
             const initialDrafts = result.exam.questions.map((q: Question) => ({
               questionId: q.id,
@@ -490,6 +513,18 @@ export default function ExamPage() {
             // Set session data
             if (result.session) {
               setSessionId(result.session.id);
+
+              // ✅ 세션 시작 시간과 남은 시간 설정
+              if (result.sessionStartTime) {
+                setSessionStartTime(result.sessionStartTime);
+              } else if (result.session.created_at) {
+                setSessionStartTime(result.session.created_at);
+              }
+
+              if (result.timeRemaining !== undefined) {
+                setTimeRemaining(result.timeRemaining);
+              }
+
               // If the session is already submitted (e.g. user reopens the page), show the submitted screen.
               if (result.session.submitted_at) {
                 setIsSubmitted(true);
@@ -517,6 +552,15 @@ export default function ExamPage() {
         } else {
           const errorData = await response.json().catch(() => ({}));
 
+          // ✅ 재시험 시도 시 에러 처리
+          if (
+            errorData.error === "Exam already submitted" ||
+            errorData.isRetakeBlocked
+          ) {
+            router.push("/join?error=already_submitted");
+            return;
+          }
+
           router.push("/join?error=network_error");
         }
       } catch (error) {
@@ -537,7 +581,7 @@ export default function ExamPage() {
     // Send heartbeat every 30 seconds
     const sendHeartbeat = async () => {
       try {
-        await fetch("/api/supa", {
+        const response = await fetch("/api/supa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -548,6 +592,23 @@ export default function ExamPage() {
             },
           }),
         });
+
+        if (response.ok) {
+          const result = await response.json();
+
+          // ✅ 시간 종료로 자동 제출된 경우
+          if (result.timeExpired || result.autoSubmitted) {
+            setIsSubmitted(true);
+
+            // 자동 제출 알림은 ExamHeader에서 처리됨
+            // 여기서는 상태만 업데이트
+          }
+
+          // ✅ 남은 시간 업데이트
+          if (result.timeRemaining !== undefined) {
+            setTimeRemaining(result.timeRemaining);
+          }
+        }
       } catch (error) {
         console.error("Heartbeat error:", error);
       }
@@ -1190,6 +1251,51 @@ export default function ExamPage() {
             duration={exam?.duration || 60}
             currentStep="exam"
             user={user}
+            sessionStartTime={sessionStartTime}
+            timeRemaining={timeRemaining}
+            onTimeExpired={async () => {
+              // ✅ 시간 종료 시 자동 제출
+              if (!sessionId || !exam || isSubmitted) return;
+
+              setIsSubmitting(true);
+              try {
+                // 현재 답안 저장 후 제출
+                await manualSave();
+
+                const sanitizedAnswers = draftAnswers.map((answer) => ({
+                  ...answer,
+                  text: answer.text?.replace(/\u0000/g, "") || "",
+                }));
+
+                const transformedChatHistory = chatHistory.map((msg) => ({
+                  type: msg.type === "user" ? "student" : "ai",
+                  content: msg.message,
+                  timestamp: msg.timestamp,
+                }));
+
+                const response = await fetch("/api/feedback", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    examCode,
+                    answers: sanitizedAnswers,
+                    examId: exam.id,
+                    sessionId: sessionId,
+                    chatHistory: transformedChatHistory,
+                    studentId: user?.id,
+                  }),
+                });
+
+                if (response.ok) {
+                  setIsSubmitted(true);
+                  // 자동 제출 알림은 ExamHeader에서 표시됨
+                }
+              } catch (error) {
+                console.error("Auto-submit error:", error);
+              } finally {
+                setIsSubmitting(false);
+              }
+            }}
             onExit={() => {
               if (
                 confirm(

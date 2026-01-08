@@ -899,15 +899,43 @@ async function initExamSession(data: {
 
     if (checkError) throw checkError;
 
-    // NOTE: 동시 접속을 "허용"하기 위해, 여기서는 다른 기기/탭을 차단하거나
-    // 기존 세션을 강제로 비활성화하지 않습니다.
-    // - 같은 기기(같은 deviceFingerprint)면 기존 세션을 재사용(재접속)
-    // - 다른 기기면 새 세션을 생성 (서로의 heartbeat/deactivate 영향을 최소화)
+    // ✅ 요구사항: 이미 제출된 세션이 있으면 재시험 불가
+    const mostRecentSubmittedSession =
+      (existingSessions || []).find((s) => !!s.submitted_at) || null;
+
+    if (mostRecentSubmittedSession) {
+      // 제출된 세션이 있으면 재시험 불가 - 제출된 세션만 반환
+      console.log(
+        "[INIT_EXAM_SESSION] Submitted session found - preventing retake:",
+        mostRecentSubmittedSession.id
+      );
+
+      // Get messages for submitted session (read-only)
+      const { data: sessionMessages } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("session_id", mostRecentSubmittedSession.id)
+        .order("created_at", { ascending: true });
+
+      const messages = (sessionMessages || []).map((msg) => ({
+        type: msg.role === "user" ? "user" : "assistant",
+        message: msg.content,
+        timestamp: msg.created_at,
+        qIdx: msg.q_idx || 0,
+      }));
+
+      return NextResponse.json({
+        exam,
+        session: mostRecentSubmittedSession,
+        messages,
+        isRetakeBlocked: true, // 재시험 차단 플래그
+      });
+    }
+
+    // 제출되지 않은 세션만 처리
     const unsubmittedSessions = (existingSessions || []).filter(
       (s) => !s.submitted_at
     );
-    const mostRecentSubmittedSession =
-      (existingSessions || []).find((s) => !!s.submitted_at) || null;
 
     const incomingFingerprint = data.deviceFingerprint || null;
 
@@ -925,11 +953,7 @@ async function initExamSession(data: {
         : unsubmittedSessions.find((s) => !s.device_fingerprint) || null;
 
     let existingSession: (typeof existingSessions)[0] | null =
-      exactDeviceMatch ||
-      claimableLegacySession ||
-      // If there are no unsubmitted sessions, fall back to the most recent submitted one (read-only)
-      mostRecentSubmittedSession ||
-      null;
+      exactDeviceMatch || claimableLegacySession || null;
 
     console.log("[INIT_EXAM_SESSION] Existing session selected:", {
       selected: !!existingSession,
@@ -952,8 +976,65 @@ async function initExamSession(data: {
       qIdx: number;
     }> = [];
     const now = new Date().toISOString();
+    const nowTime = new Date().getTime();
 
     if (existingSession && !existingSession.submitted_at) {
+      // ✅ 시험 시간 종료 체크 (세션 생성 시점 + 시험 시간)
+      const sessionStartTime = new Date(existingSession.created_at).getTime();
+      const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
+      const sessionEndTime = sessionStartTime + examDurationMs;
+      const timeRemaining = sessionEndTime - nowTime;
+
+      // 시간이 지났으면 자동 제출 처리
+      if (timeRemaining <= 0) {
+        console.log(
+          "[INIT_EXAM_SESSION] Session time expired - auto-submitting:",
+          existingSession.id
+        );
+
+        // 기존 답안 가져오기
+        const { data: existingSubmissions } = await supabase
+          .from("submissions")
+          .select("*")
+          .eq("session_id", existingSession.id);
+
+        // 자동 제출 처리 (빈 답안이라도 제출)
+        const { data: updatedSession, error: updateError } = await supabase
+          .from("sessions")
+          .update({
+            submitted_at: now,
+            is_active: false,
+          })
+          .eq("id", existingSession.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        session = updatedSession;
+
+        // 메시지 로드
+        const { data: sessionMessages } = await supabase
+          .from("messages")
+          .select("*")
+          .eq("session_id", existingSession.id)
+          .order("created_at", { ascending: true });
+
+        messages = (sessionMessages || []).map((msg) => ({
+          type: msg.role === "user" ? "user" : "assistant",
+          message: msg.content,
+          timestamp: msg.created_at,
+          qIdx: msg.q_idx || 0,
+        }));
+
+        return NextResponse.json({
+          exam,
+          session,
+          messages,
+          autoSubmitted: true, // 자동 제출 플래그
+          timeExpired: true,
+        });
+      }
+
       // Activate existing session
       console.log(
         "[INIT_EXAM_SESSION] Activating existing session:",
@@ -987,33 +1068,6 @@ async function initExamSession(data: {
         timestamp: msg.created_at,
         qIdx: msg.q_idx || 0,
       }));
-    } else if (existingSession && existingSession.submitted_at) {
-      // Session is submitted, but we should still load messages for viewing
-      console.log(
-        "[INIT_EXAM_SESSION] Loading messages from submitted session:",
-        existingSession.id
-      );
-      session = existingSession;
-
-      // Get messages for submitted session (read-only)
-      const { data: sessionMessages } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("session_id", existingSession.id)
-        .order("created_at", { ascending: true });
-
-      messages = (sessionMessages || []).map((msg) => ({
-        type: msg.role === "user" ? "user" : "assistant",
-        message: msg.content,
-        timestamp: msg.created_at,
-        qIdx: msg.q_idx || 0,
-      }));
-
-      console.log(
-        "[INIT_EXAM_SESSION] Loaded",
-        messages.length,
-        "messages from submitted session"
-      );
     } else {
       // Create new session and activate it
       console.log("[INIT_EXAM_SESSION] Creating new session");
@@ -1038,7 +1092,19 @@ async function initExamSession(data: {
       console.log("[INIT_EXAM_SESSION] ✅ New session created:", newSession.id);
     }
 
-    return NextResponse.json({ exam, session, messages });
+    // 세션의 시작 시간과 남은 시간 계산
+    const sessionStartTime = new Date(session.created_at).getTime();
+    const examDurationMs = exam.duration * 60 * 1000;
+    const sessionEndTime = sessionStartTime + examDurationMs;
+    const timeRemaining = Math.max(0, sessionEndTime - nowTime);
+
+    return NextResponse.json({
+      exam,
+      session,
+      messages,
+      sessionStartTime: session.created_at,
+      timeRemaining: Math.floor(timeRemaining / 1000), // 초 단위
+    });
   } catch (error) {
     console.error("[INIT_EXAM_SESSION] ❌ Error:", error);
     return NextResponse.json(
@@ -1677,7 +1743,7 @@ async function sessionHeartbeat(data: {
     // Verify the session belongs to the student
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, student_id, is_active, submitted_at")
+      .select("id, student_id, is_active, submitted_at, created_at, exam_id")
       .eq("id", data.sessionId)
       .single();
 
@@ -1689,6 +1755,59 @@ async function sessionHeartbeat(data: {
       return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
     }
 
+    // ✅ 이미 제출된 경우
+    if (session.submitted_at) {
+      return NextResponse.json({ 
+        success: true,
+        submitted: true,
+      });
+    }
+
+    // ✅ 시험 정보 가져와서 시간 체크
+    const { data: exam, error: examError } = await supabase
+      .from("exams")
+      .select("duration")
+      .eq("id", session.exam_id)
+      .single();
+
+    if (examError || !exam) {
+      console.error("Failed to fetch exam for heartbeat:", examError);
+      // 시험 정보를 가져오지 못해도 하트비트는 계속 진행
+    } else {
+      // ✅ 시간 종료 체크
+      const sessionStartTime = new Date(session.created_at).getTime();
+      const examDurationMs = exam.duration * 60 * 1000;
+      const sessionEndTime = sessionStartTime + examDurationMs;
+      const now = Date.now();
+      const timeRemaining = sessionEndTime - now;
+
+      if (timeRemaining <= 0) {
+        // ✅ 시간 종료 - 자동 제출 처리
+        console.log(
+          "[SESSION_HEARTBEAT] Time expired - auto-submitting session:",
+          data.sessionId
+        );
+
+        const { error: updateError } = await supabase
+          .from("sessions")
+          .update({
+            submitted_at: new Date().toISOString(),
+            is_active: false,
+          })
+          .eq("id", data.sessionId);
+
+        if (updateError) {
+          console.error("Failed to auto-submit session:", updateError);
+        }
+
+        return NextResponse.json({
+          success: true,
+          timeExpired: true,
+          autoSubmitted: true,
+        });
+      }
+    }
+
     // Only update heartbeat if session is active and not submitted
     if (session.is_active && !session.submitted_at) {
       const { error: updateError } = await supabase
@@ -1698,7 +1817,20 @@ async function sessionHeartbeat(data: {
 
       if (updateError) throw updateError;
 
-      return NextResponse.json({ success: true });
+      // 남은 시간 계산해서 반환
+      let timeRemaining = null;
+      if (exam) {
+        const sessionStartTime = new Date(session.created_at).getTime();
+        const examDurationMs = exam.duration * 60 * 1000;
+        const sessionEndTime = sessionStartTime + examDurationMs;
+        const now = Date.now();
+        timeRemaining = Math.max(0, Math.floor((sessionEndTime - now) / 1000));
+      }
+
+      return NextResponse.json({ 
+        success: true,
+        timeRemaining,
+      });
     } else {
       // Session is not active or already submitted
       return NextResponse.json(
