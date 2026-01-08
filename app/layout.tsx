@@ -32,6 +32,27 @@ export const metadata: Metadata = {
     shortcut: "/qlogo_icon.png",
     apple: "/qlogo_icon.png",
   },
+  openGraph: {
+    title: "Quest-On",
+    description:
+      "Connect instructors and students in an engaging, interactive learning environment",
+    images: [
+      {
+        url: "/qstn_og.png",
+        width: 1200,
+        height: 630,
+        alt: "Quest-On",
+      },
+    ],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Quest-On",
+    description:
+      "Connect instructors and students in an engaging, interactive learning environment",
+    images: ["/qstn_og.png"],
+  },
 };
 
 export default function RootLayout({
