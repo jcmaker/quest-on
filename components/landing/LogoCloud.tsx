@@ -29,7 +29,7 @@ export default function LogoCloud({
               isDark ? "text-zinc-500" : "text-zinc-400"
             }`}
           >
-            함께하는 혁신 파트너
+            함께하는 교수진
           </p>
           <div className="flex flex-wrap items-center justify-center gap-12 md:gap-24 opacity-70 grayscale hover:grayscale-0 transition-all duration-500">
             {PARTNERS.map((partner) => (
