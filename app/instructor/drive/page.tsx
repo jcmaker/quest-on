@@ -15,7 +15,7 @@ import {
   ChevronRight,
   Home,
   MoreVertical,
-  // Edit,
+  Edit,
   Trash2,
   FolderPlus,
   Search,
@@ -95,6 +95,10 @@ export default function InstructorDrive() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [nodeToDelete, setNodeToDelete] = useState<ExamNode | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [nodeToEdit, setNodeToEdit] = useState<ExamNode | null>(null);
+  const [editName, setEditName] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
@@ -258,6 +262,15 @@ export default function InstructorDrive() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={(e) => {
+            e.stopPropagation();
+            handleEditClick(node);
+          }}
+        >
+          <Edit className="w-4 h-4 mr-2" />
+          편집하기
+        </DropdownMenuItem>
         {node.kind === "exam" && node.exams?.code && (
           <DropdownMenuItem
             onClick={(e) => {
@@ -586,6 +599,78 @@ export default function InstructorDrive() {
     }
   };
 
+  const handleEditClick = (node: ExamNode) => {
+    if (node.kind === "exam") {
+      // 시험인 경우 편집 페이지로 이동
+      if (node.exam_id) {
+        router.push(`/instructor/${node.exam_id}/edit`);
+      }
+    } else {
+      // 폴더인 경우 이름 편집 다이얼로그 열기
+      setNodeToEdit(node);
+      setEditName(node.name);
+      setIsEditDialogOpen(true);
+    }
+  };
+
+  const handleUpdateNode = async () => {
+    if (!nodeToEdit || !editName.trim()) {
+      toast.error("이름을 입력해주세요.");
+      return;
+    }
+
+    if (editName.trim() === nodeToEdit.name) {
+      setIsEditDialogOpen(false);
+      return;
+    }
+
+    try {
+      setIsUpdating(true);
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "update_node",
+          data: {
+            node_id: nodeToEdit.id,
+            name: editName.trim(),
+          },
+        }),
+      });
+
+      if (response.ok) {
+        toast.success("이름이 변경되었습니다.");
+        setIsEditDialogOpen(false);
+        setNodeToEdit(null);
+        setEditName("");
+        // Invalidate folder contents query
+        queryClient.invalidateQueries({
+          queryKey: qk.drive.folderContents(currentFolderId, user?.id),
+        });
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage = extractErrorMessage(
+          errorData,
+          "이름 변경에 실패했습니다",
+          response.status
+        );
+        toast.error(errorMessage, {
+          duration: 5000,
+        });
+      }
+    } catch (error) {
+      console.error("Error updating node:", error);
+      const errorMessage = getErrorMessage(error, "이름 변경에 실패했습니다");
+      toast.error(errorMessage, {
+        duration: 5000,
+      });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const handleDeleteClick = (node: ExamNode) => {
     if (node.kind === "exam" && node.exams?.code) {
       // 시험인 경우는 여전히 prompt 사용 (시험 코드 입력 필요)
@@ -882,214 +967,271 @@ export default function InstructorDrive() {
 
   return (
     <>
-    <SignedIn>
-      <div className="min-h-screen bg-background">
-        {/* Header */}
-        <header className="bg-card/80 backdrop-blur-sm border-b border-border shadow-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-                  <Folder className="w-6 h-6 text-primary-foreground" />
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-foreground">
-                    내 드라이브
-                  </h1>
-                  <p className="text-sm text-muted-foreground">
-                    시험과 폴더를 관리하세요
-                  </p>
-                </div>
-              </div>
-              <div className="text-right text-sm text-muted-foreground">
-                폴더를 만들어 시험을 정리하고, 드래그 앤 드롭으로 빠르게
-                이동하세요.
-              </div>
-            </div>
-          </div>
-        </header>
-
-        {/* Main Content */}
-        <main className="max-w-7xl mx-auto p-6 space-y-6">
-          {/* Breadcrumb */}
-          <div className="flex items-center space-x-2 text-sm">
-            <button
-              onClick={() => handleBreadcrumbClick(null)}
-              className="flex items-center text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Home className="w-4 h-4 mr-1" />
-              루트
-            </button>
-            {breadcrumb.map((item: BreadcrumbItem) => (
-              <div key={item.id} className="flex items-center space-x-2">
-                <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                <button
-                  onClick={() => handleBreadcrumbClick(item.id)}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {item.name}
-                </button>
-              </div>
-            ))}
-          </div>
-
-          <section className="space-y-4">
-            <div className="bg-card/80 border border-border rounded-2xl p-4 shadow-sm">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-                <div className="flex items-center gap-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button className="gap-2 bg-primary text-primary-foreground">
-                        <Plus className="w-4 h-4" />새 항목
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-48">
-                      <DropdownMenuItem
-                        onSelect={() => setIsCreateFolderOpen(true)}
-                      >
-                        <FolderPlus className="w-4 h-4 mr-2" />새 폴더
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => router.push("/instructor/new")}
-                      >
-                        <FileText className="w-4 h-4 mr-2" />새 시험
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Link href="/instructor/exams">
-                    <Button variant="outline" className="gap-2">
-                      <FileText className="w-4 h-4" />
-                      시험 관리
-                    </Button>
-                  </Link>
-                </div>
-                <div className="flex flex-1 flex-wrap items-center gap-3 min-w-[260px]">
-                  <div className="relative flex-1 min-w-[220px]">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder={searchPlaceholder}
-                      className="pl-9"
-                    />
+      <SignedIn>
+        <div className="min-h-screen bg-background">
+          {/* Header */}
+          <header className="bg-card/80 backdrop-blur-sm border-b border-border shadow-sm">
+            <div className="max-w-7xl mx-auto px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
+                    <Folder className="w-6 h-6 text-primary-foreground" />
                   </div>
-                  <div className="flex items-center gap-1 rounded-full border border-border bg-background/90 p-1 shadow-sm">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className={getViewButtonClasses("grid")}
-                      onClick={() => setViewMode("grid")}
-                      aria-pressed={viewMode === "grid"}
-                    >
-                      <LayoutGrid className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className={getViewButtonClasses("list")}
-                      onClick={() => setViewMode("list")}
-                      aria-pressed={viewMode === "list"}
-                    >
-                      <List className="w-4 h-4" />
-                    </Button>
+                  <div>
+                    <h1 className="text-2xl font-bold text-foreground">
+                      내 드라이브
+                    </h1>
+                    <p className="text-sm text-muted-foreground">
+                      시험과 폴더를 관리하세요
+                    </p>
                   </div>
+                </div>
+                <div className="text-right text-sm text-muted-foreground">
+                  폴더를 만들어 시험을 정리하고, 드래그 앤 드롭으로 빠르게
+                  이동하세요.
                 </div>
               </div>
             </div>
+          </header>
 
-            {isLoading ? (
-              <div className="flex items-center justify-center py-16">
-                <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent"></div>
-              </div>
-            ) : !hasResults ? (
-              <div className="text-center py-16 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-card/40">
-                <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-2">
-                  {isFiltering
-                    ? "검색 결과가 없습니다."
-                    : "이 폴더가 비어있습니다."}
-                </p>
-                <p className="text-sm text-muted-foreground mb-6">
-                  {isFiltering
-                    ? "다른 검색어를 시도해보세요."
-                    : "새 폴더를 만들거나 시험을 생성해보세요."}
-                </p>
-                {!isFiltering && (
-                  <div className="flex items-center justify-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsCreateFolderOpen(true)}
-                    >
-                      <FolderPlus className="w-4 h-4 mr-2" />
-                      폴더 만들기
-                    </Button>
-                    <Link href="/instructor/new">
-                      <Button size="sm">
-                        <Plus className="w-4 h-4 mr-2" />
-                        시험 만들기
+          {/* Main Content */}
+          <main className="max-w-7xl mx-auto p-6 space-y-6">
+            {/* Breadcrumb */}
+            <div className="flex items-center space-x-2 text-sm">
+              <button
+                onClick={() => handleBreadcrumbClick(null)}
+                className="flex items-center text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Home className="w-4 h-4 mr-1" />
+                루트
+              </button>
+              {breadcrumb.map((item: BreadcrumbItem) => (
+                <div key={item.id} className="flex items-center space-x-2">
+                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  <button
+                    onClick={() => handleBreadcrumbClick(item.id)}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {item.name}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <section className="space-y-4">
+              <div className="bg-card/80 border border-border rounded-2xl p-4 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                  <div className="flex items-center gap-2">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button className="gap-2 bg-primary text-primary-foreground">
+                          <Plus className="w-4 h-4" />새 항목
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-48">
+                        <DropdownMenuItem
+                          onSelect={() => setIsCreateFolderOpen(true)}
+                        >
+                          <FolderPlus className="w-4 h-4 mr-2" />새 폴더
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => router.push("/instructor/new")}
+                        >
+                          <FileText className="w-4 h-4 mr-2" />새 시험
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Link href="/instructor/exams">
+                      <Button variant="outline" className="gap-2">
+                        <FileText className="w-4 h-4" />
+                        시험 관리
                       </Button>
                     </Link>
                   </div>
-                )}
+                  <div className="flex flex-1 flex-wrap items-center gap-3 min-w-[260px]">
+                    <div className="relative flex-1 min-w-[220px]">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder={searchPlaceholder}
+                        className="pl-9"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1 rounded-full border border-border bg-background/90 p-1 shadow-sm">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={getViewButtonClasses("grid")}
+                        onClick={() => setViewMode("grid")}
+                        aria-pressed={viewMode === "grid"}
+                      >
+                        <LayoutGrid className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className={getViewButtonClasses("list")}
+                        onClick={() => setViewMode("list")}
+                        aria-pressed={viewMode === "list"}
+                      >
+                        <List className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               </div>
-            ) : (
-              <div className="space-y-10" {...rootDragProps}>
-                {renderSection("폴더", folderNodes, {
-                  emptyLabel: "이 폴더에는 아직 하위 폴더가 없습니다.",
-                  emptyFilteredLabel: "검색 조건에 맞는 폴더가 없습니다.",
-                })}
-                {renderSection("시험", examNodes, {
-                  emptyLabel: "이 폴더에 있는 시험이 없습니다.",
-                  emptyFilteredLabel: "검색 조건에 맞는 시험이 없습니다.",
-                })}
-              </div>
-            )}
-          </section>
-        </main>
 
-        <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>새 폴더 만들기</DialogTitle>
-              <DialogDescription>폴더 이름을 입력해주세요.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="folder-name">폴더 이름</Label>
-                <Input
-                  id="folder-name"
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  placeholder="예: 2025-1학기"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleCreateFolder();
-                    }
-                  }}
-                />
+              {isLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent"></div>
+                </div>
+              ) : !hasResults ? (
+                <div className="text-center py-16 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-card/40">
+                  <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground mb-2">
+                    {isFiltering
+                      ? "검색 결과가 없습니다."
+                      : "이 폴더가 비어있습니다."}
+                  </p>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    {isFiltering
+                      ? "다른 검색어를 시도해보세요."
+                      : "새 폴더를 만들거나 시험을 생성해보세요."}
+                  </p>
+                  {!isFiltering && (
+                    <div className="flex items-center justify-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsCreateFolderOpen(true)}
+                      >
+                        <FolderPlus className="w-4 h-4 mr-2" />
+                        폴더 만들기
+                      </Button>
+                      <Link href="/instructor/new">
+                        <Button size="sm">
+                          <Plus className="w-4 h-4 mr-2" />
+                          시험 만들기
+                        </Button>
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-10" {...rootDragProps}>
+                  {renderSection("폴더", folderNodes, {
+                    emptyLabel: "이 폴더에는 아직 하위 폴더가 없습니다.",
+                    emptyFilteredLabel: "검색 조건에 맞는 폴더가 없습니다.",
+                  })}
+                  {renderSection("시험", examNodes, {
+                    emptyLabel: "이 폴더에 있는 시험이 없습니다.",
+                    emptyFilteredLabel: "검색 조건에 맞는 시험이 없습니다.",
+                  })}
+                </div>
+              )}
+            </section>
+          </main>
+
+          <Dialog
+            open={isCreateFolderOpen}
+            onOpenChange={setIsCreateFolderOpen}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>새 폴더 만들기</DialogTitle>
+                <DialogDescription>폴더 이름을 입력해주세요.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="folder-name">폴더 이름</Label>
+                  <Input
+                    id="folder-name"
+                    value={newFolderName}
+                    onChange={(e) => setNewFolderName(e.target.value)}
+                    placeholder="예: 2025-1학기"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleCreateFolder();
+                      }
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => setIsCreateFolderOpen(false)}
-              >
-                취소
-              </Button>
-              <Button
-                onClick={handleCreateFolder}
-                disabled={isCreatingFolder || !newFolderName.trim()}
-              >
-                {isCreatingFolder ? "생성 중..." : "생성"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-    </SignedIn>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setIsCreateFolderOpen(false)}
+                >
+                  취소
+                </Button>
+                <Button
+                  onClick={handleCreateFolder}
+                  disabled={isCreatingFolder || !newFolderName.trim()}
+                >
+                  {isCreatingFolder ? "생성 중..." : "생성"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* 편집 다이얼로그 */}
+          <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>이름 편집</DialogTitle>
+                <DialogDescription>
+                  {nodeToEdit?.kind === "folder"
+                    ? "폴더 이름을 수정해주세요."
+                    : "이름을 수정해주세요."}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name">
+                    {nodeToEdit?.kind === "folder" ? "폴더 이름" : "이름"}
+                  </Label>
+                  <Input
+                    id="edit-name"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder={
+                      nodeToEdit?.kind === "folder"
+                        ? "예: 2025-1학기"
+                        : "이름을 입력하세요"
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleUpdateNode();
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsEditDialogOpen(false);
+                    setNodeToEdit(null);
+                    setEditName("");
+                  }}
+                >
+                  취소
+                </Button>
+                <Button
+                  onClick={handleUpdateNode}
+                  disabled={isUpdating || !editName.trim()}
+                >
+                  {isUpdating ? "저장 중..." : "저장"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </SignedIn>
 
       {/* 삭제 확인 다이얼로그 */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

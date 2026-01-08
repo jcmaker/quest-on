@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import { useUser } from "@clerk/nextjs";
@@ -814,14 +815,22 @@ export default function CreateExam() {
   return (
     <div className="container mx-auto p-6 max-w-4xl">
       <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">새로운 시험 만들기</h1>
-            <p className="text-muted-foreground">
-              문제와 설정으로 새로운 시험을 구성하세요
-            </p>
-          </div>
+        <div className="flex items-center gap-3 mb-2 w-full justify-between">
+          <h1 className="text-3xl font-bold">새로운 시험 만들기</h1>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => router.push("/instructor")}
+            className="min-h-[44px] gap-2 border-border hover:bg-muted hover:text-foreground"
+            aria-label="대시보드로 돌아가기"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            대시보드
+          </Button>
         </div>
+        <p className="text-muted-foreground">
+          문제와 설정으로 새로운 시험을 구성하세요
+        </p>
       </div>
 
       <form
