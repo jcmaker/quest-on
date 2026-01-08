@@ -63,12 +63,14 @@ export default function LandingPage() {
               <span className="text-strikethrough-bottom text-gray-800">
                 AI 부정행위
               </span>
-              <span className="text-gray-700 text-[68px]">
+              <span className="text-gray-700 text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-[68px]">
                 , 막을 수 없다면
               </span>{" "}
               <br />
               <span className="gradient-animated-blue">평가의 일부</span>
-              <span className="text-gray-700 text-[68px]">로 만드세요.</span>
+              <span className="text-gray-700 text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-[68px]">
+                로 만드세요.
+              </span>
             </>
           }
           subheadline={
