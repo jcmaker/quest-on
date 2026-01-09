@@ -181,19 +181,21 @@ export function RubricTable({
                         className="w-full h-16 resize-none border-gray-200 focus:border-blue-500 focus:ring-blue-500"
                       />
                     </TableCell>
-                    <TableCell className="py-4 text-center align-top">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onRemove(item.id);
-                        }}
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                    <TableCell className="py-4 text-center align-middle">
+                      <div className="flex justify-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            onRemove(item.id);
+                          }}
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
