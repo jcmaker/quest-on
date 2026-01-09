@@ -8,24 +8,27 @@ import { Quote } from "lucide-react";
 const TESTIMONIALS = [
   {
     quote:
-      "Quest-On 도입 이후 학생들의 학습 태도가 완전히 바뀌었습니다. 단순 암기보다 문제 해결 과정에 집중하게 되었고, AI의 실시간 피드백이 교수 설계에 큰 영감을 줍니다.",
+      "단순 암기를 넘어 문제 해결에 몰입하게 만드는 변화, AI의 실시간 피드백이 교수 설계의 새로운 영감을 줍니다.",
     name: "강현정 교수",
     title: "홍익대학교",
     avatar: "/kang_pf-removebg-preview.png",
+    logo: "/hongik_emblem_blue.png",
   },
   {
     quote:
-      "AI 시대에는 정답보다 사고 과정과 오류 판별 능력이 더 중요해집니다. Quest-On은 이러한 사고 과정을 평가 구조 안으로 끌어옵니다.AI 사용을 배제하지 않으면서도 평가의 공정성과 설명 가능성을 확보하려는 방향성이 인상적이었습니다.",
+      "AI 시대에 꼭 필요한 '사고 과정' 평가의 해답. 공정성과 설명 가능성을 모두 갖춘 혁신적인 플랫폼입니다.",
     name: "권효찬 교수",
     title: "경기과학기술대학교",
     avatar: "/kwan_pf-removebg-preview.png",
+    logo: "/gtec_logo.svg",
   },
   {
     quote:
-      "학생의 추론 과정을 한눈에 볼 수 있다면, 기존 시험 방식으로는 어려웠던 평가가 가능해질 수 있다고 생각합니다. Quest-On이 시도하는 '사고 과정의 가시화'는 굉장히 의미 있는 방향입니다.",
+      "기존 시험으로는 불가능했던 '추론 과정의 가시화', Quest-On을 통해 진정한 의미의 평가가 시작되었습니다.",
     name: "최인대 교수",
     title: "경기과학기술대학교",
     avatar: "/choi_pf-removebg-preview.png",
+    logo: "/gtec_logo.svg",
   },
 ];
 
@@ -118,30 +121,44 @@ export default function TestimonialSection({
                 </blockquote>
 
                 {/* 교수님 정보 - 이미지 위에 배치 */}
-                <div className="mt-auto pr-4 md:pr-8">
-                  <div
-                    className={`text-base md:text-lg font-bold tracking-tight mb-1 ${
-                      isDark ? "text-white" : "text-[#1F1F1F]"
-                    }`}
-                    style={{
-                      textShadow: isDark
-                        ? "0 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.9)"
-                        : "0 2px 4px rgba(255, 255, 255, 1), 0 0 10px rgba(255, 255, 255, 0.8), 0 1px 2px rgba(255, 255, 255, 1)",
-                    }}
-                  >
-                    {testimonial.name}
-                  </div>
-                  <div
-                    className={`text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] ${
-                      isDark ? "text-zinc-400" : "text-zinc-600"
-                    }`}
-                    style={{
-                      textShadow: isDark
-                        ? "0 1px 2px rgba(0, 0, 0, 0.8), 0 0 6px rgba(0, 0, 0, 0.5)"
-                        : "0 1px 2px rgba(255, 255, 255, 1), 0 0 6px rgba(255, 255, 255, 0.8)",
-                    }}
-                  >
-                    {testimonial.title}
+                <div className="mt-10 pr-4 md:pr-8">
+                  <div className="flex items-center gap-3">
+                    {/* 학교 로고 */}
+                    <div className="relative flex-shrink-0 w-8 h-8 md:w-10 md:h-10">
+                      <Image
+                        src={testimonial.logo}
+                        alt={testimonial.title}
+                        fill
+                        className="object-contain"
+                      />
+                    </div>
+                    {/* 교수님 정보 텍스트 */}
+                    <div className="flex-1">
+                      <div
+                        className={`text-base md:text-lg font-bold tracking-tight mb-1 ${
+                          isDark ? "text-white" : "text-[#1F1F1F]"
+                        }`}
+                        style={{
+                          textShadow: isDark
+                            ? "0 2px 4px rgba(0, 0, 0, 0.8), 0 0 10px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.9)"
+                            : "0 2px 4px rgba(255, 255, 255, 1), 0 0 10px rgba(255, 255, 255, 0.8), 0 1px 2px rgba(255, 255, 255, 1)",
+                        }}
+                      >
+                        {testimonial.name}
+                      </div>
+                      <div
+                        className={`text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] ${
+                          isDark ? "text-zinc-400" : "text-zinc-600"
+                        }`}
+                        style={{
+                          textShadow: isDark
+                            ? "0 1px 2px rgba(0, 0, 0, 0.8), 0 0 6px rgba(0, 0, 0, 0.5)"
+                            : "0 1px 2px rgba(255, 255, 255, 1), 0 0 6px rgba(255, 255, 255, 0.8)",
+                        }}
+                      >
+                        {testimonial.title}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
