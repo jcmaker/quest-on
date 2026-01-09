@@ -26,6 +26,10 @@ import {
 } from "@/components/instructor/RubricTable";
 import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
+import {
+  ScrollProgressProvider,
+  ScrollProgress,
+} from "@/components/animate-ui/primitives/animate/scroll-progress";
 
 export default function CreateExam() {
   const router = useRouter();
@@ -813,159 +817,172 @@ export default function CreateExam() {
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2 w-full justify-between">
-          <h1 className="text-3xl font-bold">새로운 시험 만들기</h1>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.push("/instructor")}
-            className="min-h-[44px] gap-2 border-border hover:bg-muted hover:text-foreground"
-            aria-label="대시보드로 돌아가기"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            대시보드
-          </Button>
+    <ScrollProgressProvider
+      global
+      transition={{ stiffness: 150, damping: 30, bounce: 0 }}
+    >
+      <div className="fixed top-4 left-0 right-0 z-50 px-4">
+        <div className="max-w-4xl mx-auto">
+          <ScrollProgress
+            className="h-1.5 bg-primary rounded-full"
+            mode="width"
+          />
         </div>
-        <p className="text-muted-foreground">
-          문제와 설정으로 새로운 시험을 구성하세요
-        </p>
       </div>
-
-      <form
-        onSubmit={handleSubmit}
-        onKeyDown={(e) => {
-          // textarea에서는 엔터 허용, 다른 입력 요소에서는 form submit 방지
-          if (
-            e.key === "Enter" &&
-            (e.target as HTMLElement).tagName !== "TEXTAREA"
-          ) {
-            e.preventDefault();
-          }
-        }}
-        className="space-y-6"
-      >
-        <ExamInfoForm
-          title={examData.title}
-          code={examData.code}
-          duration={examData.duration}
-          onTitleChange={(value) =>
-            setExamData((prev) => ({ ...prev, title: value }))
-          }
-          onCodeChange={(value) =>
-            setExamData((prev) => ({ ...prev, code: value }))
-          }
-          onDurationChange={(value) =>
-            setExamData((prev) => ({ ...prev, duration: value }))
-          }
-          onGenerateCode={generateExamCode}
-        />
-
-        <FileUpload
-          files={examData.materials}
-          disabledFiles={disabledFiles}
-          canAddMoreFiles={canAddMoreFiles}
-          isDragOver={isDragOver}
-          totalSize={calculateTotalSize(examData.materials)}
-          onFileSelect={handleFileSelect}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onDragAreaClick={handleDragAreaClick}
-          onRemoveFile={removeFile}
-          getFileIcon={getFileIcon}
-        />
-
-        <RubricTable
-          rubric={rubric}
-          onAdd={addRubricItem}
-          onUpdate={updateRubricItem}
-          onRemove={removeRubricItem}
-          isPublic={isRubricPublic}
-          onPublicChange={setIsRubricPublic}
-        />
-
-        <QuestionsList
-          questions={questions}
-          onAdd={addQuestion}
-          onUpdate={updateQuestion}
-          onRemove={removeQuestion}
-        />
-
-        {/* Submit */}
-        <div className="flex gap-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => router.push("/instructor")}
-          >
-            취소
-          </Button>
-          <Button
-            type="submit"
-            disabled={isLoading}
-            className={
-              !examData.title ||
-              !examData.code ||
-              questions.length === 0 ||
-              !canAddMoreFiles
-                ? "opacity-50 cursor-not-allowed"
-                : ""
-            }
-          >
-            {isLoading ? "출제 중..." : "출제하기"}
-          </Button>
-        </div>
-      </form>
-
-      {/* 출제 완료 Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>출제 완료</DialogTitle>
-            <DialogDescription>
-              시험이 성공적으로 출제되었습니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium">시험 코드</Label>
-              <div className="flex items-center gap-2">
-                <code className="px-4 py-2 bg-muted rounded-md exam-code text-lg font-semibold">
-                  {createdExamCode}
-                </code>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    navigator.clipboard.writeText(createdExamCode);
-                    toast.success("시험 코드가 복사되었습니다.", {
-                      id: "copy-exam-code", // 중복 방지
-                    });
-                  }}
-                >
-                  복사
-                </Button>
-              </div>
-              <p className="text-sm text-muted-foreground mt-2">
-                이 코드를 학생들에게 공유하세요.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
+      <div className="container mx-auto p-6 max-w-4xl">
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2 w-full justify-between">
+            <h1 className="text-3xl font-bold">새로운 시험 만들기</h1>
             <Button
-              onClick={() => {
-                setIsDialogOpen(false);
-                router.push("/instructor/drive");
-              }}
+              type="button"
+              variant="outline"
+              onClick={() => router.push("/instructor")}
+              className="min-h-[44px] gap-2 border-border hover:bg-muted hover:text-foreground"
+              aria-label="대시보드로 돌아가기"
             >
-              확인
+              <ArrowLeft className="w-4 h-4" />
+              대시보드
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          </div>
+          <p className="text-muted-foreground">
+            문제와 설정으로 새로운 시험을 구성하세요
+          </p>
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          onKeyDown={(e) => {
+            // textarea에서는 엔터 허용, 다른 입력 요소에서는 form submit 방지
+            if (
+              e.key === "Enter" &&
+              (e.target as HTMLElement).tagName !== "TEXTAREA"
+            ) {
+              e.preventDefault();
+            }
+          }}
+          className="space-y-6"
+        >
+          <ExamInfoForm
+            title={examData.title}
+            code={examData.code}
+            duration={examData.duration}
+            onTitleChange={(value) =>
+              setExamData((prev) => ({ ...prev, title: value }))
+            }
+            onCodeChange={(value) =>
+              setExamData((prev) => ({ ...prev, code: value }))
+            }
+            onDurationChange={(value) =>
+              setExamData((prev) => ({ ...prev, duration: value }))
+            }
+            onGenerateCode={generateExamCode}
+          />
+
+          <FileUpload
+            files={examData.materials}
+            disabledFiles={disabledFiles}
+            canAddMoreFiles={canAddMoreFiles}
+            isDragOver={isDragOver}
+            totalSize={calculateTotalSize(examData.materials)}
+            onFileSelect={handleFileSelect}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onDragAreaClick={handleDragAreaClick}
+            onRemoveFile={removeFile}
+            getFileIcon={getFileIcon}
+          />
+
+          <QuestionsList
+            questions={questions}
+            onAdd={addQuestion}
+            onUpdate={updateQuestion}
+            onRemove={removeQuestion}
+          />
+
+          <RubricTable
+            rubric={rubric}
+            onAdd={addRubricItem}
+            onUpdate={updateRubricItem}
+            onRemove={removeRubricItem}
+            isPublic={isRubricPublic}
+            onPublicChange={setIsRubricPublic}
+          />
+
+          {/* Submit */}
+          <div className="flex gap-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.push("/instructor")}
+            >
+              취소
+            </Button>
+            <Button
+              type="submit"
+              disabled={isLoading}
+              className={
+                !examData.title ||
+                !examData.code ||
+                questions.length === 0 ||
+                !canAddMoreFiles
+                  ? "opacity-50 cursor-not-allowed"
+                  : ""
+              }
+            >
+              {isLoading ? "출제 중..." : "출제하기"}
+            </Button>
+          </div>
+        </form>
+
+        {/* 출제 완료 Dialog */}
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>출제 완료</DialogTitle>
+              <DialogDescription>
+                시험이 성공적으로 출제되었습니다.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">시험 코드</Label>
+                <div className="flex items-center gap-2">
+                  <code className="px-4 py-2 bg-muted rounded-md exam-code text-lg font-semibold">
+                    {createdExamCode}
+                  </code>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      navigator.clipboard.writeText(createdExamCode);
+                      toast.success("시험 코드가 복사되었습니다.", {
+                        id: "copy-exam-code", // 중복 방지
+                      });
+                    }}
+                  >
+                    복사
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground mt-2">
+                  이 코드를 학생들에게 공유하세요.
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => {
+                  setIsDialogOpen(false);
+                  router.push("/instructor/drive");
+                }}
+              >
+                확인
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </ScrollProgressProvider>
   );
 }
