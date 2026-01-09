@@ -662,9 +662,7 @@ export default function EditExam({
 
         <QuestionsList
           questions={questions}
-          onAdd={addQuestion}
           onUpdate={updateQuestion}
-          onRemove={removeQuestion}
         />
 
         {/* Submit */}
