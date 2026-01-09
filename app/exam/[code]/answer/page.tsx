@@ -689,7 +689,13 @@ export default function AnswerSubmission() {
       answerTextBefore: string;
       isInternal: boolean;
     }) => {
-      const { pastedText, pasteStart, pasteEnd, answerLengthBefore, isInternal } = pasteData;
+      const {
+        pastedText,
+        pasteStart,
+        pasteEnd,
+        answerLengthBefore,
+        isInternal,
+      } = pasteData;
 
       if (isInternal) {
         console.log(
@@ -809,7 +815,7 @@ export default function AnswerSubmission() {
           {/* Header */}
           <ExamHeader
             examCode={examCode}
-            duration={exam?.duration || 60}
+            duration={exam?.duration ?? 60}
             currentStep="answer"
             user={user}
           />

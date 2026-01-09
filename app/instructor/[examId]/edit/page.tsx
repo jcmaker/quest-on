@@ -395,6 +395,11 @@ export default function EditExam({
       toast.error("파일 용량이 50MB를 초과했습니다. 일부 파일을 삭제해주세요.");
       return;
     }
+    // duration 검증: 0(무제한)이 아니고 15 미만이면 에러
+    if (examData.duration !== 0 && examData.duration < 15) {
+      toast.error("시험 시간은 최소 15분 이상이거나 무제한이어야 합니다.");
+      return;
+    }
 
     setIsLoading(true);
 
@@ -516,6 +521,8 @@ export default function EditExam({
       const updateData = {
         title: examData.title,
         code: examData.code,
+        // duration: 0은 무제한(과제형), > 0은 시험형 (분 단위)
+        // 명시적으로 0을 전송하여 fallback 로직이 작동하지 않도록 함
         duration: examData.duration,
         questions: questions,
         rubric: rubric,

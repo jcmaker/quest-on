@@ -1175,7 +1175,7 @@ export default function ExamPage() {
       <div className="min-h-screen bg-background flex flex-col">
         <ExamHeader
           examCode={examCode}
-          duration={exam?.duration || 60}
+          duration={exam?.duration ?? 60}
           currentStep="exam"
           user={user}
         />
@@ -1248,7 +1248,7 @@ export default function ExamPage() {
           {/* Top Header */}
           <ExamHeader
             examCode={examCode}
-            duration={exam?.duration || 60}
+            duration={exam?.duration ?? 60}
             currentStep="exam"
             user={user}
             sessionStartTime={sessionStartTime}

@@ -45,6 +45,12 @@ export function ExamHeader({
 
   // Initialize timer - 세션 시작 시간 기반으로 계산
   useEffect(() => {
+    // duration이 0(무제한)이면 타이머를 초기화하지 않음
+    if (duration === 0) {
+      setTimeRemaining(null);
+      return;
+    }
+
     if (sessionStartTime) {
       // 서버에서 받은 세션 시작 시간 사용
       const startTime = new Date(sessionStartTime).getTime();
@@ -75,6 +81,11 @@ export function ExamHeader({
 
   // Timer countdown 및 시간 종료 체크
   useEffect(() => {
+    // duration이 0(무제한)이면 타이머를 실행하지 않음
+    if (duration === 0) {
+      return;
+    }
+
     if (timeRemaining === null || timeRemaining <= 0 || hasExpired) {
       return;
     }
@@ -95,7 +106,7 @@ export function ExamHeader({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timeRemaining, hasExpired, onTimeExpired]);
+  }, [timeRemaining, hasExpired, onTimeExpired, duration]);
 
   // Format time as MM:SS
   const formatTime = (seconds: number): string => {
@@ -125,16 +136,8 @@ export function ExamHeader({
                 height={32}
                 className="h-8 w-auto"
               />
-              {timeRemaining !== null && (
-                <div
-                  className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
-                    hasExpired || timeRemaining <= 0
-                      ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-                      : isTimeCritical(timeRemaining)
-                      ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-                      : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
-                  }`}
-                >
+              {duration === 0 ? (
+                <div className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
                   <svg
                     className="w-4 h-4 mr-2"
                     fill="none"
@@ -148,8 +151,42 @@ export function ExamHeader({
                       d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                     />
                   </svg>
-                  {hasExpired || timeRemaining <= 0 ? "00:00" : formatTime(timeRemaining)}
+                  <span className="whitespace-nowrap">
+                    시간 무제한 (과제형)
+                  </span>
+                  <span className="ml-2 text-xs opacity-75">
+                    제한 시간 없음
+                  </span>
                 </div>
+              ) : (
+                timeRemaining !== null && (
+                  <div
+                    className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                      hasExpired || timeRemaining <= 0
+                        ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                        : isTimeCritical(timeRemaining)
+                        ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                        : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                    }`}
+                  >
+                    <svg
+                      className="w-4 h-4 mr-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                      />
+                    </svg>
+                    {hasExpired || timeRemaining <= 0
+                      ? "00:00"
+                      : formatTime(timeRemaining)}
+                  </div>
+                )
               )}
             </div>
 

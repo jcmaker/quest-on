@@ -76,6 +76,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ✅ duration이 0이 아닐 때만 시간 만료 체크
+    // duration === 0은 무제한(과제형)이므로 시간 체크를 건너뜀
+    if (exam.duration !== 0 && sessionId) {
+      const { data: session, error: sessionError } = await supabase
+        .from("sessions")
+        .select("created_at")
+        .eq("id", sessionId)
+        .single();
+
+      if (!sessionError && session) {
+        const sessionStartTime = new Date(session.created_at).getTime();
+        const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
+        const sessionEndTime = sessionStartTime + examDurationMs;
+        const now = Date.now();
+
+        // 시간이 지났으면 에러 반환 (단, duration이 0이 아닐 때만)
+        if (now > sessionEndTime) {
+          return NextResponse.json(
+            { error: "시험 시간이 종료되었습니다." },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // Prepare the feedback prompt
     const answersText = answers
       .map(

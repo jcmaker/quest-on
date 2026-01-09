@@ -981,12 +981,17 @@ async function initExamSession(data: {
     if (existingSession && !existingSession.submitted_at) {
       // ✅ 시험 시간 종료 체크 (세션 생성 시점 + 시험 시간)
       const sessionStartTime = new Date(existingSession.created_at).getTime();
-      const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
+      
+      // duration이 0(무제한)이면 만료 시간을 먼 미래로 설정 (100년 후)
+      const examDurationMs =
+        exam.duration === 0
+          ? 100 * 365 * 24 * 60 * 60 * 1000 // 100년을 밀리초로 변환
+          : exam.duration * 60 * 1000; // 분을 밀리초로 변환
       const sessionEndTime = sessionStartTime + examDurationMs;
       const timeRemaining = sessionEndTime - nowTime;
 
-      // 시간이 지났으면 자동 제출 처리
-      if (timeRemaining <= 0) {
+      // duration이 0이 아닐 때만 시간 종료 체크 및 자동 제출 처리
+      if (exam.duration !== 0 && timeRemaining <= 0) {
         console.log(
           "[INIT_EXAM_SESSION] Session time expired - auto-submitting:",
           existingSession.id
@@ -1094,7 +1099,12 @@ async function initExamSession(data: {
 
     // 세션의 시작 시간과 남은 시간 계산
     const sessionStartTime = new Date(session.created_at).getTime();
-    const examDurationMs = exam.duration * 60 * 1000;
+    
+    // duration이 0(무제한)이면 만료 시간을 먼 미래로 설정 (100년 후)
+    const examDurationMs =
+      exam.duration === 0
+        ? 100 * 365 * 24 * 60 * 60 * 1000 // 100년을 밀리초로 변환
+        : exam.duration * 60 * 1000; // 분을 밀리초로 변환
     const sessionEndTime = sessionStartTime + examDurationMs;
     const timeRemaining = Math.max(0, sessionEndTime - nowTime);
 
@@ -1103,7 +1113,10 @@ async function initExamSession(data: {
       session,
       messages,
       sessionStartTime: session.created_at,
-      timeRemaining: Math.floor(timeRemaining / 1000), // 초 단위
+      timeRemaining:
+        exam.duration === 0
+          ? null // 무제한인 경우 null 반환
+          : Math.floor(timeRemaining / 1000), // 초 단위
     });
   } catch (error) {
     console.error("[INIT_EXAM_SESSION] ❌ Error:", error);
@@ -1774,14 +1787,15 @@ async function sessionHeartbeat(data: {
       console.error("Failed to fetch exam for heartbeat:", examError);
       // 시험 정보를 가져오지 못해도 하트비트는 계속 진행
     } else {
-      // ✅ 시간 종료 체크
-      const sessionStartTime = new Date(session.created_at).getTime();
-      const examDurationMs = exam.duration * 60 * 1000;
-      const sessionEndTime = sessionStartTime + examDurationMs;
-      const now = Date.now();
-      const timeRemaining = sessionEndTime - now;
+      // ✅ 시간 종료 체크 (duration이 0이면 건너뛰기)
+      if (exam.duration !== 0) {
+        const sessionStartTime = new Date(session.created_at).getTime();
+        const examDurationMs = exam.duration * 60 * 1000;
+        const sessionEndTime = sessionStartTime + examDurationMs;
+        const now = Date.now();
+        const timeRemaining = sessionEndTime - now;
 
-      if (timeRemaining <= 0) {
+        if (timeRemaining <= 0) {
         // ✅ 시간 종료 - 자동 제출 처리
         console.log(
           "[SESSION_HEARTBEAT] Time expired - auto-submitting session:",
@@ -1805,6 +1819,7 @@ async function sessionHeartbeat(data: {
           timeExpired: true,
           autoSubmitted: true,
         });
+        }
       }
     }
 
@@ -1819,13 +1834,14 @@ async function sessionHeartbeat(data: {
 
       // 남은 시간 계산해서 반환
       let timeRemaining = null;
-      if (exam) {
+      if (exam && exam.duration !== 0) {
         const sessionStartTime = new Date(session.created_at).getTime();
         const examDurationMs = exam.duration * 60 * 1000;
         const sessionEndTime = sessionStartTime + examDurationMs;
         const now = Date.now();
         timeRemaining = Math.max(0, Math.floor((sessionEndTime - now) / 1000));
       }
+      // duration이 0이면 timeRemaining은 null로 유지 (무제한)
 
       return NextResponse.json({ 
         success: true,
