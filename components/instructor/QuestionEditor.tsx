@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
@@ -25,44 +24,28 @@ interface QuestionEditorProps {
     field: keyof Question,
     value: string | boolean
   ) => void;
-  onRemove: (id: string) => void;
 }
 
 export function QuestionEditor({
   question,
   index,
   onUpdate,
-  onRemove,
 }: QuestionEditorProps) {
   return (
     <div className="border rounded-lg p-5 bg-card shadow-sm relative overflow-hidden">
       {/* 문제 번호 인디케이터 */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary/60"></div>
 
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
-          <Badge
-            variant="default"
-            className="text-base font-semibold px-3 py-1 h-8 flex items-center gap-1.5"
-          >
-            <Hash className="h-4 w-4" />
-            {index + 1}
-          </Badge>
-          <div className="h-6 w-px bg-border"></div>
-          <span className="text-sm text-muted-foreground">문제 출제 중</span>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={(e) => {
-            e.preventDefault();
-            onRemove(question.id);
-          }}
-          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+      <div className="flex items-center gap-3 mb-5">
+        <Badge
+          variant="default"
+          className="text-base font-semibold px-3 py-1 h-8 flex items-center gap-1.5"
         >
-          삭제
-        </Button>
+          <Hash className="h-4 w-4" />
+          {index + 1}
+        </Badge>
+        <div className="h-6 w-px bg-border"></div>
+        <span className="text-sm text-muted-foreground">문제 출제 중</span>
       </div>
       <div className="space-y-4">
         <div className="space-y-2">

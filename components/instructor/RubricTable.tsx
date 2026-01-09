@@ -1,5 +1,4 @@
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -161,17 +160,17 @@ export function RubricTable({
                     key={item.id}
                     className="align-top hover:bg-gray-50/50"
                   >
-                    <TableCell className="py-4">
-                      <Input
+                    <TableCell className="py-4 align-top">
+                      <Textarea
                         value={item.evaluationArea}
                         onChange={(e) =>
                           onUpdate(item.id, "evaluationArea", e.target.value)
                         }
-                        placeholder="예: 문제 해결 능력, 창의적 사고 등"
-                        className="w-full h-16 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                        placeholder="예: 문제 해결 능력"
+                        className="w-full h-16 resize-none border-gray-200 focus:border-blue-500 focus:ring-blue-500"
                       />
                     </TableCell>
-                    <TableCell className="py-4">
+                    <TableCell className="py-4 align-top">
                       <Textarea
                         value={item.detailedCriteria}
                         onChange={(e) =>
@@ -182,7 +181,7 @@ export function RubricTable({
                         className="w-full h-16 resize-none border-gray-200 focus:border-blue-500 focus:ring-blue-500"
                       />
                     </TableCell>
-                    <TableCell className="py-4 text-center">
+                    <TableCell className="py-4 text-center align-top">
                       <Button
                         type="button"
                         variant="ghost"

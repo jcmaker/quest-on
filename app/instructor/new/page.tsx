@@ -47,7 +47,13 @@ export default function CreateExam() {
   const [disabledFiles, setDisabledFiles] = useState<Set<number>>(new Set());
   const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [questions, setQuestions] = useState<Question[]>([]);
+  const [questions, setQuestions] = useState<Question[]>([
+    {
+      id: Date.now().toString(),
+      text: "",
+      type: "essay",
+    },
+  ]);
   const [rubric, setRubric] = useState<RubricItem[]>([
     {
       id: Date.now().toString(),
@@ -415,15 +421,6 @@ export default function CreateExam() {
     }
   };
 
-  const addQuestion = () => {
-    const newQuestion: Question = {
-      id: Date.now().toString(),
-      text: "",
-      type: "essay",
-    };
-    setQuestions([...questions, newQuestion]);
-  };
-
   const updateQuestion = (
     id: string,
     field: keyof Question,
@@ -432,10 +429,6 @@ export default function CreateExam() {
     setQuestions(
       questions.map((q) => (q.id === id ? { ...q, [field]: value } : q))
     );
-  };
-
-  const removeQuestion = (id: string) => {
-    setQuestions(questions.filter((q) => q.id !== id));
   };
 
   const addRubricItem = () => {
@@ -518,8 +511,8 @@ export default function CreateExam() {
       toast.error("시험 코드를 생성해주세요.");
       return;
     }
-    if (questions.length === 0) {
-      toast.error("최소 1개 이상의 문제를 추가해주세요.");
+    if (!questions[0]?.text || questions[0].text.trim() === "") {
+      toast.error("문제를 입력해주세요.");
       return;
     }
     if (!canAddMoreFiles) {
@@ -893,12 +886,7 @@ export default function CreateExam() {
             getFileIcon={getFileIcon}
           />
 
-          <QuestionsList
-            questions={questions}
-            onAdd={addQuestion}
-            onUpdate={updateQuestion}
-            onRemove={removeQuestion}
-          />
+          <QuestionsList questions={questions} onUpdate={updateQuestion} />
 
           <RubricTable
             rubric={rubric}
@@ -924,7 +912,8 @@ export default function CreateExam() {
               className={
                 !examData.title ||
                 !examData.code ||
-                questions.length === 0 ||
+                !questions[0]?.text ||
+                questions[0].text.trim() === "" ||
                 !canAddMoreFiles
                   ? "opacity-50 cursor-not-allowed"
                   : ""
