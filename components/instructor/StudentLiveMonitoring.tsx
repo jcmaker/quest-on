@@ -20,6 +20,7 @@ interface LiveMessage {
   id: string;
   session_id: string;
   q_idx: number;
+  role: "user" | "ai"; // "user" for student questions, "ai" for AI responses
   content: string;
   created_at: string;
   student: {
@@ -81,6 +82,16 @@ export function StudentLiveMonitoring({
         const data = await response.json();
         const newMessages = data.messages || [];
         
+        // 디버깅: API 응답 확인
+        if (process.env.NODE_ENV === "development") {
+          console.log("[StudentLiveMonitoring] API messages:", newMessages);
+          const roleCounts = newMessages.reduce((acc: Record<string, number>, msg: LiveMessage) => {
+            acc[msg.role] = (acc[msg.role] || 0) + 1;
+            return acc;
+          }, {});
+          console.log("[StudentLiveMonitoring] Message roles:", roleCounts);
+        }
+        
         // 중복 제거하면서 추가
         newMessages.forEach((msg: LiveMessage) => {
           if (!messagesMapRef.current.has(msg.id)) {
@@ -137,8 +148,7 @@ export function StudentLiveMonitoring({
             created_at: string;
           };
 
-          // user 메시지만 표시
-          if (newMessage.role !== "user") return;
+          // user와 ai 메시지 모두 표시
 
           // 이미 있는 메시지면 스킵
           if (messagesMapRef.current.has(newMessage.id)) return;
@@ -158,6 +168,7 @@ export function StudentLiveMonitoring({
             id: newMessage.id,
             session_id: newMessage.session_id,
             q_idx: newMessage.q_idx,
+            role: newMessage.role === "ai" ? "ai" : "user",
             content: content.substring(0, 500),
             created_at: newMessage.created_at,
             student: {
@@ -243,11 +254,23 @@ export function StudentLiveMonitoring({
                 {messages.map((message) => (
                   <div
                     key={message.id}
-                    className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                    className={`border rounded-lg p-4 hover:bg-muted/50 transition-colors ${
+                      message.role === "ai" ? "bg-blue-50/50 dark:bg-blue-950/20" : ""
+                    }`}
                   >
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
+                          <Badge
+                            variant={message.role === "ai" ? "default" : "outline"}
+                            className={`text-xs ${
+                              message.role === "ai"
+                                ? "bg-blue-500 text-white"
+                                : ""
+                            }`}
+                          >
+                            {message.role === "ai" ? "AI 답변" : "학생 질문"}
+                          </Badge>
                           <Badge variant="outline" className="text-xs">
                             문제 {message.q_idx + 1}
                           </Badge>
@@ -260,7 +283,13 @@ export function StudentLiveMonitoring({
                         })}
                       </span>
                     </div>
-                    <div className="bg-muted/50 rounded-md p-3">
+                    <div
+                      className={`rounded-md p-3 ${
+                        message.role === "ai"
+                          ? "bg-blue-100/50 dark:bg-blue-900/30"
+                          : "bg-muted/50"
+                      }`}
+                    >
                       <p className="text-sm whitespace-pre-wrap break-words">
                         {message.content}
                         {message.content.length >= 500 && "..."}

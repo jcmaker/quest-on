@@ -119,9 +119,9 @@ export async function GET(
       `
       )
       .in("session_id", sessionIds)
-      .eq("role", "user") // Only user messages (student questions)
+      .in("role", ["user", "ai"]) // Include both user questions and AI responses
       .order("created_at", { ascending: false })
-      .limit(50); // Limit to latest 50 messages
+      .limit(100); // Limit to latest 100 messages (increased to include pairs)
 
     // If since parameter is provided, only get messages after that time
     if (since) {
@@ -198,6 +198,7 @@ export async function GET(
         id: message.id,
         session_id: message.session_id,
         q_idx: message.q_idx,
+        role: message.role, // Include role: "user" or "ai"
         content: content.substring(0, 500), // Truncate for preview
         created_at: message.created_at,
         student: {

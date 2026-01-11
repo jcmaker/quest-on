@@ -19,6 +19,7 @@ interface LiveMessage {
   id: string;
   session_id: string;
   q_idx: number;
+  role: "user" | "ai"; // "user" for student questions, "ai" for AI responses
   content: string;
   created_at: string;
   student: {
@@ -62,6 +63,16 @@ export function LiveMonitoringCard({ examId }: LiveMonitoringCardProps) {
 
       const data = await response.json();
       const newMessages = data.messages || [];
+
+      // 디버깅: API 응답 확인
+      if (process.env.NODE_ENV === "development") {
+        console.log("[LiveMonitoringCard] API messages:", newMessages);
+        const roleCounts = newMessages.reduce((acc: Record<string, number>, msg: LiveMessage) => {
+          acc[msg.role] = (acc[msg.role] || 0) + 1;
+          return acc;
+        }, {});
+        console.log("[LiveMonitoringCard] Message roles:", roleCounts);
+      }
 
       if (newMessages.length > 0) {
         // Add new messages to the list (avoid duplicates)
@@ -212,28 +223,40 @@ export function LiveMonitoringCard({ examId }: LiveMonitoringCardProps) {
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
+              <div className="space-y-4">
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className="border rounded-lg p-4 hover:bg-muted/50 transition-colors"
+                  className={`border rounded-lg p-4 hover:bg-muted/50 transition-colors ${
+                    message.role === "ai" ? "bg-blue-50/50 dark:bg-blue-950/20" : ""
+                  }`}
                 >
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <h4 className="font-medium text-sm">
-                          {message.student.name}
+                          {message.role === "ai" ? "AI" : message.student.name}
                         </h4>
-                        {message.student.student_number && (
+                        {message.role === "user" && message.student.student_number && (
                           <span className="text-xs text-muted-foreground">
                             ({message.student.student_number})
                           </span>
                         )}
+                        <Badge
+                          variant={message.role === "ai" ? "default" : "outline"}
+                          className={`text-xs ${
+                            message.role === "ai"
+                              ? "bg-blue-500 text-white"
+                              : ""
+                          }`}
+                        >
+                          {message.role === "ai" ? "AI 답변" : "학생 질문"}
+                        </Badge>
                         <Badge variant="outline" className="text-xs">
                           문제 {message.q_idx + 1}
                         </Badge>
                       </div>
-                      {message.student.school && (
+                      {message.role === "user" && message.student.school && (
                         <p className="text-xs text-muted-foreground mb-2">
                           {message.student.school}
                         </p>
@@ -246,7 +269,13 @@ export function LiveMonitoringCard({ examId }: LiveMonitoringCardProps) {
                       })}
                     </span>
                   </div>
-                  <div className="bg-muted/50 rounded-md p-3">
+                  <div
+                    className={`rounded-md p-3 ${
+                      message.role === "ai"
+                        ? "bg-blue-100/50 dark:bg-blue-900/30"
+                        : "bg-muted/50"
+                    }`}
+                  >
                     <p className="text-sm whitespace-pre-wrap break-words">
                       {message.content}
                       {message.content.length >= 500 && "..."}
