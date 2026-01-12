@@ -552,6 +552,7 @@ export default function HeroSection({
   mode = "light",
 }: HeroSectionProps) {
   const colors = COLORS[mode];
+  const [isVideoOpen, setIsVideoOpen] = useState(false);
 
   return (
     <div
@@ -583,33 +584,53 @@ export default function HeroSection({
 
           {/* Buttons */}
           <div
-            className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4 animate-fade-in-up-sm"
+            className="flex flex-col items-center justify-center gap-4 pt-4 animate-fade-in-up-sm"
             style={{ animationDelay: "0.3s" }}
           >
-            <Link
-              href="/sign-up"
-              className={cn(
-                "group relative inline-flex items-center justify-center gap-2 px-8 py-4 text-sm font-semibold transition-all duration-300 rounded-full text-white border-transparent shadow-lg",
-                "bg-gradient-to-r from-primary via-primary/90 to-primary/80",
-                "hover:from-primary/90 hover:via-primary hover:to-primary/90",
-                "hover:shadow-xl"
-              )}
-            >
-              {ctaText}
-              <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </Link>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <Link
+                href="/sign-up"
+                className={cn(
+                  "group relative inline-flex items-center justify-center gap-2 px-8 py-4 text-sm font-semibold transition-all duration-300 rounded-full text-white border-transparent shadow-lg",
+                  "bg-gradient-to-r from-primary via-primary/90 to-primary/80",
+                  "hover:from-primary/90 hover:via-primary hover:to-primary/90",
+                  "hover:shadow-xl"
+                )}
+              >
+                {ctaText}
+                <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
 
-            {/* <button
-              className="text-sm font-medium px-6 py-4 flex items-center gap-2 transition-all hover:opacity-100 opacity-70 border rounded-full"
-              style={{
-                color: colors.text,
-                borderColor:
-                  mode === "dark" ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)",
-              }}
-            >
-              <Play className="w-4 h-4 fill-current" />
-              데모 영상 보기
-            </button> */}
+              <button
+                onClick={() => setIsVideoOpen(!isVideoOpen)}
+                className="text-sm font-medium px-6 py-4 flex items-center gap-2 transition-all hover:opacity-100 opacity-70 border rounded-full"
+                style={{
+                  color: colors.text,
+                  borderColor:
+                    mode === "dark"
+                      ? "rgba(255,255,255,0.2)"
+                      : "rgba(0,0,0,0.2)",
+                }}
+              >
+                <Play className="w-4 h-4 fill-current" />
+                데모 영상 보기
+              </button>
+            </div>
+
+            {/* Video Section */}
+            {isVideoOpen && (
+              <div className="w-full max-w-4xl mt-6 animate-fade-in-up-sm">
+                <div className="relative w-full aspect-video rounded-lg overflow-hidden shadow-2xl">
+                  <iframe
+                    src="https://www.youtube.com/embed/yjKH4Nzy_Xk"
+                    title="데모 영상"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className="absolute inset-0 w-full h-full"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
