@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
 import { openai, AI_MODEL } from "@/lib/openai";
+import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
           .join("\n")
       : "별도의 루브릭 없음";
 
-    const systemPrompt = `당신은 학생의 시험 답안을 깊이 있게 평가하는 전문 교육가 AI입니다. 학생의 답안을 상세하게 분석하여 강점과 약점을 파악하고, 실질적인 조언을 제공해야 합니다. 단순한 나열이 아닌, 논리적 흐름과 근거를 바탕으로 분석해주세요.`;
+    const systemPrompt = buildSummaryGenerationSystemPrompt();
     const userPrompt = `
 시험 제목: ${exam.title}
 

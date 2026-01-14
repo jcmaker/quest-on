@@ -4,6 +4,10 @@ import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
 import { createClerkClient } from "@clerk/nextjs/server";
 import { openai, AI_MODEL } from "@/lib/openai";
+import {
+  buildChatGradingSystemPrompt,
+  buildAnswerGradingSystemPrompt,
+} from "@/lib/prompts";
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -910,22 +914,10 @@ ${exam.rubric
       // 1. Chat stage grading
       if (questionMessages.length > 0) {
         try {
-          const chatSystemPrompt = `당신은 전문 평가위원입니다. 학생과 AI의 대화 과정을 루브릭 기준에 따라 평가하고 점수를 부여합니다.
-
-${rubricText}
-
-평가 지침:
-1. 제공된 루브릭의 각 평가 영역과 기준을 정확히 검토하세요.
-2. 학생이 AI와의 대화에서 보여준 질문의 질, 문제 이해도, 개념 파악 수준을 평가하세요.
-3. AI의 답변을 통해 학생이 얼마나 효과적으로 학습하고 개선했는지 평가하세요.
-4. 점수는 0-100점 사이의 정수로 부여하세요.
-5. 구체적이고 건설적인 피드백을 제공하세요.
-
-응답 형식 (JSON):
-{
-  "score": 75,
-  "comment": "대화 과정에서 보여준 학습 태도와 이해도를 평가한 내용을 한국어로 작성하세요."
-}`;
+          const chatSystemPrompt = buildChatGradingSystemPrompt({
+            rubricText,
+            // rubricScoresSchema 없음 (이 엔드포인트는 루브릭별 점수를 반환하지 않음)
+          });
 
           const chatUserPrompt = `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
 
@@ -985,22 +977,10 @@ ${questionMessages
       // 2. Answer stage grading
       if (submission.answer) {
         try {
-          const answerSystemPrompt = `당신은 전문 평가위원입니다. 학생의 최종 답안을 루브릭 기준에 따라 평가하고 점수를 부여합니다.
-
-${rubricText}
-
-평가 지침:
-1. 제공된 루브릭의 각 평가 영역과 기준을 정확히 검토하세요.
-2. 학생의 답안이 루브릭의 각 평가 영역을 얼마나 충족하는지 평가하세요.
-3. 답안의 완성도, 논리성, 정확성을 종합적으로 평가하세요.
-4. 점수는 0-100점 사이의 정수로 부여하세요.
-5. 구체적이고 건설적인 피드백을 제공하세요.
-
-응답 형식 (JSON):
-{
-  "score": 75,
-  "comment": "답안의 강점과 개선점을 루브릭 기준에 따라 평가한 내용을 한국어로 작성하세요."
-}`;
+          const answerSystemPrompt = buildAnswerGradingSystemPrompt({
+            rubricText,
+            // rubricScoresSchema 없음 (이 엔드포인트는 루브릭별 점수를 반환하지 않음)
+          });
 
           const answerUserPrompt = `다음 정보를 바탕으로 최종 답안을 평가해주세요:
 

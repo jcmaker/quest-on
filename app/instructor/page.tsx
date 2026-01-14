@@ -39,9 +39,31 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
+import { FileTree } from "@/components/dashboard/FileTree";
+import {
+  Files,
+  FilesHighlight,
+  FolderItem,
+  FolderHeader,
+  FolderTrigger,
+  FolderContent,
+  FolderHighlight,
+  Folder as FilesFolder,
+  FolderIcon,
+  FolderLabel,
+  FileHighlight,
+  File as FilesFile,
+  FileIcon,
+  FileLabel,
+} from "@/components/animate-ui/primitives/radix/files";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -120,6 +142,12 @@ const Home = dynamic(() =>
 const ChevronRight = dynamic(() =>
   import("lucide-react").then((mod) => ({ default: mod.ChevronRight }))
 );
+const ChevronDown = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.ChevronDown }))
+);
+const ChevronUp = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.ChevronUp }))
+);
 
 interface ExamNode {
   id: string;
@@ -165,6 +193,9 @@ export default function InstructorHome() {
   const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
+    new Set()
+  );
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
@@ -939,12 +970,317 @@ export default function InstructorHome() {
     ]
   );
 
+  // 재귀적으로 폴더 트리를 렌더링하는 컴포넌트 (리스트뷰용)
+  const FolderTreeItem = memo(
+    ({
+      folder,
+      userId,
+      onFolderClick,
+      onFileClick,
+      level = 0,
+    }: {
+      folder: ExamNode;
+      userId?: string;
+      onFolderClick: (folderId: string) => void;
+      onFileClick: (examId: string) => void;
+      level?: number;
+    }) => {
+      const { data: children = [], isLoading } = useQuery({
+        queryKey: qk.drive.folderContents(folder.id, userId),
+        queryFn: async ({ signal }) => {
+          const response = await fetch("/api/supa", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "get_folder_contents",
+              data: { folder_id: folder.id },
+            }),
+            signal,
+          });
+
+          if (!response.ok) {
+            throw new Error("Failed to load folder contents");
+          }
+
+          const data = await response.json();
+          return data.nodes || [];
+        },
+        enabled: !!userId,
+        staleTime: 1000 * 60 * 1,
+      });
+
+      const folders = useMemo(
+        () => children.filter((node: ExamNode) => node.kind === "folder"),
+        [children]
+      );
+      const files = useMemo(
+        () => children.filter((node: ExamNode) => node.kind === "exam"),
+        [children]
+      );
+
+      return (
+        <FolderItem value={folder.id}>
+          <FolderHeader>
+            <FolderTrigger className="w-full text-start">
+              <FolderHighlight>
+                <FilesFolder
+                  className="flex items-center gap-2 p-2 pointer-events-none"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onFolderClick(folder.id);
+                  }}
+                >
+                  <FolderIcon
+                    closeIcon={<Folder className="size-4" />}
+                    openIcon={<FolderOpen className="size-4" />}
+                  />
+                  <FolderLabel className="text-sm">{folder.name}</FolderLabel>
+                </FilesFolder>
+              </FolderHighlight>
+            </FolderTrigger>
+          </FolderHeader>
+          <div className="relative ml-8 before:absolute before:-left-3 before:top-0 before:bottom-0 before:w-[1px] before:bg-border/50">
+            <FolderContent className="pl-2">
+              {isLoading ? (
+                <div className="py-1 text-xs text-muted-foreground">
+                  로딩 중...
+                </div>
+              ) : (
+                <>
+                  {level === 0
+                    ? // 최상위 레벨: 파일들을 모두 표시
+                      files.map((file: ExamNode) => (
+                        <FileHighlight key={file.id}>
+                          <FilesFile
+                            className="flex items-center gap-2 p-2 pointer-events-none cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (file.exam_id) {
+                                onFileClick(file.exam_id);
+                              }
+                            }}
+                          >
+                            <FileIcon>
+                              <FileText className="size-4" />
+                            </FileIcon>
+                            <FileLabel className="text-sm">
+                              {file.name}
+                            </FileLabel>
+                          </FilesFile>
+                        </FileHighlight>
+                      ))
+                    : // 하위 레벨 (level >= 1): 파일이 있으면 "..." 표시
+                      files.length > 0 && (
+                        <FileHighlight>
+                          <FilesFile className="flex items-center gap-2 p-2 pointer-events-none">
+                            <FileIcon>
+                              <FileText className="size-4 opacity-50" />
+                            </FileIcon>
+                            <FileLabel className="text-xs text-muted-foreground">
+                              ...
+                            </FileLabel>
+                          </FilesFile>
+                        </FileHighlight>
+                      )}
+                  {folders.length > 0 && (
+                    <Files>
+                      {folders.map((childFolder: ExamNode) => (
+                        <FolderTreeItem
+                          key={childFolder.id}
+                          folder={childFolder}
+                          userId={userId}
+                          onFolderClick={onFolderClick}
+                          onFileClick={onFileClick}
+                          level={level + 1}
+                        />
+                      ))}
+                    </Files>
+                  )}
+                </>
+              )}
+            </FolderContent>
+          </div>
+        </FolderItem>
+      );
+    }
+  );
+
+  FolderTreeItem.displayName = "FolderTreeItem";
+
+  // 폴더 하위 내용을 가져오는 컴포넌트 (리스트뷰용)
+  const FolderChildren = memo(
+    ({
+      folderId,
+      userId,
+      onFolderClick,
+      onFileClick,
+    }: {
+      folderId: string;
+      userId?: string;
+      onFolderClick: (folderId: string) => void;
+      onFileClick: (examId: string) => void;
+    }) => {
+      const { data: children = [], isLoading } = useQuery({
+        queryKey: qk.drive.folderContents(folderId, userId),
+        queryFn: async ({ signal }) => {
+          const response = await fetch("/api/supa", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "get_folder_contents",
+              data: { folder_id: folderId },
+            }),
+            signal,
+          });
+
+          if (!response.ok) {
+            throw new Error("Failed to load folder contents");
+          }
+
+          const data = await response.json();
+          return data.nodes || [];
+        },
+        enabled: !!userId,
+        staleTime: 1000 * 60 * 1,
+      });
+
+      if (isLoading) {
+        return (
+          <div className="pl-12 py-2 text-xs text-muted-foreground">
+            로딩 중...
+          </div>
+        );
+      }
+
+      if (children.length === 0) {
+        return (
+          <div className="pl-12 py-2 text-xs text-muted-foreground">
+            폴더가 비어있습니다
+          </div>
+        );
+      }
+
+      const folders = children.filter(
+        (node: ExamNode) => node.kind === "folder"
+      );
+      const files = children.filter((node: ExamNode) => node.kind === "exam");
+
+      return (
+        <div className="relative ml-8 before:absolute before:-left-3 before:top-0 before:bottom-0 before:w-[1px] before:bg-border/50">
+          <FilesHighlight className="bg-accent pointer-events-none">
+            <Files className="pl-2">
+              {files.map((file: ExamNode) => (
+                <FileHighlight key={file.id}>
+                  <FilesFile
+                    className="flex items-center gap-2 p-2 pointer-events-none cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (file.exam_id) {
+                        onFileClick(file.exam_id);
+                      }
+                    }}
+                  >
+                    <FileIcon>
+                      <FileText className="size-4" />
+                    </FileIcon>
+                    <FileLabel className="text-sm">{file.name}</FileLabel>
+                  </FilesFile>
+                </FileHighlight>
+              ))}
+              {folders.map((folder: ExamNode) => (
+                <FolderTreeItem
+                  key={folder.id}
+                  folder={folder}
+                  userId={userId}
+                  onFolderClick={onFolderClick}
+                  onFileClick={onFileClick}
+                  level={0}
+                />
+              ))}
+            </Files>
+          </FilesHighlight>
+        </div>
+      );
+    }
+  );
+
+  FolderChildren.displayName = "FolderChildren";
+
   const renderListNode = useCallback(
     (node: ExamNode) => {
       const statusBadge = renderNodeStatus(node);
       const dragHandlers = getDragHandlers(node);
       const isDragSource = draggedNode?.id === node.id;
       const isDragTarget = dragOverNodeId === node.id && node.kind === "folder";
+      const isExpanded = expandedFolders.has(node.id);
+
+      if (node.kind === "folder") {
+        return (
+          <Collapsible
+            key={node.id}
+            open={isExpanded}
+            onOpenChange={(open) => {
+              const newExpanded = new Set(expandedFolders);
+              if (open) {
+                newExpanded.add(node.id);
+              } else {
+                newExpanded.delete(node.id);
+              }
+              setExpandedFolders(newExpanded);
+            }}
+          >
+            <div
+              {...dragHandlers}
+              className={`group flex items-center justify-between rounded-xl border border-border/60 bg-card/60 px-4 py-3 transition ${
+                isDragSource ? "opacity-50 cursor-grabbing" : "cursor-grab"
+              } ${isDragTarget ? "ring-2 ring-primary bg-primary/5" : ""} ${
+                isMoving ? "pointer-events-none opacity-60" : ""
+              } hover:shadow-sm`}
+            >
+              <CollapsibleTrigger asChild>
+                <div className="flex items-center gap-4 flex-1 cursor-pointer">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background/80">
+                    <Folder className="w-5 h-5 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm text-foreground truncate">
+                      {node.name}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <span>{formatDate(node.updated_at)}</span>
+                      <span>· 폴더</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {isExpanded ? (
+                      <ChevronUp className="w-4 h-4 text-muted-foreground" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                    )}
+                    {renderNodeActions(node)}
+                  </div>
+                </div>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                {isExpanded && (
+                  <FolderChildren
+                    folderId={node.id}
+                    userId={user?.id}
+                    onFolderClick={setCurrentFolderId}
+                    onFileClick={(examId) =>
+                      router.push(`/instructor/${examId}`)
+                    }
+                  />
+                )}
+              </CollapsibleContent>
+            </div>
+          </Collapsible>
+        );
+      }
 
       return (
         <div
@@ -962,27 +1298,16 @@ export default function InstructorHome() {
         >
           <div className="flex items-center gap-4 flex-1">
             <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background/80">
-              {node.kind === "folder" ? (
-                <Folder className="w-5 h-5 text-primary" />
-              ) : (
-                <FileText className="w-5 h-5 text-blue-500" />
-              )}
+              <FileText className="w-5 h-5 text-blue-500" />
             </div>
             <div className="min-w-0">
               <p className="font-medium text-sm text-foreground truncate">
                 {node.name}
               </p>
-              {node.kind === "folder" ? (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <span>{formatDate(node.updated_at)}</span>
-                  <span>· 폴더</span>
-                </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  {node.exams?.code && <span>{node.exams.code}</span>}
-                  <span>· 생성 {formatDate(node.created_at)}</span>
-                </div>
-              )}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {node.exams?.code && <span>{node.exams.code}</span>}
+                <span>· 생성 {formatDate(node.created_at)}</span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -1005,6 +1330,9 @@ export default function InstructorHome() {
       draggedNode,
       dragOverNodeId,
       isMoving,
+      expandedFolders,
+      router,
+      user?.id,
     ]
   );
 
@@ -1059,12 +1387,6 @@ export default function InstructorHome() {
       href: "/instructor/new",
       icon: Plus,
       active: pathname === "/instructor/new",
-    },
-    {
-      title: "내 드라이브",
-      href: "/instructor/drive",
-      icon: FolderOpen,
-      active: pathname === "/instructor/drive",
     },
     {
       title: "시험 관리",
@@ -1131,6 +1453,25 @@ export default function InstructorHome() {
               );
             })}
           </nav>
+
+          {!isCollapsed && (
+            <>
+              <div className="border-t border-sidebar-border my-2" />
+              <div className="px-3 py-2">
+                <h3 className="text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wide mb-2">
+                  폴더 및 파일
+                </h3>
+                <FileTree
+                  userId={user?.id}
+                  currentFolderId={currentFolderId}
+                  onFolderClick={(folderId) => {
+                    setCurrentFolderId(folderId);
+                  }}
+                  className="max-h-[400px]"
+                />
+              </div>
+            </>
+          )}
         </ShadcnSidebarContent>
 
         <SidebarFooter />

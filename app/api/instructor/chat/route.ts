@@ -6,6 +6,7 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import { openai, AI_MODEL } from "@/lib/openai";
+import { buildInstructorChatSystemPrompt } from "@/lib/prompts";
 
 // Some environments may send OPTIONS (preflight) or GET accidentally.
 export async function OPTIONS(request: NextRequest) {
@@ -119,43 +120,6 @@ async function getAIResponse(
   }
 }
 
-function buildInstructorSystemPrompt(params: {
-  context: string;
-  scopeDescription?: string;
-}): string {
-  const { context, scopeDescription = "이 페이지의 데이터" } = params;
-
-  return `
-당신은 대학 강의의 교수자(Professor)로서 시험 관리 및 채점을 보조하는 AI 어시스턴트입니다.
-
-**제공된 컨텍스트:**
-${context}
-
-**답변 범위:**
-- ${scopeDescription} 범위 안에서만 답변합니다.
-- 제공된 컨텍스트에 없는 정보는 추측하지 않습니다.
-- 컨텍스트에 명시된 데이터를 바탕으로 정확하고 도움이 되는 답변을 제공합니다.
-
-**역할(Role):**
-- 시험 관리 및 채점을 보조하는 교수자 어시스턴트
-- 학생 답안 평가, 피드백 작성, 시험 통계 분석 등을 도와줍니다
-- 교수자의 의사결정을 돕기 위해 명확하고 구체적인 정보를 제공합니다
-
-**규칙(Rules):**
-- 항상 **마크다운** 형식으로 대답합니다.
-- 정중하고 전문적인 톤을 유지합니다 (~습니다, ~입니다 체 사용).
-- 필요시 구체적인 예시나 제안을 포함합니다.
-- 데이터가 있는 경우 숫자와 통계를 활용하여 답변합니다.
-- 채점 관련 질문의 경우 평가 기준과 함께 답변합니다.
-- 시험 관리 관련 질문의 경우 실용적인 조언을 제공합니다.
-
-**답변 스타일:**
-- 간결하면서도 충분한 정보를 제공합니다.
-- 구조화된 형식(목록, 표 등)을 적절히 활용합니다.
-- 중요한 정보는 강조 표시(**굵게**)를 사용합니다.
-`.trim();
-}
-
 export async function POST(request: NextRequest) {
   const requestStartTime = Date.now();
   try {
@@ -194,7 +158,7 @@ export async function POST(request: NextRequest) {
     );
 
     // 교수용 프롬프트 생성
-    const systemPrompt = buildInstructorSystemPrompt({
+    const systemPrompt = buildInstructorChatSystemPrompt({
       context,
       scopeDescription,
     });

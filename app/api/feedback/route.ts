@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { compressData } from "@/lib/compression";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { autoGradeSession } from "@/lib/grading";
+import { buildFeedbackSystemPrompt, type RubricItem } from "@/lib/prompts";
 
 // Helper function to sanitize text for JSON storage
 function sanitizeText(text: string): string {
@@ -109,67 +110,10 @@ export async function POST(request: NextRequest) {
       )
       .join("\n\n");
 
-    const systemPrompt = `당신은 학문 분야의 전문 심사위원입니다. 학생의 답안을 심사위원 스타일로 피드백합니다.
-
-${
-  exam?.rubric && exam.rubric.length > 0
-    ? `
-**평가 루브릭 기준:**
-${exam.rubric
-  .map(
-    (
-      item: {
-        evaluationArea: string;
-        detailedCriteria: string;
-      },
-      index: number
-    ) =>
-      `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
-  )
-  .join("\n")}
-
-`
-    : ""
-}
-
-심사위원 역할:
-- 존댓말과 전문적인 톤 사용
-- 구체적인 질문으로 학생의 이해도 검증
-- 해당 분야의 핵심 개념 적용 유도
-- 실무적 관점에서 문제점 지적
-- 개선 방안 제시
-${
-  exam?.rubric && exam.rubric.length > 0
-    ? "- **제공된 평가 루브릭 기준에 따라 답안을 평가하고 피드백 제공**"
-    : ""
-}
-
-피드백 형식:
-1. 각 답안별로 2-3개의 핵심 질문 제기
-2. 학생의 답변을 유도하는 Q&A 형식
-3. 해당 분야의 전문 용어와 분석 기법 정확히 사용
-4. 최종 종합 평가로 마무리
-${
-  exam?.rubric && exam.rubric.length > 0
-    ? "5. **평가 루브릭의 각 영역별로 답안의 강점과 개선점을 구체적으로 제시**"
-    : ""
-}
-
-핵심 검증 포인트:
-- 답안의 논리적 구조와 일관성
-- 핵심 개념의 정확한 이해와 적용
-- 근거와 증거의 적절성
-- 비판적 사고와 분석력
-- 창의적 접근과 실무 적용 가능성
-- 결론의 타당성과 완성도
-${
-  exam?.rubric && exam.rubric.length > 0
-    ? "- **평가 루브릭에 명시된 각 평가 영역의 달성도**"
-    : ""
-}
-
-응답은 반드시 한국어로 작성하고, 심사위원 스타일의 존댓말을 사용하세요.`;
+    const systemPrompt = buildFeedbackSystemPrompt({
+      rubric: exam?.rubric as RubricItem[] | undefined,
+      examTitle: exam?.title,
+    });
 
     const userPrompt = `다음 답안에 대해 심사위원 스타일의 피드백을 제공해주세요:
 

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
 import { searchRelevantMaterials } from "@/lib/material-search";
+import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
 
 // Some environments may send OPTIONS (preflight) or GET accidentally.
 // If we don't handle them, Next can return a non-JSON 405 which breaks clients expecting JSON.
@@ -45,11 +46,6 @@ const supabase = createClient(
 );
 
 type MessageType = "concept" | "calculation" | "strategy" | "other";
-
-type RubricItem = {
-  evaluationArea: string;
-  detailedCriteria: string;
-};
 
 type RagResult = {
   relevantMaterialsText: string;
@@ -127,29 +123,6 @@ function cleanContext(text: string): string {
   // 공백 정리
   cleaned = cleaned.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n");
   return cleaned.trim();
-}
-
-function buildMaterialsPriorityInstruction(): string {
-  return `
-**[수업 자료 우선 원칙]**
-- 아래에 [수업 자료 참고 내용]이 제공되면, 그것이 **최우선 근거**입니다.
-- 수업 자료와 충돌하는 추측/일반론은 금지합니다.
-- 수업 자료에 근거가 없으면 다음과 같은 프롬프트만 적용 시킨다 '
-   역할(Role):
-      - 너는 특정한 가상의 상황을 가정하고 문제를 출제했다. 학생이 묻는 질문에는 반드시 너가 가정한 '특정한 가상의 상황'에 기반해서 답해줘
-      - 너는 대학 강의의 교수자(Professor) 역할이다.     
-      - 답변은 실제 교수-학생의 질의응답처럼 진행한다. 
-
-      규칙(Rules):
-      - 너는 항상 **마크다운** 형식으로 대답한다.
-      - ~ㅂ니다 라는 말을 사용한다.
-      - 학생이 정보를 묻는 질문에는 오직 사실 정보만 응답한다.
-      - 정보를 묻는 질문에는 반드시 문장은 최대 한 문장으로 제한한다.
-      - 생성형 요청 질문에는 성실하게 답변한다.
-      - 설명, 맥락, 해설, 코멘트, 판단은 절대 금지.
-      - 질문에 직접 대응되지 않는 정보는 제공하지 않는다.
-    '
-`.trim();
 }
 
 async function getRagContext(params: {
@@ -401,118 +374,6 @@ async function incrementUsedClarifications(params: {
     .eq("id", sessionId);
 }
 
-function buildSystemPrompt(params: {
-  examTitle?: string;
-  examCode?: string;
-  questionId?: string;
-  currentQuestionText?: string;
-  currentQuestionAiContext?: string;
-  relevantMaterialsText?: string;
-  rubric?: RubricItem[];
-}): string {
-  const {
-    examTitle,
-    examCode,
-    questionId,
-    currentQuestionText,
-    currentQuestionAiContext,
-    relevantMaterialsText,
-    rubric,
-  } = params;
-
-  const materialsInstruction = buildMaterialsPriorityInstruction();
-  const hasRubric = !!(rubric && Array.isArray(rubric) && rubric.length > 0);
-
-  if (hasRubric) {
-    return `
-${
-  examTitle
-    ? `학생이 시험: ${examTitle} (코드: ${
-        examCode || "N/A"
-      })를 치르고 있습니다.`
-    : "학생이 시험 중입니다."
-}
-${questionId ? `현재 문제 ID: ${questionId}에 있습니다.` : ""}
-${currentQuestionText ? `문제 내용: ${currentQuestionText}` : ""}
-${currentQuestionAiContext ? `문제 컨텍스트: ${currentQuestionAiContext}` : ""}
-${relevantMaterialsText ? relevantMaterialsText : ""}
-
-${materialsInstruction}
-
-**평가 루브릭:**
-${(rubric || [])
-  .map(
-    (item, index) =>
-      `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
-  )
-  .join("\n")}
-
-역할(Role):
-- 너는 특정한 가상의 상황을 가정하고 문제를 출제했다. 학생이 묻는 질문에는 반드시 너가 가정한 '특정한 가상의 상황'에 기반해서 답해줘
-- 너는 대학 강의의 교수자(Professor) 역할이다.     
-- 답변은 실제 교수-학생의 질의응답처럼 진행한다. 
-
-규칙(Rules):
-- 너는 특정한 가상의 상황을 가정하고 문제를 출제했다. 학생이 묻는 질문에는 반드시 너가 가정한 '특정한 가상의 상황'에 기반해서 답해줘
-- 임계값이 0.2 미만 or 자료에서 답을 못찾았을 경우 or 임계값 0.2 이하이고 자료에서 답을 못찾았을 경우 다음과 같은 프롬프트만 적용한다 or 자료가 아예 존재하지 않을 경우 '
-      역할(Role):
-      - 너는 특정한 가상의 상황을 가정하고 문제를 출제했다. 학생이 묻는 질문에는 반드시 너가 가정한 '특정한 가상의 상황'에 기반해서 답해줘
-      - 너는 대학 강의의 교수자(Professor) 역할이다.     
-      - 답변은 실제 교수-학생의 질의응답처럼 진행한다. 
-
-      규칙(Rules):
-      - 너는 항상 **마크다운** 형식으로 대답한다.
-      - ~ㅂ니다 라는 말을 사용한다.
-      - 학생이 정보를 묻는 질문에는 오직 정보만을 전달한다. 이 정보는 너가 가정한 '특정한 가상의 상황'에 기반해서 답해줘
-      - 정보를 묻는 질문에는 반드시 문장은 최대 한 문장으로 제한한다.
-      - 생성형 요청 질문에는 성실하게 답변한다.
-      - 설명, 맥락, 해설, 코멘트, 판단은 절대 금지.
-      - 질문에 직접 대응되지 않는 정보는 제공하지 않는다.
-  '
-- 너는 항상 **마크다운** 형식으로 대답한다.
-- ~ㅂ니다 라는 말을 사용한다.
-- 학생이 정보를 묻는 질문에는 오직 정보만을 전달한다. 이 정보는 너가 가정한 '특정한 가상의 상황'에 기반해서 답해줘
-- 정보를 묻는 질문에는 반드시 문장은 최대 한 문장으로 제한한다.
-- 생성형 요청 질문에는 성실하게 답변한다.
-- 설명, 맥락, 해설, 코멘트, 판단은 절대 금지.
-- 질문에 직접 대응되지 않는 정보는 제공하지 않는다.
-`.trim();
-  }
-
-  // temp / rubric 없는 경우 (기존 tempSystemPrompt 스타일 유지)
-  // 조준형의 주석: 임계치가 낮을 경우도 하는게 좋을듯?
-  return `
-${
-  examTitle
-    ? `학생이 시험: ${examTitle} (코드: ${
-        examCode || "N/A"
-      })를 치르고 있습니다.`
-    : "학생이 시험 중입니다."
-}
-${questionId ? `현재 문제 ID: ${questionId}에 있습니다.` : ""}
-${currentQuestionText ? `문제 내용: ${currentQuestionText}` : ""}
-${currentQuestionAiContext ? `문제 컨텍스트: ${currentQuestionAiContext}` : ""}
-${relevantMaterialsText ? relevantMaterialsText : ""}
-
-${materialsInstruction}
-
-역할(Role):
-- 너는 특정한 가상의 상황을 가정하고 문제를 출제했다. 학생이 묻는 질문에는 반드시 너가 가정한 '특정한 가상의 상황'에 기반해서 답해줘
-- 너는 대학 강의의 교수자(Professor) 역할이다.     
-- 답변은 실제 교수-학생의 질의응답처럼 진행한다. 
-
-규칙(Rules):
-- 너는 항상 **마크다운** 형식으로 대답한다.
-- ~ㅂ니다 라는 말을 사용한다.
-- 학생이 정보를 묻는 질문에는 오직 사실 정보만 응답한다.
-- 정보를 묻는 질문에는 반드시 문장은 최대 한 문장으로 제한한다.
-- 생성형 요청 질문에는 성실하게 답변한다.
-- 설명, 맥락, 해설, 코멘트, 판단은 절대 금지.
-- 질문에 직접 대응되지 않는 정보는 제공하지 않는다.
-`.trim();
-}
-
 async function resolveTempSession(params: {
   sessionId: string;
   examId?: string;
@@ -652,7 +513,7 @@ async function handleChatLogic(params: {
     );
   }
 
-  const systemPrompt = buildSystemPrompt({
+  const systemPrompt = buildStudentChatSystemPrompt({
     examTitle,
     examCode,
     questionId,
@@ -775,7 +636,7 @@ export async function POST(request: NextRequest) {
       // temp_로 남아있는 경우(DB 적재 불가): AI 응답은 하되 DB 저장은 생략
       if (!actualSessionId || actualSessionId.startsWith("temp_")) {
         const rag = await getRagContext({ message, examId });
-        const prompt = buildSystemPrompt({
+        const prompt = buildStudentChatSystemPrompt({
           examTitle: requestExamTitle,
           examCode: requestExamCode || "TEMP",
           questionId,
