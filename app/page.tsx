@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import HeroSection from "@/components/landing/HeroSection";
+import DemoExperienceSection from "@/components/landing/DemoExperienceSection";
 import LogoCloud from "@/components/landing/LogoCloud";
 import TestimonialSection from "@/components/landing/TestimonialSection";
 import Footer from "@/components/landing/Footer";
@@ -82,6 +83,10 @@ export default function LandingPage() {
             </>
           }
         />
+      </section>
+      {/* Demo Experience Section */}
+      <section id="demo-experience">
+        <DemoExperienceSection mode="light" />
       </section>
       {/* Features Section - 실시간 평가 시스템 */}
       <section id="features">
