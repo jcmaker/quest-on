@@ -425,7 +425,7 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
               className="h-10 rounded-full border bg-zinc-50 dark:bg-zinc-800/50 flex items-center px-4 justify-between"
               style={{ borderColor: colors.cardBorder }}
             >
-              {typingState ? (
+              {typingState && typingState.text ? (
                 <span className="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-1">
                   <TypingText
                     text={typingState.text}
