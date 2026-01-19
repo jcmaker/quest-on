@@ -45,7 +45,7 @@ const COLORS = {
   light: {
     bg: "#FFFFFF",
     text: "#1F1F1F",
-    textSec: "#6B7280",
+    textSec: "#52525B", // Improved contrast: changed from #6B7280 to #52525B (zinc-600) for better WCAG AA compliance
     primary: "#3B82F6",
     card: "#F5F5F5",
     cardBorder: "#E5E5E5",
@@ -183,10 +183,11 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
   };
 
   return (
-    <div className="relative w-full max-w-[1400px] mx-auto mt-16 lg:mt-24 perspective-1000 px-4">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="relative w-full max-w-[1400px] mx-auto mt-16 lg:mt-24 perspective-1000 px-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* LEFT PANEL: EXAM (3 cols) - Redesigned as Student Final Answer & Cheating Detection */}
-        <div
+        {/* TODO: wow-factor 섹션 - 최종답안 주석처리 */}
+        {false && <div
           id="cheating-detection-panel"
           className="lg:col-span-3 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px] animate-slide-in-left transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.3)]"
           style={{ ...cardStyle, animationDelay: "0.2s" }}
@@ -277,10 +278,11 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
               </div>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* CENTER PANEL: CHAT HISTORY (5 cols) */}
-        <div
+        {/* TODO: wow-factor 섹션 - 대화 기록 주석처리 */}
+        {false && <div
           className="lg:col-span-5 rounded-xl overflow-hidden border flex flex-col min-h-[500px] lg:h-[700px] shadow-2xl z-10 relative bg-white dark:bg-zinc-900 animate-fade-in-scale transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_25px_70px_-15px_rgba(59,130,246,0.35)]"
           style={{
             backgroundColor: mode === "dark" ? colors.chromeBg : "#ffffff",
@@ -445,10 +447,11 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
               </div>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* RIGHT PANEL: GRADING (4 cols) */}
-        <div
+        {/* TODO: wow-factor 섹션 - 종합평가 주석처리 */}
+        {false && <div
           id="ai-grading-panel"
           className="lg:col-span-4 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px] animate-slide-in-right transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.3)]"
           style={{ ...cardStyle, animationDelay: "0.4s" }}
@@ -534,7 +537,7 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
               </div>
             </div>
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* Background Decor Elements */}
@@ -552,7 +555,7 @@ export default function HeroSection({
   mode = "light",
 }: HeroSectionProps) {
   const colors = COLORS[mode];
-  const [isVideoOpen, setIsVideoOpen] = useState(false);
+  const [isVideoOpen, setIsVideoOpen] = useState(true);
 
   return (
     <div
@@ -561,23 +564,31 @@ export default function HeroSection({
     >
       {/* Navbar removed to use global Header */}
 
-      <main className="container mx-auto px-4 pt-24 pb-20 md:pt-32 md:pb-32 relative">
+      <main className="container mx-auto px-4 pt-16 pb-16 md:pt-24 md:pb-24 lg:pt-32 lg:pb-32 relative">
         {/* Text Content */}
         <div className="max-w-5xl mx-auto text-center space-y-8 relative z-10">
           {/* Badge removed */}
 
           {/* Headline */}
           <h1
-            className="text-4xl md:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.1] animate-fade-in-up-sm"
-            style={{ color: colors.text, animationDelay: "0.1s" }}
+            className="text-3xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.2] animate-fade-in-up-sm"
+            style={{ 
+              color: colors.text, 
+              animationDelay: "0.1s",
+              letterSpacing: "-0.01em"
+            }}
           >
             {headline}
           </h1>
 
           {/* Subheadline */}
           <p
-            className="text-lg md:text-xl max-w-2xl mx-auto leading-relaxed animate-fade-in-up-sm"
-            style={{ color: colors.textSec, animationDelay: "0.2s" }}
+            className="text-base md:text-lg max-w-2xl mx-auto leading-[1.6] animate-fade-in-up-sm"
+            style={{ 
+              color: colors.textSec, 
+              animationDelay: "0.2s",
+              letterSpacing: "-0.3px"
+            }}
           >
             {subheadline}
           </p>
@@ -591,25 +602,23 @@ export default function HeroSection({
               <Link
                 href="/sign-up"
                 className={cn(
-                  "group relative inline-flex items-center justify-center gap-2 px-8 py-4 text-sm font-semibold transition-all duration-300 rounded-full text-white border-transparent shadow-lg",
+                  "group relative inline-flex items-center justify-center gap-2 px-8 py-4 text-sm font-semibold transition-all duration-200 rounded-full text-white border-transparent shadow-lg",
                   "bg-gradient-to-r from-primary via-primary/90 to-primary/80",
                   "hover:from-primary/90 hover:via-primary hover:to-primary/90",
-                  "hover:shadow-xl"
+                  "hover:shadow-xl hover:scale-[1.02] active:scale-[0.98]"
                 )}
               >
                 {ctaText}
-                <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-200" />
               </Link>
 
               <button
                 onClick={() => setIsVideoOpen(!isVideoOpen)}
-                className="text-sm font-medium px-6 py-4 flex items-center gap-2 transition-all hover:opacity-100 opacity-70 border rounded-full"
+                className="text-sm font-semibold px-6 py-4 flex items-center gap-2 transition-all duration-200 rounded-full shadow-sm hover:shadow-md active:scale-[0.98]"
                 style={{
                   color: colors.text,
-                  borderColor:
-                    mode === "dark"
-                      ? "rgba(255,255,255,0.2)"
-                      : "rgba(0,0,0,0.2)",
+                  backgroundColor: mode === "dark" ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+                  border: `1px solid ${mode === "dark" ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.15)"}`,
                 }}
               >
                 <Play className="w-4 h-4 fill-current" />

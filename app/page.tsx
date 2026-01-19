@@ -3,11 +3,26 @@
 import { useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import HeroSection from "@/components/landing/HeroSection";
-import DemoExperienceSection from "@/components/landing/DemoExperienceSection";
-import LogoCloud from "@/components/landing/LogoCloud";
-import TestimonialSection from "@/components/landing/TestimonialSection";
-import Footer from "@/components/landing/Footer";
+
+// Lazy load below-the-fold components for better performance
+const DemoExperienceSection = dynamic(
+  () => import("@/components/landing/DemoExperienceSection"),
+  { loading: () => <div className="min-h-[600px]" /> }
+);
+const TestimonialSection = dynamic(
+  () => import("@/components/landing/TestimonialSection"),
+  { loading: () => <div className="min-h-[600px]" /> }
+);
+const LogoCloud = dynamic(
+  () => import("@/components/landing/LogoCloud"),
+  { loading: () => <div className="min-h-[400px]" /> }
+);
+const Footer = dynamic(
+  () => import("@/components/landing/Footer"),
+  { loading: () => <div className="min-h-[300px]" /> }
+);
 
 export default function LandingPage() {
   const { isSignedIn, isLoaded, user } = useUser();
@@ -64,12 +79,12 @@ export default function LandingPage() {
               <span className="text-strikethrough-bottom text-gray-800">
                 AI 부정행위
               </span>
-              <span className="text-gray-700 text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-[68px]">
+              <span className="text-gray-700 text-2xl sm:text-3xl md:text-4xl lg:text-5xl">
                 , 막을 수 없다면
               </span>{" "}
               <br />
               <span className="gradient-animated-blue">평가의 일부</span>
-              <span className="text-gray-700 text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-[68px]">
+              <span className="text-gray-700 text-2xl sm:text-3xl md:text-4xl lg:text-5xl">
                 로 만드세요.
               </span>
             </>
@@ -85,9 +100,10 @@ export default function LandingPage() {
         />
       </section>
       {/* Demo Experience Section */}
-      <section id="demo-experience">
+      {/* TODO: 데모 섹션 잠시 주석처리 */}
+      {/* <section id="demo-experience">
         <DemoExperienceSection mode="light" />
-      </section>
+      </section> */}
       {/* Features Section - 실시간 평가 시스템 */}
       <section id="features">
         <TestimonialSection mode="light" />
