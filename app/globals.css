@@ -201,6 +201,9 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 16px; /* 16pt baseline */
+    line-height: 1.6; /* fontSize × 1.6 */
+    letter-spacing: -0.3px; /* -0.3px for 16-17pt body text */
   }
 }
 

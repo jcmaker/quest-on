@@ -105,6 +105,8 @@ const COLORS = {
 
 const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
   const colors = COLORS[mode];
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const [isInView, setIsInView] = useState(false);
   const [typingState, setTypingState] = useState<{
     isTyping: boolean;
     text: string;
@@ -123,8 +125,40 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
     "배터리 수명은 어느 정도야?",
   ];
 
-  // Sequence the chat
+  // Intersection Observer로 섹션이 보일 때 감지
   useEffect(() => {
+    const currentRef = sectionRef.current;
+    if (!currentRef) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !isInView) {
+          setIsInView(true);
+        }
+      },
+      {
+        threshold: 0.1, // 섹션의 10%가 보일 때 트리거
+        rootMargin: "0px 0px -100px 0px", // 뷰포트 하단 100px 전에 트리거
+      }
+    );
+
+    observer.observe(currentRef);
+
+    return () => {
+      observer.unobserve(currentRef);
+    };
+  }, [isInView]);
+
+  // Sequence the chat - 섹션이 보일 때만 시작
+  useEffect(() => {
+    if (!isInView) {
+      // 섹션이 보이지 않을 때 상태 초기화
+      setTypingState(null);
+      setShownStudentMessages(new Set());
+      setShownAIResponses(new Set());
+      return;
+    }
+
     const timers: NodeJS.Timeout[] = [];
     let currentTime = 1000; // 1초 후 시작
 
@@ -170,7 +204,7 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
     });
 
     return () => timers.forEach(clearTimeout);
-  }, []);
+  }, [isInView]);
 
   // Helper for card styling
   const cardStyle = {
@@ -183,14 +217,19 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
   };
 
   return (
-      <div className="relative w-full max-w-[1400px] mx-auto mt-16 lg:mt-24 perspective-1000 px-4">
+      <div ref={sectionRef} className="relative w-full max-w-[1400px] mx-auto mt-16 lg:mt-24 perspective-1000 px-4">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* LEFT PANEL: EXAM (3 cols) - Redesigned as Student Final Answer & Cheating Detection */}
-        {/* TODO: wow-factor 섹션 - 최종답안 주석처리 */}
-        {false && <div
+        <div
           id="cheating-detection-panel"
-          className="lg:col-span-3 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px] animate-slide-in-left transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.3)]"
-          style={{ ...cardStyle, animationDelay: "0.2s" }}
+          className="lg:col-span-3 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px] transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.3)]"
+          style={{
+            ...cardStyle,
+            opacity: isInView ? 1 : 0,
+            transform: isInView ? "translateY(0)" : "translateY(20px)",
+            transitionDelay: isInView ? "0.1s" : "0s",
+            pointerEvents: isInView ? "auto" : "none",
+          }}
         >
           {/* Header */}
           <div
@@ -278,12 +317,11 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
               </div>
             </div>
           </div>
-        </div>}
+        </div>
 
         {/* CENTER PANEL: CHAT HISTORY (5 cols) */}
-        {/* TODO: wow-factor 섹션 - 대화 기록 주석처리 */}
-        {false && <div
-          className="lg:col-span-5 rounded-xl overflow-hidden border flex flex-col min-h-[500px] lg:h-[700px] shadow-2xl z-10 relative bg-white dark:bg-zinc-900 animate-fade-in-scale transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_25px_70px_-15px_rgba(59,130,246,0.35)]"
+        <div
+          className="lg:col-span-5 rounded-xl overflow-hidden border flex flex-col min-h-[500px] lg:h-[700px] shadow-2xl z-10 relative bg-white dark:bg-zinc-900 transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_25px_70px_-15px_rgba(59,130,246,0.35)]"
           style={{
             backgroundColor: mode === "dark" ? colors.chromeBg : "#ffffff",
             boxShadow:
@@ -292,6 +330,10 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
                 : "0 20px 60px -15px rgba(0, 0, 0, 0.15)",
             borderColor:
               mode === "dark" ? "rgba(59, 130, 246, 0.3)" : colors.cardBorder,
+            opacity: isInView ? 1 : 0,
+            transform: isInView ? "translateY(0)" : "translateY(20px)",
+            transitionDelay: isInView ? "0.2s" : "0s",
+            pointerEvents: isInView ? "auto" : "none",
           }}
         >
           {/* Header */}
@@ -447,14 +489,19 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
               </div>
             </div>
           </div>
-        </div>}
+        </div>
 
         {/* RIGHT PANEL: GRADING (4 cols) */}
-        {/* TODO: wow-factor 섹션 - 종합평가 주석처리 */}
-        {false && <div
+        <div
           id="ai-grading-panel"
-          className="lg:col-span-4 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px] animate-slide-in-right transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.3)]"
-          style={{ ...cardStyle, animationDelay: "0.4s" }}
+          className="lg:col-span-4 rounded-xl overflow-hidden border flex flex-col min-h-[400px] lg:h-[500px] transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_10px_40px_-10px_rgba(59,130,246,0.3)]"
+          style={{
+            ...cardStyle,
+            opacity: isInView ? 1 : 0,
+            transform: isInView ? "translateY(0)" : "translateY(20px)",
+            transitionDelay: isInView ? "0.3s" : "0s",
+            pointerEvents: isInView ? "auto" : "none",
+          }}
         >
           {/* Header */}
           <div
@@ -476,7 +523,7 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
                   <SlidingNumber
                     number={92}
                     fromNumber={0}
-                    inView={true}
+                    inView={isInView}
                     inViewOnce={true}
                     transition={{ stiffness: 200, damping: 20, mass: 0.4 }}
                     delay={0.4}
@@ -537,7 +584,7 @@ const ProductSimulation = ({ mode }: { mode: "light" | "dark" }) => {
               </div>
             </div>
           </div>
-        </div>}
+        </div>
       </div>
 
       {/* Background Decor Elements */}
