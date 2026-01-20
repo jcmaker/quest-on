@@ -230,7 +230,7 @@ export function CustomSignUp() {
             alt="Quest-On"
             width={400}
             height={400}
-            className="w-auto h-auto max-w-[80%] max-h-[80%] object-contain"
+            className="w-auto h-auto max-w-[51%] max-h-[51%] object-contain"
             priority
           />
         </div>
