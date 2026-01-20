@@ -3,28 +3,18 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo, useCallback, memo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
-// 동적 임포트로 아이콘 최적화
-import { GraduationCap } from "lucide-react";
-import dynamic from "next/dynamic";
-import { UserMenu } from "@/components/auth/UserMenu";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+// 동적 임포트로 아이콘 최적화
+import dynamic from "next/dynamic";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -46,8 +36,6 @@ import {
 } from "@/components/ui/collapsible";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
-import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
-import { FileTree } from "@/components/dashboard/FileTree";
 import {
   Files,
   FilesHighlight,
@@ -74,15 +62,6 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "@/components/animate-ui/components/base/alert-dialog";
-import {
-  Sidebar,
-  SidebarContent as ShadcnSidebarContent,
-  SidebarHeader,
-  SidebarInset,
-  SidebarProvider,
-  SidebarTrigger,
-  useSidebar,
-} from "@/components/ui/sidebar";
 
 // 무거운 컴포넌트는 동적 임포트로 지연 로딩
 const BookOpen = dynamic(() =>
@@ -126,6 +105,9 @@ const MoreVertical = dynamic(() =>
 );
 const Copy = dynamic(() =>
   import("lucide-react").then((mod) => ({ default: mod.Copy }))
+);
+const FilesIcon = dynamic(() =>
+  import("lucide-react").then((mod) => ({ default: mod.Files }))
 );
 const Trash2 = dynamic(() =>
   import("lucide-react").then((mod) => ({ default: mod.Trash2 }))
@@ -174,10 +156,8 @@ interface ExamNode {
 
 export default function InstructorHome() {
   const router = useRouter();
-  const pathname = usePathname();
   const { isSignedIn, isLoaded, user } = useUser();
   const queryClient = useQueryClient();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -197,8 +177,6 @@ export default function InstructorHome() {
     new Set()
   );
 
-  // Get user role from metadata
-  const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
   // TanStack Query로 폴더 내용 가져오기 (캐싱 및 최적화)
   const { data: nodes = [], isLoading } = useQuery({
@@ -239,7 +217,7 @@ export default function InstructorHome() {
       const data = await response.json();
       return data.nodes || [];
     },
-    enabled: !!(isLoaded && isSignedIn && userRole === "instructor"),
+    enabled: !!(isLoaded && isSignedIn),
     staleTime: 1000 * 60 * 1, // 1분 캐시
     gcTime: 1000 * 60 * 5, // 5분 후 가비지 컬렉션
   });
@@ -270,12 +248,7 @@ export default function InstructorHome() {
       const data = await response.json();
       return data.breadcrumb || [];
     },
-    enabled: !!(
-      isLoaded &&
-      isSignedIn &&
-      userRole === "instructor" &&
-      currentFolderId
-    ),
+    enabled: !!(isLoaded && isSignedIn && currentFolderId),
     staleTime: 1000 * 60 * 5, // 5분 캐시
   });
 
@@ -287,21 +260,6 @@ export default function InstructorHome() {
       window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     }
   }, []); // 빈 의존성 배열로 마운트 시 한 번만 실행
-
-  // Redirect non-instructors or users without role
-  useEffect(() => {
-    if (isLoaded && isSignedIn) {
-      // Role이 설정되지 않은 경우 onboarding으로 리다이렉트
-      if (!user?.unsafeMetadata?.role) {
-        router.push("/onboarding");
-        return;
-      }
-      // Role이 instructor가 아닌 경우 student 페이지로 리다이렉트
-      if (userRole !== "instructor") {
-        router.push("/student");
-      }
-    }
-  }, [isLoaded, isSignedIn, userRole, user, router]);
 
   const filteredNodes = useMemo<ExamNode[]>(() => {
     if (!searchQuery.trim()) {
@@ -381,6 +339,52 @@ export default function InstructorHome() {
       console.error("Copy exam code error:", error);
       toast.error("시험 코드를 복사하지 못했습니다.", {
         id: "copy-exam-code-error",
+      });
+    }
+  };
+
+  const handleCopyExam = async (node: ExamNode) => {
+    if (node.kind !== "exam" || !node.exam_id) {
+      toast.error("시험을 복사할 수 없습니다.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "copy_exam",
+          data: { exam_id: node.exam_id },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const errorMessage =
+          errorData.error ||
+          errorData.details ||
+          "시험 복사에 실패했습니다.";
+        toast.error(errorMessage, {
+          duration: 5000,
+        });
+        return;
+      }
+
+      toast.success("시험이 복사되었습니다.", {
+        id: "copy-exam-success",
+      });
+
+      // Refresh folder contents
+      refetchFolderContents();
+    } catch (error) {
+      console.error("Error copying exam:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "시험 복사에 실패했습니다.";
+      toast.error(errorMessage, {
+        duration: 5000,
       });
     }
   };
@@ -599,15 +603,26 @@ export default function InstructorHome() {
           편집하기
         </DropdownMenuItem>
         {node.kind === "exam" && node.exams?.code && (
-          <DropdownMenuItem
-            onClick={(e) => {
-              e.stopPropagation();
-              handleCopyExamCode(node.exams?.code);
-            }}
-          >
-            <Copy className="w-4 h-4 mr-2" aria-hidden="true" />
-            코드 복사
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCopyExamCode(node.exams?.code);
+              }}
+            >
+              <Copy className="w-4 h-4 mr-2" aria-hidden="true" />
+              시험 코드
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCopyExam(node);
+              }}
+            >
+              <FilesIcon className="w-4 h-4 mr-2" aria-hidden="true" />
+              복사본
+            </DropdownMenuItem>
+          </>
         )}
         <DropdownMenuItem
           onClick={(e) => {
@@ -630,6 +645,58 @@ export default function InstructorHome() {
         ? "bg-primary text-primary-foreground shadow-sm"
         : "hover:bg-muted/70"
     );
+
+  // 그리드 뷰 스켈레톤 컴포넌트
+  const GridCardSkeleton = () => (
+    <Card className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
+      <div className="flex flex-1 flex-col text-left">
+        {/* 아이콘 영역 */}
+        <div className="flex flex-1 items-center justify-center bg-gradient-to-b from-blue-100 to-blue-50 p-10">
+          <Skeleton className="h-16 w-16 rounded-lg" />
+        </div>
+        {/* 텍스트 영역 */}
+        <CardContent className="flex flex-col gap-2 border-t border-border/50 bg-background/80 px-5 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
+              <Skeleton className="h-3 w-2/3" />
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-3 w-20" />
+          </div>
+        </CardContent>
+      </div>
+      {/* 액션 버튼 */}
+      <div className="absolute right-2 top-2">
+        <Skeleton className="h-10 w-10 rounded-lg" />
+      </div>
+    </Card>
+  );
+
+  // 리스트 뷰 스켈레톤 컴포넌트
+  const ListItemSkeleton = () => (
+    <div className="group flex items-center justify-between rounded-xl border border-border/60 bg-card/60 px-4 py-3">
+      <div className="flex items-center gap-4 flex-1">
+        <Skeleton className="h-11 w-11 rounded-lg" />
+        <div className="min-w-0 flex-1 space-y-2">
+          <Skeleton className="h-4 w-48" />
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-1" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-6 w-16 rounded-full" />
+        <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-10 w-10 rounded-lg" />
+      </div>
+    </div>
+  );
 
   // 노드 클릭 핸들러 최적화
   const handleNodeClick = useCallback(
@@ -1375,272 +1442,9 @@ export default function InstructorHome() {
     );
   };
 
-  const navigationItems = [
-    {
-      title: "대시보드",
-      href: "/instructor",
-      icon: LayoutDashboard,
-      active: pathname === "/instructor",
-    },
-    {
-      title: "새 시험 생성",
-      href: "/instructor/new",
-      icon: Plus,
-      active: pathname === "/instructor/new",
-    },
-    {
-      title: "시험 관리",
-      href: "/instructor/exams",
-      icon: List,
-      active: pathname === "/instructor/exams",
-    },
-  ];
-
-  const SidebarContent = () => {
-    const { state } = useSidebar();
-    const isCollapsed = state === "collapsed";
-
-    return (
-      <>
-        <SidebarHeader className="p-4 sm:p-5 border-b border-sidebar-border">
-          <Link
-            href="/instructor"
-            className={cn(
-              "flex items-center",
-              isCollapsed ? "justify-center" : "justify-start"
-            )}
-          >
-            <Image
-              src="/qstn_logo_svg.svg"
-              alt="Quest-On Logo"
-              width={40}
-              height={40}
-              className="w-10 h-10 shrink-0"
-              priority
-            />
-            {!isCollapsed && (
-              <span className="text-xl font-bold text-sidebar-foreground ml-2">
-                Quest-On
-              </span>
-            )}
-          </Link>
-        </SidebarHeader>
-
-        <ShadcnSidebarContent>
-          <nav
-            className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
-            aria-label="주요 네비게이션"
-          >
-            {navigationItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar group-data-[collapsible=icon]:justify-center",
-                    item.active
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  )}
-                  aria-current={item.active ? "page" : undefined}
-                  title={isCollapsed ? item.title : undefined}
-                >
-                  <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
-                  {!isCollapsed && <span>{item.title}</span>}
-                </Link>
-              );
-            })}
-          </nav>
-
-          {!isCollapsed && (
-            <>
-              <div className="border-t border-sidebar-border my-2" />
-              <div className="px-3 py-2">
-                <h3 className="text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wide mb-2">
-                  폴더 및 파일
-                </h3>
-                <FileTree
-                  userId={user?.id}
-                  currentFolderId={currentFolderId}
-                  onFolderClick={(folderId) => {
-                    setCurrentFolderId(folderId);
-                  }}
-                  className="max-h-[400px]"
-                />
-              </div>
-            </>
-          )}
-        </ShadcnSidebarContent>
-
-        <SidebarFooter />
-      </>
-    );
-  };
-
   return (
-    <div className="min-h-screen bg-background">
-      <SignedOut>
-        <div className="flex items-center justify-center h-screen p-4">
-          <Card className="w-full max-w-md shadow-xl border-0 bg-card/80 backdrop-blur-sm">
-            <CardHeader className="text-center space-y-4">
-              <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto">
-                <GraduationCap
-                  className="w-8 h-8 text-primary-foreground"
-                  aria-hidden="true"
-                />
-              </div>
-              <CardTitle className="text-xl font-bold">
-                로그인이 필요합니다
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                강사 페이지에 접근하려면 로그인해주세요
-              </p>
-            </CardHeader>
-            <CardContent className="text-center pb-8">
-              <Button
-                onClick={() => router.replace("/sign-in")}
-                className="w-full min-h-[44px]"
-                aria-label="강사로 로그인"
-              >
-                강사로 로그인
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </SignedOut>
-
-      <SignedIn>
-        <SidebarProvider
-          defaultOpen={true}
-          style={
-            {
-              "--sidebar-width": "16rem",
-              "--sidebar-width-icon": "4rem",
-            } as React.CSSProperties
-          }
-        >
-          <Sidebar
-            side="left"
-            variant="sidebar"
-            collapsible="icon"
-            className="border-r border-sidebar-border"
-          >
-            <SidebarContent />
-          </Sidebar>
-
-          {/* Mobile Sidebar Sheet */}
-          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <SheetContent side="left" className="w-64 p-0">
-              <SheetHeader className="sr-only">
-                <SheetTitle>메뉴</SheetTitle>
-              </SheetHeader>
-              <div className="flex flex-col h-full bg-sidebar">
-                <div className="p-4 sm:p-5 border-b border-sidebar-border">
-                  <Link
-                    href="/instructor"
-                    className="flex items-center justify-center"
-                  >
-                    <Image
-                      src="/qstn_logo_svg.svg"
-                      alt="Quest-On Logo"
-                      width={40}
-                      height={40}
-                      className="w-10 h-10"
-                      priority
-                    />
-                    <span className="text-xl font-bold text-sidebar-foreground ml-2">
-                      Quest-On
-                    </span>
-                  </Link>
-                </div>
-                <nav
-                  className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
-                  aria-label="주요 네비게이션"
-                >
-                  {navigationItems.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setSidebarOpen(false)}
-                        className={cn(
-                          "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar",
-                          item.active
-                            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                        )}
-                        aria-current={item.active ? "page" : undefined}
-                      >
-                        <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
-                        <span>{item.title}</span>
-                      </Link>
-                    );
-                  })}
-                </nav>
-                <SidebarFooter />
-              </div>
-            </SheetContent>
-          </Sheet>
-
-          <SidebarInset>
-            {/* Main Content Area */}
-            <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-              {/* Top Header */}
-              <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200">
-                <div className="px-4 sm:px-6 lg:px-8 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
-                      {/* Mobile Menu Button */}
-                      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-                        <SheetTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="lg:hidden min-h-[44px] min-w-[44px] p-0"
-                            aria-label="메뉴 열기"
-                          >
-                            <Menu className="w-5 h-5" aria-hidden="true" />
-                          </Button>
-                        </SheetTrigger>
-                      </Sheet>
-
-                      {/* Desktop Sidebar Toggle */}
-                      <SidebarTrigger className="hidden lg:flex" />
-
-                      <div className="min-w-0">
-                        <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
-                          강사 콘솔
-                        </h1>
-                        <p className="text-xs text-muted-foreground truncate hidden sm:block">
-                          환영합니다,{" "}
-                          {user?.firstName ||
-                            user?.emailAddresses[0]?.emailAddress}
-                          님
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2 shrink-0">
-                      <Badge
-                        variant="outline"
-                        className="bg-primary/10 text-primary border-primary/20 text-xs hidden sm:inline-flex"
-                        aria-label="강사 모드"
-                      >
-                        강사 모드
-                      </Badge>
-                      <div className="lg:hidden">
-                        <UserMenu />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </header>
-
-              {/* Main Content */}
-              <main className="flex-1 overflow-y-auto bg-background">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
+    <>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
                   {/* Welcome Section */}
                   <Card className="border-0 shadow-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground overflow-hidden">
                     <CardContent className="p-6 sm:p-8">
@@ -1687,18 +1491,6 @@ export default function InstructorHome() {
                               총 {nodes.length}개
                             </span>
                           </div>
-                          <Link
-                            href="/instructor/drive"
-                            className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
-                          >
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="min-h-[44px] px-4"
-                            >
-                              드라이브에서 보기
-                            </Button>
-                          </Link>
                         </div>
                       </div>
                     </CardHeader>
@@ -1799,17 +1591,19 @@ export default function InstructorHome() {
 
                       {/* 콘텐츠 */}
                       {isLoading ? (
-                        <div className="flex items-center justify-center py-16">
-                          <div className="flex flex-col items-center gap-3">
-                            <Loader2
-                              className="w-10 h-10 animate-spin text-primary"
-                              aria-hidden="true"
-                            />
-                            <p className="text-sm text-muted-foreground">
-                              시험 목록을 불러오는 중...
-                            </p>
+                        viewMode === "grid" ? (
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {[...Array(8)].map((_, i) => (
+                              <GridCardSkeleton key={i} />
+                            ))}
                           </div>
-                        </div>
+                        ) : (
+                          <div className="space-y-2" aria-busy="true" aria-live="polite">
+                            {[...Array(6)].map((_, i) => (
+                              <ListItemSkeleton key={i} />
+                            ))}
+                          </div>
+                        )
                       ) : !hasResults ? (
                         <div className="text-center py-16 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-card/40">
                           <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -1864,11 +1658,6 @@ export default function InstructorHome() {
                     </CardContent>
                   </Card>
                 </div>
-              </main>
-            </div>
-          </SidebarInset>
-        </SidebarProvider>
-      </SignedIn>
 
       {/* 삭제 확인 다이얼로그 */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -1995,6 +1784,6 @@ export default function InstructorHome() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

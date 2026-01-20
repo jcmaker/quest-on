@@ -8,6 +8,7 @@ const isProtectedRoute = createRouteMatcher([
 
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/demo",
   "/join",
   "/admin/login",
   "/api/chat",
@@ -19,8 +20,8 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
 ]);
 
-export default clerkMiddleware(async (auth, req) => {
-  // /api/upload는 route 핸들러에서 자체 인증 체크하므로 middleware에서 제외
+export const proxy = clerkMiddleware(async (auth, req) => {
+  // /api/upload는 route 핸들러에서 자체 인증 체크하므로 proxy에서 제외
   if (req.nextUrl.pathname === "/api/upload") return;
 
   if (isPublicRoute(req)) return;

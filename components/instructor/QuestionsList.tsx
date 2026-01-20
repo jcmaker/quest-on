@@ -10,13 +10,14 @@ import type { Question } from "./QuestionEditor";
 
 interface QuestionsListProps {
   questions: Question[];
-  onUpdate: (id: string, field: keyof Question, value: string | boolean) => void;
+  onUpdate: (
+    id: string,
+    field: keyof Question,
+    value: string | boolean
+  ) => void;
 }
 
-export function QuestionsList({
-  questions,
-  onUpdate,
-}: QuestionsListProps) {
+export function QuestionsList({ questions, onUpdate }: QuestionsListProps) {
   return (
     <Card>
       <CardHeader>
@@ -43,4 +44,3 @@ export function QuestionsList({
     </Card>
   );
 }
-

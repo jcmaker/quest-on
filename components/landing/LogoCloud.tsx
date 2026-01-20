@@ -22,11 +22,11 @@ export default function LogoCloud({
         isDark ? "bg-black" : "bg-white"
       }`}
     >
-      <div className="container mx-auto px-6 w-full">
+      <div className="container mx-auto px-4 lg:px-6 w-full">
         <div className="flex flex-col items-center justify-center gap-8">
           <p
             className={`text-xs font-bold uppercase tracking-[0.2em] ${
-              isDark ? "text-zinc-500" : "text-zinc-400"
+              isDark ? "text-zinc-500" : "text-zinc-600"
             }`}
           >
             함께하는 교수진

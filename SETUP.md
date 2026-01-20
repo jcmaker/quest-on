@@ -94,7 +94,7 @@ lib/
 
 1. **New User**: Signs up → Selects role → Gets redirected to appropriate dashboard
 2. **Returning User**: Signs in → Automatically redirected to role-specific dashboard
-3. **Route Protection**: Middleware protects all routes except specified public ones
+3. **Route Protection**: Proxy protects all routes except specified public ones
 
 ## 📚 Exam System Features
 

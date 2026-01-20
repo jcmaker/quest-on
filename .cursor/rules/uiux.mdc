@@ -1,48 +1,159 @@
 ---
+description: UI/UX Design System Rules (Cognitive Load, Typography, Color, Grid, Interaction, IA)
+globs:
+  - "**/*.{ts,tsx,js,jsx}"
+  - "**/*.{css,scss}"
+  - "**/*.{md,mdx}"
 alwaysApply: true
 ---
 
-당신은 소프트웨어 개발을 위한 UI 및 UX 디자인 원칙에 대한 전문가입니다.
+# UI/UX Core Rules
 
-시각 디자인 (Visual Design) - 사용자 시선을 효과적으로 유도할 수 있도록 명확한 시각적 계층 구조를 구축한다. - 브랜드를 잘 반영하는 일관된 색상 팔레트를 선택한다(사용자에게 가이드라인을 요청한다). - 가독성과 강조를 위해 타이포그래피를 효과적으로 사용한다. - 문자의 판독성을 위해 충분한 명도 대비를 유지한다(WCAG 2.1 AA 기준). - 애플리케이션 전반에 걸쳐 일관된 스타일로 디자인한다.
+## 1 Core Principles
 
-인터랙션 디자인 (Interaction Design) - 직관적인 내비게이션 패턴을 생성한다. - 인지 부하를 줄이기 위해 익숙한 UI 컴포넌트를 사용한다. - 사용자 행동을 유도할 수 있는 명확한 호출-행동(CTA)을 제공한다. - 다양한 기기에서 잘 동작하도록 반응형 디자인을 구현한다. - 사용자 경험을 향상시키는 선에서 애니메이션을 적절히 사용한다.
+- **Minimize cognitive load (Occam’s Razor)**  
+  Prefer the simplest design that achieves the same outcome. Avoid cleverness that increases user thinking cost.
 
-접근성 (Accessibility) - 웹 접근성을 위해 WCAG 가이드라인을 따른다. - 스크린 리더 호환성을 높이기 위해 시맨틱 HTML을 사용한다. - 이미지 및 비텍스트 콘텐츠에 대체 텍스트를 제공한다. - 모든 인터랙티브 요소가 키보드만으로도 탐색 가능하도록 보장한다. - 다양한 보조 기술을 활용해 테스트한다.
+- **Remove extraneous cognitive load**  
+  Do not add unnecessary visual stimulation, decoration, or multiple choices that are not required for task completion.
 
-성능 최적화 (Performance Optimization) - 로딩 시간을 최소화하기 위해 이미지와 에셋을 최적화한다. - 중요도가 낮은 리소스에는 지연 로딩(lazy loading)을 구현한다. - 초기 로드 성능을 개선하기 위해 코드 스플리팅을 사용한다. - Core Web Vitals(LCP, FID, CLS)를 모니터링하고 최적화한다.
+- **Recognition over recall**  
+  Design flows so users can _recognize_ actions from cues instead of having to _remember_ what to do.
 
-사용자 피드백 (User Feedback) - 사용자 행동에 대해 명확한 피드백 메커니즘을 포함한다. - 비동기 작업에 대해 로딩 인디케이터를 사용한다. - 분명한 오류 메시지와 복구 옵션을 제공한다. - 사용자 행동과 페인 포인트를 추적하기 위해 분석 도구(analytics)를 구현한다.
+  - Prefer visible labels, previews, examples, defaults, and contextual hints.
 
-정보 구조 (Information Architecture) - 사용자가 쉽게 접근할 수 있도록 콘텐츠를 논리적으로 구성한다. - 내비게이션을 위해 명확한 라벨링과 카테고리화를 사용한다. - 효과적인 검색 기능을 구현한다. - 전체 구조를 시각화하기 위해 사이트맵을 생성한다.
+- **Doherty Threshold**  
+  Aim for system feedback/response time **≤ 0.4s** for primary interactions whenever feasible.
+  - If > 0.4s is unavoidable, immediately show feedback (optimistic UI, skeleton, spinner, progress).
 
-모바일-우선 디자인 (Mobile-First Design) - 모바일 기기를 먼저 고려해 디자인한 뒤, 상위 해상도로 확장한다(Tailwind의 모바일-우선 브레이크포인트 전략을 따른다). - 터치 친화적인 인터페이스 요소를 사용한다. - 스와이프, 핀치-투-줌 등 제스처를 일반적인 행동에 구현한다. - 중요한 인터랙티브 요소를 엄지 손가락이 닿기 쉬운 영역(thumb zone)에 배치하는 것을 고려한다.
+## 2 Typography & Hierarchy
 
-일관성 (Consistency) - 디자인 시스템을 개발하고 이를 준수한다(Tailwind 유틸리티와 컴포넌트 레벨 패턴을 함께 정의한다). - 인터페이스 전반에서 일관된 용어를 사용한다. - 반복적으로 등장하는 요소의 위치를 일관되게 유지한다. - 서로 다른 섹션 간에도 시각적 일관성을 보장한다.
+- **Text-first design**  
+  Assume typography drives most of the UI experience; prioritize readability and legibility above decoration.
 
-테스트 및 반복 (Testing and Iteration) - 중요한 디자인 의사결정을 위해 A/B 테스트를 수행한다. - 히트맵과 세션 리코딩을 사용해 사용자 행동을 분석한다. - 정기적으로 사용자 피드백을 수집하고 반영한다. - 데이터와 피드백을 기반으로 디자인을 지속적으로 반복·개선한다.
+- **Anchor size (Body baseline)**  
+  Default body text to **16pt**. Use it as the baseline for spacing and type scales unless there is a clear reason to deviate.
 
-문서화 (Documentation) - 포괄적인 스타일 가이드를 유지한다(Tailwind 클래스 사용 규칙과 컴포넌트 스타일 가이드를 함께 정의한다). - 디자인 패턴과 컴포넌트 사용 방법을 문서화한다. - 복잡한 인터랙션을 위해 사용자 플로우 다이어그램을 생성한다. - 디자인 에셋을 정리하고 팀이 쉽게 접근할 수 있도록 유지한다.
+- **Build hierarchy in this order**  
+  Users perceive importance strongest by: **color > size > shape**.
 
-유동 레이아웃 (Fluid Layouts) - 고정 픽셀 대신 상대 단위(%, em, rem)를 사용한다(Tailwind의 w-_, max-w-_, gap-\* 등 상대 단위 기반 유틸리티를 우선 사용한다). - 유연한 레이아웃을 위해 CSS Grid와 Flexbox 대신 Tailwind의 grid, flex 유틸리티 클래스를 사용한다. - 모바일-우선 접근으로 디자인한 뒤 상위 해상도로 확장한다.
+  - Establish hierarchy with **weight (boldness)** and **color** first.
+  - Adjust **size** only when necessary.
 
-미디어 쿼리 (Media Queries) - 서로 다른 화면 크기에 맞춰 레이아웃을 조정하기 위해 Tailwind의 반응형 프리픽스(sm:, md:, lg:, xl:)를 사용한다. - 특정 기기보다는 콘텐츠 요구사항에 초점을 맞춰 브레이크포인트를 정의한다. - 다양한 기기와 화면 방향에서 디자인을 테스트한다.
+- **Line-height & letter-spacing**
+  - Body line-height recommendation: **fontSize × 1.6**
+  - For 16–17pt body text: apply letter-spacing **-0.3** (or **-1%**) as default.
 
-이미지 및 미디어 (Images and Media) - srcset과 sizes 속성을 사용해 반응형 이미지를 구성한다(또는 Next.js Image 컴포넌트와 함께 Tailwind 클래스를 사용한다). - 이미지와 비디오에 지연 로딩을 구현한다. - iframe과 같은 임베디드 미디어를 반응형으로 만들기 위해 Tailwind의 aspect-ratio, w-full, h-auto 등의 유틸리티 또는 최소한의 CSS를 사용한다.
+## 3 Color & Accessibility
 
-타이포그래피 (Typography) - 폰트 크기에 상대 단위(em, rem)를 사용한다(Tailwind의 text-sm, text-base, text-lg 등 rem 기반 유틸리티를 사용한다). - 작은 화면에서도 읽기 쉽도록 줄 간격과 자간을 Tailwind의 leading-_, tracking-_ 클래스로 조정한다. - 브레이크포인트 전반에서 일관된 타이포그래피를 위해 Tailwind의 폰트 스케일과 커스텀 설정을 활용한다.
+- **Design with luminance first**  
+  Define UI form using **value/brightness**. Use saturation sparingly and only for the most important elements.
 
-터치 타깃 (Touch Targets) - 인터랙티브 요소가 터치하기에 충분히 크도록 최소 44x44픽셀을 확보한다(버튼/아이콘에 적절한 p-_, h-_, w-\* 클래스를 사용한다). - 터치 타깃 사이에 적절한 간격을 둔다(gap, space-y, space-x 유틸리티 활용). - 데스크톱의 hover 상태뿐 아니라 터치 및 키보드 사용자를 위한 focus 상태도 고려한다(focus:, focus-visible: 유틸리티 사용).
+- **Contrast compliance (WCAG)**  
+  Ensure at least **AA contrast (≥ 4.5:1)** for text and essential UI components.
 
-성능 (Performance) - 모바일 네트워크에서 더 빠른 로딩을 위해 에셋을 최적화한다. - 가능하면 JavaScript 대신 CSS 애니메이션 또는 Tailwind의 transition/animation 유틸리티를 사용한다. - 퍼스트 뷰(above-the-fold) 콘텐츠를 위한 크리티컬 CSS를 구현하고, Tailwind의 JIT 빌드로 사용하지 않는 스타일을 최소화한다.
+- **Semantic color consistency**
 
-콘텐츠 우선순위 (Content Prioritization) - 모바일 뷰에서 우선적으로 보여줄 콘텐츠를 명확히 우선순위화한다. - 필요한 시점에만 콘텐츠를 드러내는 프로그레시브 디스클로저를 사용한다. - 작은 화면에서 보조 콘텐츠를 위해 오프 캔버스 패턴을 구현한다.
+  - Green: success
+  - Red: error / danger
+  - Yellow: warning
+  - Blue: info / link  
+    Apply these meanings consistently across the product.
 
-내비게이션 (Navigation) - 모바일 친화적인 내비게이션 패턴(예: 햄버거 메뉴)을 설계한다. - 내비게이션이 키보드와 스크린 리더로도 접근 가능하도록 보장한다. - 쉬운 접근성을 위해 스티키 헤더 사용을 고려한다.
+- **Natural tint/shade behavior**
+  - For **tints (lighter)**: reduce saturation to avoid neon/pastel glare
+  - For **shades (darker)**: increase saturation slightly to preserve vividness
 
-폼 (Forms) - 다양한 화면 크기에 적응하는 폼 레이아웃을 설계한다(Tailwind의 grid, flex, gap 유틸리티를 활용한다). - 더 나은 모바일 경험을 위해 적절한 input type을 사용한다. - 인라인 검증과 명확한 오류 메시지를 구현한다.
+## 4 Layout & Grid
 
-테스트 (Testing) - 브라우저 개발자 도구를 사용해 반응형을 테스트한다. - 에뮬레이터뿐만 아니라 실제 기기에서도 테스트한다. - 다양한 기기 유형을 대상으로 사용성 테스트를 수행한다.
+- **Grid unit**  
+  Use an **8pt / 4pt** spacing system as the baseline.
 
-최신 반응형 디자인 기법과 브라우저 기능을 항상 업데이트해서 숙지한다.
-업계 표준 가이드라인을 참고하고, 최신 UI/UX 트렌드 및 모범 사례를 지속적으로 학습한다.
+- **Columns**
+
+  - Mobile: **4-column** grid
+  - Desktop: **12-column** grid
+
+- **Margin & padding definition**
+
+  - Define spacing in clockwise order: **top, right, bottom, left**
+  - Apply proximity: place related items closer; separate unrelated groups clearly.
+
+- **Responsive breakpoints**
+  - Define breakpoints for **mobile / tablet / desktop**
+  - At smaller widths, **reduce visible content density** (fewer items, fewer options) to improve scanning and navigation.
+
+## 5 Interaction Components
+
+- **Interaction pipeline**
+  Every interaction must follow:  
+  **Input → Process → Output → Feedback**  
+  Always communicate state changes immediately.
+
+- **Button design**
+
+  - Buttons must clearly look “pressable” (color, underline, elevation, etc.)
+  - Label with an explicit **verb phrase** describing the outcome (e.g., “Save changes”, “Create post”)
+
+- **Text fields**
+
+  - Mark required fields clearly (e.g., red asterisk `*`)
+  - Provide the appropriate virtual keyboard/input mode (email, numeric, etc.) during entry
+
+- **Progress indicators**
+  - Short tasks: looping animation (spinner/skeleton)
+  - Long tasks: show progress via **%** or **step count** to manage waiting perception
+
+## 6 IA & Navigation
+
+- **Choose the right structure**
+  Pick based on information nature:
+
+  - Flat
+  - Tree (hierarchical)
+  - Network (graph-like)
+
+- **Tabs**
+  Use tabs only to split content of the **same hierarchy level**.  
+  The active tab must be visually unmistakable.
+
+- **Bottom sheets**
+  Use when interaction is more complex than a simple dialog.  
+  Apply background **dim** to focus attention on the sheet.
+
+## 7 Skeleton Loading (Perceived Performance)
+
+- **When to use skeletons**
+
+  - Use skeleton loading for **content layouts that are predictable** (lists, cards, feeds, tables, forms).
+  - Prefer skeletons over spinners when users expect **structured content** to appear.
+
+- **Shape should match final UI**
+
+  - Skeletons must mirror the final layout: same spacing, alignment, and approximate line lengths.
+  - Avoid generic blocks that don’t resemble the actual content.
+
+- **Avoid layout shift**
+
+  - Reserve space to match final component height/width as closely as possible to prevent jank.
+  - Keep skeleton dimensions stable across breakpoints.
+
+- **Timing rules**
+
+  - If response is likely **< 0.4s**, consider showing nothing or a subtle immediate state change (to avoid flicker).
+  - For **0.4s ~ 2s**, skeletons are ideal.
+  - For **> 2s** or uncertain duration, combine skeleton + explicit progress/step or status text when helpful.
+
+- **Perceived realism**
+
+  - Use subtle motion (shimmer/pulse) but avoid aggressive animation that adds visual noise.
+  - Keep contrast low; skeletons should not compete with real content.
+
+- **Accessibility**
+
+  - Mark skeleton containers as non-content for assistive tech (e.g., `aria-busy`, `aria-live` usage as appropriate).
+  - Provide meaningful status text for screen readers when loading is long (“Loading results…”).
+
+- **Replace strategy**
+  - Replace skeleton with real content **atomically per section** (header, list, footer) to reduce jumpiness.
+  - Prefer progressive rendering: show above-the-fold skeletons first, then below-the-fold.

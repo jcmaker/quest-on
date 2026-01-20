@@ -97,7 +97,7 @@ function CustomSidebar({
             width={32}
             height={32}
             className="w-8 h-8 shrink-0"
-            priority
+            loading="lazy"
           />
           <span className="text-base font-bold text-sidebar-foreground ml-2">
             Quest-On
@@ -1195,27 +1195,28 @@ export default function DemoExperienceSection({
   return (
     <section
       className={cn(
-        "w-full py-24 lg:py-32",
+        "w-full py-16 lg:py-24",
         isDark ? "bg-black" : "bg-gradient-to-b from-white to-zinc-50"
       )}
     >
-      <div className="container mx-auto px-6">
+      <div className="container mx-auto px-4 lg:px-6">
         {/* Header */}
-        <div className="mx-auto mb-16 max-w-4xl text-center">
+        <div className="mx-auto mb-12 lg:mb-16 max-w-4xl text-center">
           <h2
             className={cn(
-              "text-3xl font-bold tracking-tight md:text-5xl lg:text-5xl animate-fade-in-up-sm mb-4",
+              "text-3xl font-bold tracking-tight md:text-4xl lg:text-5xl animate-fade-in-up-sm mb-4",
               isDark ? "text-white" : "text-[#1F1F1F]"
             )}
+            style={{ letterSpacing: "-0.01em" }}
           >
             Quest-On 체험하기
           </h2>
           <p
             className={cn(
-              "text-lg md:text-xl leading-relaxed animate-fade-in-up-sm",
+              "text-base md:text-lg leading-[1.6] animate-fade-in-up-sm",
               isDark ? "text-zinc-400" : "text-zinc-600"
             )}
-            style={{ animationDelay: "0.1s" }}
+            style={{ animationDelay: "0.1s", letterSpacing: "-0.3px" }}
           >
             4단계로 간단하게 시작하는 혁신적인 평가 시스템
           </p>

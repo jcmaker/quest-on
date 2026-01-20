@@ -41,14 +41,15 @@ export default function TestimonialSection({
 
   return (
     <section
-      className={`w-full py-24 lg:py-32 ${isDark ? "bg-black" : "bg-white"}`}
+      className={`w-full py-16 lg:py-24 ${isDark ? "bg-black" : "bg-white"}`}
     >
-      <div className="container mx-auto px-6">
-        <div className="mx-auto mb-20 max-w-4xl text-center">
+      <div className="container mx-auto px-4 lg:px-6">
+        <div className="mx-auto mb-12 lg:mb-16 max-w-4xl text-center">
           <h2
-            className={`text-3xl font-bold tracking-tight md:text-5xl lg:text-5xl animate-fade-in-up-sm ${
+            className={`text-3xl font-bold tracking-tight md:text-4xl lg:text-5xl animate-fade-in-up-sm ${
               isDark ? "text-white" : "text-[#1F1F1F]"
             }`}
+            style={{ letterSpacing: "-0.01em" }}
           >
             이미 수많은 교육 현장에서
             <br />
@@ -56,7 +57,7 @@ export default function TestimonialSection({
           </h2>
         </div>
 
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-3 lg:gap-8">
           {TESTIMONIALS.map((testimonial, index) => (
             <div
               key={testimonial.name}
@@ -75,6 +76,7 @@ export default function TestimonialSection({
                     alt={testimonial.name}
                     fill
                     className="object-contain object-right-bottom"
+                    loading="lazy"
                   />
                 </div>
               </div>
@@ -107,10 +109,11 @@ export default function TestimonialSection({
 
                 <blockquote className="flex-1 mb-8 pr-4 md:pr-8">
                   <p
-                    className={`text-base md:text-lg lg:text-xl leading-relaxed font-bold tracking-tight ${
+                    className={`text-base md:text-lg lg:text-xl leading-[1.6] font-bold tracking-tight ${
                       isDark ? "text-zinc-200" : "text-[#1F1F1F]"
                     }`}
                     style={{
+                      letterSpacing: "-0.3px",
                       textShadow: isDark
                         ? "0 2px 4px rgba(0, 0, 0, 0.8), 0 0 12px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.9)"
                         : "0 2px 4px rgba(255, 255, 255, 1), 0 0 12px rgba(255, 255, 255, 0.8), 0 1px 2px rgba(255, 255, 255, 1)",
@@ -130,6 +133,7 @@ export default function TestimonialSection({
                         alt={testimonial.title}
                         fill
                         className="object-contain"
+                        loading="lazy"
                       />
                     </div>
                     {/* 교수님 정보 텍스트 */}

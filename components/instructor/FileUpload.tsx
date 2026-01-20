@@ -55,8 +55,8 @@ export function FileUpload({
             <TooltipContent>
               <p className="max-w-xs">
                 시험 문제 작성을 위한 수업 자료를 업로드하세요. PPT, PDF, 워드,
-                엑셀, 한글, 이미지 파일을 지원하며, 최대 50MB까지 업로드 가능합니다. AI가 이
-                자료를 참고하여 문제를 생성합니다.
+                엑셀, 한글, 이미지 파일을 지원하며, 최대 50MB까지 업로드
+                가능합니다. AI가 이 자료를 참고하여 문제를 생성합니다.
               </p>
             </TooltipContent>
           </Tooltip>
@@ -92,7 +92,9 @@ export function FileUpload({
                     ? "파일을 여기에 놓으세요"
                     : "파일을 드래그하거나 클릭하여 선택"}
                 </div>
-                <div className="text-xs">PPT, PDF, 워드, 엑셀, CSV, 한글, 이미지 파일</div>
+                <div className="text-xs">
+                  PPT, PDF, 워드, 엑셀, CSV, 한글, 이미지 파일
+                </div>
               </div>
             </div>
           </div>
@@ -148,7 +150,9 @@ export function FileUpload({
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-lg">{getFileIcon(file.name)}</span>
+                        <span className="text-lg">
+                          {getFileIcon(file.name)}
+                        </span>
                         <span
                           className={`text-sm font-medium ${
                             isDisabled ? "text-red-600" : ""
@@ -184,4 +188,3 @@ export function FileUpload({
     </>
   );
 }
-

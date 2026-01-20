@@ -608,7 +608,7 @@ export default function ExamDetail({
           <p className="text-muted-foreground">
             {error || "시험 데이터를 불러올 수 없습니다."}
           </p>
-          <Link href="/instructor/exams" className="inline-block mt-4">
+          <Link href="/instructor" className="inline-block mt-4">
             <Button variant="outline">시험 목록으로 돌아가기</Button>
           </Link>
         </div>

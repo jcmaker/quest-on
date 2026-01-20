@@ -11,7 +11,7 @@ const COLORS = {
   light: {
     bg: "#FFFFFF",
     text: "#1F1F1F",
-    textSec: "#6B7280",
+    textSec: "#52525B", // Improved contrast: changed from #6B7280 to #52525B (zinc-600) for better WCAG AA compliance
     border: "#E5E5E5",
   },
   dark: {
@@ -71,7 +71,7 @@ export default function Footer({ mode = "light" }: FooterProps) {
       }`}
     >
       <div className="container mx-auto px-4 lg:px-8 max-w-7xl">
-        <div className="flex flex-wrap lg:flex-nowrap gap-12 lg:gap-16 mb-16">
+        <div className="flex flex-wrap lg:flex-nowrap gap-8 lg:gap-12 mb-12 lg:mb-16">
           {/* Left Section - Logo & Contact */}
           <div className="w-full lg:w-1/2">
             {/* Logo */}
@@ -82,6 +82,7 @@ export default function Footer({ mode = "light" }: FooterProps) {
                 width={40}
                 height={40}
                 className="h-10 w-10"
+                loading="lazy"
               />
               <span
                 className="font-bold text-2xl tracking-tight"
@@ -93,8 +94,11 @@ export default function Footer({ mode = "light" }: FooterProps) {
 
             {/* Description */}
             <p
-              className="text-lg lg:text-xl mb-8 leading-relaxed max-w-lg"
-              style={{ color: colors.textSec }}
+              className="text-base lg:text-lg mb-8 leading-[1.6] max-w-lg"
+              style={{ 
+                color: colors.textSec,
+                letterSpacing: "-0.3px"
+              }}
             >
               AI와 함께하는 차세대 교육 평가 시스템.
               <br />
@@ -104,7 +108,7 @@ export default function Footer({ mode = "light" }: FooterProps) {
             {/* Contact Button */}
             <button
               onClick={handleContactClick}
-              className="px-8 py-3.5 rounded-full font-semibold text-white transition-all shadow-lg hover:shadow-xl hover:scale-105 flex items-center gap-2"
+              className="px-8 py-3.5 rounded-full font-semibold text-white transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2"
               style={{
                 background:
                   "linear-gradient(135deg, #3b82f6 0%, #6366f1 25%, #8b5cf6 50%, #a855f7 75%, #9333ea 100%)",

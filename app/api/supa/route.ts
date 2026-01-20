@@ -93,6 +93,8 @@ export async function POST(request: NextRequest) {
         return await deleteNode(data);
       case "get_instructor_drive":
         return await getInstructorDrive();
+      case "copy_exam":
+        return await copyExam(data);
       default:
         return NextResponse.json(
           { error: `Invalid action: ${action}` },
@@ -1922,6 +1924,256 @@ async function getInstructorDrive() {
     console.error("Get instructor drive error:", error);
     return NextResponse.json(
       { error: "Failed to get instructor drive" },
+      { status: 500 }
+    );
+  }
+}
+
+async function copyExam(data: { exam_id: string }) {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return NextResponse.json(
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
+    // Get the original exam
+    const { data: originalExam, error: examError } = await supabase
+      .from("exams")
+      .select("*")
+      .eq("id", data.exam_id)
+      .eq("instructor_id", user.id)
+      .single();
+
+    if (examError || !originalExam) {
+      return NextResponse.json(
+        { error: "Exam not found or access denied" },
+        { status: 404 }
+      );
+    }
+
+    // Get the original exam node to preserve parent folder
+    const { data: originalNode, error: nodeError } = await supabase
+      .from("exam_nodes")
+      .select("*")
+      .eq("exam_id", data.exam_id)
+      .eq("instructor_id", user.id)
+      .single();
+
+    if (nodeError || !originalNode) {
+      console.error("Original exam node not found:", nodeError);
+    }
+
+    // Generate new exam code
+    const generateExamCode = () => {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      let result = "";
+      for (let i = 0; i < 6; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    };
+
+    let newCode = generateExamCode();
+    // Ensure code is unique
+    let codeCheck = await supabase
+      .from("exams")
+      .select("code")
+      .eq("code", newCode)
+      .single();
+    
+    while (!codeCheck.error) {
+      newCode = generateExamCode();
+      codeCheck = await supabase
+        .from("exams")
+        .select("code")
+        .eq("code", newCode)
+        .single();
+    }
+
+    // Prepare copied exam data
+    const newTitle = `${originalExam.title} (복사본)`;
+    const now = new Date().toISOString();
+
+    // Sanitize questions (remove core_ability if present)
+    const sanitizedQuestions = Array.isArray(originalExam.questions)
+      ? originalExam.questions.map((q: QuestionData & { core_ability?: unknown }) => {
+          const { core_ability, ...rest } = q;
+          return rest;
+        })
+      : [];
+
+    const examData = {
+      title: newTitle,
+      code: newCode,
+      description: originalExam.description || null,
+      duration: originalExam.duration,
+      questions: sanitizedQuestions,
+      materials: originalExam.materials || [],
+      materials_text: originalExam.materials_text || [], // 복사본도 materials_text 포함
+      rubric: originalExam.rubric || [],
+      rubric_public: originalExam.rubric_public || false,
+      status: "draft", // 복사본은 초안 상태로 시작
+      instructor_id: user.id,
+      created_at: now,
+      updated_at: now,
+    };
+
+    // Create the new exam
+    const { data: newExam, error: createError } = await supabase
+      .from("exams")
+      .insert([examData])
+      .select()
+      .single();
+
+    if (createError || !newExam) {
+      console.error("Failed to create copied exam:", createError);
+      return NextResponse.json(
+        { error: "Failed to create copied exam" },
+        { status: 500 }
+      );
+    }
+
+    // Create exam node (preserve parent folder)
+    const parentId = originalNode?.parent_id || null;
+
+    // Get the maximum sort_order for this parent folder
+    let sortQuery = supabase
+      .from("exam_nodes")
+      .select("sort_order")
+      .eq("instructor_id", user.id);
+
+    if (parentId === null) {
+      sortQuery = sortQuery.is("parent_id", null);
+    } else {
+      sortQuery = sortQuery.eq("parent_id", parentId);
+    }
+
+    const { data: existingNodes } = await sortQuery
+      .order("sort_order", { ascending: false })
+      .limit(1);
+
+    const nextSortOrder =
+      existingNodes && existingNodes.length > 0
+        ? existingNodes[0].sort_order + 1
+        : 0;
+
+    const { data: examNode, error: nodeCreateError } = await supabase
+      .from("exam_nodes")
+      .insert([
+        {
+          instructor_id: user.id,
+          parent_id: parentId,
+          kind: "exam",
+          name: newTitle,
+          exam_id: newExam.id,
+          sort_order: nextSortOrder,
+        },
+      ])
+      .select()
+      .single();
+
+    if (nodeCreateError) {
+      console.error("Failed to create exam node:", nodeCreateError);
+      // Exam is created but node creation failed - this is not critical
+    }
+
+    // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
+    if (
+      examData.materials_text &&
+      Array.isArray(examData.materials_text) &&
+      examData.materials_text.length > 0
+    ) {
+      try {
+        console.log("🚀 [copyExam] RAG 처리 시작:", {
+          examId: newExam.id,
+          materialsCount: examData.materials_text.length,
+        });
+
+        let totalChunksSaved = 0;
+
+        for (let idx = 0; idx < examData.materials_text.length; idx++) {
+          const material = examData.materials_text[idx];
+          const materialData = material as {
+            url: string;
+            text: string;
+            fileName: string;
+          };
+
+          if (!materialData.text || materialData.text.trim().length === 0) {
+            console.log(
+              `⚠️ [copyExam] 텍스트가 비어있어 건너뜀: ${materialData.fileName}`
+            );
+            continue;
+          }
+
+          // 1. 텍스트 청킹
+          const chunks = chunkText(materialData.text, {
+            chunkSize: 800,
+            chunkOverlap: 200,
+          });
+
+          if (chunks.length === 0) {
+            console.log(
+              `⚠️ [copyExam] 청크 생성 실패: ${materialData.fileName}`
+            );
+            continue;
+          }
+
+          // 2. 기존 청크 삭제 (이미 새 시험이므로 없을 것이지만 안전을 위해)
+          await deleteChunksByFileUrl(newExam.id, materialData.url);
+
+          // 3. 청크 포맷팅
+          const formattedChunks = chunks.map((chunk) =>
+            formatChunkMetadata(chunk, materialData.fileName, materialData.url)
+          );
+
+          // 4. 임베딩 생성 (배치)
+          const chunkTexts = formattedChunks.map((c) => c.content);
+          const embeddings = await createEmbeddings(chunkTexts);
+
+          // 5. DB에 저장
+          const chunksToSave = formattedChunks.map((chunk, index) => ({
+            content: chunk.content,
+            embedding: embeddings[index],
+            metadata: chunk.metadata,
+          }));
+
+          await saveChunksToDB(newExam.id, chunksToSave);
+          totalChunksSaved += chunksToSave.length;
+        }
+
+        console.log("🎉 [copyExam] RAG 처리 완료:", {
+          examId: newExam.id,
+          filesProcessed: examData.materials_text.length,
+          totalChunksSaved,
+        });
+      } catch (ragError) {
+        // RAG 처리 실패해도 시험 복사는 성공으로 처리
+        console.error("❌ [copyExam] RAG 처리 실패 (시험 복사는 성공):", {
+          examId: newExam.id,
+          error:
+            ragError instanceof Error ? ragError.message : String(ragError),
+        });
+      }
+    }
+
+    return NextResponse.json({ exam: newExam, examNode });
+  } catch (error) {
+    console.error("Copy exam error:", error);
+    return NextResponse.json(
+      {
+        error: `Failed to copy exam: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      },
       { status: 500 }
     );
   }
