@@ -8,8 +8,13 @@ export function ConditionalHeader() {
   const pathname = usePathname();
   const { isSignedIn, isLoaded, user } = useUser();
 
-  // onboarding 페이지와 시험 페이지에서는 헤더를 숨김
-  if (pathname === "/onboarding" || pathname.startsWith("/exam/")) {
+  // onboarding 페이지, 시험 페이지, 로그인/회원가입 페이지에서는 헤더를 숨김
+  if (
+    pathname === "/onboarding" ||
+    pathname.startsWith("/exam/") ||
+    pathname.startsWith("/sign-in") ||
+    pathname.startsWith("/sign-up")
+  ) {
     return null;
   }
 

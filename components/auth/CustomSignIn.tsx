@@ -12,7 +12,25 @@ export function CustomSignIn() {
   return (
     <div className="flex min-h-screen">
       {/* Left Section - Sign In Form */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-white dark:bg-gray-950">
+      <div className="flex-1 flex items-center justify-center p-8 bg-white dark:bg-gray-950 relative">
+        {/* 로고 - 왼쪽 상단 */}
+        <Link
+          href="/"
+          className="absolute top-8 left-8 flex items-center gap-2 z-10"
+        >
+          <Image
+            src="/qstn_logo_svg.svg"
+            alt="Quest-On Logo"
+            width={30}
+            height={30}
+            className="w-8 h-8"
+            priority
+          />
+          <span className="text-lg font-bold text-gray-900 dark:text-white">
+            Quest-On
+          </span>
+        </Link>
+
         <div className="w-full max-w-md space-y-8">
           <div className="space-y-2">
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
