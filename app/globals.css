@@ -842,3 +842,44 @@
 .hide-scrollbar::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }
+
+/* Clerk SignIn/SignUp 필드 세로 배치 강제 */
+.cl-formFieldRow {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100% !important;
+  gap: 0 !important;
+}
+
+.cl-formField {
+  width: 100% !important;
+  margin-bottom: 1rem !important;
+  display: block !important;
+}
+
+.cl-formFieldLabel {
+  display: block !important;
+  margin-bottom: 0.25rem !important;
+}
+
+.cl-formFieldInput {
+  width: 100% !important;
+}
+
+.cl-form {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 1rem !important;
+}
+
+/* 소셜 로그인 버튼들도 세로 배치 */
+.cl-socialButtonsBlock {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.5rem !important;
+  margin-bottom: 1.5rem !important;
+}
+
+.cl-socialButtonsBlockButton {
+  width: 100% !important;
+}

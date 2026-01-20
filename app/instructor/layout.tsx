@@ -30,7 +30,7 @@ import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
 import { FileTree } from "@/components/dashboard/FileTree";
 import { UserMenu } from "@/components/auth/UserMenu";
 import dynamic from "next/dynamic";
-import { Menu } from "lucide-react";
+import { Menu, XIcon } from "lucide-react";
 
 // 동적 임포트로 아이콘 최적화
 const LayoutDashboard = dynamic(() =>
@@ -41,7 +41,7 @@ const Plus = dynamic(() =>
 );
 
 function SidebarContent() {
-  const { state } = useSidebar();
+  const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
   const pathname = usePathname();
   const { user } = useUser();
@@ -64,28 +64,43 @@ function SidebarContent() {
 
   return (
     <>
-      <SidebarHeader className="p-4 sm:p-5 border-b border-sidebar-border">
-        <Link
-          href="/instructor"
-          className={cn(
-            "flex items-center",
-            isCollapsed ? "justify-center" : "justify-start"
-          )}
-        >
-          <Image
-            src="/qstn_logo_svg.svg"
-            alt="Quest-On Logo"
-            width={40}
-            height={40}
-            className="w-10 h-10 shrink-0"
-            priority
-          />
-          {!isCollapsed && (
-            <span className="text-xl font-bold text-sidebar-foreground ml-2">
-              Quest-On
-            </span>
-          )}
-        </Link>
+      <SidebarHeader className="p-2 sm:p-3 border-b border-sidebar-border flex items-center">
+        {isCollapsed ? (
+          <div className="w-full flex items-center justify-center">
+            <Menu 
+              className="w-5 h-5 shrink-0 cursor-pointer" 
+              aria-hidden="true" 
+              onClick={toggleSidebar}
+            />
+            <span className="sr-only">사이드바 열기</span>
+          </div>
+        ) : (
+          <div className="w-full flex items-center justify-between px-3 sm:px-4">
+            <Link
+              href="/instructor"
+              className="flex items-center flex-shrink-0"
+            >
+              <Image
+                src="/qstn_logo_svg.svg"
+                alt="Quest-On Logo"
+                width={30}
+                height={30}
+                className="w-8 h-8 shrink-0"
+                priority
+              />
+              <span className="text-lg font-bold ml-2">Quest-On</span>
+            </Link>
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
+              aria-label="사이드바 닫기"
+            >
+              <XIcon className="w-5 h-5" />
+              <span className="sr-only">사이드바 닫기</span>
+            </button>
+          </div>
+        )}
       </SidebarHeader>
 
       <ShadcnSidebarContent>
@@ -286,17 +301,12 @@ export default function InstructorLayout({
             {/* Main Content Area */}
             <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
               {/* Top Header */}
-              <header className="sticky top-0 z-40 bg-card/95 backdrop-blur-md border-b border-border shadow-sm transition-all duration-200">
-                <div className="px-4 sm:px-6 lg:px-8 py-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
-                      {/* Mobile Menu Button */}
-                      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+              <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
                         <SheetTrigger asChild>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="lg:hidden min-h-[44px] min-w-[44px] p-0"
+                            className="lg:hidden min-h-[44px] min-w-[44px] p-0 "
                             aria-label="메뉴 열기"
                           >
                             <Menu className="w-5 h-5" aria-hidden="true" />
@@ -304,36 +314,8 @@ export default function InstructorLayout({
                         </SheetTrigger>
                       </Sheet>
 
-                      {/* Desktop Sidebar Toggle */}
-                      <SidebarTrigger className="hidden lg:flex" />
-
-                      <div className="min-w-0">
-                        <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
-                          강사 콘솔
-                        </h1>
-                        <p className="text-xs text-muted-foreground truncate hidden sm:block">
-                          환영합니다,{" "}
-                          {user?.firstName ||
-                            user?.emailAddresses[0]?.emailAddress}
-                          님
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-2 shrink-0">
-                      <Badge
-                        variant="outline"
-                        className="bg-primary/10 text-primary border-primary/20 text-xs hidden sm:inline-flex"
-                        aria-label="강사 모드"
-                      >
-                        강사 모드
-                      </Badge>
-                      <div className="lg:hidden">
-                        <UserMenu />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </header>
+                      
+              
 
               {/* Main Content */}
               <main className="flex-1 overflow-y-auto bg-background">

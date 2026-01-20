@@ -3,6 +3,7 @@
 import { SignUp } from "@clerk/nextjs";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { clerkAppearance } from "@/lib/clerk-config";
 import {
   Card,
   CardContent,
@@ -129,24 +130,26 @@ export function CustomSignUp() {
 
               <SignUp
                 appearance={{
+                  ...clerkAppearance,
                   elements: {
+                    ...clerkAppearance.elements,
+                    // 페이지별 커스터마이징: 카드 스타일 제거 (커스텀 레이아웃 사용)
                     rootBox: "w-full",
                     card: "shadow-none border-0 p-0",
                     headerTitle: "hidden",
                     headerSubtitle: "hidden",
-                    socialButtonsBlockButton:
-                      "border border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900",
-                    socialButtonsBlockButtonText:
-                      "text-gray-700 dark:text-gray-300 font-medium",
+                    // 필드 세로 배치 강제 - 각 필드를 블록 요소로 만들어 위아래 배치
+                    formField: "w-full mb-4 block",
+                    formFieldLabel: "block mb-1 text-foreground font-medium",
+                    formFieldInput: "w-full border-input bg-background text-foreground focus:border-primary focus:ring-2 focus:ring-ring",
+                    formFieldRow: "flex flex-col space-y-0 w-full",
+                    form: "flex flex-col space-y-4",
+                    // 소셜 로그인 버튼 스타일
+                    socialButtonsBlock: "mb-6 space-y-2",
+                    socialButtonsBlockButton: "w-full border border-input bg-background hover:bg-accent text-foreground",
+                    // 회원가입 버튼
                     formButtonPrimary:
-                      "bg-black hover:bg-gray-900 text-white w-full",
-                    formFieldInput:
-                      "border-gray-300 dark:border-gray-700 focus:border-black dark:focus:border-white",
-                    footerActionLink:
-                      "text-black dark:text-white hover:underline",
-                    formFieldLabel: "text-gray-700 dark:text-gray-300",
-                    dividerLine: "bg-gray-200 dark:bg-gray-800",
-                    dividerText: "text-gray-500 dark:text-gray-400",
+                      "bg-black hover:bg-gray-900 text-white w-full mt-4 dark:bg-white dark:hover:bg-gray-100 dark:text-black",
                   },
                 }}
                 routing="path"

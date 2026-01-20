@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/sonner";
 import QueryProvider from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { Analytics } from "@vercel/analytics/next";
+import { clerkAppearance, clerkLocalization } from "@/lib/clerk-config";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -63,7 +64,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" suppressHydrationWarning={true}>
-      <ClerkProvider>
+      <ClerkProvider
+        appearance={clerkAppearance}
+        localization={clerkLocalization}
+      >
         <body
           className={`${geistSans.variable} ${geistMono.variable} ${robotoMono.variable} antialiased`}
           suppressHydrationWarning={true}
