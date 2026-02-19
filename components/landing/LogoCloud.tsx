@@ -4,6 +4,7 @@
 // 이전: import { motion } from "framer-motion";
 
 const PARTNERS = [
+  { name: "고려대학교", logo: "Korea University" },
   { name: "홍익대학교", logo: "Hongik University" },
   { name: "경기과학기술대학교", logo: "GTEC" },
 ];
@@ -31,21 +32,21 @@ export default function LogoCloud({
           >
             함께하는 교수진
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-12 md:gap-24 opacity-70 grayscale hover:grayscale-0 transition-all duration-500">
+          <div className="grid grid-cols-1 sm:grid-cols-3 w-full max-w-4xl mx-auto gap-8 sm:gap-12 opacity-70 grayscale hover:grayscale-0 transition-all duration-500">
             {PARTNERS.map((partner) => (
               <div
                 key={partner.name}
-                className="flex flex-col items-center gap-3 group"
+                className="flex flex-col items-center justify-center gap-3 group min-w-0 py-4"
               >
                 <div
-                  className={`text-2xl md:text-3xl font-black tracking-tighter ${
+                  className={`text-xl sm:text-2xl md:text-3xl font-black tracking-tighter text-center ${
                     isDark ? "text-white" : "text-[#1F1F1F]"
                   }`}
                 >
                   {partner.name}
                 </div>
                 <div
-                  className={`text-[10px] font-bold uppercase tracking-widest opacity-40 group-hover:opacity-100 transition-opacity ${
+                  className={`text-[10px] font-bold uppercase tracking-widest opacity-40 group-hover:opacity-100 transition-opacity text-center ${
                     isDark ? "text-zinc-400" : "text-zinc-500"
                   }`}
                 >
