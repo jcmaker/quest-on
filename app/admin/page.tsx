@@ -77,7 +77,6 @@ export default function AdminDashboard() {
     students: 0,
     noRole: 0,
   });
-  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [error, setError] = useState("");
@@ -119,7 +118,6 @@ export default function AdminDashboard() {
 
     setUsers(usersResponse.users);
     setStats(usersResponse.stats);
-    setIsLoading(false);
   }, [usersResponse, router]);
 
   useEffect(() => {
@@ -437,7 +435,7 @@ export default function AdminDashboard() {
                   <SelectItem value="student">학생</SelectItem>
                 </SelectContent>
               </Select>
-              <Button onClick={fetchUsers} variant="outline">
+              <Button onClick={() => refetch()} variant="outline">
                 <RefreshCw className="w-4 h-4 mr-2" />
                 새로고침
               </Button>
