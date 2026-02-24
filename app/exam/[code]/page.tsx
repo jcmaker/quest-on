@@ -97,6 +97,8 @@ interface Exam {
     detailedCriteria: string;
   }>;
   rubric_public?: boolean;
+  allow_draft_in_waiting?: boolean;
+  allow_chat_in_waiting?: boolean;
 }
 
 interface DraftAnswer {
