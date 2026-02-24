@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AdminSidebarFooter } from "@/components/admin/AdminSidebarFooter";
+import { useQuery } from "@tanstack/react-query";
 
 interface User {
   id: string;
@@ -84,31 +85,51 @@ export default function AdminDashboard() {
   const router = useRouter();
   const pathname = usePathname();
 
-  const fetchUsers = async () => {
-    try {
-      setIsLoading(true);
-      setError("");
+  const {
+    data: usersResponse,
+    isLoading,
+    error: queryError,
+    refetch,
+  } = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: async () => {
       const response = await fetch("/api/admin/users");
 
       if (response.status === 403) {
-        router.push("/admin/login");
-        return;
+        return { unauthorized: true } as const;
       }
 
-      if (response.ok) {
-        const data = await response.json();
-        setUsers(data.users);
-        setStats(data.stats);
-      } else {
-        setError("사용자 정보를 불러오는데 실패했습니다.");
+      if (!response.ok) {
+        throw new Error("사용자 정보를 불러오는데 실패했습니다.");
       }
-    } catch (error) {
-      console.error("Error fetching users:", error);
-      setError("서버 오류가 발생했습니다.");
-    } finally {
-      setIsLoading(false);
+
+      const data = await response.json();
+      return { unauthorized: false, ...data } as const;
+    },
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!usersResponse) return;
+
+    if (usersResponse.unauthorized) {
+      router.push("/admin/login");
+      return;
     }
-  };
+
+    setUsers(usersResponse.users);
+    setStats(usersResponse.stats);
+    setIsLoading(false);
+  }, [usersResponse, router]);
+
+  useEffect(() => {
+    if (!queryError) return;
+    setError(
+      queryError instanceof Error
+        ? queryError.message
+        : "사용자 정보를 불러오는데 실패했습니다."
+    );
+  }, [queryError]);
 
   const updateUserRole = async (userId: string, newRole: string) => {
     try {
@@ -122,7 +143,7 @@ export default function AdminDashboard() {
 
       if (response.ok) {
         // 사용자 목록 새로고침
-        await fetchUsers();
+        await refetch();
       } else {
         setError("역할 변경에 실패했습니다.");
       }
@@ -210,38 +231,6 @@ export default function AdminDashboard() {
       </>
     );
   };
-
-  useEffect(() => {
-    // 페이지 로드 시 인증 확인
-    const checkAuth = async () => {
-      try {
-        // 먼저 사용자 목록을 가져와서 인증 확인
-        const response = await fetch("/api/admin/users");
-
-        if (response.status === 403) {
-          // 인증되지 않은 경우 로그인 페이지로 리다이렉트
-          router.push("/admin/login");
-          return;
-        }
-
-        if (response.ok) {
-          // 인증된 경우 사용자 데이터 설정
-          const data = await response.json();
-          setUsers(data.users);
-          setStats(data.stats);
-          setIsLoading(false);
-        } else {
-          setError("사용자 정보를 불러오는데 실패했습니다.");
-          setIsLoading(false);
-        }
-      } catch (error) {
-        console.error("Auth check error:", error);
-        router.push("/admin/login");
-      }
-    };
-
-    checkAuth();
-  }, [router]);
 
   const filteredUsers = users.filter((user) => {
     const matchesSearch =

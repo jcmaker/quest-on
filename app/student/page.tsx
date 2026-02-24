@@ -75,6 +75,83 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 
+type NavigationItem = {
+  title: string;
+  href: string;
+  icon: any;
+  active: boolean;
+};
+
+function SidebarContent({
+  navigationItems,
+  onItemClick,
+}: {
+  navigationItems: NavigationItem[];
+  onItemClick: () => void;
+}) {
+  const { state } = useSidebar();
+  const isCollapsed = state === "collapsed";
+
+  return (
+    <>
+      <SidebarHeader className="p-4 sm:p-5 border-b border-sidebar-border">
+        <Link
+          href="/student"
+          className={cn(
+            "flex items-center",
+            isCollapsed ? "justify-center" : "justify-start"
+          )}
+        >
+          <Image
+            src="/qstn_logo_svg.svg"
+            alt="Quest-On Logo"
+            width={40}
+            height={40}
+            className="w-10 h-10 shrink-0"
+            priority
+          />
+          {!isCollapsed && (
+            <span className="text-xl font-bold text-sidebar-foreground ml-2">
+              Quest-On
+            </span>
+          )}
+        </Link>
+      </SidebarHeader>
+
+      <ShadcnSidebarContent>
+        <nav
+          className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
+          aria-label="주요 네비게이션"
+        >
+          {navigationItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onItemClick}
+                className={cn(
+                  "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar group-data-[collapsible=icon]:justify-center",
+                  item.active
+                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                )}
+                aria-current={item.active ? "page" : undefined}
+                title={isCollapsed ? item.title : undefined}
+              >
+                <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
+                {!isCollapsed && <span>{item.title}</span>}
+              </Link>
+            );
+          })}
+        </nav>
+      </ShadcnSidebarContent>
+
+      <SidebarFooter />
+    </>
+  );
+}
+
 interface ExamSession {
   id: string;
   examId: string;
@@ -117,7 +194,6 @@ export default function StudentDashboard() {
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
   const [profileChecked, setProfileChecked] = useState(false);
-  const [isCheckingProfile, setIsCheckingProfile] = useState(false);
 
   // Scroll to top on mount and when pathname changes
   useEffect(() => {
@@ -141,42 +217,47 @@ export default function StudentDashboard() {
     }
   }, [isLoaded, isSignedIn, userRole, user, router]);
 
-  // Check if profile exists for students
-  useEffect(() => {
-    const checkProfile = async () => {
-      if (profileChecked || isCheckingProfile) return;
-      if (isLoaded && isSignedIn && userRole === "student") {
-        setIsCheckingProfile(true);
-        try {
-          const response = await fetch("/api/student/profile");
-          if (response.ok) {
-            const data = await response.json();
-            if (!data.profile) {
-              router.replace("/student/profile-setup");
-              return;
-            }
-          } else if (response.status === 403) {
-            router.replace("/instructor");
-            return;
-          }
-        } catch (error) {
-          console.error("[Profile Check] Error checking profile:", error);
-        } finally {
-          setProfileChecked(true);
-          setIsCheckingProfile(false);
-        }
+  // Check if profile exists for students (React Query 기반)
+  const {
+    data: profileData,
+    isLoading: isProfileLoading,
+  } = useQuery({
+    queryKey: ["student-profile", user?.id],
+    enabled:
+      isLoaded &&
+      isSignedIn &&
+      userRole === "student" &&
+      !profileChecked,
+    queryFn: async () => {
+      const response = await fetch("/api/student/profile");
+      if (response.status === 403) {
+        return { forbidden: true } as const;
       }
-    };
-    checkProfile();
-  }, [
-    isLoaded,
-    isSignedIn,
-    userRole,
-    profileChecked,
-    isCheckingProfile,
-    router,
-    user,
-  ]);
+      if (!response.ok) {
+        throw new Error("[Profile Check] 프로필을 불러오는 중 오류가 발생했습니다.");
+      }
+      const data = await response.json();
+      return { forbidden: false, ...data } as const;
+    },
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!profileData || profileChecked) return;
+
+    if (profileData.forbidden) {
+      router.replace("/instructor");
+      return;
+    }
+
+    // profile 정보가 없으면 프로필 설정 페이지로 이동
+    if (!(profileData as any).profile) {
+      router.replace("/student/profile-setup");
+      return;
+    }
+
+    setProfileChecked(true);
+  }, [profileData, profileChecked, router]);
 
   // TanStack Query for Sessions (Infinite Scroll)
   const {
@@ -454,70 +535,6 @@ export default function StudentDashboard() {
     },
   ];
 
-  const SidebarContent = () => {
-    const { state } = useSidebar();
-    const isCollapsed = state === "collapsed";
-
-    return (
-      <>
-        <SidebarHeader className="p-4 sm:p-5 border-b border-sidebar-border">
-          <Link
-            href="/student"
-            className={cn(
-              "flex items-center",
-              isCollapsed ? "justify-center" : "justify-start"
-            )}
-          >
-            <Image
-              src="/qstn_logo_svg.svg"
-              alt="Quest-On Logo"
-              width={40}
-              height={40}
-              className="w-10 h-10 shrink-0"
-              priority
-            />
-            {!isCollapsed && (
-              <span className="text-xl font-bold text-sidebar-foreground ml-2">
-                Quest-On
-              </span>
-            )}
-          </Link>
-        </SidebarHeader>
-
-        <ShadcnSidebarContent>
-          <nav
-            className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
-            aria-label="주요 네비게이션"
-          >
-            {navigationItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar group-data-[collapsible=icon]:justify-center",
-                    item.active
-                      ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                  )}
-                  aria-current={item.active ? "page" : undefined}
-                  title={isCollapsed ? item.title : undefined}
-                >
-                  <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
-                  {!isCollapsed && <span>{item.title}</span>}
-                </Link>
-              );
-            })}
-          </nav>
-        </ShadcnSidebarContent>
-
-        <SidebarFooter />
-      </>
-    );
-  };
-
   // Skeleton loading components
   const StatCardSkeleton = () => (
     <Card className="border-0 shadow-lg animate-pulse">
@@ -549,7 +566,14 @@ export default function StudentDashboard() {
     </div>
   );
 
-  if (isLoaded && isSignedIn && userRole === "student" && isCheckingProfile) {
+  const isCheckingProfile =
+    isLoaded &&
+    isSignedIn &&
+    userRole === "student" &&
+    !profileChecked &&
+    isProfileLoading;
+
+  if (isCheckingProfile) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
@@ -600,7 +624,10 @@ export default function StudentDashboard() {
             collapsible="icon"
             className="border-r border-sidebar-border"
           >
-            <SidebarContent />
+            <SidebarContent
+              navigationItems={navigationItems}
+              onItemClick={() => setSidebarOpen(false)}
+            />
           </Sidebar>
 
           {/* Mobile Sidebar Sheet */}

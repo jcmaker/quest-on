@@ -1,8 +1,5 @@
-"use client";
-
-import { useEffect } from "react";
-import { useUser } from "@clerk/nextjs";
-import { useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
+import { currentUser } from "@clerk/nextjs/server";
 import dynamic from "next/dynamic";
 import HeroSection from "@/components/landing/HeroSection";
 
@@ -24,49 +21,26 @@ const Footer = dynamic(
   { loading: () => <div className="min-h-[300px]" /> }
 );
 
-export default function LandingPage() {
-  const { isSignedIn, isLoaded, user } = useUser();
-  const router = useRouter();
+export default async function LandingPage() {
+  const user = await currentUser();
 
-  // Get user role from metadata
-  const userRole = (user?.unsafeMetadata?.role as string) || "student";
+  if (user) {
+    const role = (user.unsafeMetadata?.role as string) || "student";
 
-  // Auto-redirect logged-in users to their dashboard
-  useEffect(() => {
-    if (!isLoaded) return;
-
-    if (isSignedIn) {
-      // Logged in - redirect based on role
-      if (!user?.unsafeMetadata?.role) {
-        router.replace("/onboarding");
-      } else {
-        switch (userRole) {
-          case "instructor":
-            router.replace("/instructor");
-            break;
-          case "student":
-            router.replace("/student");
-            break;
-          case "admin":
-            router.replace("/admin");
-            break;
-          default:
-            router.replace("/student");
-        }
+    if (!user.unsafeMetadata?.role) {
+      redirect("/onboarding");
+    } else {
+      switch (role) {
+        case "instructor":
+          redirect("/instructor");
+        case "student":
+          redirect("/student");
+        case "admin":
+          redirect("/admin");
+        default:
+          redirect("/student");
       }
     }
-  }, [isLoaded, isSignedIn, userRole, user, router]);
-
-  // Show loading state while checking auth
-  if (isLoaded && isSignedIn) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center space-y-4">
-          <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-muted-foreground">리다이렉트 중...</p>
-        </div>
-      </div>
-    );
   }
 
   return (

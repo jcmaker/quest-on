@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
@@ -85,42 +86,45 @@ export default function StudentReportPage() {
   const sessionId = params.sessionId as string;
   const reportTemplateRef = useRef<HTMLDivElement>(null);
 
-  const [reportData, setReportData] = useState<ReportData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState(0);
-  const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
-  const fetchReportData = async () => {
-    try {
-      setLoading(true);
+  const {
+    data: reportData,
+    isLoading,
+    error: queryError,
+  } = useQuery({
+    queryKey: ["student-report", sessionId, user?.id],
+    enabled:
+      isLoaded &&
+      isSignedIn &&
+      userRole === "student" &&
+      typeof sessionId === "string" &&
+      !!sessionId,
+    queryFn: async () => {
       const response = await fetch(`/api/student/session/${sessionId}/report`);
 
       if (!response.ok) {
         if (response.status === 403 || response.status === 404) {
-          setError("리포트를 찾을 수 없습니다.");
-        } else {
-          setError("리포트를 불러오는 중 오류가 발생했습니다.");
+          throw new Error("리포트를 찾을 수 없습니다.");
         }
-        return;
+        throw new Error("리포트를 불러오는 중 오류가 발생했습니다.");
       }
 
       const data: ReportData = await response.json();
 
-      // Check if graded
       if (!data.grades || Object.keys(data.grades).length === 0) {
-        setError("아직 평가가 완료되지 않았습니다.");
-        return;
+        throw new Error("아직 평가가 완료되지 않았습니다.");
       }
 
-      setReportData(data);
-    } catch (error) {
-      console.error("Error fetching report:", error);
-      setError("리포트를 불러오는 중 오류가 발생했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
+      return data;
+    },
+    retry: false,
+  });
+
+  const errorMessage =
+    queryError instanceof Error ? queryError.message : null;
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -129,9 +133,6 @@ export default function StudentReportPage() {
       router.push("/student");
       return;
     }
-
-    fetchReportData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn, user, sessionId, router]);
 
   const getScoreColor = (score: number) => {
@@ -255,7 +256,7 @@ export default function StudentReportPage() {
     }
   };
 
-  if (!isLoaded || loading) {
+  if (!isLoaded || isLoading) {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
@@ -269,12 +270,12 @@ export default function StudentReportPage() {
     return null;
   }
 
-  if (error || !reportData) {
+  if (errorMessage || !reportData) {
     return (
       <div className="container mx-auto p-6 max-w-4xl">
         <div className="text-center py-12">
           <h2 className="text-xl font-semibold text-red-600 mb-2">
-            {error || "리포트를 불러올 수 없습니다"}
+            {errorMessage || "리포트를 불러올 수 없습니다"}
           </h2>
           <Link href="/student">
             <Button variant="outline" className="mt-4">

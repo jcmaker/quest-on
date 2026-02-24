@@ -658,11 +658,11 @@ async function getExamById(data: { id: string }) {
       );
     }
 
-    // Now fetch the full exam data
+    // Now fetch the full exam data (Gate 필드 포함)
     const { data: exam, error } = await supabase
       .from("exams")
       .select(
-        "id, title, code, description, duration, questions, materials, rubric, rubric_public, status, instructor_id, created_at, updated_at"
+        "id, title, code, description, duration, questions, materials, rubric, rubric_public, status, instructor_id, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting"
       )
       .eq("id", data.id)
       .eq("instructor_id", user.id) // Only allow instructors to view their own exams
@@ -881,6 +881,45 @@ async function initExamSession(data: {
       return NextResponse.json({ error: "Exam not found" }, { status: 404 });
     }
 
+    // ✅ Gate 방식: 시험 상태 및 입장 가능 여부 확인
+    const now = new Date().toISOString();
+    const nowTime = new Date().getTime();
+    const examStatus = exam.status || "draft";
+    const openAt = exam.open_at ? new Date(exam.open_at).getTime() : null;
+    const closeAt = exam.close_at ? new Date(exam.close_at).getTime() : null;
+    const startedAt = exam.started_at ? new Date(exam.started_at).getTime() : null;
+
+    // ✅ 기본 원칙: 시작 전(draft/joinable/scheduled)에는 Join만 가능, 응시는 불가
+    // Running 상태에서만 실제 응시 가능
+    
+    // Closed 상태는 Join 불가
+    if (examStatus === "closed" || examStatus === "archived") {
+      return NextResponse.json(
+        {
+          error: "Exam not available for joining",
+          currentStatus: examStatus,
+          message: "This exam is closed or archived",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Gate 필드가 있는 경우: close_at 체크 (입장 마감 시간)
+    const hasGateFields = openAt !== null || closeAt !== null;
+    if (hasGateFields) {
+      const isEntryClosed = closeAt !== null && nowTime >= closeAt;
+      if (isEntryClosed) {
+        return NextResponse.json(
+          {
+            error: "Entry window closed",
+            closeAt: exam.close_at,
+            message: "The entry window for this exam has closed",
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // core_ability(핵심 역량) 필드는 제거되었으므로, 세션 init 응답에서도 제거한다.
     if (exam.questions && Array.isArray(exam.questions)) {
       exam.questions = exam.questions.map((q: Record<string, unknown>) => {
@@ -977,23 +1016,25 @@ async function initExamSession(data: {
       timestamp: string;
       qIdx: number;
     }> = [];
-    const now = new Date().toISOString();
-    const nowTime = new Date().getTime();
 
     if (existingSession && !existingSession.submitted_at) {
-      // ✅ 시험 시간 종료 체크 (세션 생성 시점 + 시험 시간)
-      const sessionStartTime = new Date(existingSession.created_at).getTime();
+      // ✅ Gate 방식: 세션 상태 확인 및 타이머 계산
+      const sessionStatus = existingSession.status || "not_joined";
       
-      // duration이 0(무제한)이면 만료 시간을 먼 미래로 설정 (100년 후)
-      const examDurationMs =
-        exam.duration === 0
-          ? 100 * 365 * 24 * 60 * 60 * 1000 // 100년을 밀리초로 변환
-          : exam.duration * 60 * 1000; // 분을 밀리초로 변환
-      const sessionEndTime = sessionStartTime + examDurationMs;
-      const timeRemaining = sessionEndTime - nowTime;
+      // ✅ 중요: 타이머는 in_progress 상태이고 attempt_timer_started_at이 설정된 경우에만 시작됨
+      // waiting 상태에서는 타이머가 시작되지 않으므로 시간 체크를 하지 않음
+      const timerStartTime = existingSession.attempt_timer_started_at
+        ? new Date(existingSession.attempt_timer_started_at).getTime()
+        : null;
+      
+      // ✅ 시험 시간 종료 체크는 in_progress 상태이고 타이머가 시작된 경우에만 수행
+      if (sessionStatus === "in_progress" && timerStartTime !== null && exam.duration !== 0) {
+        const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
+        const sessionEndTime = timerStartTime + examDurationMs;
+        const timeRemaining = sessionEndTime - nowTime;
 
-      // duration이 0이 아닐 때만 시간 종료 체크 및 자동 제출 처리
-      if (exam.duration !== 0 && timeRemaining <= 0) {
+        // 시간 종료 체크 및 자동 제출 처리
+        if (timeRemaining <= 0) {
         console.log(
           "[INIT_EXAM_SESSION] Session time expired - auto-submitting:",
           existingSession.id
@@ -1041,26 +1082,81 @@ async function initExamSession(data: {
           timeExpired: true,
         });
       }
+      }
 
-      // Activate existing session
-      console.log(
-        "[INIT_EXAM_SESSION] Activating existing session:",
-        existingSession.id
-      );
-      const { data: updatedSession, error: updateError } = await supabase
-        .from("sessions")
-        .update({
-          is_active: true,
-          last_heartbeat_at: now,
-          device_fingerprint:
-            incomingFingerprint || existingSession.device_fingerprint || null,
-        })
-        .eq("id", existingSession.id)
-        .select()
-        .single();
+      // ✅ 세션 상태에 따라 처리: 기본적으로 시작 전에는 waiting, 시작 후에는 in_progress
+      const currentStatus = existingSession.status || "not_joined";
+      const examStarted = examStatus === "running" && startedAt !== null && nowTime >= startedAt;
+      
+      // 이미 InProgress인 경우 (시험이 시작된 경우)
+      if (currentStatus === "in_progress") {
+        console.log(
+          "[INIT_EXAM_SESSION] Session already in progress:",
+          existingSession.id
+        );
+        
+        const { data: updatedSession, error: updateError } = await supabase
+          .from("sessions")
+          .update({
+            is_active: true,
+            last_heartbeat_at: now,
+            device_fingerprint:
+              incomingFingerprint || existingSession.device_fingerprint || null,
+          })
+          .eq("id", existingSession.id)
+          .select()
+          .single();
 
-      if (updateError) throw updateError;
-      session = updatedSession;
+        if (updateError) throw updateError;
+        session = updatedSession;
+      } else if (examStarted && currentStatus === "waiting") {
+        // 시험이 시작되었고 세션이 waiting 상태인 경우 → in_progress로 전환
+        console.log(
+          "[INIT_EXAM_SESSION] Exam started - updating session to in_progress:",
+          existingSession.id
+        );
+        
+        const { data: updatedSession, error: updateError } = await supabase
+          .from("sessions")
+          .update({
+            is_active: true,
+            last_heartbeat_at: now,
+            device_fingerprint:
+              incomingFingerprint || existingSession.device_fingerprint || null,
+            status: "in_progress",
+            started_at: now,
+            attempt_timer_started_at: now,
+          })
+          .eq("id", existingSession.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        session = updatedSession;
+      } else {
+        // Waiting 상태인 경우 (시험 시작 대기 중)
+        console.log(
+          "[INIT_EXAM_SESSION] Session in waiting state:",
+          existingSession.id
+        );
+        
+        const { data: updatedSession, error: updateError } = await supabase
+          .from("sessions")
+          .update({
+            is_active: true,
+            last_heartbeat_at: now,
+            device_fingerprint:
+              incomingFingerprint || existingSession.device_fingerprint || null,
+            // 상태가 없거나 joined인 경우 waiting으로 설정
+            status: currentStatus === "joined" || !currentStatus ? "waiting" : currentStatus,
+          })
+          .eq("id", existingSession.id)
+          .select()
+          .single();
+
+        if (updateError) throw updateError;
+        session = updatedSession;
+      }
 
       // Get messages for existing session
       const { data: sessionMessages } = await supabase
@@ -1076,8 +1172,16 @@ async function initExamSession(data: {
         qIdx: msg.q_idx || 0,
       }));
     } else {
-      // Create new session and activate it
+      // ✅ 새 세션 생성: 기본적으로 시작 전에는 waiting 상태
       console.log("[INIT_EXAM_SESSION] Creating new session");
+      
+      // 시험이 이미 시작되었는지 확인 (started_at이 있고 status가 running)
+      const examStarted = examStatus === "running" && startedAt !== null && nowTime >= startedAt;
+      
+      // 시작 전: waiting 상태 (Join만 가능, 응시 불가)
+      // 시작 후: in_progress 상태 (실제 응시 가능)
+      const initialStatus = examStarted ? "in_progress" : "waiting";
+      
       const { data: newSession, error: createError } = await supabase
         .from("sessions")
         .insert([
@@ -1089,6 +1193,10 @@ async function initExamSession(data: {
             last_heartbeat_at: now,
             device_fingerprint: incomingFingerprint,
             created_at: now,
+            status: initialStatus,
+            // 시험이 이미 시작되었으면 타이머 시작 시간 설정
+            started_at: examStarted ? now : null,
+            attempt_timer_started_at: examStarted ? now : null,
           },
         ])
         .select()
@@ -1096,29 +1204,46 @@ async function initExamSession(data: {
 
       if (createError) throw createError;
       session = newSession;
-      console.log("[INIT_EXAM_SESSION] ✅ New session created:", newSession.id);
+      console.log(
+        `[INIT_EXAM_SESSION] ✅ New session created: ${newSession.id} (status: ${initialStatus}, examStarted: ${examStarted})`
+      );
     }
 
-    // 세션의 시작 시간과 남은 시간 계산
-    const sessionStartTime = new Date(session.created_at).getTime();
-    
-    // duration이 0(무제한)이면 만료 시간을 먼 미래로 설정 (100년 후)
-    const examDurationMs =
-      exam.duration === 0
-        ? 100 * 365 * 24 * 60 * 60 * 1000 // 100년을 밀리초로 변환
-        : exam.duration * 60 * 1000; // 분을 밀리초로 변환
-    const sessionEndTime = sessionStartTime + examDurationMs;
-    const timeRemaining = Math.max(0, sessionEndTime - nowTime);
+    // ✅ Gate 방식: 타이머 계산 (attempt_timer_started_at 기준)
+    const sessionStatus = session.status || "not_joined";
+    const timerStartTime = session.attempt_timer_started_at
+      ? new Date(session.attempt_timer_started_at).getTime()
+      : session.started_at
+      ? new Date(session.started_at).getTime()
+      : null;
+
+    // InProgress 상태이고 타이머가 시작된 경우만 시간 계산
+    let timeRemaining = null;
+    let sessionStartTime = session.created_at;
+
+    if (sessionStatus === "in_progress" && timerStartTime !== null) {
+      sessionStartTime = new Date(session.attempt_timer_started_at || session.started_at || session.created_at).toISOString();
+      
+      // duration이 0(무제한)이면 만료 시간을 먼 미래로 설정 (100년 후)
+      const examDurationMs =
+        exam.duration === 0
+          ? 100 * 365 * 24 * 60 * 60 * 1000 // 100년을 밀리초로 변환
+          : exam.duration * 60 * 1000; // 분을 밀리초로 변환
+      const sessionEndTime = timerStartTime + examDurationMs;
+      timeRemaining = Math.max(0, sessionEndTime - nowTime);
+    }
 
     return NextResponse.json({
       exam,
       session,
       messages,
-      sessionStartTime: session.created_at,
+      sessionStartTime,
       timeRemaining:
-        exam.duration === 0
-          ? null // 무제한인 경우 null 반환
+        exam.duration === 0 || timeRemaining === null
+          ? null // 무제한이거나 타이머가 시작되지 않은 경우 null 반환
           : Math.floor(timeRemaining / 1000), // 초 단위
+      sessionStatus, // 세션 상태 반환 (Waiting Room 표시용)
+      gateStarted: examStatus === "running" && startedAt !== null && nowTime >= startedAt, // 시험 시작 여부
     });
   } catch (error) {
     console.error("[INIT_EXAM_SESSION] ❌ Error:", error);
@@ -1789,38 +1914,47 @@ async function sessionHeartbeat(data: {
       console.error("Failed to fetch exam for heartbeat:", examError);
       // 시험 정보를 가져오지 못해도 하트비트는 계속 진행
     } else {
-      // ✅ 시간 종료 체크 (duration이 0이면 건너뛰기)
-      if (exam.duration !== 0) {
-        const sessionStartTime = new Date(session.created_at).getTime();
+      // ✅ Gate 방식: attempt_timer_started_at 기준으로 시간 체크
+      // InProgress 상태이고 타이머가 시작된 경우만 시간 체크
+      const sessionStatus = (session as any).status || "not_joined";
+      const timerStartTime = (session as any).attempt_timer_started_at
+        ? new Date((session as any).attempt_timer_started_at).getTime()
+        : (session as any).started_at
+        ? new Date((session as any).started_at).getTime()
+        : null;
+
+      if (sessionStatus === "in_progress" && timerStartTime !== null && exam.duration !== 0) {
         const examDurationMs = exam.duration * 60 * 1000;
-        const sessionEndTime = sessionStartTime + examDurationMs;
+        const sessionEndTime = timerStartTime + examDurationMs;
         const now = Date.now();
         const timeRemaining = sessionEndTime - now;
 
         if (timeRemaining <= 0) {
-        // ✅ 시간 종료 - 자동 제출 처리
-        console.log(
-          "[SESSION_HEARTBEAT] Time expired - auto-submitting session:",
-          data.sessionId
-        );
+          // ✅ 시간 종료 - 자동 제출 처리
+          console.log(
+            "[SESSION_HEARTBEAT] Time expired - auto-submitting session:",
+            data.sessionId
+          );
 
-        const { error: updateError } = await supabase
-          .from("sessions")
-          .update({
-            submitted_at: new Date().toISOString(),
-            is_active: false,
-          })
-          .eq("id", data.sessionId);
+          const { error: updateError } = await supabase
+            .from("sessions")
+            .update({
+              submitted_at: new Date().toISOString(),
+              status: "auto_submitted",
+              auto_submitted: true,
+              is_active: false,
+            })
+            .eq("id", data.sessionId);
 
-        if (updateError) {
-          console.error("Failed to auto-submit session:", updateError);
-        }
+          if (updateError) {
+            console.error("Failed to auto-submit session:", updateError);
+          }
 
-        return NextResponse.json({
-          success: true,
-          timeExpired: true,
-          autoSubmitted: true,
-        });
+          return NextResponse.json({
+            success: true,
+            timeExpired: true,
+            autoSubmitted: true,
+          });
         }
       }
     }
@@ -1834,16 +1968,27 @@ async function sessionHeartbeat(data: {
 
       if (updateError) throw updateError;
 
-      // 남은 시간 계산해서 반환
+      // ✅ Gate 방식: attempt_timer_started_at 기준으로 남은 시간 계산
       let timeRemaining = null;
-      if (exam && exam.duration !== 0) {
-        const sessionStartTime = new Date(session.created_at).getTime();
+      const sessionStatus = (session as any).status || "not_joined";
+      const timerStartTime = (session as any).attempt_timer_started_at
+        ? new Date((session as any).attempt_timer_started_at).getTime()
+        : (session as any).started_at
+        ? new Date((session as any).started_at).getTime()
+        : null;
+
+      if (
+        exam &&
+        exam.duration !== 0 &&
+        sessionStatus === "in_progress" &&
+        timerStartTime !== null
+      ) {
         const examDurationMs = exam.duration * 60 * 1000;
-        const sessionEndTime = sessionStartTime + examDurationMs;
+        const sessionEndTime = timerStartTime + examDurationMs;
         const now = Date.now();
         timeRemaining = Math.max(0, Math.floor((sessionEndTime - now) / 1000));
       }
-      // duration이 0이면 timeRemaining은 null로 유지 (무제한)
+      // duration이 0이거나 타이머가 시작되지 않았으면 timeRemaining은 null로 유지
 
       return NextResponse.json({ 
         success: true,

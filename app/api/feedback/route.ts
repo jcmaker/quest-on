@@ -69,8 +69,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Exam not found" }, { status: 404 });
     }
 
-    // Check if exam is still active
-    if (exam.status !== "active" && exam.status !== "draft") {
+    // Check if exam allows submission (draft, active, or running after instructor started)
+    const allowedStatuses = ["active", "draft", "running"];
+    if (!exam.status || !allowedStatuses.includes(exam.status)) {
       return NextResponse.json(
         { error: "Exam is no longer active" },
         { status: 400 }

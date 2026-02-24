@@ -130,7 +130,8 @@ function SidebarContent() {
           })}
         </nav>
 
-        {!isCollapsed && (
+        {/* 폴더 트리 구조 임시 비활성화 */}
+        {/* {!isCollapsed && (
           <>
             <div className="border-t border-sidebar-border my-2" />
             <div className="px-3 py-2">
@@ -147,7 +148,7 @@ function SidebarContent() {
               />
             </div>
           </>
-        )}
+        )} */}
       </ShadcnSidebarContent>
 
       <SidebarFooter />

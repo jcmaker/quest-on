@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,6 +69,8 @@ import {
   ChatLoadingIndicator,
   SubmissionOverlay,
 } from "@/components/exam/ExamLoading";
+import { PreflightModal } from "@/components/exam/PreflightModal";
+import { WaitingRoom } from "@/components/exam/WaitingRoom";
 
 interface Question {
   id: string;
@@ -388,7 +391,7 @@ export default function ExamPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [draftAnswers, setDraftAnswers] = useState<DraftAnswer[]>([]);
 
-  const [examLoading, setExamLoading] = useState(true);
+  const [examInitialized, setExamInitialized] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [sessionError, setSessionError] = useState(false);
@@ -402,9 +405,13 @@ export default function ExamPage() {
   const [questionScrollTop, setQuestionScrollTop] = useState(0);
   const [sessionStartTime, setSessionStartTime] = useState<string | null>(null);
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
+  // Gate 방식 상태 관리
+  const [sessionStatus, setSessionStatus] = useState<string | null>(null);
+  const [showPreflight, setShowPreflight] = useState(false);
+  const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const questionScrollRef = useRef<HTMLDivElement>(null);
 
   // Filter chat history by current question
@@ -434,244 +441,188 @@ export default function ExamPage() {
     </>
   );
 
-  // Fetch exam and session data from database using optimized single call
-  useEffect(() => {
-    const initExam = async () => {
-      if (!examCode || !isLoaded || !user) return;
-
+  const { data: initData, isLoading: initLoading } = useQuery({
+    queryKey: ["exam-session-init", examCode, user?.id],
+    queryFn: async () => {
       const deviceFingerprint = getDeviceFingerprint();
-
-      try {
-        // Note: Clerk session revocation is optional
-        // The main protection is at the exam session level (checked in init_exam_session)
-        // Uncomment below if you want to also revoke other Clerk sessions:
-        /*
-        try {
-          const revokeResponse = await fetch(
-            "/api/auth/revoke-other-sessions",
-            {
-              method: "POST",
-            }
-          );
-          if (revokeResponse.ok) {
-            const revokeData = await revokeResponse.json();
-            console.log("[INIT_EXAM] Revoked other Clerk sessions:", revokeData);
-          }
-        } catch (revokeError) {
-          console.error("[INIT_EXAM] Error revoking Clerk sessions:", revokeError);
-          // Continue even if revocation fails
-        }
-        */
-
-        const response = await fetch("/api/supa", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "init_exam_session",
-            data: {
-              examCode,
-              studentId: user.id,
-              deviceFingerprint,
-            },
-          }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-
-          if (result.exam) {
-            setExam(result.exam);
-
-            // ✅ 재시험 차단: 이미 제출된 시험이 있으면 제출 화면으로 리다이렉트
-            if (result.isRetakeBlocked) {
-              setIsSubmitted(true);
-              setSessionId(result.session.id);
-              if (result.messages) {
-                setChatHistory(result.messages);
-              }
-              return;
-            }
-
-            // ✅ 시간 종료로 자동 제출된 경우
-            if (result.autoSubmitted || result.timeExpired) {
-              setIsSubmitted(true);
-              setSessionId(result.session.id);
-              if (result.messages) {
-                setChatHistory(result.messages);
-              }
-              // 알림은 ExamHeader에서 처리
-              return;
-            }
-
-            // Initialize draft answers
-            const initialDrafts = result.exam.questions.map((q: Question) => ({
-              questionId: q.id,
-              text: "",
-            }));
-            setDraftAnswers(initialDrafts);
-
-            // Set session data
-            if (result.session) {
-              setSessionId(result.session.id);
-
-              // ✅ 세션 시작 시간과 남은 시간 설정
-              if (result.sessionStartTime) {
-                setSessionStartTime(result.sessionStartTime);
-              } else if (result.session.created_at) {
-                setSessionStartTime(result.session.created_at);
-              }
-
-              if (result.timeRemaining !== undefined) {
-                setTimeRemaining(result.timeRemaining);
-              }
-
-              // If the session is already submitted (e.g. user reopens the page), show the submitted screen.
-              if (result.session.submitted_at) {
-                setIsSubmitted(true);
-              }
-
-              // Set chat history (always set, even if empty, to ensure consistency)
-              if (result.messages) {
-                setChatHistory(result.messages);
-                console.log(
-                  "[INIT_EXAM] Loaded chat history:",
-                  result.messages.length,
-                  "messages"
-                );
-              } else {
-                // Explicitly set empty array if messages is not provided
-                setChatHistory([]);
-                console.log("[INIT_EXAM] No messages found in session");
-              }
-            } else {
-              setSessionError(true);
-            }
-          } else {
-            router.push("/join?error=exam_not_found");
-          }
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-
-          // ✅ 재시험 시도 시 에러 처리
-          if (
-            errorData.error === "Exam already submitted" ||
-            errorData.isRetakeBlocked
-          ) {
-            router.push("/join?error=already_submitted");
-            return;
-          }
-
-          router.push("/join?error=network_error");
-        }
-      } catch (error) {
-        console.error("Error initializing exam:", error);
-        router.push("/join?error=network_error");
-      } finally {
-        setExamLoading(false);
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "init_exam_session",
+          data: { examCode, studentId: user!.id, deviceFingerprint },
+        }),
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return { ok: false as const, errorData };
       }
-    };
+      return { ok: true as const, ...(await response.json()) };
+    },
+    enabled: !!examCode && isLoaded && !!user,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 10 * 60 * 1000,
+  });
 
-    initExam();
-  }, [examCode, router, isLoaded, user]);
+  const examLoading = initLoading || (!examInitialized && !initData);
 
-  // Send heartbeat periodically and handle page unload
+  useEffect(() => {
+    if (!initData) return;
+
+    if (!initData.ok) {
+      const { errorData } = initData;
+      if (errorData.error === "Exam already submitted" || errorData.isRetakeBlocked) {
+        router.push("/join?error=already_submitted");
+      } else {
+        router.push("/join?error=network_error");
+      }
+      return;
+    }
+
+    if (!initData.exam) {
+      router.push("/join?error=exam_not_found");
+      return;
+    }
+
+    setExam(initData.exam);
+
+    if (initData.isRetakeBlocked) {
+      setIsSubmitted(true);
+      setSessionId(initData.session.id);
+      if (initData.messages) setChatHistory(initData.messages);
+      setExamInitialized(true);
+      return;
+    }
+
+    if (initData.autoSubmitted || initData.timeExpired) {
+      setIsSubmitted(true);
+      setSessionId(initData.session.id);
+      if (initData.messages) setChatHistory(initData.messages);
+      setExamInitialized(true);
+      return;
+    }
+
+    setDraftAnswers(
+      initData.exam.questions.map((q: Question) => ({ questionId: q.id, text: "" }))
+    );
+
+    if (initData.session) {
+      setSessionId(initData.session.id);
+
+      const currentSessionStatus =
+        initData.sessionStatus || initData.session.status || "not_joined";
+      setSessionStatus(currentSessionStatus);
+
+      if (
+        currentSessionStatus === "joined" ||
+        (!initData.session.preflight_accepted_at &&
+          currentSessionStatus !== "in_progress" &&
+          currentSessionStatus !== "submitted" &&
+          currentSessionStatus !== "auto_submitted")
+      ) {
+        setShowPreflight(true);
+      }
+
+      if (currentSessionStatus === "waiting") {
+        setIsInWaitingRoom(true);
+      }
+
+      if (initData.sessionStartTime) {
+        setSessionStartTime(initData.sessionStartTime);
+      } else if (initData.session.created_at) {
+        setSessionStartTime(initData.session.created_at);
+      }
+
+      if (initData.timeRemaining !== undefined) {
+        setTimeRemaining(initData.timeRemaining);
+      }
+
+      if (initData.session.submitted_at) {
+        setIsSubmitted(true);
+      }
+
+      if (initData.messages) {
+        setChatHistory(initData.messages);
+        console.log("[INIT_EXAM] Loaded chat history:", initData.messages.length, "messages");
+      } else {
+        setChatHistory([]);
+        console.log("[INIT_EXAM] No messages found in session");
+      }
+    } else {
+      setSessionError(true);
+    }
+
+    setExamInitialized(true);
+  }, [initData, router]);
+
+  const { data: heartbeatData } = useQuery({
+    queryKey: ["session-heartbeat", sessionId],
+    queryFn: async () => {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "session_heartbeat",
+          data: { sessionId, studentId: user!.id },
+        }),
+      });
+      if (!response.ok) return null;
+      return response.json();
+    },
+    enabled: !!sessionId && !!user && !isSubmitted,
+    refetchInterval: 30000,
+    refetchIntervalInBackground: true,
+    staleTime: 0,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!heartbeatData) return;
+    if (heartbeatData.timeExpired || heartbeatData.autoSubmitted) {
+      setIsSubmitted(true);
+    }
+    if (heartbeatData.timeRemaining !== undefined) {
+      setTimeRemaining(heartbeatData.timeRemaining);
+    }
+  }, [heartbeatData]);
+
   useEffect(() => {
     if (!sessionId || !user || isSubmitted) return;
 
-    // Send heartbeat every 30 seconds
-    const sendHeartbeat = async () => {
-      try {
-        const response = await fetch("/api/supa", {
+    const handleBeforeUnload = () => {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon(
+          "/api/supa",
+          JSON.stringify({
+            action: "deactivate_session",
+            data: { sessionId, studentId: user.id },
+          })
+        );
+      } else {
+        fetch("/api/supa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "session_heartbeat",
-            data: {
-              sessionId,
-              studentId: user.id,
-            },
+            action: "deactivate_session",
+            data: { sessionId, studentId: user.id },
           }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-
-          // ✅ 시간 종료로 자동 제출된 경우
-          if (result.timeExpired || result.autoSubmitted) {
-            setIsSubmitted(true);
-
-            // 자동 제출 알림은 ExamHeader에서 처리됨
-            // 여기서는 상태만 업데이트
-          }
-
-          // ✅ 남은 시간 업데이트
-          if (result.timeRemaining !== undefined) {
-            setTimeRemaining(result.timeRemaining);
-          }
-        }
-      } catch (error) {
-        console.error("Heartbeat error:", error);
-      }
-    };
-
-    // Send initial heartbeat
-    sendHeartbeat();
-
-    // Set up interval
-    heartbeatIntervalRef.current = setInterval(sendHeartbeat, 30000); // 30 seconds
-
-    // Deactivate session on page unload
-    const handleBeforeUnload = async () => {
-      // Use sendBeacon for reliable delivery on page unload
-      if (navigator.sendBeacon) {
-        const data = JSON.stringify({
-          action: "deactivate_session",
-          data: {
-            sessionId,
-            studentId: user.id,
-          },
-        });
-        navigator.sendBeacon("/api/supa", data);
-      } else {
-        // Fallback: try to send sync request (not ideal but better than nothing)
-        try {
-          await fetch("/api/supa", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "deactivate_session",
-              data: {
-                sessionId,
-                studentId: user.id,
-              },
-            }),
-            keepalive: true,
-          });
-        } catch (error) {
-          console.error("Failed to deactivate session on unload:", error);
-        }
+          keepalive: true,
+        }).catch(console.error);
       }
     };
 
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
-      if (heartbeatIntervalRef.current) {
-        clearInterval(heartbeatIntervalRef.current);
-      }
       window.removeEventListener("beforeunload", handleBeforeUnload);
-
-      // Deactivate session on component unmount (if not submitted)
       if (!isSubmitted) {
         fetch("/api/supa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "deactivate_session",
-            data: {
-              sessionId,
-              studentId: user.id,
-            },
+            data: { sessionId, studentId: user.id },
           }),
           keepalive: true,
         }).catch(console.error);
@@ -679,56 +630,41 @@ export default function ExamPage() {
     };
   }, [sessionId, user, isSubmitted]);
 
-  // Load saved answers from server when session is available
+  const { data: savedAnswersData } = useQuery({
+    queryKey: ["session-submissions", sessionId],
+    queryFn: async () => {
+      console.log("Loading saved answers from server for session:", sessionId);
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "get_session_submissions",
+          data: { sessionId },
+        }),
+      });
+      if (!response.ok) return null;
+      const result = await response.json();
+      console.log("Server submissions result:", result);
+      return result;
+    },
+    enabled: !!sessionId && !!exam,
+    staleTime: Infinity,
+  });
+
   useEffect(() => {
-    const loadSavedAnswersFromServer = async () => {
-      if (!sessionId || !exam) return;
+    if (!savedAnswersData?.submissions || !exam) return;
+    if (savedAnswersData.submissions.length === 0) return;
 
-      try {
-        console.log(
-          "Loading saved answers from server for session:",
-          sessionId
-        );
+    const serverAnswers = exam.questions.map((question, index) => {
+      const submission = savedAnswersData.submissions.find(
+        (sub: { q_idx: number; answer: string }) => sub.q_idx === index
+      );
+      return { questionId: question.id, text: submission?.answer || "" };
+    });
 
-        const response = await fetch("/api/supa", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "get_session_submissions",
-            data: { sessionId },
-          }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          console.log("Server submissions result:", result);
-
-          if (result.submissions && result.submissions.length > 0) {
-            // Convert server submissions to draft answers format
-            const serverAnswers = exam.questions.map((question, index) => {
-              const submission = result.submissions.find(
-                (sub: { q_idx: number; answer: string }) => sub.q_idx === index
-              );
-              return {
-                questionId: question.id,
-                text: submission?.answer || "",
-              };
-            });
-
-            setDraftAnswers(serverAnswers);
-            console.log(
-              "Loaded saved answers from server:",
-              serverAnswers.length
-            );
-          }
-        }
-      } catch (error) {
-        console.error("Error loading saved answers from server:", error);
-      }
-    };
-
-    loadSavedAnswersFromServer();
-  }, [sessionId, exam]);
+    setDraftAnswers(serverAnswers);
+    console.log("Loaded saved answers from server:", serverAnswers.length);
+  }, [savedAnswersData, exam]);
 
   // Manual save function
   const manualSave = useCallback(async () => {
@@ -1170,6 +1106,62 @@ export default function ExamPage() {
     );
   }
 
+  // Preflight Modal 수락 핸들러
+  const handlePreflightAccept = async () => {
+    if (!sessionId) {
+      console.error("[PREFLIGHT] No session ID");
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/session/${sessionId}/preflight`, {
+        method: "POST",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("[PREFLIGHT] ✅ Preflight accepted:", data);
+        setShowPreflight(false);
+        setSessionStatus("waiting");
+        setIsInWaitingRoom(true);
+      } else {
+        let errorData: any = {};
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          try {
+            errorData = await response.json();
+          } catch (e) {
+            console.error("[PREFLIGHT] Failed to parse error response as JSON:", e);
+          }
+        } else {
+          const text = await response.text().catch(() => "");
+          errorData = { message: text || "알 수 없는 오류" };
+        }
+        
+        console.error("[PREFLIGHT] ❌ Failed to accept preflight:", {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+        });
+        
+        // 사용자에게 에러 알림
+        const errorMessage = errorData.details || errorData.message || errorData.error || "알 수 없는 오류";
+        alert(`Preflight 수락에 실패했습니다: ${errorMessage}`);
+      }
+    } catch (error) {
+      console.error("[PREFLIGHT] ❌ Error accepting preflight:", error);
+      alert("Preflight 수락 중 오류가 발생했습니다. 다시 시도해주세요.");
+    }
+  };
+
+  // Gate Start 신호 수신 핸들러
+  const handleGateStart = () => {
+    setIsInWaitingRoom(false);
+    setSessionStatus("in_progress");
+    // 페이지 새로고침하여 최신 상태 로드
+    window.location.reload();
+  };
+
   if (isSubmitted) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
@@ -1213,6 +1205,46 @@ export default function ExamPage() {
           </Card>
         </div>
       </div>
+    );
+  }
+
+  // ✅ Gate 방식: Waiting Room 표시
+  if (isInWaitingRoom || sessionStatus === "waiting") {
+    return (
+      <>
+        <WaitingRoom
+          examTitle={exam?.title}
+          examCode={examCode}
+          allowDraftInWaiting={exam?.allow_draft_in_waiting || false}
+          allowChatInWaiting={exam?.allow_chat_in_waiting || false}
+          onGateStart={handleGateStart}
+          sessionId={sessionId || undefined}
+          examId={exam?.id}
+          studentId={user?.id}
+        />
+        <PreflightModal
+          open={showPreflight}
+          onAccept={handlePreflightAccept}
+          onCancel={() => router.push("/join")}
+          examTitle={exam?.title}
+          examDuration={exam?.duration}
+          examDescription={exam?.description}
+        />
+      </>
+    );
+  }
+
+  // ✅ Gate 방식: Preflight Modal 표시
+  if (showPreflight) {
+    return (
+      <PreflightModal
+        open={showPreflight}
+        onAccept={handlePreflightAccept}
+        onCancel={() => router.push("/join")}
+        examTitle={exam?.title}
+        examDuration={exam?.duration}
+        examDescription={exam?.description}
+      />
     );
   }
 

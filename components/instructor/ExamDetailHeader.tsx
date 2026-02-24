@@ -17,21 +17,23 @@ export function ExamDetailHeader({
 }: ExamDetailHeaderProps) {
   return (
     <div className="mb-8">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex-1">
           <h1 className="text-3xl font-bold">{title}</h1>
           <p className="text-muted-foreground">
             시험 코드: <span className="exam-code">{code}</span>
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {extraActions}
-          <Link href="/instructor">
-            <Button variant="outline">대시보드로 돌아가기</Button>
-          </Link>
-          <Link href={`/instructor/${examId}/edit`}>
-            <Button>시험 편집</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/instructor">
+              <Button variant="outline">대시보드로 돌아가기</Button>
+            </Link>
+            <Link href={`/instructor/${examId}/edit`}>
+              <Button>시험 편집</Button>
+            </Link>
+          </div>
         </div>
       </div>
     </div>

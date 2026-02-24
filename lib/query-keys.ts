@@ -20,10 +20,35 @@ export const qk = {
     },
 
     /**
+     * 시험 상세 데이터 (exam + sessions 병렬 로드)
+     * @param examId - 시험 ID
+     */
+    examDetail: (examId: string) => ["instructor-exam-detail", examId] as const,
+
+    /**
+     * 시험별 최종 채점 데이터
+     * @param examId - 시험 ID
+     */
+    finalGrades: (examId: string) => ["instructor-final-grades", examId] as const,
+
+    /**
+     * 시험별 문제 목록 (lazy load)
+     * @param examId - 시험 ID
+     */
+    examQuestions: (examId: string) => ["instructor-exam-questions", examId] as const,
+
+    /**
      * 시험별 분석 데이터
      * @param examId - 시험 ID
      */
     examAnalytics: (examId: string) => ["exam-analytics", examId] as const,
+
+    /**
+     * 시험별 대기 중인 학생 목록 (실시간)
+     * @param examId - 시험 ID
+     */
+    waitingStudents: (examId: string) =>
+      ["instructor-waiting-students", examId] as const,
   },
 
   student: {

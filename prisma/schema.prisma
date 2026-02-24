@@ -48,12 +48,21 @@ model exams {
   updated_at           DateTime?              @default(now()) @db.Timestamptz(6)
   materials            Json?                  @default("[]")
   rubric               Json?                  @default("[]")
+  // Gate 방식 필드 추가
+  open_at              DateTime?              @db.Timestamptz(6) // 입장 시작 시간 (Access Window 시작)
+  close_at             DateTime?              @db.Timestamptz(6) // 입장 마감 시간 (Join cutoff)
+  started_at           DateTime?              @db.Timestamptz(6) // Gate Start 신호 시간 (교수 Start Exam 클릭 시)
+  allow_draft_in_waiting Boolean?              @default(false)   // Waiting Room에서 Drafting 허용 여부
+  allow_chat_in_waiting  Boolean?              @default(false)   // Waiting Room에서 AI Chat 허용 여부
   exam_nodes           exam_nodes[]
   exam_material_chunks exam_material_chunks[]
 
   @@index([code], map: "idx_exams_code")
   @@index([instructor_id], map: "idx_exams_instructor_id")
   @@index([rubric], map: "idx_exams_rubric", type: Gin)
+  @@index([open_at], map: "idx_exams_open_at")
+  @@index([close_at], map: "idx_exams_close_at")
+  @@index([status], map: "idx_exams_status")
 }
 
 model grades {
@@ -114,6 +123,12 @@ model sessions {
   compressed_session_data String?
   compression_metadata    Json?         @default("{}")
   ai_summary              Json? // AI 자동 채점 요약 평가
+  // Gate 방식 필드 추가
+  status                  String?       @default("not_joined") // "not_joined" | "joined" | "waiting" | "in_progress" | "submitted" | "auto_submitted" | "locked"
+  started_at              DateTime?     @db.Timestamptz(6)     // Gate Start 신호 수신 시간 (InProgress 전환 시)
+  attempt_timer_started_at DateTime?    @db.Timestamptz(6)     // 개별 타이머 시작 시간
+  auto_submitted          Boolean?      @default(false)         // 자동 제출 플래그
+  preflight_accepted_at   DateTime?    @db.Timestamptz(6)      // Preflight Modal 수락 시간
   grades                  grades[]
   messages                messages[]
   submissions             submissions[]
@@ -123,6 +138,8 @@ model sessions {
   @@index([exam_id, student_id], map: "idx_sessions_exam_student")
   @@index([student_id, created_at], map: "idx_sessions_student_created")
   @@index([exam_id, submitted_at], map: "idx_sessions_exam_submitted")
+  @@index([status], map: "idx_sessions_status")
+  @@index([exam_id, status], map: "idx_sessions_exam_status")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments

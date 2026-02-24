@@ -4,15 +4,7 @@ import * as Clerk from "@clerk/elements/common";
 import * as SignUp from "@clerk/elements/sign-up";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import Image from "next/image";
@@ -28,9 +20,9 @@ export function CustomSignUp() {
   };
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* Left Section - Sign Up Form */}
-      <div className="flex-1 flex items-center justify-center p-8 bg-white dark:bg-gray-950 relative">
+      <div className="flex-1 flex flex-col p-8 bg-white dark:bg-gray-950 relative overflow-y-auto">
         {/* 로고 - 왼쪽 상단 */}
         <Link
           href="/"
@@ -49,80 +41,70 @@ export function CustomSignUp() {
           </span>
         </Link>
 
-        <div className="w-full max-w-md space-y-8">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              새로운 계정 만들기
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Quest-On 계정을 만들어보세요
-            </p>
-          </div>
+        <div className="w-full max-w-md mx-auto mt-16 mb-8 flex flex-col flex-1 min-h-0">
+          <div className="space-y-2 mb-6">
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                  새로운 계정 만들기
+                </h1>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Quest-On 계정을 만들어보세요
+                </p>
+              </div>
 
-          {/* 역할 선택 - Form 위에 배치 */}
-          <Card className="border-gray-200 dark:border-gray-800">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">사용자 유형 선택</CardTitle>
-              <CardDescription className="text-sm">계정 유형을 선택해주세요</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <RadioGroup
-                value={role}
-                onValueChange={(value) =>
-                  handleRoleChange(value as "instructor" | "student")
-                }
+          {/* 역할 선택 - Flex 버튼 형태 */}
+          <div className="mb-6">
+            <div className="mb-2">
+              <Label className="text-sm font-medium">사용자 유형 선택</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">계정 유형을 선택해주세요</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => handleRoleChange("instructor")}
+                className={`flex-1 flex flex-col items-start p-4 border-2 rounded-lg transition-all ${
+                  role === "instructor"
+                    ? "border-primary bg-primary/5 dark:bg-primary/10"
+                    : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                }`}
               >
-                <div className="flex items-center space-x-3 p-3 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer transition-colors">
-                  <RadioGroupItem
-                    value="instructor"
-                    id="instructor"
-                    className="mt-0"
-                  />
-                  <Label
-                    htmlFor="instructor"
-                    className="flex-1 cursor-pointer space-y-1"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <Users className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                      <span className="text-sm font-medium">
-                        강사 (시험 출제자)
-                      </span>
+                <div className="flex items-center gap-2 mb-1">
+                  <Users className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                    강사
+                          </span>
+                        </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 text-left">
+                          시험을 만들고 관리합니다
+                        </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRoleChange("student")}
+                className={`flex-1 flex flex-col items-start p-4 border-2 rounded-lg transition-all ${
+                  role === "student"
+                    ? "border-primary bg-primary/5 dark:bg-primary/10"
+                    : "border-gray-200 dark:border-gray-800 hover:border-gray-300 dark:hover:border-gray-700"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <GraduationCap className="h-4 w-4 text-gray-600 dark:text-gray-400" />
+                  <span className="text-sm font-medium text-gray-900 dark:text-white">
+                    학생
+                          </span>
+                        </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400 text-left">
+                          시험에 참여하고 피드백을 받습니다
+                        </p>
+              </button>
+            </div>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      시험을 만들고 관리합니다
-                    </p>
-                  </Label>
-                </div>
-                <div className="flex items-center space-x-3 p-3 border border-gray-200 dark:border-gray-800 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-900 cursor-pointer transition-colors">
-                  <RadioGroupItem
-                    value="student"
-                    id="student"
-                    className="mt-0"
-                  />
-                  <Label
-                    htmlFor="student"
-                    className="flex-1 cursor-pointer space-y-1"
-                  >
-                    <div className="flex items-center space-x-2">
-                      <GraduationCap className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-                      <span className="text-sm font-medium">
-                        학생 (시험 응시자)
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      시험에 참여하고 피드백을 받습니다
-                    </p>
-                  </Label>
-                </div>
-              </RadioGroup>
-            </CardContent>
-          </Card>
 
           {/* 계정 생성 Form */}
-          <SignUp.Root>
-            <SignUp.Step name="start" className="space-y-6">
-              {/* 소셜 로그인 버튼들 */}
-              <div className="space-y-2">
+          <div className="flex-1 min-h-0 flex flex-col">
+            <SignUp.Root>
+              <SignUp.Step name="start" className="space-y-4 flex-1 flex flex-col min-h-0">
+                {/* 소셜 로그인 버튼들 */}
+                <div className="space-y-2">
                 <Clerk.Connection name="google" asChild>
                   <Button
                     type="button"
@@ -164,8 +146,8 @@ export function CustomSignUp() {
                 </Clerk.Connection>
               </div>
 
-              {/* 구분선 */}
-              <div className="relative">
+                {/* 구분선 */}
+                <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-border"></div>
                 </div>
@@ -176,8 +158,8 @@ export function CustomSignUp() {
                 </div>
               </div>
 
-              {/* 이메일 입력 필드 */}
-              <Clerk.Field name="emailAddress" className="space-y-2">
+                {/* 이메일 입력 필드 */}
+                <Clerk.Field name="emailAddress" className="space-y-2">
                 <Clerk.Label asChild>
                   <Label>이메일 주소</Label>
                 </Clerk.Label>
@@ -187,8 +169,8 @@ export function CustomSignUp() {
                 <Clerk.FieldError className="text-sm text-destructive mt-1" />
               </Clerk.Field>
 
-              {/* 비밀번호 입력 필드 */}
-              <Clerk.Field name="password" className="space-y-2">
+                {/* 비밀번호 입력 필드 */}
+                <Clerk.Field name="password" className="space-y-2">
                 <Clerk.Label asChild>
                   <Label>비밀번호</Label>
                 </Clerk.Label>
@@ -198,23 +180,24 @@ export function CustomSignUp() {
                 <Clerk.FieldError className="text-sm text-destructive mt-1" />
               </Clerk.Field>
 
-              {/* 회원가입 버튼 */}
-              <SignUp.Action submit asChild>
-                <Button className="w-full min-h-[44px]" size="lg" type="submit">
-                  <span className="font-bold">회원가입</span>
-                </Button>
-              </SignUp.Action>
-            </SignUp.Step>
-          </SignUp.Root>
+                {/* 회원가입 버튼 */}
+                <SignUp.Action submit asChild>
+                  <Button className="w-full min-h-[44px]" size="lg" type="submit">
+                    <span className="font-bold">회원가입</span>
+                  </Button>
+                </SignUp.Action>
+              </SignUp.Step>
+            </SignUp.Root>
 
-          <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-            이미 계정이 있으신가요?{" "}
-            <Link
-              href="/sign-in"
-              className="font-medium text-black dark:text-white hover:underline"
-            >
-              로그인
-            </Link>
+            <div className="text-center text-sm text-gray-600 dark:text-gray-400 mt-12">
+              이미 계정이 있으신가요?{" "}
+              <Link
+                href="/sign-in"
+                className="font-medium text-black dark:text-white hover:underline"
+              >
+                로그인
+              </Link>
+            </div>
           </div>
         </div>
       </div>
@@ -225,9 +208,9 @@ export function CustomSignUp() {
         style={{ backgroundColor: '#365FC6' }}
       >
         <div className="relative w-full h-full flex items-center justify-center">
-          <Image
+                  <Image
             src="/wqstn.png"
-            alt="Quest-On"
+                    alt="Quest-On"
             width={400}
             height={400}
             className="w-auto h-auto max-w-[51%] max-h-[51%] object-contain"

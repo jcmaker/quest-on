@@ -10,6 +10,7 @@ import { ExamDetailHeader } from "@/components/instructor/ExamDetailHeader";
 import { ExamDetailsCard } from "@/components/instructor/ExamDetailsCard";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
 import { ExamAnalyticsCard } from "@/components/instructor/ExamAnalyticsCard";
+import { ExamControlButtons } from "@/components/instructor/ExamControlButtons";
 import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import {
@@ -48,10 +49,13 @@ interface Exam {
   code: string;
   description: string;
   duration: number;
-  status: "draft" | "active" | "completed";
+  status: "draft" | "active" | "completed" | "joinable" | "running" | "closed" | "scheduled" | "entry_closed";
   createdAt: string;
   questions: Question[];
   students: Student[];
+  open_at?: string | null;
+  close_at?: string | null;
+  started_at?: string | null;
 }
 
 interface Question {
@@ -88,8 +92,6 @@ export default function ExamDetail({
 
   // Fetch exam data from database
   const [exam, setExam] = useState<Exam | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOption, setSortOption] = useState<SortOption>("score");
   const [monitoringSessionId, setMonitoringSessionId] = useState<string | null>(
@@ -100,9 +102,211 @@ export default function ExamDetail({
   );
   const [examInfoOpen, setExamInfoOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [questionsLoading, setQuestionsLoading] = useState(false);
-  const [questionsCount, setQuestionsCount] = useState<number | null>(null);
+
+  const { data: examDetailData, isLoading: examDetailLoading, error: examDetailError } = useQuery({
+    queryKey: qk.instructor.examDetail(resolvedParams.examId),
+    queryFn: async () => {
+      const [examResponse, sessionsResponse] = await Promise.all([
+        fetch("/api/supa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "get_exam_by_id",
+            data: { id: resolvedParams.examId },
+          }),
+        }),
+        fetch(`/api/exam/${resolvedParams.examId}/sessions`),
+      ]);
+
+      if (!examResponse.ok) {
+        const errorText = await examResponse.text();
+        console.error("API Error Response:", errorText);
+        throw new Error(
+          `Failed to fetch exam details: ${examResponse.status} ${examResponse.statusText}`
+        );
+      }
+
+      const examResult = await examResponse.json();
+      const questionsArray = examResult.exam.questions || [];
+      let students: Student[] = [];
+
+      if (sessionsResponse.ok) {
+        const sessionsResult = await sessionsResponse.json();
+        const sessionsByStudent = new Map<string, Array<Record<string, unknown>>>();
+
+        sessionsResult.sessions.forEach((session: Record<string, unknown>) => {
+          const studentId =
+            typeof session.student_id === "string" ? session.student_id : "";
+          if (!sessionsByStudent.has(studentId)) {
+            sessionsByStudent.set(studentId, []);
+          }
+          sessionsByStudent.get(studentId)?.push(session);
+        });
+
+        students = Array.from(sessionsByStudent.entries()).map(
+          ([studentId, sessions]) => {
+            const submittedSessions = sessions
+              .filter((s) => s.submitted_at != null)
+              .sort((a, b) => {
+                const aDate = a.submitted_at
+                  ? new Date(a.submitted_at as string).getTime()
+                  : 0;
+                const bDate = b.submitted_at
+                  ? new Date(b.submitted_at as string).getTime()
+                  : 0;
+                return bDate - aDate;
+              });
+
+            const unsubmittedSessions = sessions
+              .filter((s) => s.submitted_at == null)
+              .sort((a, b) => {
+                const aDate = a.created_at
+                  ? new Date(a.created_at as string).getTime()
+                  : 0;
+                const bDate = b.created_at
+                  ? new Date(b.created_at as string).getTime()
+                  : 0;
+                return bDate - aDate;
+              });
+
+            const selectedSession =
+              submittedSessions.length > 0
+                ? submittedSessions[0]
+                : unsubmittedSessions.length > 0
+                ? unsubmittedSessions[0]
+                : sessions[0];
+
+            const sessionId =
+              typeof selectedSession.id === "string" ? selectedSession.id : "";
+            const submittedAt =
+              selectedSession.submitted_at != null
+                ? typeof selectedSession.submitted_at === "string"
+                  ? selectedSession.submitted_at
+                  : String(selectedSession.submitted_at)
+                : undefined;
+
+            const studentName =
+              typeof selectedSession.student_name === "string"
+                ? selectedSession.student_name
+                : `Student ${studentId.slice(0, 8)}`;
+            const studentEmail =
+              typeof selectedSession.student_email === "string"
+                ? selectedSession.student_email
+                : `${studentId}@example.com`;
+
+            const createdAt =
+              selectedSession.created_at != null
+                ? typeof selectedSession.created_at === "string"
+                  ? selectedSession.created_at
+                  : String(selectedSession.created_at)
+                : undefined;
+
+            return {
+              id: sessionId,
+              name: studentName,
+              email: studentEmail,
+              status: submittedAt ? "completed" : "in-progress",
+              score: undefined,
+              finalScore: undefined,
+              submittedAt: submittedAt as string | undefined,
+              createdAt: createdAt as string | undefined,
+              student_number:
+                typeof selectedSession.student_number === "string"
+                  ? selectedSession.student_number
+                  : undefined,
+              school:
+                typeof selectedSession.student_school === "string"
+                  ? selectedSession.student_school
+                  : undefined,
+              questionCount: undefined,
+              answerLength: undefined,
+              isGraded: false,
+            };
+          }
+        );
+      }
+
+      return {
+        exam: {
+          id: examResult.exam.id,
+          title: examResult.exam.title,
+          code: examResult.exam.code,
+          description: examResult.exam.description,
+          duration: examResult.exam.duration,
+          status: examResult.exam.status,
+          createdAt: examResult.exam.created_at,
+          questions: [],
+          students,
+          open_at: examResult.exam.open_at || null,
+          close_at: examResult.exam.close_at || null,
+          started_at: examResult.exam.started_at || null,
+        } as Exam,
+        questionsCount: questionsArray.length,
+      };
+    },
+    enabled: !!resolvedParams.examId,
+  });
+
+  const loading = examDetailLoading || (!exam && !examDetailError);
+  const error = examDetailError instanceof Error
+    ? examDetailError.message
+    : examDetailError
+    ? "Failed to load exam data"
+    : null;
+  const questionsCount = examDetailData?.questionsCount ?? null;
+
+  useEffect(() => {
+    setExam(null);
+  }, [resolvedParams.examId]);
+
+  useEffect(() => {
+    if (examDetailData?.exam && !exam) {
+      setExam(examDetailData.exam);
+    }
+  }, [examDetailData]);
+
+  const { data: finalGradesData } = useQuery({
+    queryKey: qk.instructor.finalGrades(resolvedParams.examId),
+    queryFn: async () => {
+      const response = await fetch(
+        `/api/exam/${resolvedParams.examId}/final-grades`
+      ).catch(() => null);
+      if (!response?.ok) return null;
+      return response.json();
+    },
+    enabled: !!exam && exam.students.length > 0,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (!finalGradesData?.grades) return;
+
+    const finalGradesMap = new Map<string, number>();
+    finalGradesData.grades.forEach(
+      (g: { session_id: string; score: number; isManual?: boolean }) => {
+        if (g.isManual) {
+          finalGradesMap.set(g.session_id, g.score);
+        }
+      }
+    );
+
+    setExam((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        students: prev.students.map((student) => {
+          const finalScore = finalGradesMap.get(student.id);
+          return {
+            ...student,
+            finalScore:
+              finalScore !== undefined ? finalScore : student.finalScore,
+            isGraded: finalScore !== undefined,
+          };
+        }),
+      };
+    });
+  }, [finalGradesData]);
 
   // Fetch analytics data (for charts only, student scores are already in exam.students)
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
@@ -110,7 +314,7 @@ export default function ExamDetail({
     queryFn: async ({ signal }) => {
       const response = await fetch(
         `/api/analytics/exam/${resolvedParams.examId}/overview`,
-        { signal } // AbortSignal 연결
+        { signal }
       );
       if (!response.ok) {
         throw new Error("Failed to fetch analytics");
@@ -122,11 +326,11 @@ export default function ExamDetail({
       isLoaded &&
       isSignedIn &&
       !!exam &&
-      exam.students.length > 0, // 학생이 있을 때만 실행
-    staleTime: 30000, // 30초간 캐시 유지
-    gcTime: 5 * 60 * 1000, // 5분간 가비지 컬렉션 방지
-    refetchOnMount: true, // 컴포넌트가 마운트될 때마다 재요청 (새로고침 시 최신 데이터 보장)
-    refetchOnWindowFocus: true, // 창 포커스 시 재요청 (다른 탭에서 돌아올 때 최신 데이터 보장)
+      exam.students.length > 0,
+    staleTime: 30000,
+    gcTime: 5 * 60 * 1000,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
   });
 
   // Redirect non-instructors
@@ -138,249 +342,6 @@ export default function ExamDetail({
       redirect("/student");
     }
   }, [isLoaded, isSignedIn, user]);
-
-  // Fetch exam data
-  useEffect(() => {
-    const fetchExamData = async () => {
-      try {
-        setLoading(true);
-
-        // 병렬로 필수 데이터 가져오기 (exam + sessions)
-        const [examResponse, sessionsResponse] = await Promise.all([
-          fetch("/api/supa", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              action: "get_exam_by_id",
-              data: { id: resolvedParams.examId },
-            }),
-          }),
-          fetch(`/api/exam/${resolvedParams.examId}/sessions`),
-        ]);
-
-        if (!examResponse.ok) {
-          const errorText = await examResponse.text();
-          console.error("API Error Response:", errorText);
-          throw new Error(
-            `Failed to fetch exam details: ${examResponse.status} ${examResponse.statusText}`
-          );
-        }
-
-        const examResult = await examResponse.json();
-
-        // Store questions count for display (from API response, but we won't use the actual questions data)
-        const questionsArray = examResult.exam.questions || [];
-        setQuestionsCount(questionsArray.length);
-
-        // 학생 데이터 처리 (sessions는 이미 가져옴)
-        let students: Student[] = [];
-
-        if (sessionsResponse.ok) {
-          const sessionsResult = await sessionsResponse.json();
-
-          // 학생별로 세션을 그룹화
-          const sessionsByStudent = new Map<
-            string,
-            Array<Record<string, unknown>>
-          >();
-
-          sessionsResult.sessions.forEach(
-            (session: Record<string, unknown>) => {
-              const studentId =
-                typeof session.student_id === "string"
-                  ? session.student_id
-                  : "";
-
-              if (!sessionsByStudent.has(studentId)) {
-                sessionsByStudent.set(studentId, []);
-              }
-              sessionsByStudent.get(studentId)?.push(session);
-            }
-          );
-
-          // 각 학생별로 최적의 세션 선택
-          students = Array.from(sessionsByStudent.entries()).map(
-            ([studentId, sessions]) => {
-              // 제출된 세션이 있으면 제출된 세션을 우선 선택 (최신 제출 순)
-              const submittedSessions = sessions
-                .filter((s) => s.submitted_at != null)
-                .sort((a, b) => {
-                  const aDate = a.submitted_at
-                    ? new Date(a.submitted_at as string).getTime()
-                    : 0;
-                  const bDate = b.submitted_at
-                    ? new Date(b.submitted_at as string).getTime()
-                    : 0;
-                  return bDate - aDate; // 최신 제출이 먼저
-                });
-
-              // 제출된 세션이 없으면 최신 세션 선택
-              const unsubmittedSessions = sessions
-                .filter((s) => s.submitted_at == null)
-                .sort((a, b) => {
-                  const aDate = a.created_at
-                    ? new Date(a.created_at as string).getTime()
-                    : 0;
-                  const bDate = b.created_at
-                    ? new Date(b.created_at as string).getTime()
-                    : 0;
-                  return bDate - aDate; // 최신 생성이 먼저
-                });
-
-              // 우선순위: 제출된 세션 > 최신 미제출 세션
-              const selectedSession =
-                submittedSessions.length > 0
-                  ? submittedSessions[0]
-                  : unsubmittedSessions.length > 0
-                  ? unsubmittedSessions[0]
-                  : sessions[0]; // 폴백
-
-              const sessionId =
-                typeof selectedSession.id === "string"
-                  ? selectedSession.id
-                  : "";
-              const submittedAt =
-                selectedSession.submitted_at != null
-                  ? typeof selectedSession.submitted_at === "string"
-                    ? selectedSession.submitted_at
-                    : String(selectedSession.submitted_at)
-                  : undefined;
-
-              // Get student name from session data (already fetched from Clerk)
-              const studentName =
-                typeof selectedSession.student_name === "string"
-                  ? selectedSession.student_name
-                  : `Student ${studentId.slice(0, 8)}`;
-              const studentEmail =
-                typeof selectedSession.student_email === "string"
-                  ? selectedSession.student_email
-                  : `${studentId}@example.com`;
-
-              const createdAt =
-                selectedSession.created_at != null
-                  ? typeof selectedSession.created_at === "string"
-                    ? selectedSession.created_at
-                    : String(selectedSession.created_at)
-                  : undefined;
-
-              return {
-                id: sessionId, // Use session ID for routing to grade page
-                name: studentName,
-                email: studentEmail,
-                status: submittedAt ? "completed" : "in-progress",
-                score: undefined, // Will be filled by analytics query
-                finalScore: undefined, // Will be filled by final grades query
-                submittedAt: submittedAt as string | undefined,
-                createdAt: createdAt as string | undefined,
-                student_number:
-                  typeof selectedSession.student_number === "string"
-                    ? selectedSession.student_number
-                    : undefined,
-                school:
-                  typeof selectedSession.student_school === "string"
-                    ? selectedSession.student_school
-                    : undefined,
-                questionCount: undefined, // Will be filled by analytics query
-                answerLength: undefined, // Will be filled by analytics query
-                isGraded: false, // Will be filled by final grades query
-              };
-            }
-          );
-        }
-
-        // 초기 데이터 설정 (점수 정보는 나중에 업데이트)
-        setExam({
-          id: examResult.exam.id,
-          title: examResult.exam.title,
-          code: examResult.exam.code,
-          description: examResult.exam.description,
-          duration: examResult.exam.duration,
-          status: examResult.exam.status,
-          createdAt: examResult.exam.created_at,
-          questions: [], // Don't load questions initially - will be loaded when questionsOpen is true
-          students: students,
-        });
-      } catch (err) {
-        console.error("Error fetching exam data:", err);
-        setError(
-          err instanceof Error ? err.message : "Failed to load exam data"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchExamData();
-  }, [resolvedParams.examId]);
-
-  // Final grades를 별도로 로드하여 학생 데이터 업데이트
-  // Analytics는 useQuery에서 이미 처리되므로 여기서는 final grades만 처리
-  const [finalGradesLoaded, setFinalGradesLoaded] = useState(false);
-  // analyticsProcessed 플래그 제거 - analyticsData가 변경될 때마다 업데이트하도록 변경
-
-  // examId가 변경되면 플래그 리셋
-  useEffect(() => {
-    setFinalGradesLoaded(false);
-  }, [resolvedParams.examId]);
-
-  useEffect(() => {
-    if (!exam || exam.students.length === 0 || finalGradesLoaded) return;
-
-    const updateFinalGrades = async () => {
-      try {
-        const gradesResponse = await fetch(
-          `/api/exam/${resolvedParams.examId}/final-grades`
-        ).catch(() => null);
-
-        if (!gradesResponse?.ok) return;
-
-        const gradesData = await gradesResponse.json();
-        const finalGradesMap = new Map<string, number>();
-
-        if (gradesData.grades) {
-          gradesData.grades.forEach(
-            (g: { session_id: string; score: number; isManual?: boolean }) => {
-              // 교수가 수동으로 채점한 경우만 최종 채점으로 표시
-              if (g.isManual) {
-                finalGradesMap.set(g.session_id, g.score);
-              }
-            }
-          );
-        }
-
-        // 학생 데이터 업데이트 (final grades만)
-        setExam((prev) => {
-          if (!prev) return prev;
-
-          const updatedStudents = prev.students.map((student) => {
-            const finalScore = finalGradesMap.get(student.id);
-            const isGraded = finalScore !== undefined;
-
-            return {
-              ...student,
-              finalScore:
-                finalScore !== undefined ? finalScore : student.finalScore,
-              isGraded,
-            };
-          });
-
-          return {
-            ...prev,
-            students: updatedStudents,
-          };
-        });
-
-        setFinalGradesLoaded(true);
-      } catch (err) {
-        console.error("Error updating final grades:", err);
-        // 에러가 발생해도 기본 데이터는 유지
-      }
-    };
-
-    updateFinalGrades();
-  }, [exam?.id, resolvedParams.examId, finalGradesLoaded]);
 
   // Analytics 데이터가 로드되면 학생 점수 업데이트
   // analyticsData가 변경될 때마다 재실행하여 최신 데이터 반영
@@ -427,44 +388,26 @@ export default function ExamDetail({
     });
   }, [analyticsData, exam?.id]); // analyticsData가 변경될 때마다 재실행
 
-  // Load questions when questionsOpen becomes true
-  useEffect(() => {
-    if (questionsOpen && exam && questions.length === 0 && !questionsLoading) {
-      const loadQuestions = async () => {
-        try {
-          setQuestionsLoading(true);
-          const examResponse = await fetch("/api/supa", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              action: "get_exam_by_id",
-              data: { id: resolvedParams.examId },
-            }),
-          });
+  const { data: questionsData, isLoading: questionsLoading } = useQuery({
+    queryKey: qk.instructor.examQuestions(resolvedParams.examId),
+    queryFn: async () => {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "get_exam_by_id",
+          data: { id: resolvedParams.examId },
+        }),
+      });
+      if (!response.ok) return [];
+      const result = await response.json();
+      return result.exam.questions || [];
+    },
+    enabled: questionsOpen && !!exam,
+    staleTime: Infinity,
+  });
 
-          if (examResponse.ok) {
-            const examResult = await examResponse.json();
-            const questionsArray = examResult.exam.questions || [];
-            setQuestions(questionsArray);
-          }
-        } catch (err) {
-          console.error("Error loading questions:", err);
-        } finally {
-          setQuestionsLoading(false);
-        }
-      };
-
-      loadQuestions();
-    }
-  }, [
-    questionsOpen,
-    exam,
-    questions.length,
-    questionsLoading,
-    resolvedParams.examId,
-  ]);
+  const questions = questionsData ?? [];
 
   // Filtered and sorted students
   const filteredAndSortedStudents = useMemo(() => {
@@ -632,6 +575,33 @@ export default function ExamDetail({
             title={exam.title}
             code={exam.code}
             examId={exam.id}
+            extraActions={
+              <>
+                {/* 디버깅: 실제 값 확인 */}
+                {process.env.NODE_ENV === "development" && (
+                  <div className="text-xs text-muted-foreground mr-2">
+                    Status: {exam.status || "undefined"} | 
+                    Gate: {!!(exam.open_at || exam.close_at) ? "true" : "false"}
+                  </div>
+                )}
+                <ExamControlButtons
+                  examId={exam.id}
+                  examStatus={exam.status || "draft"}
+                  hasGateFields={!!(exam.open_at || exam.close_at)}
+                  onStatusChange={(newStatus, startedAt) => {
+                    // 상태만 업데이트 (페이지 새로고침 없이)
+                    setExam((prev) => {
+                      if (!prev) return prev;
+                      return {
+                        ...prev,
+                        status: newStatus as Exam["status"],
+                        started_at: startedAt || prev.started_at,
+                      };
+                    });
+                  }}
+                />
+              </>
+            }
           />
 
           {/* 위쪽: 시험 정보와 문제 (Collapsible) */}
