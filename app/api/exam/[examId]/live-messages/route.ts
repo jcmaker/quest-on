@@ -2,51 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
-import { createClerkClient } from "@clerk/nextjs/server";
+import { successJson, errorJson } from "@/lib/api-response";
+import { batchGetUserInfo } from "@/lib/clerk-users";
 
 // Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-// Initialize Clerk client
-const clerk = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY!,
-});
-
-// Helper function to get user info from Clerk
-async function getUserInfo(clerkUserId: string): Promise<{
-  name: string;
-  email: string;
-} | null> {
-  try {
-    const user = await clerk.users.getUser(clerkUserId);
-    
-    let name = "";
-    if (user.firstName && user.lastName) {
-      name = `${user.firstName} ${user.lastName}`;
-    } else if (user.firstName) {
-      name = user.firstName;
-    } else if (user.lastName) {
-      name = user.lastName;
-    } else if (user.fullName) {
-      name = user.fullName;
-    } else {
-      name = user.emailAddresses[0]?.emailAddress || `Student ${clerkUserId.slice(0, 8)}`;
-    }
-    
-    const email = user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
-    
-    return { name, email };
-  } catch (error) {
-    console.error("Error fetching user info from Clerk:", error);
-    return {
-      name: `Student ${clerkUserId.slice(0, 8)}`,
-      email: `${clerkUserId}@example.com`,
-    };
-  }
-}
 
 export async function GET(
   request: NextRequest,
@@ -60,13 +23,13 @@ export async function GET(
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get exam to verify instructor owns it
@@ -77,12 +40,12 @@ export async function GET(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get all active sessions for this exam (not submitted)
@@ -97,7 +60,7 @@ export async function GET(
     }
 
     if (!sessions || sessions.length === 0) {
-      return NextResponse.json({ messages: [], sessions: [] });
+      return successJson({ messages: [], sessions: [] });
     }
 
     // Get session IDs
@@ -155,23 +118,23 @@ export async function GET(
       });
     }
 
-    // Fetch student info for all students in parallel
+    // Batch fetch all student info from Clerk (single API call)
+    const clerkUserMap = await batchGetUserInfo(uniqueStudentIds);
+
     const studentInfoMap = new Map<string, { name: string; email: string; student_number?: string; school?: string }>();
-    await Promise.all(
-      uniqueStudentIds.map(async (studentId) => {
-        const info = await getUserInfo(studentId);
-        const profile = studentProfileMap.get(studentId);
-        
-        if (info) {
-          studentInfoMap.set(studentId, {
-            name: profile?.name || info.name,
-            email: info.email,
-            student_number: profile?.student_number,
-            school: profile?.school,
-          });
-        }
-      })
-    );
+    for (const studentId of uniqueStudentIds) {
+      const info = clerkUserMap.get(studentId);
+      const profile = studentProfileMap.get(studentId);
+
+      if (info) {
+        studentInfoMap.set(studentId, {
+          name: profile?.name || info.name,
+          email: info.email,
+          student_number: profile?.student_number,
+          school: profile?.school,
+        });
+      }
+    }
 
     // Process messages with student info
     const processedMessages = (messages || []).map((message) => {
@@ -216,15 +179,12 @@ export async function GET(
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
 
-    return NextResponse.json({
+    return successJson({
       messages: processedMessages,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Error fetching live messages:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Shield, Eye, EyeOff } from "lucide-react";
+import { ErrorAlert } from "@/components/ui/error-alert";
 
 export default function AdminLoginPage() {
   const [username, setUsername] = useState("");
@@ -105,11 +106,7 @@ export default function AdminLoginPage() {
                 </Button>
               </div>
             </div>
-            {error && (
-              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
-                {error}
-              </div>
-            )}
+            {error && <ErrorAlert message={error} />}
             <Button
               type="submit"
               className="w-full h-12 text-lg"

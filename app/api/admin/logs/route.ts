@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { createClient } from "@supabase/supabase-js";
+import { successJson, errorJson } from "@/lib/api-response";
 
 // Supabase 서버 전용 클라이언트
 const supabase = createClient(
@@ -35,13 +36,10 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error("Error fetching error logs:", error);
-      return NextResponse.json(
-        { error: "Failed to fetch error logs" },
-        { status: 500 }
-      );
+      return errorJson("INTERNAL_ERROR", "Failed to fetch error logs", 500);
     }
 
-    return NextResponse.json({
+    return successJson({
       logs: data || [],
       total: count || 0,
       limit,
@@ -51,16 +49,10 @@ export async function GET(request: NextRequest) {
     console.error("Error in admin logs API:", error);
 
     if (error instanceof Error && error.message === "Admin access required") {
-      return NextResponse.json(
-        { error: "Admin access required" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Admin access required", 403);
     }
 
-    return NextResponse.json(
-      { error: "Failed to fetch error logs" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Failed to fetch error logs", 500);
   }
 }
 

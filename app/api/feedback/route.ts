@@ -6,6 +6,8 @@ import { compressData } from "@/lib/compression";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { autoGradeSession } from "@/lib/grading";
 import { buildFeedbackSystemPrompt, type RubricItem } from "@/lib/prompts";
+import { successJson, errorJson } from "@/lib/api-response";
+import { auditLog } from "@/lib/audit";
 
 // Helper function to sanitize text for JSON storage
 function sanitizeText(text: string): string {
@@ -52,17 +54,14 @@ export async function POST(request: NextRequest) {
     // Authentication check
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const { examCode, answers, examId, sessionId, chatHistory, studentId } =
       await request.json();
 
     if (!examCode || !answers || !Array.isArray(answers)) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
+      return errorJson("BAD_REQUEST", "Missing required fields", 400);
     }
 
     // Validate exam submission from Supabase
@@ -73,16 +72,13 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     // Check if exam allows submission (draft, active, or running after instructor started)
     const allowedStatuses = ["active", "draft", "running"];
     if (!exam.status || !allowedStatuses.includes(exam.status)) {
-      return NextResponse.json(
-        { error: "Exam is no longer active" },
-        { status: 400 }
-      );
+      return errorJson("BAD_REQUEST", "Exam is no longer active", 400);
     }
 
     // ✅ duration이 0이 아닐 때만 시간 만료 체크
@@ -102,10 +98,7 @@ export async function POST(request: NextRequest) {
 
         // 시간이 지났으면 에러 반환 (단, duration이 0이 아닐 때만)
         if (now > sessionEndTime) {
-          return NextResponse.json(
-            { error: "시험 시간이 종료되었습니다." },
-            { status: 400 }
-          );
+          return errorJson("BAD_REQUEST", "시험 시간이 종료되었습니다.", 400);
         }
       }
     }
@@ -370,17 +363,26 @@ ${answersText}
         }
       } catch (error) {
         console.error("Error storing submission:", error);
-        return NextResponse.json(
-          {
-            error: "Failed to store submission in database",
-            details: error instanceof Error ? error.message : "Unknown error",
-          },
-          { status: 500 }
+        return errorJson(
+          "INTERNAL_ERROR",
+          "Failed to store submission in database",
+          500,
+          error instanceof Error ? error.message : "Unknown error"
         );
       }
     }
 
-    return NextResponse.json({
+    // Audit log: session submit via feedback
+    if (user && sessionId) {
+      auditLog({
+        action: "session_submit",
+        userId: user.id,
+        targetId: sessionId,
+        details: { examId, examCode },
+      });
+    }
+
+    return successJson({
       feedback,
       timestamp: new Date().toISOString(),
       examCode,
@@ -391,15 +393,9 @@ ${answersText}
     console.error("Feedback API error:", error);
 
     if (error instanceof OpenAI.APIError) {
-      return NextResponse.json(
-        { error: "OpenAI API error", details: error.message },
-        { status: 500 }
-      );
+      return errorJson("INTERNAL_ERROR", "OpenAI API error", 500, error.message);
     }
 
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

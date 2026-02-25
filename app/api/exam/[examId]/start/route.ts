@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { successJson, errorJson } from "@/lib/api-response";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -27,15 +28,12 @@ export async function POST(
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Instructor access required", 403);
     }
 
     const resolvedParams = await params;
@@ -53,44 +51,32 @@ export async function POST(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json(
-        { error: "Exam not found" },
-        { status: 404 }
-      );
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json(
-        { error: "Access denied" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Access denied", 403);
     }
 
     // 2. 상태 검증: Running이 아닌 모든 상태에서 Start 가능 (기본적으로 항상 시작 가능)
     // Closed 상태는 제외 (이미 종료된 시험)
     const invalidStatuses = ["running", "closed"];
     if (invalidStatuses.includes(exam.status || "")) {
-      return NextResponse.json(
-        {
-          error: "Exam cannot be started",
-          currentStatus: exam.status,
-          message: exam.status === "running" 
-            ? "Exam is already running" 
-            : "Exam is already closed",
-        },
-        { status: 400 }
+      return errorJson(
+        "BAD_REQUEST",
+        exam.status === "running"
+          ? "Exam is already running"
+          : "Exam is already closed",
+        400,
+        { currentStatus: exam.status }
       );
     }
 
     // 3. 이미 시작된 경우 체크
     if (exam.started_at) {
-      return NextResponse.json(
-        {
-          error: "Exam already started",
-          startedAt: exam.started_at,
-        },
-        { status: 400 }
-      );
+      return errorJson("BAD_REQUEST", "Exam already started", 400, {
+        startedAt: exam.started_at,
+      });
     }
 
     const now = new Date().toISOString();
@@ -121,10 +107,7 @@ export async function POST(
 
     if (updateExamError) {
       console.error("[START_EXAM] Failed to update exam:", updateExamError);
-      return NextResponse.json(
-        { error: "Failed to start exam" },
-        { status: 500 }
-      );
+      return errorJson("INTERNAL_ERROR", "Failed to start exam", 500);
     }
 
     // 5. 모든 Waiting 세션을 InProgress로 전환
@@ -167,8 +150,7 @@ export async function POST(
 
     console.log(`[START_EXAM] ✅ Exam ${examId} started successfully`);
 
-    return NextResponse.json({
-      success: true,
+    return successJson({
       examId,
       startedAt: now,
       status: "running",
@@ -176,9 +158,6 @@ export async function POST(
     });
   } catch (error) {
     console.error("[START_EXAM] ❌ Error:", error);
-    return NextResponse.json(
-      { error: "Failed to start exam" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Failed to start exam", 500);
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
+import { successJson, errorJson } from "@/lib/api-response";
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -15,16 +16,13 @@ export async function GET(request: NextRequest) {
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is student
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
-      return NextResponse.json(
-        { error: "Student access required" },
-        { status: 403 }
-      );
+      return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
     // Get pagination parameters
@@ -52,7 +50,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (!allSessions || allSessions.length === 0) {
-      return NextResponse.json({
+      return successJson({
         sessions: [],
         pagination: {
           page,
@@ -214,7 +212,7 @@ export async function GET(request: NextRequest) {
       ? offset + limit < filteredTotalCount
       : false;
 
-    return NextResponse.json({
+    return successJson({
       sessions: sessionsWithDetails,
       pagination: {
         page,
@@ -225,9 +223,6 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error("Get student sessions error:", error);
-    return NextResponse.json(
-      { error: "Failed to get student sessions" },
-      { status: 500 }
-    );
+    return errorJson("FETCH_SESSIONS_FAILED", "Failed to get student sessions", 500);
   }
 }

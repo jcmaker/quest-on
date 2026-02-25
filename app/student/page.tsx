@@ -40,13 +40,11 @@ import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
 import { UserMenu } from "@/components/auth/UserMenu";
 import {
   Sidebar,
-  SidebarContent as ShadcnSidebarContent,
-  SidebarHeader,
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
-  useSidebar,
 } from "@/components/ui/sidebar";
+import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import { useInView } from "react-intersection-observer";
@@ -75,82 +73,6 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 
-type NavigationItem = {
-  title: string;
-  href: string;
-  icon: any;
-  active: boolean;
-};
-
-function SidebarContent({
-  navigationItems,
-  onItemClick,
-}: {
-  navigationItems: NavigationItem[];
-  onItemClick: () => void;
-}) {
-  const { state } = useSidebar();
-  const isCollapsed = state === "collapsed";
-
-  return (
-    <>
-      <SidebarHeader className="p-4 sm:p-5 border-b border-sidebar-border">
-        <Link
-          href="/student"
-          className={cn(
-            "flex items-center",
-            isCollapsed ? "justify-center" : "justify-start"
-          )}
-        >
-          <Image
-            src="/qstn_logo_svg.svg"
-            alt="Quest-On Logo"
-            width={40}
-            height={40}
-            className="w-10 h-10 shrink-0"
-            priority
-          />
-          {!isCollapsed && (
-            <span className="text-xl font-bold text-sidebar-foreground ml-2">
-              Quest-On
-            </span>
-          )}
-        </Link>
-      </SidebarHeader>
-
-      <ShadcnSidebarContent>
-        <nav
-          className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
-          aria-label="주요 네비게이션"
-        >
-          {navigationItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onItemClick}
-                className={cn(
-                  "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar group-data-[collapsible=icon]:justify-center",
-                  item.active
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                )}
-                aria-current={item.active ? "page" : undefined}
-                title={isCollapsed ? item.title : undefined}
-              >
-                <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
-                {!isCollapsed && <span>{item.title}</span>}
-              </Link>
-            );
-          })}
-        </nav>
-      </ShadcnSidebarContent>
-
-      <SidebarFooter />
-    </>
-  );
-}
 
 interface ExamSession {
   id: string;
@@ -624,8 +546,9 @@ export default function StudentDashboard() {
             collapsible="icon"
             className="border-r border-sidebar-border"
           >
-            <SidebarContent
-              navigationItems={navigationItems}
+            <DashboardSidebar
+              homeHref="/student"
+              navItems={navigationItems}
               onItemClick={() => setSidebarOpen(false)}
             />
           </Sidebar>

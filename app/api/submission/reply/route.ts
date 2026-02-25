@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
+import { successJson, errorJson } from "@/lib/api-response";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,7 +15,7 @@ export async function POST(request: NextRequest) {
     // Authentication check
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const body = await request.json();
@@ -22,20 +23,14 @@ export async function POST(request: NextRequest) {
     const { studentReply, sessionId, qIdx } = body;
 
     if (!studentReply || !sessionId || qIdx === undefined) {
-      return NextResponse.json(
-        { error: "Student reply, sessionId, and qIdx are required" },
-        { status: 400 }
-      );
+      return errorJson("MISSING_FIELDS", "Student reply, sessionId, and qIdx are required", 400);
     }
 
     // Validate UUID format
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(sessionId)) {
-      return NextResponse.json(
-        { error: "Invalid session ID format" },
-        { status: 400 }
-      );
+      return errorJson("INVALID_SESSION_ID", "Invalid session ID format", 400);
     }
 
     // Verify session ownership
@@ -46,17 +41,11 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json(
-        { error: "Session not found" },
-        { status: 404 }
-      );
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
     if (session.student_id !== user.id) {
-      return NextResponse.json(
-        { error: "Access denied" },
-        { status: 403 }
-      );
+      return errorJson("ACCESS_DENIED", "Access denied", 403);
     }
 
     // Sanitize HTML - remove null characters
@@ -77,10 +66,7 @@ export async function POST(request: NextRequest) {
         : null;
 
     if (checkError) {
-      return NextResponse.json(
-        { error: "Failed to check submission", details: checkError.message },
-        { status: 500 }
-      );
+      return errorJson("CHECK_SUBMISSION_FAILED", "Failed to check submission", 500, checkError.message);
     }
 
     let data;
@@ -119,17 +105,11 @@ export async function POST(request: NextRequest) {
         code: error.code,
         message: error.message,
       });
-      return NextResponse.json(
-        { error: "Failed to save submission" },
-        { status: 500 }
-      );
+      return errorJson("SAVE_SUBMISSION_FAILED", "Failed to save submission", 500);
     }
 
     if (!data) {
-      return NextResponse.json(
-        { error: "Submission operation failed" },
-        { status: 404 }
-      );
+      return errorJson("SUBMISSION_OPERATION_FAILED", "Submission operation failed", 404);
     }
 
     const requestDuration = Date.now() - requestStartTime;
@@ -137,19 +117,13 @@ export async function POST(request: NextRequest) {
       `[SUBMISSION] Reply saved | Session: ${sessionId} | Q: ${qIdx} | ${requestDuration}ms`
     );
 
-    return NextResponse.json({
-      success: true,
-      submission: data,
-    });
+    return successJson({ submission: data });
   } catch (error) {
     const requestDuration = Date.now() - requestStartTime;
     console.error("Submission update error:", {
       message: error instanceof Error ? error.message : "Unknown error",
       duration: requestDuration,
     });
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_SERVER_ERROR", "Internal server error", 500);
   }
 }

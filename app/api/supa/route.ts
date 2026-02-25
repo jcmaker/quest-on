@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
 import { compressData } from "@/lib/compression";
 import { chunkText, formatChunkMetadata } from "@/lib/chunking";
 import { createEmbeddings } from "@/lib/embedding";
 import { saveChunksToDB, deleteChunksByFileUrl } from "@/lib/save-chunks";
+import { successJson, errorJson } from "@/lib/api-response";
+import { auditLog } from "@/lib/audit";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,10 +23,7 @@ const supabase = createClient(supabaseUrl || "", supabaseKey || "");
 
 export async function POST(request: NextRequest) {
   if (!supabaseUrl || !supabaseKey) {
-    return NextResponse.json(
-      { error: "Server configuration error: Missing Supabase credentials" },
-      { status: 500 }
-    );
+    return errorJson("SERVER_CONFIG_ERROR", "Server configuration error: Missing Supabase credentials", 500);
   }
 
   try {
@@ -33,19 +32,13 @@ export async function POST(request: NextRequest) {
       body = await request.json();
     } catch (jsonError) {
       console.error("JSON parsing error:", jsonError);
-      return NextResponse.json(
-        { error: "Invalid JSON in request body" },
-        { status: 400 }
-      );
+      return errorJson("INVALID_JSON", "Invalid JSON in request body", 400);
     }
 
     const { action, data } = body;
 
     if (!action) {
-      return NextResponse.json(
-        { error: "Missing 'action' field in request" },
-        { status: 400 }
-      );
+      return errorJson("MISSING_ACTION", "Missing 'action' field in request", 400);
     }
 
     switch (action) {
@@ -96,24 +89,19 @@ export async function POST(request: NextRequest) {
       case "copy_exam":
         return await copyExam(data);
       default:
-        return NextResponse.json(
-          { error: `Invalid action: ${action}` },
-          { status: 400 }
-        );
+        return errorJson("INVALID_ACTION", `Invalid action: ${action}`, 400);
     }
   } catch (error) {
     console.error("Supabase API error:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: errorMessage,
-        ...(process.env.NODE_ENV === "development" && {
-          stack: error instanceof Error ? error.stack : undefined,
-        }),
-      },
-      { status: 500 }
+    return errorJson(
+      "INTERNAL_SERVER_ERROR",
+      "Internal server error",
+      500,
+      process.env.NODE_ENV === "development"
+        ? { message: errorMessage, stack: error instanceof Error ? error.stack : undefined }
+        : errorMessage
     );
   }
 }
@@ -151,7 +139,7 @@ async function createExam(data: {
     // Get current user
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is instructor
@@ -160,14 +148,7 @@ async function createExam(data: {
 
     if (userRole !== "instructor") {
       console.log("Create exam - Access denied. User role:", userRole);
-      return NextResponse.json(
-        {
-          error: "Instructor access required",
-          details: `User role: ${userRole || "not set"}`,
-          userId: user.id,
-        },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403, `User role: ${userRole || "not set"}`);
     }
 
     // Create exam with the correct schema
@@ -217,10 +198,7 @@ async function createExam(data: {
 
     if (error) {
       console.error("Supabase error:", error);
-      return NextResponse.json(
-        { error: `Database error: ${error.message}` },
-        { status: 500 }
-      );
+      return errorJson("DATABASE_ERROR", `Database error: ${error.message}`, 500);
     }
 
     // Create exam node in exam_nodes table
@@ -281,10 +259,12 @@ async function createExam(data: {
         console.log("🚀 [createExam] RAG 처리 시작:", {
           examId: exam.id,
           materialsCount: examData.materials_text.length,
-          materialsPreview: examData.materials_text.map((m: any) => ({
-            fileName: m.fileName || "unknown",
-            textLength: m.text?.length || 0,
-          })),
+          materialsPreview: examData.materials_text.map(
+            (m: { fileName?: string; text?: string }) => ({
+              fileName: m.fileName || "unknown",
+              textLength: m.text?.length || 0,
+            })
+          ),
         });
 
         let totalChunksSaved = 0;
@@ -408,17 +388,10 @@ async function createExam(data: {
       });
     }
 
-    return NextResponse.json({ exam, examNode });
+    return successJson({ exam, examNode });
   } catch (error) {
     console.error("Create exam error:", error);
-    return NextResponse.json(
-      {
-        error: `Failed to create exam: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      },
-      { status: 500 }
-    );
+    return errorJson("CREATE_EXAM_FAILED", `Failed to create exam: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
   }
 }
 
@@ -436,13 +409,23 @@ async function updateExam(data: {
 
     if (error) throw error;
 
-    return NextResponse.json({ exam });
+    // Audit log: exam status change
+    if (data.update.status) {
+      const user = await currentUser();
+      if (user) {
+        auditLog({
+          action: "exam_status_change",
+          userId: user.id,
+          targetId: data.id,
+          details: { newStatus: data.update.status },
+        });
+      }
+    }
+
+    return successJson({ exam });
   } catch (error) {
     console.error("Update exam error:", error);
-    return NextResponse.json(
-      { error: "Failed to update exam" },
-      { status: 500 }
-    );
+    return errorJson("UPDATE_EXAM_FAILED", "Failed to update exam", 500);
   }
 }
 
@@ -520,17 +503,22 @@ async function submitExam(data: {
       submissionsCount: submissions.length,
     });
 
-    return NextResponse.json({
+    // Audit log: session submit
+    auditLog({
+      action: "session_submit",
+      userId: data.studentId,
+      targetId: data.sessionId,
+      details: { examId: data.examId, submissionsCount: submissions.length },
+    });
+
+    return successJson({
       session,
       submissions,
       compressionStats: compressedSessionData.metadata,
     });
   } catch (error) {
     console.error("Submit exam error:", error);
-    return NextResponse.json(
-      { error: "Failed to submit exam" },
-      { status: 500 }
-    );
+    return errorJson("SUBMIT_EXAM_FAILED", "Failed to submit exam", 500);
   }
 }
 
@@ -544,15 +532,15 @@ async function getExam(data: { code: string }) {
 
     if (error) {
       if (error.code === "PGRST116") {
-        return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
       }
       throw error;
     }
 
-    return NextResponse.json({ exam });
+    return successJson({ exam });
   } catch (error) {
     console.error("Get exam error:", error);
-    return NextResponse.json({ error: "Failed to get exam" }, { status: 500 });
+    return errorJson("GET_EXAM_FAILED", "Failed to get exam", 500);
   }
 }
 
@@ -563,21 +551,12 @@ async function getExamById(data: { id: string }) {
     // Validate input
     if (!data || !data.id) {
       console.error("API: Missing exam ID");
-      return NextResponse.json(
-        { error: "Missing exam ID", details: "The 'id' field is required" },
-        { status: 400 }
-      );
+      return errorJson("MISSING_EXAM_ID", "Missing exam ID", 400, "The 'id' field is required");
     }
 
     if (typeof data.id !== "string" || data.id.trim() === "") {
       console.error("API: Invalid exam ID format:", data.id);
-      return NextResponse.json(
-        {
-          error: "Invalid exam ID",
-          details: "Exam ID must be a non-empty string",
-        },
-        { status: 400 }
-      );
+      return errorJson("INVALID_EXAM_ID", "Invalid exam ID", 400, "Exam ID must be a non-empty string");
     }
 
     // Get current user
@@ -586,21 +565,12 @@ async function getExamById(data: { id: string }) {
       user = await currentUser();
     } catch (authError) {
       console.error("API: Error getting current user:", authError);
-      return NextResponse.json(
-        {
-          error: "Authentication error",
-          details:
-            authError instanceof Error
-              ? authError.message
-              : "Unknown auth error",
-        },
-        { status: 401 }
-      );
+      return errorJson("AUTH_ERROR", "Authentication error", 401, authError instanceof Error ? authError.message : "Unknown auth error");
     }
 
     if (!user) {
       console.error("API: No user found");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     console.log("API: User found:", user.id);
@@ -611,10 +581,7 @@ async function getExamById(data: { id: string }) {
 
     if (userRole !== "instructor") {
       console.error("API: User is not instructor");
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     console.log(
@@ -634,10 +601,7 @@ async function getExamById(data: { id: string }) {
     if (checkError) {
       console.error("API: Error checking exam existence:", checkError);
       if (checkError.code === "PGRST116") {
-        return NextResponse.json(
-          { error: "Exam not found", details: "No exam exists with this ID" },
-          { status: 404 }
-        );
+        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "No exam exists with this ID");
       }
       throw checkError;
     }
@@ -649,13 +613,7 @@ async function getExamById(data: { id: string }) {
         examInstructorId: examExists.instructor_id,
         currentUserId: user.id,
       });
-      return NextResponse.json(
-        {
-          error: "Exam not found",
-          details: "Exam does not belong to this instructor",
-        },
-        { status: 404 }
-      );
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "Exam does not belong to this instructor");
     }
 
     // Now fetch the full exam data (Gate 필드 포함)
@@ -671,27 +629,18 @@ async function getExamById(data: { id: string }) {
     if (error) {
       console.error("API: Database error:", error);
       if (error.code === "PGRST116") {
-        return NextResponse.json(
-          {
-            error: "Exam not found",
-            details: "No exam found matching the criteria",
-          },
-          { status: 404 }
-        );
+        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "No exam found matching the criteria");
       }
       throw error;
     }
 
     if (!exam) {
       console.error("API: Exam query returned no data");
-      return NextResponse.json(
-        { error: "Exam not found", details: "Exam data is null" },
-        { status: 404 }
-      );
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "Exam data is null");
     }
 
     console.log("API: Exam found successfully:", exam.id);
-    return NextResponse.json({ exam });
+    return successJson({ exam });
   } catch (error) {
     console.error("Get exam by ID error:", error);
     const errorMessage =
@@ -699,13 +648,13 @@ async function getExamById(data: { id: string }) {
     const errorDetails =
       error instanceof Error && error.stack ? error.stack : undefined;
     console.error("Error details:", { errorMessage, errorDetails });
-    return NextResponse.json(
-      {
-        error: "Failed to get exam",
-        details: errorMessage,
-        ...(process.env.NODE_ENV === "development" && { stack: errorDetails }),
-      },
-      { status: 500 }
+    return errorJson(
+      "GET_EXAM_FAILED",
+      "Failed to get exam",
+      500,
+      process.env.NODE_ENV === "development"
+        ? { message: errorMessage, stack: errorDetails }
+        : errorMessage
     );
   }
 }
@@ -715,16 +664,13 @@ async function getInstructorExams() {
     // Get current user
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     const { data: exams, error } = await supabase
@@ -764,10 +710,10 @@ async function getInstructorExams() {
       })
     );
 
-    return NextResponse.json({ exams: examsWithCounts });
+    return successJson({ exams: examsWithCounts });
   } catch (error) {
     console.error("Get instructor exams error:", error);
-    return NextResponse.json({ error: "Failed to get exams" }, { status: 500 });
+    return errorJson("GET_EXAMS_FAILED", "Failed to get exams", 500);
   }
 }
 
@@ -822,7 +768,7 @@ async function createOrGetSession(data: { examId: string; studentId: string }) {
         "messages"
       );
 
-      return NextResponse.json({
+      return successJson({
         session: existingSession,
         messages: formattedMessages,
       });
@@ -844,16 +790,13 @@ async function createOrGetSession(data: { examId: string; studentId: string }) {
 
     if (createError) throw createError;
 
-    return NextResponse.json({
+    return successJson({
       session: newSession,
       messages: [],
     });
   } catch (error) {
     console.error("Create or get session error:", error);
-    return NextResponse.json(
-      { error: "Failed to create or get session" },
-      { status: 500 }
-    );
+    return errorJson("SESSION_FAILED", "Failed to create or get session", 500);
   }
 }
 
@@ -878,7 +821,7 @@ async function initExamSession(data: {
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
     // ✅ Gate 방식: 시험 상태 및 입장 가능 여부 확인
@@ -894,14 +837,7 @@ async function initExamSession(data: {
     
     // Closed 상태는 Join 불가
     if (examStatus === "closed" || examStatus === "archived") {
-      return NextResponse.json(
-        {
-          error: "Exam not available for joining",
-          currentStatus: examStatus,
-          message: "This exam is closed or archived",
-        },
-        { status: 403 }
-      );
+      return errorJson("EXAM_NOT_AVAILABLE", "Exam not available for joining", 403, { currentStatus: examStatus, message: "This exam is closed or archived" });
     }
 
     // Gate 필드가 있는 경우: close_at 체크 (입장 마감 시간)
@@ -909,14 +845,7 @@ async function initExamSession(data: {
     if (hasGateFields) {
       const isEntryClosed = closeAt !== null && nowTime >= closeAt;
       if (isEntryClosed) {
-        return NextResponse.json(
-          {
-            error: "Entry window closed",
-            closeAt: exam.close_at,
-            message: "The entry window for this exam has closed",
-          },
-          { status: 403 }
-        );
+        return errorJson("ENTRY_WINDOW_CLOSED", "Entry window closed", 403, { closeAt: exam.close_at, message: "The entry window for this exam has closed" });
       }
     }
 
@@ -965,7 +894,7 @@ async function initExamSession(data: {
         qIdx: msg.q_idx || 0,
       }));
 
-      return NextResponse.json({
+      return successJson({
         exam,
         session: mostRecentSubmittedSession,
         messages,
@@ -1074,7 +1003,7 @@ async function initExamSession(data: {
           qIdx: msg.q_idx || 0,
         }));
 
-        return NextResponse.json({
+        return successJson({
           exam,
           session,
           messages,
@@ -1233,7 +1162,7 @@ async function initExamSession(data: {
       timeRemaining = Math.max(0, sessionEndTime - nowTime);
     }
 
-    return NextResponse.json({
+    return successJson({
       exam,
       session,
       messages,
@@ -1247,10 +1176,7 @@ async function initExamSession(data: {
     });
   } catch (error) {
     console.error("[INIT_EXAM_SESSION] ❌ Error:", error);
-    return NextResponse.json(
-      { error: "Failed to initialize exam session" },
-      { status: 500 }
-    );
+    return errorJson("INIT_SESSION_FAILED", "Failed to initialize exam session", 500);
   }
 }
 
@@ -1315,7 +1241,7 @@ async function saveDraft(data: {
         .single();
 
       if (updateError) throw updateError;
-      return NextResponse.json({ submission: updatedSubmission });
+      return successJson({ submission: updatedSubmission });
     } else {
       // Create new submission
       const { data: newSubmission, error: createError } = await supabase
@@ -1335,14 +1261,11 @@ async function saveDraft(data: {
         .single();
 
       if (createError) throw createError;
-      return NextResponse.json({ submission: newSubmission });
+      return successJson({ submission: newSubmission });
     }
   } catch (error) {
     console.error("Save draft error:", error);
-    return NextResponse.json(
-      { error: "Failed to save draft" },
-      { status: 500 }
-    );
+    return errorJson("SAVE_DRAFT_FAILED", "Failed to save draft", 500);
   }
 }
 
@@ -1368,13 +1291,10 @@ async function saveAllDrafts(data: {
       }
     }
 
-    return NextResponse.json({ submissions: results });
+    return successJson({ submissions: results });
   } catch (error) {
     console.error("Save all drafts error:", error);
-    return NextResponse.json(
-      { error: "Failed to save all drafts" },
-      { status: 500 }
-    );
+    return errorJson("SAVE_ALL_DRAFTS_FAILED", "Failed to save all drafts", 500);
   }
 }
 
@@ -1424,13 +1344,10 @@ async function saveDraftAnswers(data: {
       }
     }
 
-    return NextResponse.json({ submissions: results });
+    return successJson({ submissions: results });
   } catch (error) {
     console.error("Save draft answers error:", error);
-    return NextResponse.json(
-      { error: "Failed to save draft answers" },
-      { status: 500 }
-    );
+    return errorJson("SAVE_DRAFT_ANSWERS_FAILED", "Failed to save draft answers", 500);
   }
 }
 
@@ -1444,13 +1361,10 @@ async function getSessionSubmissions(data: { sessionId: string }) {
 
     if (error) throw error;
 
-    return NextResponse.json({ submissions: submissions || [] });
+    return successJson({ submissions: submissions || [] });
   } catch (error) {
     console.error("Get session submissions error:", error);
-    return NextResponse.json(
-      { error: "Failed to get session submissions" },
-      { status: 500 }
-    );
+    return errorJson("GET_SUBMISSIONS_FAILED", "Failed to get session submissions", 500);
   }
 }
 
@@ -1464,13 +1378,10 @@ async function getSessionMessages(data: { sessionId: string }) {
 
     if (error) throw error;
 
-    return NextResponse.json({ messages: messages || [] });
+    return successJson({ messages: messages || [] });
   } catch (error) {
     console.error("Get session messages error:", error);
-    return NextResponse.json(
-      { error: "Failed to get session messages" },
-      { status: 500 }
-    );
+    return errorJson("GET_MESSAGES_FAILED", "Failed to get session messages", 500);
   }
 }
 
@@ -1480,15 +1391,12 @@ async function createFolder(data: { name: string; parent_id?: string | null }) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     // Get the maximum sort_order for this parent folder
@@ -1530,13 +1438,10 @@ async function createFolder(data: { name: string; parent_id?: string | null }) {
 
     if (error) throw error;
 
-    return NextResponse.json({ folder });
+    return successJson({ folder });
   } catch (error) {
     console.error("Create folder error:", error);
-    return NextResponse.json(
-      { error: "Failed to create folder" },
-      { status: 500 }
-    );
+    return errorJson("CREATE_FOLDER_FAILED", "Failed to create folder", 500);
   }
 }
 
@@ -1544,15 +1449,12 @@ async function getFolderContents(data: { folder_id?: string | null }) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     const parentId = data.folder_id || null;
@@ -1657,7 +1559,7 @@ async function getFolderContents(data: { folder_id?: string | null }) {
       }
     }
 
-    return NextResponse.json({ nodes: nodesWithCounts });
+    return successJson({ nodes: nodesWithCounts });
   } catch (error) {
     console.error("[api] Get folder contents error:", {
       error,
@@ -1666,13 +1568,7 @@ async function getFolderContents(data: { folder_id?: string | null }) {
     });
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json(
-      {
-        error: "Failed to get folder contents",
-        details: errorMessage,
-      },
-      { status: 500 }
-    );
+    return errorJson("GET_FOLDER_CONTENTS_FAILED", "Failed to get folder contents", 500, errorMessage);
   }
 }
 
@@ -1680,7 +1576,7 @@ async function getBreadcrumb(data: { folder_id: string }) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Use recursive CTE to get all parent folders
@@ -1707,16 +1603,13 @@ async function getBreadcrumb(data: { folder_id: string }) {
         currentId = node.parent_id as string | null;
       }
 
-      return NextResponse.json({ breadcrumb });
+      return successJson({ breadcrumb });
     }
 
-    return NextResponse.json({ breadcrumb: rpcData || [] });
+    return successJson({ breadcrumb: rpcData || [] });
   } catch (error) {
     console.error("Get breadcrumb error:", error);
-    return NextResponse.json(
-      { error: "Failed to get breadcrumb" },
-      { status: 500 }
-    );
+    return errorJson("GET_BREADCRUMB_FAILED", "Failed to get breadcrumb", 500);
   }
 }
 
@@ -1728,15 +1621,12 @@ async function moveNode(data: {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     const updateData: Record<string, unknown> = {};
@@ -1757,10 +1647,10 @@ async function moveNode(data: {
 
     if (error) throw error;
 
-    return NextResponse.json({ node });
+    return successJson({ node });
   } catch (error) {
     console.error("Move node error:", error);
-    return NextResponse.json({ error: "Failed to move node" }, { status: 500 });
+    return errorJson("MOVE_NODE_FAILED", "Failed to move node", 500);
   }
 }
 
@@ -1768,15 +1658,12 @@ async function updateNode(data: { node_id: string; name?: string }) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     const updateData: Record<string, unknown> = {};
@@ -1803,13 +1690,10 @@ async function updateNode(data: { node_id: string; name?: string }) {
         .eq("instructor_id", user.id);
     }
 
-    return NextResponse.json({ node });
+    return successJson({ node });
   } catch (error) {
     console.error("Update node error:", error);
-    return NextResponse.json(
-      { error: "Failed to update node" },
-      { status: 500 }
-    );
+    return errorJson("UPDATE_NODE_FAILED", "Failed to update node", 500);
   }
 }
 
@@ -1817,15 +1701,12 @@ async function deleteNode(data: { node_id: string }) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     // Get the node first to check if it's a folder
@@ -1849,10 +1730,7 @@ async function deleteNode(data: { node_id: string }) {
       if (childrenError) throw childrenError;
 
       if (children && children.length > 0) {
-        return NextResponse.json(
-          { error: "Cannot delete folder with contents" },
-          { status: 400 }
-        );
+        return errorJson("FOLDER_NOT_EMPTY", "Cannot delete folder with contents", 400);
       }
     }
 
@@ -1865,13 +1743,10 @@ async function deleteNode(data: { node_id: string }) {
 
     if (deleteError) throw deleteError;
 
-    return NextResponse.json({ success: true });
+    return successJson({});
   } catch (error) {
     console.error("Delete node error:", error);
-    return NextResponse.json(
-      { error: "Failed to delete node" },
-      { status: 500 }
-    );
+    return errorJson("DELETE_NODE_FAILED", "Failed to delete node", 500);
   }
 }
 
@@ -1883,22 +1758,21 @@ async function sessionHeartbeat(data: {
     // Verify the session belongs to the student
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, student_id, is_active, submitted_at, created_at, exam_id")
+      .select("id, student_id, is_active, submitted_at, created_at, exam_id, status, started_at, attempt_timer_started_at")
       .eq("id", data.sessionId)
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
     if (session.student_id !== data.studentId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 403);
     }
 
     // ✅ 이미 제출된 경우
     if (session.submitted_at) {
-      return NextResponse.json({ 
-        success: true,
+      return successJson({
         submitted: true,
       });
     }
@@ -1916,11 +1790,11 @@ async function sessionHeartbeat(data: {
     } else {
       // ✅ Gate 방식: attempt_timer_started_at 기준으로 시간 체크
       // InProgress 상태이고 타이머가 시작된 경우만 시간 체크
-      const sessionStatus = (session as any).status || "not_joined";
-      const timerStartTime = (session as any).attempt_timer_started_at
-        ? new Date((session as any).attempt_timer_started_at).getTime()
-        : (session as any).started_at
-        ? new Date((session as any).started_at).getTime()
+      const sessionStatus = (session.status as string) || "not_joined";
+      const timerStartTime = session.attempt_timer_started_at
+        ? new Date(session.attempt_timer_started_at as string).getTime()
+        : session.started_at
+        ? new Date(session.started_at as string).getTime()
         : null;
 
       if (sessionStatus === "in_progress" && timerStartTime !== null && exam.duration !== 0) {
@@ -1950,8 +1824,7 @@ async function sessionHeartbeat(data: {
             console.error("Failed to auto-submit session:", updateError);
           }
 
-          return NextResponse.json({
-            success: true,
+          return successJson({
             timeExpired: true,
             autoSubmitted: true,
           });
@@ -1970,11 +1843,11 @@ async function sessionHeartbeat(data: {
 
       // ✅ Gate 방식: attempt_timer_started_at 기준으로 남은 시간 계산
       let timeRemaining = null;
-      const sessionStatus = (session as any).status || "not_joined";
-      const timerStartTime = (session as any).attempt_timer_started_at
-        ? new Date((session as any).attempt_timer_started_at).getTime()
-        : (session as any).started_at
-        ? new Date((session as any).started_at).getTime()
+      const sessionStatus = (session.status as string) || "not_joined";
+      const timerStartTime = session.attempt_timer_started_at
+        ? new Date(session.attempt_timer_started_at as string).getTime()
+        : session.started_at
+        ? new Date(session.started_at as string).getTime()
         : null;
 
       if (
@@ -1990,23 +1863,16 @@ async function sessionHeartbeat(data: {
       }
       // duration이 0이거나 타이머가 시작되지 않았으면 timeRemaining은 null로 유지
 
-      return NextResponse.json({ 
-        success: true,
+      return successJson({
         timeRemaining,
       });
     } else {
       // Session is not active or already submitted
-      return NextResponse.json(
-        { error: "Session is not active" },
-        { status: 400 }
-      );
+      return errorJson("SESSION_INACTIVE", "Session is not active", 400);
     }
   } catch (error) {
     console.error("Session heartbeat error:", error);
-    return NextResponse.json(
-      { error: "Failed to update heartbeat" },
-      { status: 500 }
-    );
+    return errorJson("HEARTBEAT_FAILED", "Failed to update heartbeat", 500);
   }
 }
 
@@ -2023,11 +1889,11 @@ async function deactivateSession(data: {
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
     if (session.student_id !== data.studentId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 403);
     }
 
     // Deactivate the session
@@ -2038,13 +1904,10 @@ async function deactivateSession(data: {
 
     if (updateError) throw updateError;
 
-    return NextResponse.json({ success: true });
+    return successJson({});
   } catch (error) {
     console.error("Deactivate session error:", error);
-    return NextResponse.json(
-      { error: "Failed to deactivate session" },
-      { status: 500 }
-    );
+    return errorJson("DEACTIVATE_SESSION_FAILED", "Failed to deactivate session", 500);
   }
 }
 
@@ -2052,25 +1915,19 @@ async function getInstructorDrive() {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     // Get root level nodes (parent_id is null)
     return await getFolderContents({ folder_id: null });
   } catch (error) {
     console.error("Get instructor drive error:", error);
-    return NextResponse.json(
-      { error: "Failed to get instructor drive" },
-      { status: 500 }
-    );
+    return errorJson("GET_DRIVE_FAILED", "Failed to get instructor drive", 500);
   }
 }
 
@@ -2078,15 +1935,12 @@ async function copyExam(data: { exam_id: string }) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     // Get the original exam
@@ -2098,10 +1952,7 @@ async function copyExam(data: { exam_id: string }) {
       .single();
 
     if (examError || !originalExam) {
-      return NextResponse.json(
-        { error: "Exam not found or access denied" },
-        { status: 404 }
-      );
+      return errorJson("EXAM_NOT_FOUND", "Exam not found or access denied", 404);
     }
 
     // Get the original exam node to preserve parent folder
@@ -2180,10 +2031,7 @@ async function copyExam(data: { exam_id: string }) {
 
     if (createError || !newExam) {
       console.error("Failed to create copied exam:", createError);
-      return NextResponse.json(
-        { error: "Failed to create copied exam" },
-        { status: 500 }
-      );
+      return errorJson("COPY_EXAM_FAILED", "Failed to create copied exam", 500);
     }
 
     // Create exam node (preserve parent folder)
@@ -2310,16 +2158,9 @@ async function copyExam(data: { exam_id: string }) {
       }
     }
 
-    return NextResponse.json({ exam: newExam, examNode });
+    return successJson({ exam: newExam, examNode });
   } catch (error) {
     console.error("Copy exam error:", error);
-    return NextResponse.json(
-      {
-        error: `Failed to copy exam: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
-      },
-      { status: 500 }
-    );
+    return errorJson("COPY_EXAM_FAILED", `Failed to copy exam: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
   }
 }

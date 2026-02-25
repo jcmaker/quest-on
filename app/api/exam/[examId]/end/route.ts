@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { successJson, errorJson } from "@/lib/api-response";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -26,15 +27,12 @@ export async function POST(
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Instructor access required", 403);
     }
 
     const resolvedParams = await params;
@@ -48,29 +46,21 @@ export async function POST(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json(
-        { error: "Exam not found" },
-        { status: 404 }
-      );
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json(
-        { error: "Access denied" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Access denied", 403);
     }
 
     // 2. 상태 검증: Running 또는 EntryClosed 상태에서만 End 가능
     const validStatuses = ["running", "entry_closed"];
     if (!validStatuses.includes(exam.status || "")) {
-      return NextResponse.json(
-        {
-          error: "Exam cannot be ended",
-          currentStatus: exam.status,
-          message: "Exam must be in 'running' or 'entry_closed' status to end",
-        },
-        { status: 400 }
+      return errorJson(
+        "BAD_REQUEST",
+        "Exam must be in 'running' or 'entry_closed' status to end",
+        400,
+        { currentStatus: exam.status }
       );
     }
 
@@ -87,10 +77,7 @@ export async function POST(
 
     if (updateExamError) {
       console.error("[END_EXAM] Failed to update exam:", updateExamError);
-      return NextResponse.json(
-        { error: "Failed to end exam" },
-        { status: 500 }
-      );
+      return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);
     }
 
     // 4. (선택사항) 모든 진행 중 세션 강제 제출
@@ -132,8 +119,7 @@ export async function POST(
 
     console.log(`[END_EXAM] ✅ Exam ${examId} ended successfully`);
 
-    return NextResponse.json({
-      success: true,
+    return successJson({
       examId,
       status: "closed",
       endedAt: now,
@@ -141,9 +127,6 @@ export async function POST(
     });
   } catch (error) {
     console.error("[END_EXAM] ❌ Error:", error);
-    return NextResponse.json(
-      { error: "Failed to end exam" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);
   }
 }

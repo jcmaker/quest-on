@@ -11,6 +11,8 @@ import { buildInstructorChatSystemPrompt } from "@/lib/prompts";
 import { handleCorsPreFlight } from "@/lib/cors";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, instructorChatRequestSchema } from "@/lib/validations";
+import { successJson, errorJson } from "@/lib/api-response";
+import type { ResponseOutputItem, ResponseOutputMessage, ResponseOutputText } from "openai/resources/responses/responses";
 
 export async function OPTIONS(request: NextRequest) {
   return handleCorsPreFlight(request);
@@ -73,16 +75,20 @@ async function getAIResponse(
 
     // output 배열에서 메시지 타입 찾기
     let responseText = "";
-    const outputArray = response.output as any;
+    const outputArray: ResponseOutputItem[] = response.output;
     if (outputArray && Array.isArray(outputArray)) {
       const messageOutput = outputArray.find(
-        (item: any) => item.type === "message" && item.content
+        (item: ResponseOutputItem): item is ResponseOutputMessage =>
+          item.type === "message" && "content" in item
       );
 
       if (messageOutput && Array.isArray(messageOutput.content)) {
         const textParts = messageOutput.content
-          .filter((part: any) => part.type === "output_text" && part.text)
-          .map((part: any) => part.text);
+          .filter(
+            (part): part is ResponseOutputText =>
+              part.type === "output_text" && "text" in part
+          )
+          .map((part) => part.text);
         responseText = textParts.join("");
       }
     }
@@ -114,24 +120,18 @@ export async function POST(request: NextRequest) {
     // Authentication check
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Instructor access required", 403);
     }
 
     // Rate limiting
     const rl = checkRateLimit(`instructor-chat:${user.id}`, RATE_LIMITS.ai);
     if (!rl.allowed) {
-      return NextResponse.json(
-        { error: "Too many requests. Please try again later." },
-        { status: 429 }
-      );
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     const body = await request.json();
@@ -139,10 +139,7 @@ export async function POST(request: NextRequest) {
     // Input validation
     const validation = validateRequest(instructorChatRequestSchema, body);
     if (!validation.success) {
-      return NextResponse.json(
-        { error: validation.error },
-        { status: 400 }
-      );
+      return errorJson("VALIDATION_ERROR", validation.error!, 400);
     }
 
     const { message, sessionId, context, scopeDescription, userId } = validation.data;
@@ -167,7 +164,7 @@ export async function POST(request: NextRequest) {
       `⏱️  [PERFORMANCE] Total request time (instructor-chat): ${requestDuration}ms`
     );
 
-    return NextResponse.json({
+    return successJson({
       response: aiResponse,
       timestamp: new Date().toISOString(),
     });
@@ -182,15 +179,11 @@ export async function POST(request: NextRequest) {
       errorType: typeof error,
     });
 
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        message:
-          "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.",
-        details:
-          process.env.NODE_ENV === "development" ? errorMessage : undefined,
-      },
-      { status: 500 }
+    return errorJson(
+      "INTERNAL_ERROR",
+      "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.",
+      500,
+      process.env.NODE_ENV === "development" ? errorMessage : undefined
     );
   }
 }

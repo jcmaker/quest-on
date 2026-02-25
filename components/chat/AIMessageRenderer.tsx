@@ -3,6 +3,7 @@
 import React from "react";
 import ReactMarkdown, { Components } from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -98,14 +99,12 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
                       <span>{match[1]}</span>
                     </div>
                     <SyntaxHighlighter
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      style={vscDarkPlus as any}
+                      style={vscDarkPlus as SyntaxHighlighterProps["style"]}
                       language={match[1]}
                       PreTag="div"
                       className="!m-0 !rounded-none !bg-[#1e1e1e]"
                       showLineNumbers={true}
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      {...(props as any)}
+                      {...(props as Omit<SyntaxHighlighterProps, "children" | "style" | "language">)}
                     >
                       {String(children).replace(/\n$/, "")}
                     </SyntaxHighlighter>
@@ -203,14 +202,12 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
               ),
 
               // 수학 식 렌더링 (remark-math 플러그인용)
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              math: ({ children }: any) => (
+              math: ({ children }: { children?: React.ReactNode }) => (
                 <div className="my-0 mt-0 mb-0 overflow-x-auto p-0.5 bg-muted/20 rounded-lg text-center [&+*]:mt-0">
                   {children}
                 </div>
               ),
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              inlineMath: ({ children }: any) => (
+              inlineMath: ({ children }: { children?: React.ReactNode }) => (
                 <span className="inline-block mx-1 px-1 bg-muted/20 rounded">
                   {children}
                 </span>

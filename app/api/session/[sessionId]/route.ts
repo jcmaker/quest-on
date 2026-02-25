@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
+import { successJson, errorJson } from "@/lib/api-response";
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -24,7 +25,7 @@ export async function GET(
       console.error(
         `❌ [AUTH] Unauthorized session access attempt | Session: ${sessionId}`
       );
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     console.log(
@@ -60,7 +61,7 @@ export async function GET(
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
     // Check if user is authorized to view this session
@@ -69,12 +70,12 @@ export async function GET(
     const isStudentOwner = session.student_id === user.id;
 
     if (!isInstructor && !isStudentOwner) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // If instructor, check if they own the exam
     if (isInstructor && session.exams.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Decompress session data if available
@@ -207,7 +208,7 @@ export async function GET(
       `✅ [SUCCESS] Session data retrieved | Session: ${sessionId} | Submissions: ${decompressedSubmissions.length} | Messages: ${decompressedMessages.length}`
     );
 
-    return NextResponse.json({
+    return successJson({
       session: {
         id: session.id,
         exam_id: session.exam_id,
@@ -234,9 +235,6 @@ export async function GET(
         (error as Error)?.message
       }`
     );
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

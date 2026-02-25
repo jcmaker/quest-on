@@ -48,6 +48,7 @@ import {
   FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ErrorAlert } from "@/components/ui/error-alert";
 import { AdminSidebarFooter } from "@/components/admin/AdminSidebarFooter";
 import { useQuery } from "@tanstack/react-query";
 
@@ -441,11 +442,7 @@ export default function AdminDashboard() {
               </Button>
             </div>
 
-            {error && (
-              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
-                {error}
-              </div>
-            )}
+            {error && <ErrorAlert message={error} />}
 
             {/* Users Table */}
             <div className="space-y-4">

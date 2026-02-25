@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
+import { successJson, errorJson } from "@/lib/api-response";
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -18,16 +19,13 @@ export async function GET(
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is student
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
-      return NextResponse.json(
-        { error: "Student access required" },
-        { status: 403 }
-      );
+      return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
     // Get session data
@@ -38,20 +36,17 @@ export async function GET(
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
     // Check if student owns this session
     if (session.student_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Check if session is submitted
     if (!session.submitted_at) {
-      return NextResponse.json(
-        { error: "Session not submitted yet" },
-        { status: 400 }
-      );
+      return errorJson("SESSION_NOT_SUBMITTED", "Session not submitted yet", 400);
     }
 
     // Get exam data
@@ -62,7 +57,7 @@ export async function GET(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
     // Normalize questions format
@@ -270,7 +265,7 @@ export async function GET(
       overallScore = Math.round(totalScore / questionCount);
     }
 
-    return NextResponse.json({
+    return successJson({
       session: {
         id: session.id,
         exam_id: session.exam_id,
@@ -289,9 +284,6 @@ export async function GET(
     });
   } catch (error) {
     console.error("Get student report error:", error);
-    return NextResponse.json(
-      { error: "Failed to get report" },
-      { status: 500 }
-    );
+    return errorJson("FETCH_REPORT_FAILED", "Failed to get report", 500);
   }
 }

@@ -2,65 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
-import { createClerkClient } from "@clerk/nextjs/server";
 import { openai, AI_MODEL } from "@/lib/openai";
 import {
   buildChatGradingSystemPrompt,
   buildAnswerGradingSystemPrompt,
 } from "@/lib/prompts";
+import { successJson, errorJson } from "@/lib/api-response";
+import { auditLog } from "@/lib/audit";
+import { batchGetUserInfo } from "@/lib/clerk-users";
 
 // Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-// Initialize Clerk client
-const clerk = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY!,
-});
-
-// Helper function to get user info from Clerk
-async function getUserInfo(clerkUserId: string): Promise<{
-  name: string;
-  email: string;
-} | null> {
-  try {
-    const user = await clerk.users.getUser(clerkUserId);
-
-    // Get user name from firstName/lastName or fullName
-    let name = "";
-    if (user.firstName && user.lastName) {
-      name = `${user.firstName} ${user.lastName}`;
-    } else if (user.firstName) {
-      name = user.firstName;
-    } else if (user.lastName) {
-      name = user.lastName;
-    } else if (user.fullName) {
-      name = user.fullName;
-    } else {
-      // Fallback to email or ID
-      name =
-        user.emailAddresses[0]?.emailAddress ||
-        `Student ${clerkUserId.slice(0, 8)}`;
-    }
-
-    const email =
-      user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
-
-    return {
-      name,
-      email,
-    };
-  } catch (error) {
-    console.error("Error fetching user info from Clerk:", error);
-    // Fallback to placeholder
-    return {
-      name: `Student ${clerkUserId.slice(0, 8)}`,
-      email: `${clerkUserId}@example.com`,
-    };
-  }
-}
 
 export async function GET(
   request: NextRequest,
@@ -75,7 +30,7 @@ export async function GET(
 
     if (!user) {
       console.log("❌ No user found");
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     console.log("✅ User authenticated:", user.id);
@@ -83,7 +38,7 @@ export async function GET(
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get session data first (including ai_summary for auto-graded summary)
@@ -96,14 +51,10 @@ export async function GET(
 
     if (sessionError || !session) {
       console.log("❌ Session not found:", sessionError);
-      return NextResponse.json(
-        {
-          error: "Session not found",
-          details: sessionError?.message,
-          sessionId,
-        },
-        { status: 404 }
-      );
+      return errorJson("NOT_FOUND", "Session not found", 404, {
+        details: sessionError?.message,
+        sessionId,
+      });
     }
 
     console.log("✅ Session found:", session.id);
@@ -117,13 +68,9 @@ export async function GET(
 
     if (examError || !exam) {
       console.log("❌ Exam not found:", examError);
-      return NextResponse.json(
-        {
-          error: "Exam not found",
-          details: examError?.message,
-        },
-        { status: 404 }
-      );
+      return errorJson("NOT_FOUND", "Exam not found", 404, {
+        details: examError?.message,
+      });
     }
 
     // Normalize questions format (text -> prompt)
@@ -255,13 +202,14 @@ export async function GET(
         examInstructorId: exam.instructor_id,
         userId: user.id,
       });
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     console.log("✅ Instructor verified");
 
-    // Get student info from Clerk
-    const clerkStudentInfo = await getUserInfo(session.student_id);
+    // Get student info from Clerk (batch call for consistency)
+    const clerkUserMap = await batchGetUserInfo([session.student_id]);
+    const clerkStudentInfo = clerkUserMap.get(session.student_id) ?? null;
 
     // Get student profile from database
     const { data: studentProfile } = await supabase
@@ -491,7 +439,7 @@ export async function GET(
       `✅ [SUCCESS] Grading data retrieved | Session: ${sessionId} | Exam: ${exam.code} | Student: ${session.student_id}`
     );
 
-    return NextResponse.json(responseData);
+    return successJson(responseData);
   } catch (error) {
     const requestDuration = Date.now() - requestStartTime;
     console.error("Get session for grading error:", error);
@@ -500,10 +448,7 @@ export async function GET(
         (error as Error)?.message
       }`
     );
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }
 
@@ -524,13 +469,13 @@ export async function POST(
     );
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get session to verify instructor owns the exam
@@ -541,7 +486,7 @@ export async function POST(
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
     // Get exam to check instructor
@@ -552,12 +497,12 @@ export async function POST(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Check if grade already exists for this question
@@ -610,8 +555,15 @@ export async function POST(
       `✅ [SUCCESS] Grade saved | Session: ${sessionId} | Question: ${questionIdx} | Score: ${score}`
     );
 
-    return NextResponse.json({
-      success: true,
+    // Audit log: grade update
+    auditLog({
+      action: "grade_update",
+      userId: user.id,
+      targetId: sessionId,
+      details: { questionIdx, score, comment: comment?.slice(0, 200) },
+    });
+
+    return successJson({
       grade: result,
     });
   } catch (error) {
@@ -622,10 +574,7 @@ export async function POST(
         (error as Error)?.message
       }`
     );
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }
 
@@ -646,13 +595,13 @@ export async function PUT(
     );
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get session
@@ -663,7 +612,7 @@ export async function PUT(
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
     // Get exam with rubric
@@ -674,12 +623,12 @@ export async function PUT(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Check if already graded (unless force regrade)
@@ -693,8 +642,7 @@ export async function PUT(
         console.log(
           `⚠️ [AUTO_GRADE] Grades already exist, skipping auto-grade`
         );
-        return NextResponse.json({
-          success: true,
+        return successJson({
           message: "Already graded",
           skipped: true,
         });
@@ -1107,8 +1055,7 @@ ${submission.answer || "답안이 없습니다."}
       `✅ [SUCCESS] Auto-graded ${grades.length} questions | Session: ${sessionId}`
     );
 
-    return NextResponse.json({
-      success: true,
+    return successJson({
       gradesCount: grades.length,
       grades,
     });
@@ -1123,13 +1070,11 @@ ${submission.answer || "답안이 없습니다."}
     console.error("Error stack:", (error as Error)?.stack);
     console.error("Full error:", error);
 
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: (error as Error)?.message,
-        message: (error as Error)?.message || "Unknown error occurred",
-      },
-      { status: 500 }
+    return errorJson(
+      "INTERNAL_ERROR",
+      (error as Error)?.message || "Unknown error occurred",
+      500,
+      (error as Error)?.message
     );
   }
 }

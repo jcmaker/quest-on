@@ -4,6 +4,7 @@ import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
+import { successJson, errorJson } from "@/lib/api-response";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,22 +15,19 @@ export async function POST(request: NextRequest) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     const body = await request.json();
     const { sessionId } = body;
 
     if (!sessionId) {
-      return NextResponse.json(
-        { error: "Session ID required" },
-        { status: 400 }
-      );
+      return errorJson("MISSING_SESSION_ID", "Session ID required", 400);
     }
 
     // Fetch session
@@ -40,7 +38,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
     // Fetch exam
@@ -51,11 +49,11 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Fetch submissions
@@ -154,12 +152,13 @@ JSON 형식으로 응답해주세요:
       // Don't fail the request, just log the error
     }
 
-    return NextResponse.json({ summary: result });
+    return successJson({ summary: result });
   } catch (error: unknown) {
     console.error("Summary generation error:", error);
-    return NextResponse.json(
-      { error: (error as Error).message || "Internal server error" },
-      { status: 500 }
+    return errorJson(
+      "SUMMARY_GENERATION_FAILED",
+      (error as Error).message || "Internal server error",
+      500
     );
   }
 }

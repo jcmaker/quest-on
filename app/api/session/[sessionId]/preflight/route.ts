@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { successJson, errorJson } from "@/lib/api-response";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -25,7 +26,7 @@ export async function POST(
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const resolvedParams = await params;
@@ -39,17 +40,11 @@ export async function POST(
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json(
-        { error: "Session not found" },
-        { status: 404 }
-      );
+      return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
     if (session.student_id !== user.id) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Unauthorized", 403);
     }
 
     const now = new Date().toISOString();
@@ -65,29 +60,21 @@ export async function POST(
 
     if (updateError) {
       console.error("[PREFLIGHT] Failed to update session:", updateError);
-      return NextResponse.json(
-        { 
-          error: "Failed to accept preflight",
-          details: updateError.message || String(updateError),
-          code: updateError.code,
-        },
-        { status: 500 }
-      );
+      return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500, {
+        details: updateError.message || String(updateError),
+        code: updateError.code,
+      });
     }
 
     console.log(`[PREFLIGHT] ✅ Session ${sessionId} preflight accepted`);
 
-    return NextResponse.json({
-      success: true,
+    return successJson({
       sessionId,
       preflightAcceptedAt: now,
       status: "waiting",
     });
   } catch (error) {
     console.error("[PREFLIGHT] ❌ Error:", error);
-    return NextResponse.json(
-      { error: "Failed to accept preflight" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500);
   }
 }

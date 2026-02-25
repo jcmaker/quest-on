@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchUniversities } from "@/lib/seoul-universities";
+import { successJson, errorJson } from "@/lib/api-response";
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,12 +12,9 @@ export async function GET(request: NextRequest) {
 
     const results = await searchUniversities(query, limit);
 
-    return NextResponse.json({ universities: results });
+    return successJson({ universities: results });
   } catch (error) {
     console.error("Error searching universities:", error);
-    return NextResponse.json(
-      { error: "Failed to search universities" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Failed to search universities", 500);
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClerkClient } from "@clerk/nextjs/server";
 import { requireAdmin } from "@/lib/admin-auth";
+import { successJson, errorJson } from "@/lib/api-response";
 
 // Clerk 클라이언트 직접 초기화
 const clerk = createClerkClient({
@@ -36,7 +37,7 @@ export async function GET() {
       noRole: usersWithRoles.filter((u) => !u.role || u.role === "").length,
     };
 
-    return NextResponse.json({
+    return successJson({
       users: usersWithRoles,
       stats,
     });
@@ -44,15 +45,9 @@ export async function GET() {
     console.error("Error fetching users:", error);
 
     if (error instanceof Error && error.message === "Admin access required") {
-      return NextResponse.json(
-        { error: "Admin access required" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Admin access required", 403);
     }
 
-    return NextResponse.json(
-      { error: "Failed to fetch users" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Failed to fetch users", 500);
   }
 }

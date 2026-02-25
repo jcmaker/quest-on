@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
 import { decompressData } from "@/lib/compression";
+import { successJson, errorJson } from "@/lib/api-response";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,15 +17,12 @@ export async function GET(
     // Authentication + authorization
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 }
-      );
+      return errorJson("INSTRUCTOR_ACCESS_REQUIRED", "Instructor access required", 403);
     }
 
     const { examId } = await params;
@@ -37,12 +35,12 @@ export async function GET(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
     // Verify instructor owns this exam
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      return errorJson("ACCESS_DENIED", "Access denied", 403);
     }
 
     // 시험 타입 확인: 모든 문제가 essay 타입인지 확인
@@ -65,10 +63,7 @@ export async function GET(
 
     if (sessionsError) {
       console.error("Error fetching sessions:", sessionsError);
-      return NextResponse.json(
-        { error: "Failed to fetch sessions" },
-        { status: 500 }
-      );
+      return errorJson("FETCH_SESSIONS_FAILED", "Failed to fetch sessions", 500);
     }
 
     // 2-0. 중복/불완전 세션 필터링: 학생별로 가장 적절한 세션만 선택
@@ -134,7 +129,7 @@ export async function GET(
     }
 
     if (!filteredSessions || filteredSessions.length === 0) {
-      return NextResponse.json({
+      return successJson({
         examId,
         examTitle: exam.title,
         totalStudents: 0,
@@ -720,7 +715,7 @@ export async function GET(
           },
         ];
 
-    return NextResponse.json({
+    return successJson({
       examId,
       examTitle: exam.title,
       totalStudents: studentData.length,
@@ -757,9 +752,6 @@ export async function GET(
     });
   } catch (error) {
     console.error("Analytics API error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_SERVER_ERROR", "Internal server error", 500);
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { successJson, errorJson } from "@/lib/api-response";
 
 // 프로필 조회
 export async function GET() {
@@ -8,16 +9,13 @@ export async function GET() {
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is student
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
-      return NextResponse.json(
-        { error: "Student access required" },
-        { status: 403 }
-      );
+      return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
     // Prisma를 사용하여 프로필 조회
@@ -27,21 +25,21 @@ export async function GET() {
     });
     console.log("[Profile API] Profile found:", profile ? "yes" : "no");
 
-    return NextResponse.json({ profile });
+    return successJson({ profile });
   } catch (error) {
     console.error("[Profile API] Error fetching profile:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     const errorStack = error instanceof Error ? error.stack : undefined;
     console.error("[Profile API] Error stack:", errorStack);
-    return NextResponse.json(
+    return errorJson(
+      "FETCH_PROFILE_FAILED",
+      "Failed to fetch profile",
+      500,
       {
-        error: "Failed to fetch profile",
-        details: errorMessage,
-        // 개발 환경에서만 스택 트레이스 포함
+        message: errorMessage,
         ...(process.env.NODE_ENV === "development" && { stack: errorStack }),
-      },
-      { status: 500 }
+      }
     );
   }
 }
@@ -52,26 +50,20 @@ export async function POST(request: NextRequest) {
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is student
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
-      return NextResponse.json(
-        { error: "Student access required" },
-        { status: 403 }
-      );
+      return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
     const { name, student_number, school } = await request.json();
 
     // Validation
     if (!name || !student_number || !school) {
-      return NextResponse.json(
-        { error: "Name, student number, and school are required" },
-        { status: 400 }
-      );
+      return errorJson("MISSING_FIELDS", "Name, student number, and school are required", 400);
     }
 
     // Upsert profile (create or update)
@@ -91,12 +83,9 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return NextResponse.json({ profile, success: true });
+    return successJson({ profile });
   } catch (error) {
     console.error("Error saving profile:", error);
-    return NextResponse.json(
-      { error: "Failed to save profile" },
-      { status: 500 }
-    );
+    return errorJson("SAVE_PROFILE_FAILED", "Failed to save profile", 500);
   }
 }

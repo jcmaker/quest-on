@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
+import { successJson, errorJson } from "@/lib/api-response";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
     // Authentication check
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const body = await request.json();
@@ -30,10 +31,7 @@ export async function POST(request: Request) {
     } = body;
 
     if (!sessionId) {
-      return NextResponse.json(
-        { error: "sessionId is required" },
-        { status: 400 }
-      );
+      return errorJson("BAD_REQUEST", "sessionId is required", 400);
     }
 
     // Verify session ownership
@@ -44,10 +42,7 @@ export async function POST(request: Request) {
       .single();
 
     if (!session || session.student_id !== user.id) {
-      return NextResponse.json(
-        { error: "Access denied" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Access denied", 403);
     }
 
     const suspicious = !isInternal;
@@ -71,12 +66,9 @@ export async function POST(request: Request) {
       console.error("Error inserting paste log:", insertError);
     }
 
-    return NextResponse.json({ success: true });
+    return successJson();
   } catch (error) {
     console.error("Error logging paste event:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to log event" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Failed to log event", 500);
   }
 }

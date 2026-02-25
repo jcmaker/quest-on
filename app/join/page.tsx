@@ -27,6 +27,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { FileText } from "lucide-react";
+import { ErrorAlert } from "@/components/ui/error-alert";
 
 export default function ExamCodeEntry() {
   const [examCode, setExamCode] = useState("");
@@ -78,11 +79,7 @@ export default function ExamCodeEntry() {
             </CardHeader>
             <CardContent>
               <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                  <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-lg text-sm">
-                    {error}
-                  </div>
-                )}
+                {error && <ErrorAlert message={error} />}
                 <div className="space-y-2 mb-12">
                   <div className="flex justify-center">
                     <InputOTP

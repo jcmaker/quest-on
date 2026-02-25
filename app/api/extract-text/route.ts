@@ -4,24 +4,54 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
 import { createClient } from "@supabase/supabase-js";
+import { successJson, errorJson } from "@/lib/api-response";
 import mammoth from "mammoth";
 import AdmZip from "adm-zip";
 import { chunkText, formatChunkMetadata } from "@/lib/chunking";
 import { createEmbeddings } from "@/lib/embedding";
 import { saveChunksToDB, deleteChunksByFileUrl } from "@/lib/save-chunks";
 
+// pdf2json 타입 정의 (라이브러리에 타입이 없으므로 직접 정의)
+interface PDFTextRun {
+  T: string;
+}
+
+interface PDFTextItem {
+  R?: PDFTextRun[];
+}
+
+interface PDFPage {
+  Texts?: PDFTextItem[];
+}
+
+interface PDFParserData {
+  Pages?: PDFPage[];
+}
+
+interface PDFParserErrorData {
+  parserError?: string;
+}
+
+type PDFParserConstructor = new (
+  context: null,
+  verbosity: number
+) => {
+  on: (event: string, callback: (data: PDFParserData | PDFParserErrorData) => void) => void;
+  parseBuffer: (buffer: Buffer) => void;
+};
+
 // pdf2json을 사용하여 PDF 텍스트 추출 (Node.js 전용)
 // pdf-parse와 pdfjs-dist는 DOMMatrix 등 브라우저 API를 사용하여 Node.js에서 실패함
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let PDFParser: any = null;
+let PDFParser: PDFParserConstructor | null = null;
 
-async function getPDFParser() {
+async function getPDFParser(): Promise<PDFParserConstructor> {
   if (!PDFParser) {
     try {
       console.log("[extract-text] pdf2json 모듈 로드 시도...");
       // pdf2json은 Node.js 전용이므로 안전하게 사용 가능
+      // pdf2json에 타입 정의가 없으므로 unknown을 거쳐 변환
       const pdf2jsonModule = await import("pdf2json");
-      PDFParser = pdf2jsonModule.default || pdf2jsonModule;
+      PDFParser = (pdf2jsonModule.default || pdf2jsonModule) as unknown as PDFParserConstructor;
       console.log("[extract-text] pdf2json 모듈 로드 성공");
     } catch (error) {
       console.error("[extract-text] pdf2json 모듈 로드 실패:", error);
@@ -54,29 +84,27 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
       const textParts: string[] = [];
 
       // 텍스트 추출 이벤트 핸들러
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      pdfParser.on("pdfParser_dataError", (errData: any) => {
+      pdfParser.on("pdfParser_dataError", (errData: PDFParserData | PDFParserErrorData) => {
         console.error("[extract-text] PDF 파싱 에러:", errData);
+        const errorData = errData as PDFParserErrorData;
         reject(
           new Error(
-            `PDF 파싱 실패: ${errData.parserError || "알 수 없는 오류"}`
+            `PDF 파싱 실패: ${errorData.parserError || "알 수 없는 오류"}`
           )
         );
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      pdfParser.on("pdfParser_dataReady", (pdfData: any) => {
+      pdfParser.on("pdfParser_dataReady", (pdfData: PDFParserData | PDFParserErrorData) => {
         try {
+          const parsedData = pdfData as PDFParserData;
           // 모든 페이지에서 텍스트 추출
-          if (pdfData.Pages && Array.isArray(pdfData.Pages)) {
-            for (const page of pdfData.Pages) {
+          if (parsedData.Pages && Array.isArray(parsedData.Pages)) {
+            for (const page of parsedData.Pages) {
               if (page.Texts && Array.isArray(page.Texts)) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const pageTexts = page.Texts.map((textObj: any) => {
+                const pageTexts = page.Texts.map((textObj: PDFTextItem) => {
                   // R 배열에서 텍스트 추출
                   if (textObj.R && Array.isArray(textObj.R)) {
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    return textObj.R.map((r: any) => r.T || "").join("");
+                    return textObj.R.map((r: PDFTextRun) => r.T || "").join("");
                   }
                   return "";
                 }).filter((text: string) => text.trim());
@@ -280,23 +308,20 @@ export async function POST(request: NextRequest) {
     // 인증 확인
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // 강사 권한 확인
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     const body = await request.json();
     ({ fileUrl, fileName, mimeType, examId } = body);
 
     if (!fileUrl) {
-      return NextResponse.json(
-        { error: "fileUrl is required" },
-        { status: 400 }
-      );
+      return errorJson("MISSING_FILE_URL", "fileUrl is required", 400);
     }
     // TypeScript narrowing helper (Vercel build strict mode)
     const fileUrlStr: string = fileUrl;
@@ -316,10 +341,7 @@ export async function POST(request: NextRequest) {
 
     if (downloadError || !fileData) {
       console.error("[extract-text] Download error:", downloadError);
-      return NextResponse.json(
-        { error: "파일을 다운로드할 수 없습니다." },
-        { status: 500 }
-      );
+      return errorJson("FILE_DOWNLOAD_FAILED", "파일을 다운로드할 수 없습니다.", 500);
     }
 
     // ArrayBuffer를 Buffer로 변환
@@ -393,8 +415,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const response = {
-      success: true,
+    const responseData = {
       text: extractedText,
       length: extractedText.length,
       chunksSaved: examId ? chunksSaved : undefined,
@@ -404,13 +425,12 @@ export async function POST(request: NextRequest) {
     };
 
     console.log("✅ [extract-text] 응답:", {
-      success: response.success,
-      textLength: response.length,
-      chunksSaved: response.chunksSaved,
-      note: response.note,
+      textLength: responseData.length,
+      chunksSaved: responseData.chunksSaved,
+      note: responseData.note,
     });
 
-    return NextResponse.json(response);
+    return successJson(responseData);
   } catch (error) {
     console.error("[extract-text] Error:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -438,19 +458,13 @@ export async function POST(request: NextRequest) {
 
     // 항상 JSON 응답 반환 (빈 응답 방지)
     try {
-      return NextResponse.json(
-        {
-          error: errorMessage || "알 수 없는 오류가 발생했습니다.",
-          message: errorMessage, // 호환성을 위해 message도 추가
-          details:
-            process.env.NODE_ENV === "development"
-              ? {
-                  stack: errorStack,
-                  name: errorName,
-                }
-              : undefined,
-        },
-        { status: 500 }
+      return errorJson(
+        "EXTRACT_TEXT_FAILED",
+        errorMessage || "알 수 없는 오류가 발생했습니다.",
+        500,
+        process.env.NODE_ENV === "development"
+          ? { stack: errorStack, name: errorName }
+          : undefined
       );
     } catch (jsonError) {
       // JSON 응답 생성 실패 시에도 에러 반환

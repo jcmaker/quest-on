@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { currentUser } from "@clerk/nextjs/server";
+import { successJson, errorJson } from "@/lib/api-response";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,13 +17,13 @@ export async function GET(
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get exam to verify instructor owns it
@@ -33,11 +34,11 @@ export async function GET(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get all sessions for this exam
@@ -48,14 +49,11 @@ export async function GET(
 
     if (sessionsError) {
       console.error("Error fetching sessions:", sessionsError);
-      return NextResponse.json(
-        { error: "Failed to fetch sessions" },
-        { status: 500 }
-      );
+      return errorJson("INTERNAL_ERROR", "Failed to fetch sessions", 500);
     }
 
     if (!sessions || sessions.length === 0) {
-      return NextResponse.json({ grades: [] });
+      return successJson({ grades: [] });
     }
 
     // Get all grades for these sessions
@@ -68,14 +66,11 @@ export async function GET(
 
     if (gradesError) {
       console.error("Error fetching grades:", gradesError);
-      return NextResponse.json(
-        { error: "Failed to fetch grades" },
-        { status: 500 }
-      );
+      return errorJson("INTERNAL_ERROR", "Failed to fetch grades", 500);
     }
 
     if (!grades || grades.length === 0) {
-      return NextResponse.json({ grades: [] });
+      return successJson({ grades: [] });
     }
 
     // 교수가 수동으로 채점한 점수만 필터링
@@ -131,12 +126,9 @@ export async function GET(
       }
     });
 
-    return NextResponse.json({ grades: finalGrades });
+    return successJson({ grades: finalGrades });
   } catch (error) {
     console.error("Final grades API error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

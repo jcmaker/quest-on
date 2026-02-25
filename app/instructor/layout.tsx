@@ -19,18 +19,14 @@ import {
 } from "@/components/ui/sheet";
 import {
   Sidebar,
-  SidebarContent as ShadcnSidebarContent,
-  SidebarHeader,
   SidebarInset,
   SidebarProvider,
-  SidebarTrigger,
-  useSidebar,
 } from "@/components/ui/sidebar";
 import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
-import { FileTree } from "@/components/dashboard/FileTree";
 import { UserMenu } from "@/components/auth/UserMenu";
+import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
 import dynamic from "next/dynamic";
-import { Menu, XIcon } from "lucide-react";
+import { Menu } from "lucide-react";
 
 // 동적 임포트로 아이콘 최적화
 const LayoutDashboard = dynamic(() =>
@@ -40,12 +36,15 @@ const Plus = dynamic(() =>
   import("lucide-react").then((mod) => ({ default: mod.Plus }))
 );
 
-function SidebarContent() {
-  const { state, toggleSidebar } = useSidebar();
-  const isCollapsed = state === "collapsed";
+export default function InstructorLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const router = useRouter();
   const pathname = usePathname();
-  const { user } = useUser();
-  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const { isSignedIn, isLoaded, user } = useUser();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navigationItems = [
     {
@@ -61,110 +60,6 @@ function SidebarContent() {
       active: pathname === "/instructor/new",
     },
   ];
-
-  return (
-    <>
-      <SidebarHeader className="p-2 sm:p-3 border-b border-sidebar-border flex items-center">
-        {isCollapsed ? (
-          <div className="w-full flex items-center justify-center">
-            <Menu 
-              className="w-5 h-5 shrink-0 cursor-pointer" 
-              aria-hidden="true" 
-              onClick={toggleSidebar}
-            />
-            <span className="sr-only">사이드바 열기</span>
-          </div>
-        ) : (
-          <div className="w-full flex items-center justify-between px-3 sm:px-4">
-            <Link
-              href="/instructor"
-              className="flex items-center flex-shrink-0"
-            >
-              <Image
-                src="/qstn_logo_svg.svg"
-                alt="Quest-On Logo"
-                width={30}
-                height={30}
-                className="w-8 h-8 shrink-0"
-                priority
-              />
-              <span className="text-lg font-bold ml-2">Quest-On</span>
-            </Link>
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              className="rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
-              aria-label="사이드바 닫기"
-            >
-              <XIcon className="w-5 h-5" />
-              <span className="sr-only">사이드바 닫기</span>
-            </button>
-          </div>
-        )}
-      </SidebarHeader>
-
-      <ShadcnSidebarContent>
-        <nav
-          className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
-          aria-label="주요 네비게이션"
-        >
-          {navigationItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar group-data-[collapsible=icon]:justify-center",
-                  item.active
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                )}
-                aria-current={item.active ? "page" : undefined}
-                title={isCollapsed ? item.title : undefined}
-              >
-                <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
-                {!isCollapsed && <span>{item.title}</span>}
-              </Link>
-            );
-          })}
-        </nav>
-
-        {/* 폴더 트리 구조 임시 비활성화 */}
-        {/* {!isCollapsed && (
-          <>
-            <div className="border-t border-sidebar-border my-2" />
-            <div className="px-3 py-2">
-              <h3 className="text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wide mb-2">
-                폴더 및 파일
-              </h3>
-              <FileTree
-                userId={user?.id}
-                currentFolderId={currentFolderId}
-                onFolderClick={(folderId) => {
-                  setCurrentFolderId(folderId);
-                }}
-                className="max-h-[400px]"
-              />
-            </div>
-          </>
-        )} */}
-      </ShadcnSidebarContent>
-
-      <SidebarFooter />
-    </>
-  );
-}
-
-export default function InstructorLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const { isSignedIn, isLoaded, user } = useUser();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Get user role from metadata
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
@@ -232,7 +127,11 @@ export default function InstructorLayout({
             collapsible="icon"
             className="border-r border-sidebar-border"
           >
-            <SidebarContent />
+            <DashboardSidebar
+              homeHref="/instructor"
+              navItems={navigationItems}
+              showToggle
+            />
           </Sidebar>
 
           {/* Mobile Sidebar Sheet */}

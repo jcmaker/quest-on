@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { User, GraduationCap, Hash, Loader2 } from "lucide-react";
+import { ErrorAlert } from "@/components/ui/error-alert";
 
 interface University {
   name: string;
@@ -309,11 +310,7 @@ export default function ProfileSetupPage() {
             </div>
 
             {/* 에러 메시지 */}
-            {error && (
-              <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
-                {error}
-              </div>
-            )}
+            {error && <ErrorAlert message={error} />}
 
             {/* 제출 버튼 */}
             <Button

@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import { compressData } from "@/lib/compression";
 import { buildFeedbackChatSystemPrompt, type RubricItem } from "@/lib/prompts";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { successJson, errorJson } from "@/lib/api-response";
 
 // 메시지 타입 분류 함수 (개념/계산/전략/기타)
 async function classifyMessageType(
@@ -61,26 +62,20 @@ export async function POST(request: NextRequest) {
     // Authentication check
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Rate limiting
     const rl = checkRateLimit(`feedback-chat:${user.id}`, RATE_LIMITS.chat);
     if (!rl.allowed) {
-      return NextResponse.json(
-        { error: "Too many requests. Please try again later." },
-        { status: 429 }
-      );
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     const { message, examCode, questionId, conversationHistory, studentId } =
       await request.json();
 
     if (!message || !examCode) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
+      return errorJson("BAD_REQUEST", "Missing required fields", 400);
     }
 
     // 시험 정보 조회
@@ -91,7 +86,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     // 현재 문제 찾기
@@ -147,10 +142,7 @@ export async function POST(request: NextRequest) {
     const tokensUsed = completion.usage?.total_tokens || null; // 토큰 사용량 추출
 
     if (!response) {
-      return NextResponse.json(
-        { error: "Failed to generate AI response" },
-        { status: 500 }
-      );
+      return errorJson("INTERNAL_ERROR", "Failed to generate AI response", 500);
     }
 
     // Store feedback chat interaction with compression
@@ -254,7 +246,7 @@ export async function POST(request: NextRequest) {
       `✅ [SUCCESS] Feedback chat completed | Student: ${studentId} | Question: ${questionId}`
     );
 
-    return NextResponse.json({
+    return successJson({
       response,
       timestamp: new Date().toISOString(),
       examCode,
@@ -268,9 +260,6 @@ export async function POST(request: NextRequest) {
         (error as Error)?.message
       }`
     );
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

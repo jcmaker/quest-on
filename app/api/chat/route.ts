@@ -12,6 +12,8 @@ import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
 import { handleCorsPreFlight } from "@/lib/cors";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, chatRequestSchema } from "@/lib/validations";
+import { successJson, errorJson } from "@/lib/api-response";
+import type { ResponseOutputItem, ResponseOutputMessage, ResponseOutputText } from "openai/resources/responses/responses";
 
 export async function OPTIONS(request: NextRequest) {
   return handleCorsPreFlight(request);
@@ -150,7 +152,8 @@ async function getRagContext(params: {
       resultsCount: searchResults.length,
       topSimilarity: topSimilarity?.toFixed(3) ?? "N/A",
       fileNames: searchResults.map(
-        (r: any) => r.metadata?.fileName || "unknown"
+        (r: { metadata?: { fileName?: string } }) =>
+          r.metadata?.fileName || "unknown"
       ),
     });
 
@@ -265,18 +268,22 @@ async function getAIResponse(
 
     // output 배열에서 메시지 타입 찾기
     let responseText = "";
-    const outputArray = response.output as any;
+    const outputArray: ResponseOutputItem[] = response.output;
     if (outputArray && Array.isArray(outputArray)) {
       // type이 'message'인 항목 찾기
       const messageOutput = outputArray.find(
-        (item: any) => item.type === "message" && item.content
+        (item: ResponseOutputItem): item is ResponseOutputMessage =>
+          item.type === "message" && "content" in item
       );
 
       if (messageOutput && Array.isArray(messageOutput.content)) {
         // content 배열에서 텍스트 추출
         const textParts = messageOutput.content
-          .filter((part: any) => part.type === "output_text" && part.text)
-          .map((part: any) => part.text);
+          .filter(
+            (part): part is ResponseOutputText =>
+              part.type === "output_text" && "text" in part
+          )
+          .map((part) => part.text);
         responseText = textParts.join("");
       }
     }
@@ -346,8 +353,8 @@ async function incrementUsedClarifications(params: {
 
     // function 미존재 등은 폴백
     console.warn("[chat] increment_used_clarifications rpc failed, fallback", {
-      code: (error as any)?.code,
-      message: (error as any)?.message,
+      code: error.code,
+      message: error.message,
     });
   } catch (e) {
     console.warn("[chat] increment_used_clarifications rpc threw, fallback", e);
@@ -558,10 +565,7 @@ export async function POST(request: NextRequest) {
     // Input validation
     const validation = validateRequest(chatRequestSchema, body);
     if (!validation.success) {
-      return NextResponse.json(
-        { error: validation.error },
-        { status: 400 }
-      );
+      return errorJson("VALIDATION_ERROR", validation.error!, 400);
     }
 
     const {
@@ -581,10 +585,7 @@ export async function POST(request: NextRequest) {
     const rateLimitKey = `chat:${studentId || sessionId}`;
     const rl = checkRateLimit(rateLimitKey, RATE_LIMITS.chat);
     if (!rl.allowed) {
-      return NextResponse.json(
-        { error: "Too many requests. Please try again later." },
-        { status: 429 }
-      );
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     // 안전한 문제 인덱스 계산 (공통 로직)
@@ -628,7 +629,7 @@ export async function POST(request: NextRequest) {
           previousResponseId
         );
 
-        return NextResponse.json({
+        return successJson({
           response: aiResponse,
           timestamp: new Date().toISOString(),
           examCode: requestExamCode || "TEMP",
@@ -650,7 +651,7 @@ export async function POST(request: NextRequest) {
         skipIncrementUsedClarifications,
       });
 
-      return NextResponse.json({
+      return successJson({
         response: aiResponse,
         timestamp: new Date().toISOString(),
         examCode: requestExamCode || "TEMP",
@@ -677,18 +678,12 @@ export async function POST(request: NextRequest) {
         "SessionId:",
         sessionId
       );
-      return NextResponse.json(
-        { error: "Invalid session", details: sessionError?.message },
-        { status: 400 }
-      );
+      return errorJson("INVALID_SESSION", "Invalid session", 400, sessionError?.message);
     }
 
     if (!session.exam_id) {
       console.error("Session has no exam_id:", session);
-      return NextResponse.json(
-        { error: "Session is missing exam information" },
-        { status: 400 }
-      );
+      return errorJson("MISSING_EXAM_INFO", "Session is missing exam information", 400);
     }
 
     const { data: exam, error: examError } = await supabase
@@ -704,10 +699,7 @@ export async function POST(request: NextRequest) {
         "ExamId:",
         session.exam_id
       );
-      return NextResponse.json(
-        { error: "Exam not found", details: examError?.message },
-        { status: 404 }
-      );
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, examError?.message);
     }
 
     const effectiveExamId = examId || exam.id;
@@ -742,7 +734,7 @@ export async function POST(request: NextRequest) {
       `⏱️  [PERFORMANCE] Total request time (regular): ${requestDuration}ms`
     );
 
-    return NextResponse.json({
+    return successJson({
       response: aiResponse,
       timestamp: new Date().toISOString(),
       examCode: exam.code,
@@ -759,15 +751,11 @@ export async function POST(request: NextRequest) {
       errorType: typeof error,
     });
 
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        message:
-          "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.",
-        details:
-          process.env.NODE_ENV === "development" ? errorMessage : undefined,
-      },
-      { status: 500 }
+    return errorJson(
+      "INTERNAL_ERROR",
+      "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.",
+      500,
+      process.env.NODE_ENV === "development" ? errorMessage : undefined
     );
   }
 }

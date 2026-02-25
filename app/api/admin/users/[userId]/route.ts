@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClerkClient } from "@clerk/nextjs/server";
 import { requireAdmin } from "@/lib/admin-auth";
+import { successJson, errorJson } from "@/lib/api-response";
 
 // Clerk 클라이언트 직접 초기화
 const clerk = createClerkClient({
@@ -20,10 +21,7 @@ export async function PATCH(
 
     // Role 유효성 검사
     if (!role || !["instructor", "student"].includes(role)) {
-      return NextResponse.json(
-        { error: "Invalid role. Must be 'instructor' or 'student'" },
-        { status: 400 }
-      );
+      return errorJson("BAD_REQUEST", "Invalid role. Must be 'instructor' or 'student'", 400);
     }
 
     // 사용자 정보 업데이트
@@ -31,8 +29,7 @@ export async function PATCH(
       unsafeMetadata: { role },
     });
 
-    return NextResponse.json({
-      success: true,
+    return successJson({
       user: {
         id: updatedUser.id,
         email: updatedUser.emailAddresses[0]?.emailAddress,
@@ -45,16 +42,10 @@ export async function PATCH(
     console.error("Error updating user role:", error);
 
     if (error instanceof Error && error.message === "Admin access required") {
-      return NextResponse.json(
-        { error: "Admin access required" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Admin access required", 403);
     }
 
-    return NextResponse.json(
-      { error: "Failed to update user role" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Failed to update user role", 500);
   }
 }
 
@@ -84,20 +75,14 @@ export async function GET(
       unsafeMetadata: user.unsafeMetadata,
     };
 
-    return NextResponse.json({ user: userInfo });
+    return successJson({ user: userInfo });
   } catch (error) {
     console.error("Error fetching user:", error);
 
     if (error instanceof Error && error.message === "Admin access required") {
-      return NextResponse.json(
-        { error: "Admin access required" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Admin access required", 403);
     }
 
-    return NextResponse.json(
-      { error: "Failed to fetch user" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Failed to fetch user", 500);
   }
 }

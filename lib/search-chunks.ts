@@ -30,6 +30,21 @@ export interface SearchOptions {
   matchCount?: number; // 반환할 결과 수 (기본값: 5)
 }
 
+/** Supabase RPC match_exam_materials 함수 반환 타입 */
+interface MatchExamMaterialsRow {
+  id: string;
+  content: string;
+  file_url: string;
+  similarity: number;
+  metadata: {
+    fileName?: string;
+    fileUrl?: string;
+    chunkIndex?: number;
+    startChar?: number;
+    endChar?: number;
+  } | null;
+}
+
 /**
  * 질문 텍스트로 관련 자료 검색
  * @param queryText 검색할 질문 텍스트
@@ -146,24 +161,26 @@ export async function searchMaterialChunks(
       throw allError;
     }
 
+    const typedResults = (allResults || []) as MatchExamMaterialsRow[];
+
     console.log("📊 [search-chunks] 임계값 0.0 결과:", {
-      resultsCount: allResults?.length || 0,
-      similarities: allResults?.map((r: any) => ({
+      resultsCount: typedResults.length,
+      similarities: typedResults.map((r) => ({
         id: r.id,
         similarity: r.similarity?.toFixed(4),
       })),
-      topSimilarity: allResults?.[0]?.similarity?.toFixed(4) || "N/A",
+      topSimilarity: typedResults[0]?.similarity?.toFixed(4) || "N/A",
       minSimilarity:
-        allResults?.[allResults.length - 1]?.similarity?.toFixed(4) || "N/A",
+        typedResults[typedResults.length - 1]?.similarity?.toFixed(4) || "N/A",
     });
 
     // 실제 유사도가 있는 결과만 필터링
-    const validResults = (allResults || []).filter(
-      (r: any) => r.similarity && r.similarity > matchThreshold
+    const validResults = typedResults.filter(
+      (r) => r.similarity && r.similarity > matchThreshold
     );
 
     console.log("🎯 [search-chunks] 필터링된 결과:", {
-      originalCount: allResults?.length || 0,
+      originalCount: typedResults.length,
       filteredCount: validResults.length,
       threshold: matchThreshold,
     });
@@ -174,54 +191,63 @@ export async function searchMaterialChunks(
     const data = validResults.slice(0, matchCount);
 
     console.log("📥 [search-chunks] 최종 결과:", {
-      resultsCount: data?.length || 0,
+      resultsCount: data.length,
       duration: `${searchDuration}ms`,
-      topSimilarity: data?.[0]?.similarity?.toFixed(4) || "N/A",
+      topSimilarity: data[0]?.similarity?.toFixed(4) || "N/A",
+    });
+
+    const defaultMetadata: SearchResult["metadata"] = {
+      fileName: "",
+      fileUrl: "",
+      chunkIndex: 0,
+      startChar: 0,
+      endChar: 0,
+    };
+
+    const mapToSearchResult = (item: MatchExamMaterialsRow): SearchResult => ({
+      id: item.id,
+      content: item.content,
+      fileUrl: item.file_url,
+      similarity: item.similarity,
+      metadata: {
+        fileName: item.metadata?.fileName ?? defaultMetadata.fileName,
+        fileUrl: item.metadata?.fileUrl ?? defaultMetadata.fileUrl,
+        chunkIndex: item.metadata?.chunkIndex ?? defaultMetadata.chunkIndex,
+        startChar: item.metadata?.startChar ?? defaultMetadata.startChar,
+        endChar: item.metadata?.endChar ?? defaultMetadata.endChar,
+      },
     });
 
     if (!data || data.length === 0) {
       console.log("⚠️ [search-chunks] 검색 결과 없음:", {
         examId: examId || "전체",
         matchThreshold,
-        allResultsCount: allResults?.length || 0,
+        allResultsCount: typedResults.length,
         message:
-          allResults && allResults.length > 0
-            ? `임계값 ${matchThreshold}이 너무 높습니다. 실제 최고 유사도: ${allResults[0]?.similarity?.toFixed(
+          typedResults.length > 0
+            ? `임계값 ${matchThreshold}이 너무 높습니다. 실제 최고 유사도: ${typedResults[0]?.similarity?.toFixed(
                 4
               )}`
             : "RPC 함수가 결과를 반환하지 않았습니다",
       });
 
       // 실제 유사도가 낮더라도 상위 결과 반환 (임계값 무시)
-      if (allResults && allResults.length > 0) {
+      if (typedResults.length > 0) {
         console.log("⚠️ [search-chunks] 임계값 무시하고 상위 결과 반환:", {
-          resultsCount: Math.min(allResults.length, matchCount),
-          topSimilarity: allResults[0]?.similarity?.toFixed(4),
+          resultsCount: Math.min(typedResults.length, matchCount),
+          topSimilarity: typedResults[0]?.similarity?.toFixed(4),
         });
 
-        const results: SearchResult[] = allResults
+        return typedResults
           .slice(0, matchCount)
-          .map((item: any) => ({
-            id: item.id,
-            content: item.content,
-            fileUrl: item.file_url,
-            similarity: item.similarity,
-            metadata: item.metadata || {},
-          }));
-        return results;
+          .map(mapToSearchResult);
       }
 
       return [];
     }
 
     // 4. 결과 포맷팅
-    const results: SearchResult[] = data.map((item: any) => ({
-      id: item.id,
-      content: item.content,
-      fileUrl: item.file_url,
-      similarity: item.similarity,
-      metadata: item.metadata || {},
-    }));
+    const results: SearchResult[] = data.map(mapToSearchResult);
 
     console.log("🎯 [search-chunks] 검색 완료:", {
       resultsCount: results.length,

@@ -29,6 +29,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { CopyProtector } from "@/components/exam/CopyProtector";
+import { ErrorAlert } from "@/components/ui/error-alert";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import {
   Card,
@@ -230,30 +231,14 @@ function ExamChatSidebar({
 
           {/* Error Message */}
           {sessionError && (
-            <div className="px-4 sm:px-6 py-3 bg-destructive/10 border-t border-destructive/20 backdrop-blur-sm">
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <AlertCircle
-                    className="w-4 h-4 text-destructive shrink-0"
-                    aria-hidden="true"
-                  />
-                  <p className="text-sm text-destructive font-medium">
-                    세션 연결에 문제가 있습니다.
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSessionError(false);
-                    window.location.reload();
-                  }}
-                  className="text-destructive border-destructive/30 hover:bg-destructive/5 min-h-[44px] px-4 w-full sm:w-auto"
-                  aria-label="연결 재시도"
-                >
-                  재시도
-                </Button>
-              </div>
+            <div className="px-4 sm:px-6 py-3">
+              <ErrorAlert
+                message="세션 연결에 문제가 있습니다."
+                onRetry={() => {
+                  setSessionError(false);
+                  window.location.reload();
+                }}
+              />
             </div>
           )}
 
