@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
+import { validateUUID } from "@/lib/validate-params";
 
 const supabase = getSupabaseServer();
 
@@ -24,6 +25,9 @@ export async function POST(
 
     const resolvedParams = await params;
     const sessionId = resolvedParams.sessionId;
+
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
 
     // 세션 확인 및 권한 검증
     const { data: session, error: sessionError } = await supabase

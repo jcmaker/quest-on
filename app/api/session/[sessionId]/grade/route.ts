@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { openai, AI_MODEL } from "@/lib/openai";
 import {
   buildChatGradingSystemPrompt,
@@ -11,6 +11,7 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { batchGetUserInfo } from "@/lib/clerk-users";
 import { logError } from "@/lib/logger";
+import { validateUUID } from "@/lib/validate-params";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -22,6 +23,9 @@ export async function GET(
   const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
+
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
 
     const user = await currentUser();
 
@@ -380,6 +384,10 @@ export async function POST(
   const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
+
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
+
     const user = await currentUser();
     const body = await request.json();
     const { questionIdx, score, comment, stageGrading } = body;
@@ -421,57 +429,36 @@ export async function POST(
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
-    // Check if grade already exists for this question
-    const { data: existingGrade } = await supabase
+    // Upsert grade (atomic: handles concurrent grading safely)
+    const { data: result, error: gradeError } = await supabase
       .from("grades")
-      .select("id")
-      .eq("session_id", sessionId)
-      .eq("q_idx", questionIdx)
-      .single();
-
-    let result;
-    if (existingGrade) {
-      // Update existing grade
-      const { data, error } = await supabase
-        .from("grades")
-        .update({
+      .upsert(
+        {
+          session_id: sessionId,
+          q_idx: questionIdx,
           score,
           comment,
           stage_grading: stageGrading || null,
-        })
-        .eq("id", existingGrade.id)
-        .select()
-        .single();
+        },
+        { onConflict: "session_id,q_idx" }
+      )
+      .select()
+      .single();
 
-      if (error) throw error;
-      result = data;
-    } else {
-      // Insert new grade
-      const { data, error } = await supabase
-        .from("grades")
-        .insert([
-          {
-            session_id: sessionId,
-            q_idx: questionIdx,
-            score,
-            comment,
-            stage_grading: stageGrading || null,
-          },
-        ])
-        .select()
-        .single();
+    if (gradeError) throw gradeError;
 
-      if (error) throw error;
-      result = data;
+    // Audit log: fire-and-forget with error catching
+    try {
+      await auditLog({
+        action: "grade_update",
+        userId: user.id,
+        targetId: sessionId,
+        details: { questionIdx, score, comment: comment?.slice(0, 200) },
+      });
+    } catch (auditError) {
+      // Log but don't block the response
+      console.error("[grade] Audit log failed:", auditError);
     }
-
-    // Audit log: grade update
-    auditLog({
-      action: "grade_update",
-      userId: user.id,
-      targetId: sessionId,
-      details: { questionIdx, score, comment: comment?.slice(0, 200) },
-    });
 
     return successJson({
       grade: result,
@@ -489,6 +476,10 @@ export async function PUT(
   const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
+
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
+
     const user = await currentUser();
     const body = await request.json().catch(() => ({}));
     const { forceRegrade = false } = body;

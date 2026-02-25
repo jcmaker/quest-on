@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
+import { validateUUID } from "@/lib/validate-params";
 
 const supabase = getSupabaseServer();
 
@@ -18,7 +19,12 @@ export async function PATCH(
     }
 
     const { submissionId } = await params;
-    const { studentReply, sessionId, qIdx } = await request.json();
+
+    const invalidId = validateUUID(submissionId, "submissionId");
+    if (invalidId) return invalidId;
+
+    const { studentReply, sessionId, qIdx, expectedUpdatedAt } =
+      await request.json();
 
     if (!studentReply) {
       return errorJson("MISSING_REPLY", "Student reply is required", 400);
@@ -39,16 +45,24 @@ export async function PATCH(
     }
 
     let data, error;
+    const updatePayload = {
+      student_reply: studentReply,
+      updated_at: new Date().toISOString(),
+    };
 
     if (sessionId !== undefined && qIdx !== undefined) {
-      const result = await supabase
+      let query = supabase
         .from("submissions")
-        .update({ student_reply: studentReply })
+        .update(updatePayload)
         .eq("session_id", sessionId)
-        .eq("q_idx", qIdx)
-        .select()
-        .single();
+        .eq("q_idx", qIdx);
 
+      // Optimistic locking: only update if updated_at matches
+      if (expectedUpdatedAt) {
+        query = query.eq("updated_at", expectedUpdatedAt);
+      }
+
+      const result = await query.select().single();
       data = result.data;
       error = result.error;
     } else {
@@ -71,19 +85,34 @@ export async function PATCH(
         }
       }
 
-      const result = await supabase
+      let query = supabase
         .from("submissions")
-        .update({ student_reply: studentReply })
-        .eq("id", submissionId)
-        .select()
-        .single();
+        .update(updatePayload)
+        .eq("id", submissionId);
 
+      if (expectedUpdatedAt) {
+        query = query.eq("updated_at", expectedUpdatedAt);
+      }
+
+      const result = await query.select().single();
       data = result.data;
       error = result.error;
     }
 
     if (error) {
-      return errorJson("UPDATE_SUBMISSION_FAILED", "Failed to update submission", 500);
+      // PGRST116 = no rows returned (optimistic lock conflict)
+      if (error.code === "PGRST116" && expectedUpdatedAt) {
+        return errorJson(
+          "CONFLICT",
+          "Submission was modified concurrently. Please refresh and try again.",
+          409
+        );
+      }
+      return errorJson(
+        "UPDATE_SUBMISSION_FAILED",
+        "Failed to update submission",
+        500
+      );
     }
 
     return successJson({ submission: data });

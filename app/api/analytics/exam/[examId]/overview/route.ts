@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { decompressData } from "@/lib/compression";
 import { successJson, errorJson } from "@/lib/api-response";
+import { validateUUID } from "@/lib/validate-params";
 
 const supabase = getSupabaseServer();
 
@@ -23,6 +24,9 @@ export async function GET(
     }
 
     const { examId } = await params;
+
+    const invalidId = validateUUID(examId, "examId");
+    if (invalidId) return invalidId;
 
     // 1. 시험 정보 가져오기 (루브릭 정보 포함)
     const { data: exam, error: examError } = await supabase

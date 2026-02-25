@@ -5,7 +5,7 @@
  * - 클라이언트에서 '/api/feedback-chat' 호출 시, 루브릭/문제 맥락 기반으로 응답 생성
  */
 import { NextRequest, NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { compressData } from "@/lib/compression";

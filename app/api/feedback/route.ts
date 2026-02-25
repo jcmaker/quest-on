@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { compressData } from "@/lib/compression";
 import { openai, AI_MODEL, callOpenAI, enqueueGrading } from "@/lib/openai";
 import { autoGradeSession } from "@/lib/grading";

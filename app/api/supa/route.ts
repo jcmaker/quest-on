@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { compressData } from "@/lib/compression";
 import { chunkText, formatChunkMetadata } from "@/lib/chunking";
 import { createEmbeddings } from "@/lib/embedding";

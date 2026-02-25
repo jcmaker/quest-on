@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
+import { validateUUID } from "@/lib/validate-params";
 
 const supabase = getSupabaseServer();
 
@@ -11,6 +12,10 @@ export async function GET(
 ) {
   try {
     const { examId } = await params;
+
+    const invalidId = validateUUID(examId, "examId");
+    if (invalidId) return invalidId;
+
     const user = await currentUser();
 
     if (!user) {

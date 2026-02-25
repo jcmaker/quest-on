@@ -14,6 +14,7 @@ import { logError } from "@/lib/logger";
 // Routes should still handle OpenAI errors at call time.
 export const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY ?? "MISSING_OPENAI_API_KEY",
+  ...(process.env.OPENAI_BASE_URL && { baseURL: process.env.OPENAI_BASE_URL }),
 });
 
 // Preferred: lazy + explicit failure with a clear error message.
@@ -24,7 +25,10 @@ export function getOpenAI(): OpenAI {
     throw new Error("Missing OPENAI_API_KEY environment variable");
   }
   if (!_openai) {
-    _openai = new OpenAI({ apiKey });
+    _openai = new OpenAI({
+      apiKey,
+      ...(process.env.OPENAI_BASE_URL && { baseURL: process.env.OPENAI_BASE_URL }),
+    });
   }
   return _openai;
 }
@@ -34,21 +38,37 @@ export const AI_MODEL = "gpt5.2-chat-latest";
 
 // ============================================================
 // Global concurrency limiter for OpenAI API calls
-// Max 15 concurrent requests to avoid 429 rate limit errors
+// Max 30 concurrent requests for 100-user scale
 // ============================================================
-const openaiLimiter = pLimit(15);
+const openaiLimiter = pLimit(30);
+
+const OPENAI_TIMEOUT_MS = 25_000;
+
+class OpenAITimeoutError extends Error {
+  constructor() {
+    super(`OpenAI call timed out after ${OPENAI_TIMEOUT_MS}ms`);
+    this.name = "OpenAITimeoutError";
+  }
+}
 
 /**
  * Wraps an OpenAI API call with:
  * 1. Global concurrency limit (max 15 simultaneous calls)
  * 2. Exponential backoff retry on 429 errors (max 3 attempts)
+ * 3. 25-second timeout to prevent connection pool exhaustion
  */
 export async function callOpenAI<T>(fn: () => Promise<T>): Promise<T> {
   return openaiLimiter(async () => {
     const maxRetries = 3;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        return await fn();
+        const result = await Promise.race([
+          fn(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new OpenAITimeoutError()), OPENAI_TIMEOUT_MS)
+          ),
+        ]);
+        return result;
       } catch (error) {
         const isRateLimit =
           error instanceof OpenAI.APIError && error.status === 429;
@@ -72,10 +92,12 @@ export async function callOpenAI<T>(fn: () => Promise<T>): Promise<T> {
   });
 }
 
+export { OpenAITimeoutError };
+
 // ============================================================
-// Grading queue: max 3 concurrent autoGradeSession executions
+// Grading queue: max 10 concurrent autoGradeSession executions
 // ============================================================
-const gradingLimiter = pLimit(3);
+const gradingLimiter = pLimit(10);
 
 /**
  * Wraps a grading job so at most 3 run concurrently.

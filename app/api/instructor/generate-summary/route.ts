@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
 import { successJson, errorJson } from "@/lib/api-response";
