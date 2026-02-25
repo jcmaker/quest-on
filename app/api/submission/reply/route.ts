@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { successJson, errorJson } from "@/lib/api-response";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 // Update submission with student reply using sessionId and qIdx
 export async function POST(request: NextRequest) {
@@ -101,10 +98,6 @@ export async function POST(request: NextRequest) {
     }
 
     if (error) {
-      console.error("Submission database error:", {
-        code: error.code,
-        message: error.message,
-      });
       return errorJson("SAVE_SUBMISSION_FAILED", "Failed to save submission", 500);
     }
 
@@ -112,18 +105,8 @@ export async function POST(request: NextRequest) {
       return errorJson("SUBMISSION_OPERATION_FAILED", "Submission operation failed", 404);
     }
 
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `[SUBMISSION] Reply saved | Session: ${sessionId} | Q: ${qIdx} | ${requestDuration}ms`
-    );
-
     return successJson({ submission: data });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    console.error("Submission update error:", {
-      message: error instanceof Error ? error.message : "Unknown error",
-      duration: requestDuration,
-    });
     return errorJson("INTERNAL_SERVER_ERROR", "Internal server error", 500);
   }
 }

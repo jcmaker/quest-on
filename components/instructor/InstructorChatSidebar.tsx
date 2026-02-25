@@ -209,9 +209,6 @@ function ChatPanel({
 
       // 405 에러를 명시적으로 처리
       if (res.status === 405) {
-        console.error(
-          "405 Method Not Allowed - API route may not be properly configured"
-        );
         throw new Error(
           "API 메서드가 허용되지 않습니다. 서버 설정을 확인해주세요."
         );
@@ -219,12 +216,6 @@ function ChatPanel({
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        console.error("Chat API error:", {
-          status: res.status,
-          statusText: res.statusText,
-          error: data?.error,
-          details: data?.details,
-        });
         throw new Error(data?.error || `Chat request failed (${res.status})`);
       }
       return data as { response: string };
@@ -237,7 +228,6 @@ function ChatPanel({
       scrollToBottom();
     },
     onError: (err) => {
-      console.error("Chat mutation error:", err);
       const errorMessage =
         err instanceof Error
           ? err.message.includes("405") ||

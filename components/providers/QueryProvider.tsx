@@ -17,25 +17,8 @@ export default function QueryProvider({
   const [queryClient] = useState(
     () =>
       new QueryClient({
-        queryCache: new QueryCache({
-          onError: (error, query) => {
-            // 에러 로그 수집 중단됨 (성능 최적화를 위해)
-            // 필요시 다시 활성화: logError 호출 복원
-            console.error("Query error:", error, {
-              queryKey: query?.queryKey,
-              queryHash: query?.queryHash,
-            });
-          },
-        }),
-        mutationCache: new MutationCache({
-          onError: (error, variables, context, mutation) => {
-            // 에러 로그 수집 중단됨 (성능 최적화를 위해)
-            // 필요시 다시 활성화: logError 호출 복원
-            console.error("Mutation error:", error, {
-              mutationKey: mutation?.options?.mutationKey,
-            });
-          },
-        }),
+        queryCache: new QueryCache({}),
+        mutationCache: new MutationCache({}),
         defaultOptions: {
           queries: {
             // With SSR, we usually want to set some default staleTime

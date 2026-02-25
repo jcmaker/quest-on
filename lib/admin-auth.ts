@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import crypto from "crypto";
 
 const COOKIE_NAME = "admin-session";
@@ -71,16 +72,24 @@ export async function verifyAdminToken(): Promise<{ isAdmin: boolean }> {
     }
 
     return { isAdmin: verifyToken(token) };
-  } catch (error) {
-    console.error("Admin verification error:", error);
+  } catch {
     return { isAdmin: false };
   }
 }
 
-export async function requireAdmin(): Promise<void> {
+/**
+ * Verifies admin access and returns a 401 response if not authorized.
+ * Returns null if the user is a valid admin, or a NextResponse error otherwise.
+ * Usage: const denied = await requireAdmin(); if (denied) return denied;
+ */
+export async function requireAdmin(): Promise<NextResponse | null> {
   const { isAdmin } = await verifyAdminToken();
 
   if (!isAdmin) {
-    throw new Error("Admin access required");
+    return NextResponse.json(
+      { error: "UNAUTHORIZED", message: "Admin access required" },
+      { status: 401 }
+    );
   }
+  return null;
 }

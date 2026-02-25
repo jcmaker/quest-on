@@ -63,8 +63,8 @@ export default function ProfilePage() {
                 setStudentProfile(data.profile);
               }
             }
-          } catch (error) {
-            console.error("Error loading student profile:", error);
+          } catch {
+            // Profile loading error handled silently
           } finally {
             setIsLoadingProfile(false);
           }

@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { successJson, errorJson } from "@/lib/api-response";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function POST(request: Request) {
   try {
@@ -63,12 +60,11 @@ export async function POST(request: Request) {
     });
 
     if (insertError) {
-      console.error("Error inserting paste log:", insertError);
+      // Non-critical: paste log insert failed
     }
 
     return successJson();
   } catch (error) {
-    console.error("Error logging paste event:", error);
     return errorJson("INTERNAL_ERROR", "Failed to log event", 500);
   }
 }

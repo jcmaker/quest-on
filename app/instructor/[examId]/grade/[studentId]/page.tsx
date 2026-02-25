@@ -249,9 +249,6 @@ export default function GradeStudentPage({
 
       const data: SessionData = await response.json();
 
-      // Debug logging
-      console.log("📊 Fetched session data:", data);
-
       return data;
     },
     enabled: !!(
@@ -401,7 +398,6 @@ export default function GradeStudentPage({
       toast.success("채점이 저장되었습니다.");
     },
     onError: (error: Error) => {
-      console.error("Error saving grade:", error);
       const errorMessage = getErrorMessage(
         error,
         "채점 저장 중 오류가 발생했습니다"

@@ -1,20 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Missing Supabase environment variables");
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = getSupabaseServer();
 
 /**
  * POST /api/exam/[examId]/start
- * 
+ *
  * Gate Start 신호: 교수가 "Start Exam" 버튼을 클릭하면
  * - exams.started_at 설정
  * - exams.status를 "running"으로 변경
@@ -106,7 +99,6 @@ export async function POST(
       .eq("id", examId);
 
     if (updateExamError) {
-      console.error("[START_EXAM] Failed to update exam:", updateExamError);
       return errorJson("INTERNAL_ERROR", "Failed to start exam", 500);
     }
 
@@ -118,14 +110,11 @@ export async function POST(
       .eq("exam_id", examId)
       .eq("status", "waiting");
 
-    if (sessionsError) {
-      console.error("[START_EXAM] Failed to fetch waiting sessions:", sessionsError);
-      // 시험은 이미 시작되었으므로, 세션 업데이트 실패해도 계속 진행
-    } else if (waitingSessions && waitingSessions.length > 0) {
+    if (!sessionsError && waitingSessions && waitingSessions.length > 0) {
       const sessionIds = waitingSessions.map((s) => s.id);
 
       // 모든 Waiting 세션을 InProgress로 전환
-      const { error: updateSessionsError } = await supabase
+      await supabase
         .from("sessions")
         .update({
           status: "in_progress",
@@ -134,21 +123,7 @@ export async function POST(
           updated_at: now,
         })
         .in("id", sessionIds);
-
-      if (updateSessionsError) {
-        console.error(
-          "[START_EXAM] Failed to update sessions:",
-          updateSessionsError
-        );
-        // 시험은 이미 시작되었으므로, 세션 업데이트 실패해도 계속 진행
-      } else {
-        console.log(
-          `[START_EXAM] ✅ Updated ${sessionIds.length} sessions to in_progress`
-        );
-      }
     }
-
-    console.log(`[START_EXAM] ✅ Exam ${examId} started successfully`);
 
     return successJson({
       examId,
@@ -157,7 +132,6 @@ export async function POST(
       sessionsUpdated: waitingSessions?.length || 0,
     });
   } catch (error) {
-    console.error("[START_EXAM] ❌ Error:", error);
     return errorJson("INTERNAL_ERROR", "Failed to start exam", 500);
   }
 }

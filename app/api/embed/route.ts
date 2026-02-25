@@ -34,18 +34,13 @@ export async function POST(request: NextRequest) {
       return errorJson("BAD_REQUEST", "텍스트가 비어있습니다", 400);
     }
 
-    console.log("[embed] 임베딩 생성 시작, 텍스트 길이:", text.length);
-
     const embedding = await createEmbedding(text);
-
-    console.log("[embed] 임베딩 생성 완료, 차원:", embedding.length);
 
     return successJson({
       embedding,
       dimensions: embedding.length,
     });
   } catch (error) {
-    console.error("[embed] 에러:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     return errorJson("INTERNAL_ERROR", "임베딩 생성 실패", 500, errorMessage);

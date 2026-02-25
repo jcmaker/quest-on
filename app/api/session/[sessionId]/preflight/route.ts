@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Missing Supabase environment variables");
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = getSupabaseServer();
 
 /**
  * POST /api/session/[sessionId]/preflight
@@ -59,14 +52,11 @@ export async function POST(
       .eq("id", sessionId);
 
     if (updateError) {
-      console.error("[PREFLIGHT] Failed to update session:", updateError);
       return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500, {
         details: updateError.message || String(updateError),
         code: updateError.code,
       });
     }
-
-    console.log(`[PREFLIGHT] ✅ Session ${sessionId} preflight accepted`);
 
     return successJson({
       sessionId,
@@ -74,7 +64,6 @@ export async function POST(
       status: "waiting",
     });
   } catch (error) {
-    console.error("[PREFLIGHT] ❌ Error:", error);
     return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500);
   }
 }

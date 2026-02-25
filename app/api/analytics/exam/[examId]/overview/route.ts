@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { decompressData } from "@/lib/compression";
 import { successJson, errorJson } from "@/lib/api-response";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
@@ -62,7 +59,6 @@ export async function GET(
       .order("created_at", { ascending: false });
 
     if (sessionsError) {
-      console.error("Error fetching sessions:", sessionsError);
       return errorJson("FETCH_SESSIONS_FAILED", "Failed to fetch sessions", 500);
     }
 
@@ -751,7 +747,6 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Analytics API error:", error);
     return errorJson("INTERNAL_SERVER_ERROR", "Internal server error", 500);
   }
 }

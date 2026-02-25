@@ -37,9 +37,8 @@ export function getDeviceFingerprint(): string {
   // Store in localStorage for persistence
   try {
     localStorage.setItem("device_fingerprint", deviceId);
-  } catch (e) {
-    // localStorage might not be available
-    console.warn("Failed to store device fingerprint:", e);
+  } catch {
+    // localStorage might not be available in some environments
   }
 
   return deviceId;

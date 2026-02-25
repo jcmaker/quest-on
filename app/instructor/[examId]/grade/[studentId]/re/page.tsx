@@ -62,7 +62,6 @@ export default function RegradePage() {
           router.push(`/instructor/${examId}/grade/${studentId}`);
         }, 2000);
       } catch (error) {
-        console.error("가채점 실패:", error);
         setStatus("error");
         setMessage(
           error instanceof Error

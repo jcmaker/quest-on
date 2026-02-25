@@ -130,19 +130,11 @@ export function ExamControlButtons({
           table: "sessions",
           filter: `exam_id=eq.${examId}`, // 해당 시험의 세션만 필터링
         },
-        (payload) => {
-          console.log("[REALTIME] Session changed:", payload);
-          // 데이터가 변할 때마다 캐시를 무효화하여 다시 가져오기
+        () => {
           queryClient.invalidateQueries({ queryKey });
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          console.log("[REALTIME] Subscribed to waiting room changes");
-        } else if (status === "CHANNEL_ERROR") {
-          console.error("[REALTIME] Channel error");
-        }
-      });
+      .subscribe();
 
     // cleanup: 컴포넌트 언마운트 또는 모달이 닫힐 때 구독 해제
     return () => {
@@ -179,7 +171,6 @@ export function ExamControlButtons({
         );
       }
     } catch (error) {
-      console.error("Error starting exam:", error);
       toast.error("시험 시작 중 오류가 발생했습니다.");
     } finally {
       setIsStarting(false);
@@ -208,7 +199,6 @@ export function ExamControlButtons({
         );
       }
     } catch (error) {
-      console.error("Error ending exam:", error);
       toast.error("시험 종료 중 오류가 발생했습니다.");
     } finally {
       setIsEnding(false);
@@ -349,17 +339,6 @@ export function ExamControlButtons({
   };
 
   const { badge, button } = getStatusDisplay();
-
-  // 디버깅: 실제 값 확인
-  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-    console.log("[ExamControlButtons] Debug:", {
-      examId,
-      examStatus,
-      hasGateFields,
-      buttonExists: !!button,
-      badgeExists: !!badge,
-    });
-  }
 
   return (
     <>

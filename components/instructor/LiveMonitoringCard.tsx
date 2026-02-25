@@ -64,16 +64,6 @@ export function LiveMonitoringCard({ examId }: LiveMonitoringCardProps) {
       const data = await response.json();
       const newMessages = data.messages || [];
 
-      // 디버깅: API 응답 확인
-      if (process.env.NODE_ENV === "development") {
-        console.log("[LiveMonitoringCard] API messages:", newMessages);
-        const roleCounts = newMessages.reduce((acc: Record<string, number>, msg: LiveMessage) => {
-          acc[msg.role] = (acc[msg.role] || 0) + 1;
-          return acc;
-        }, {});
-        console.log("[LiveMonitoringCard] Message roles:", roleCounts);
-      }
-
       if (newMessages.length > 0) {
         // Add new messages to the list (avoid duplicates)
         setMessages((prev) => {
@@ -97,8 +87,8 @@ export function LiveMonitoringCard({ examId }: LiveMonitoringCardProps) {
       if (typeof window !== "undefined") {
         localStorage.setItem(`live_monitoring_last_fetch_${examId}`, newTimestamp);
       }
-    } catch (error) {
-      console.error("Error fetching live messages:", error);
+    } catch {
+      // Fetch error handled gracefully
     } finally {
       setIsLoading(false);
     }

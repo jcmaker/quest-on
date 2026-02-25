@@ -293,9 +293,6 @@ export default function CreateExam() {
       return; // 텍스트 추출 불가능한 파일은 건너뛰기
     }
 
-    // 콘솔에 텍스트 추출 시작 로그
-    console.log(`[extract-text] 텍스트 추출 시작: ${file.name}`);
-
     try {
       // 파일을 FormData로 업로드
       const formData = new FormData();
@@ -333,8 +330,7 @@ export default function CreateExam() {
         let text = "";
         try {
           text = await extractResponse.text();
-        } catch (textError) {
-          console.error(`[extract-text] 응답 텍스트 읽기 실패:`, textError);
+        } catch {
           throw new Error(
             `텍스트 추출 실패 (${extractResponse.status}): 응답을 읽을 수 없습니다.`
           );
@@ -347,14 +343,8 @@ export default function CreateExam() {
           } else {
             errorData = { error: "서버에서 에러 응답을 반환하지 않았습니다." };
           }
-        } catch (parseError) {
+        } catch {
           // JSON 파싱 실패 시 원본 텍스트 사용
-          console.error(`[extract-text] JSON 파싱 실패:`, {
-            status: extractResponse.status,
-            statusText: extractResponse.statusText,
-            text: text.substring(0, 200),
-            parseError,
-          });
           errorData = {
             error: `서버 오류 (${extractResponse.status}): ${
               text || "응답 본문이 비어있습니다"
@@ -365,13 +355,6 @@ export default function CreateExam() {
 
         const errorMessage =
           errorData.error || errorData.message || "텍스트 추출 실패";
-        console.error(`[extract-text] API 에러:`, {
-          errorData,
-          status: extractResponse.status,
-          statusText: extractResponse.statusText,
-          hasError: !!errorData.error,
-          hasMessage: !!errorData.message,
-        });
         throw new Error(errorMessage);
       }
 
@@ -387,13 +370,9 @@ export default function CreateExam() {
           });
           return newMap;
         });
-        console.log(`[extract-text] 텍스트 저장 완료 (${file.name}):`, {
-          fileName: file.name,
-          textLength: extractResult.text?.length || 0,
-        });
       }
-    } catch (error) {
-      console.error(`[extract-text] 텍스트 추출 실패 (${file.name}):`, error);
+    } catch {
+      // Text extraction failure is non-critical; file upload still succeeds
     }
   };
 
@@ -556,12 +535,6 @@ export default function CreateExam() {
       if (activeMaterials.length > 0) {
         const uploadPromises = activeMaterials.map(async (file) => {
           // 원본 파일명은 파일 자체의 name 속성으로 서버에 전달됨
-          console.log(`[client] Processing file: ${file.name}`, {
-            originalName: file.name,
-            fileSize: file.size,
-            fileType: file.type,
-          });
-
           try {
             // RLS 정책 문제 해결을 위한 Signed URL 방식
             const { createClient } = await import("@supabase/supabase-js");
@@ -601,13 +574,6 @@ export default function CreateExam() {
             // Storage 경로: instructor-{userId}/{safeFileName}
             const storagePath = `instructor-${user?.id}/${safeFileName}`;
 
-            console.log(`[client] Attempting direct upload to Supabase:`, {
-              originalName: file.name,
-              storagePath: storagePath,
-              fileSize: file.size,
-              fileType: file.type,
-            });
-
             // 먼저 직접 업로드 시도
             const { data, error } = await supabase.storage
               .from("exam-materials")
@@ -617,20 +583,11 @@ export default function CreateExam() {
               });
 
             if (error) {
-              console.error(
-                `[client] Direct upload failed for ${file.name}:`,
-                error
-              );
-
               // RLS 정책 에러인 경우 서버 API로 폴백
               if (
                 error.message.includes("row-level security") ||
                 error.message.includes("policy")
               ) {
-                console.log(
-                  `[client] RLS policy error detected, falling back to server API for ${file.name}`
-                );
-
                 // 서버 API로 폴백 (4MB 제한 있지만 작은 파일은 가능)
                 const formData = new FormData();
                 formData.append("file", file);
@@ -660,9 +617,6 @@ export default function CreateExam() {
                   throw new Error(`${file.name}: ${result.message}`);
                 }
 
-                console.log(
-                  `[client] Server upload successful for ${file.name}`
-                );
                 return result.url;
               }
 
@@ -674,35 +628,15 @@ export default function CreateExam() {
               .from("exam-materials")
               .getPublicUrl(data.path);
 
-            console.log(`[client] Direct upload successful for ${file.name}:`, {
-              originalName: file.name,
-              storagePath: data.path,
-              publicUrl: urlData.publicUrl,
-              fileSize: file.size,
-              fileType: file.type,
-            });
-
             return urlData.publicUrl;
           } catch (error) {
-            console.error(
-              `[client] Direct upload error for ${file.name}:`,
-              error
-            );
             throw error;
           }
         });
 
         try {
-          console.log(
-            `[client] Starting upload of ${activeMaterials.length} files...`
-          );
           materialUrls = await Promise.all(uploadPromises);
-          console.log(
-            `[client] Successfully uploaded ${materialUrls.length} files`
-          );
         } catch (uploadError) {
-          console.error("[client] File upload failed:", uploadError);
-
           // 에러 메시지 추출 및 표시
           const errorMessage = getErrorMessage(
             uploadError,
@@ -716,9 +650,6 @@ export default function CreateExam() {
         }
 
         // 파일 업로드 후 텍스트 추출 (업로드된 실제 URL 사용)
-        console.log(
-          `[client] Starting text extraction for ${materialUrls.length} files...`
-        );
         const textExtractionPromises = activeMaterials.map(
           async (file, index) => {
             const url = materialUrls[index];
@@ -732,7 +663,6 @@ export default function CreateExam() {
             }
 
             try {
-              console.log(`[client] Extracting text from ${file.name}...`);
               const extractResponse = await fetch("/api/extract-text", {
                 method: "POST",
                 headers: {
@@ -746,9 +676,6 @@ export default function CreateExam() {
               });
 
               if (!extractResponse.ok) {
-                console.error(
-                  `[client] Text extraction failed for ${file.name}`
-                );
                 return null;
               }
 
@@ -761,11 +688,7 @@ export default function CreateExam() {
                 };
               }
               return null;
-            } catch (error) {
-              console.error(
-                `[client] Text extraction error for ${file.name}:`,
-                error
-              );
+            } catch {
               return null;
             }
           }
@@ -778,23 +701,9 @@ export default function CreateExam() {
             item !== null
         );
 
-        console.log(
-          `[client] Text extraction completed: ${materialsText.length} files extracted`
-        );
       }
 
-      // 기존 extractedTexts는 사용하지 않음 (URL 매칭 문제로 인해)
-
       // Prepare exam data for database
-      console.log(`[client] Preparing exam data:`, {
-        materialsCount: materialUrls.length,
-        materialsTextCount: materialsText.length,
-        materialsTextPreview: materialsText.map((m) => ({
-          fileName: m.fileName,
-          textLength: m.text.length,
-        })),
-      });
-
       const examDataForDB = {
         title: examData.title,
         code: examData.code,
@@ -812,14 +721,12 @@ export default function CreateExam() {
       };
 
       // Save to Supabase using useMutation
-      const result = await createExamMutation.mutateAsync(examDataForDB);
-      console.log("Exam created successfully:", result);
+      await createExamMutation.mutateAsync(examDataForDB);
 
       // Show dialog with exam code instead of redirecting
       setCreatedExamCode(examData.code);
       setIsDialogOpen(true);
-    } catch (error) {
-      console.error("Error creating exam:", error);
+    } catch {
       alert("시험 생성 중 오류가 발생했습니다. 다시 시도해주세요.");
     } finally {
       setIsLoading(false);

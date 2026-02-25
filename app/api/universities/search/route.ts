@@ -13,8 +13,7 @@ export async function GET(request: NextRequest) {
     const results = await searchUniversities(query, limit);
 
     return successJson({ universities: results });
-  } catch (error) {
-    console.error("Error searching universities:", error);
+  } catch {
     return errorJson("INTERNAL_ERROR", "Failed to search universities", 500);
   }
 }

@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 
 // Supabase 서버 전용 클라이언트
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET(request: NextRequest) {
   try {
     // 어드민 인증 확인
-    await requireAdmin();
+    const denied = await requireAdmin();
+    if (denied) return denied;
 
     // 쿼리 파라미터 파싱
     const searchParams = request.nextUrl.searchParams;
@@ -35,7 +33,6 @@ export async function GET(request: NextRequest) {
     const { data, error, count } = await query;
 
     if (error) {
-      console.error("Error fetching error logs:", error);
       return errorJson("INTERNAL_ERROR", "Failed to fetch error logs", 500);
     }
 
@@ -46,12 +43,6 @@ export async function GET(request: NextRequest) {
       offset,
     });
   } catch (error) {
-    console.error("Error in admin logs API:", error);
-
-    if (error instanceof Error && error.message === "Admin access required") {
-      return errorJson("FORBIDDEN", "Admin access required", 403);
-    }
-
     return errorJson("INTERNAL_ERROR", "Failed to fetch error logs", 500);
   }
 }

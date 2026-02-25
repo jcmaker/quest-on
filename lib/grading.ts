@@ -1,17 +1,15 @@
-import { openai, AI_MODEL } from "@/lib/openai";
-import { createClient } from "@supabase/supabase-js";
+import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import {
   buildChatGradingSystemPrompt,
   buildAnswerGradingSystemPrompt,
   buildSummaryEvaluationSystemPrompt,
 } from "@/lib/prompts";
+import { logError } from "@/lib/logger";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 interface GradeResult {
   q_idx: number;
@@ -39,12 +37,6 @@ interface SummaryResult {
 export async function autoGradeSession(
   sessionId: string
 ): Promise<{ grades: GradeResult[]; summary: SummaryResult | null }> {
-  const startTime = Date.now();
-
-  console.log(
-    `🤖 [AUTO_GRADE] Starting auto-grading for session: ${sessionId}`
-  );
-
   // 1. 세션 정보 가져오기
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
@@ -86,20 +78,11 @@ export async function autoGradeSession(
     .order("created_at", { ascending: false }); // 최신 것부터 정렬
 
   if (submissionsError) {
-    console.error(
-      "❌ [AUTO_GRADE] Error fetching submissions:",
-      submissionsError
-    );
     throw new Error(`Failed to fetch submissions: ${submissionsError.message}`);
   }
 
   if (!submissions || submissions.length === 0) {
-    console.warn(
-      `⚠️ [AUTO_GRADE] No submissions found for session: ${sessionId}`
-    );
     // submissions가 없어도 계속 진행 (메시지만으로 채점 가능할 수 있음)
-  } else {
-    console.log(`📤 [AUTO_GRADE] Found ${submissions.length} submissions`);
   }
 
   // 4. 메시지 가져오기 (채팅 기록)
@@ -119,10 +102,11 @@ export async function autoGradeSession(
     .order("created_at", { ascending: true });
 
   if (messagesError) {
-    console.error("❌ [AUTO_GRADE] Error fetching messages:", messagesError);
     // messages는 필수가 아니므로 에러를 throw하지 않음
-  } else {
-    console.log(`💬 [AUTO_GRADE] Found ${messages?.length || 0} messages`);
+    logError("[AUTO_GRADE] Error fetching messages", messagesError, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId },
+    });
   }
 
   // 5. 데이터 압축 해제 및 정리
@@ -189,11 +173,8 @@ export async function autoGradeSession(
             bestSubmission.compressed_answer_data as string
           );
           answer = (decompressed as { answer?: string })?.answer || answer;
-        } catch (error) {
-          console.error(
-            `❌ [AUTO_GRADE] Error decompressing answer data for q_idx ${qIdx}:`,
-            error
-          );
+        } catch {
+          // Decompression failed, fall back to raw answer
         }
       }
 
@@ -223,16 +204,7 @@ export async function autoGradeSession(
             : undefined,
       };
 
-      if (subs.length > 1) {
-        console.log(
-          `⚠️ [AUTO_GRADE] Found ${subs.length} submissions for q_idx ${qIdx}, using the best one`
-        );
-      }
     });
-
-    console.log(
-      `📝 [AUTO_GRADE] Processed ${submissionsByQIdx.size} unique questions from submissions`
-    );
   }
 
   const messagesByQuestion: Record<
@@ -253,8 +225,8 @@ export async function autoGradeSession(
           content =
             (decompressData(message.compressed_content as string) as string) ||
             content;
-        } catch (error) {
-          console.error("Error decompressing message content:", error);
+        } catch {
+          // Decompression failed, fall back to raw content
         }
       }
 
@@ -319,10 +291,15 @@ ${rubricItems
 `
       : "";
 
-  // 8. 각 문제별 채점
-  const grades: GradeResult[] = [];
+  // 8. 각 문제별 채점 (병렬 처리로 ~5배 속도 개선)
+  const rubricScoresSchema = rubricItems
+    .map(
+      (item) =>
+        `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
+    )
+    .join(",\n");
 
-  for (const question of questions) {
+  const gradePromises = questions.map(async (question): Promise<GradeResult | null> => {
     const qIdx = question.idx;
     let submission = submissionsByQuestion[qIdx];
     if (!submission && questions.indexOf(question) >= 0) {
@@ -332,41 +309,20 @@ ${rubricItems
     const questionMessages = messagesByQuestion[qIdx] || [];
 
     if (!submission) {
-      console.log(
-        `⚠️ [AUTO_GRADE] No submission found for question ${qIdx}, skipping`
-      );
-      continue;
+      return null;
     }
 
-    const stageGrading: {
-      chat?: {
-        score: number;
-        comment: string;
-        rubric_scores?: Record<string, number>;
-      };
-      answer?: {
-        score: number;
-        comment: string;
-        rubric_scores?: Record<string, number>;
-      };
-    } = {};
+    // Chat + Answer 채점을 병렬 실행
+    const [chatResult, answerResult] = await Promise.allSettled([
+      // 8-1. Chat stage 채점
+      questionMessages.length > 0
+        ? (async () => {
+            const chatSystemPrompt = buildChatGradingSystemPrompt({
+              rubricText,
+              rubricScoresSchema,
+            });
 
-    // 8-1. Chat stage 채점
-    if (questionMessages.length > 0) {
-      try {
-        const rubricScoresSchema = rubricItems
-          .map(
-            (item) =>
-              `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
-          )
-          .join(",\n");
-
-        const chatSystemPrompt = buildChatGradingSystemPrompt({
-          rubricText,
-          rubricScoresSchema,
-        });
-
-        const chatUserPrompt = `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
+            const chatUserPrompt = `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
 
 **문제:**
 ${question.prompt || ""}
@@ -380,70 +336,48 @@ ${questionMessages
 
 위 정보를 바탕으로 루브릭 기준에 따라 채팅 단계의 점수와 피드백을 제공해주세요.`;
 
-        const chatCompletion = await openai.chat.completions.create({
-          model: AI_MODEL,
-          messages: [
-            { role: "system", content: chatSystemPrompt },
-            { role: "user", content: chatUserPrompt },
-          ],
-          response_format: { type: "json_object" },
-        });
+            const chatCompletion = await callOpenAI(() =>
+              openai.chat.completions.create({
+                model: AI_MODEL,
+                messages: [
+                  { role: "system", content: chatSystemPrompt },
+                  { role: "user", content: chatUserPrompt },
+                ],
+                response_format: { type: "json_object" },
+              })
+            );
 
-        const chatResponseContent =
-          chatCompletion.choices[0]?.message?.content || "";
-        const chatParsedResponse = JSON.parse(chatResponseContent);
+            const chatParsedResponse = JSON.parse(
+              chatCompletion.choices[0]?.message?.content || ""
+            );
 
-        // 루브릭 항목별 점수 추출
-        const rubricScores: Record<string, number> = {};
-        if (chatParsedResponse.rubric_scores && rubricItems.length > 0) {
-          rubricItems.forEach((item) => {
-            const score = chatParsedResponse.rubric_scores[item.evaluationArea];
-            if (typeof score === "number") {
-              rubricScores[item.evaluationArea] = Math.max(
-                0,
-                Math.min(5, Math.round(score))
-              );
+            const rubricScores: Record<string, number> = {};
+            if (chatParsedResponse.rubric_scores && rubricItems.length > 0) {
+              rubricItems.forEach((item) => {
+                const score = chatParsedResponse.rubric_scores[item.evaluationArea];
+                if (typeof score === "number") {
+                  rubricScores[item.evaluationArea] = Math.max(0, Math.min(5, Math.round(score)));
+                }
+              });
             }
-          });
-        }
 
-        stageGrading.chat = {
-          score: Math.max(
-            0,
-            Math.min(100, Math.round(chatParsedResponse.score || 0))
-          ),
-          comment: chatParsedResponse.comment || "채팅 단계 평가 완료",
-          rubric_scores:
-            Object.keys(rubricScores).length > 0 ? rubricScores : undefined,
-        };
+            return {
+              score: Math.max(0, Math.min(100, Math.round(chatParsedResponse.score || 0))),
+              comment: chatParsedResponse.comment || "채팅 단계 평가 완료",
+              rubric_scores: Object.keys(rubricScores).length > 0 ? rubricScores : undefined,
+            };
+          })()
+        : Promise.resolve(null),
 
-        console.log(
-          `✅ [AUTO_GRADE] Question ${qIdx} chat stage: ${stageGrading.chat.score}점`
-        );
-      } catch (error) {
-        console.error(
-          `❌ [AUTO_GRADE] Error grading chat stage for question ${qIdx}:`,
-          error
-        );
-      }
-    }
+      // 8-2. Answer stage 채점
+      submission.answer
+        ? (async () => {
+            const answerSystemPrompt = buildAnswerGradingSystemPrompt({
+              rubricText,
+              rubricScoresSchema,
+            });
 
-    // 8-2. Answer stage 채점
-    if (submission.answer) {
-      try {
-        const answerRubricScoresSchema = rubricItems
-          .map(
-            (item) =>
-              `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
-          )
-          .join(",\n");
-
-        const answerSystemPrompt = buildAnswerGradingSystemPrompt({
-          rubricText,
-          rubricScoresSchema: answerRubricScoresSchema,
-        });
-
-        const answerUserPrompt = `다음 정보를 바탕으로 최종 답안을 평가해주세요:
+            const answerUserPrompt = `다음 정보를 바탕으로 최종 답안을 평가해주세요:
 
 **문제:**
 ${question.prompt || ""}
@@ -455,55 +389,52 @@ ${submission.answer || "답안이 없습니다."}
 
 위 정보를 바탕으로 루브릭 기준에 따라 답안의 점수와 피드백을 제공해주세요.`;
 
-        const answerCompletion = await openai.chat.completions.create({
-          model: AI_MODEL,
-          messages: [
-            { role: "system", content: answerSystemPrompt },
-            { role: "user", content: answerUserPrompt },
-          ],
-          response_format: { type: "json_object" },
-        });
+            const answerCompletion = await callOpenAI(() =>
+              openai.chat.completions.create({
+                model: AI_MODEL,
+                messages: [
+                  { role: "system", content: answerSystemPrompt },
+                  { role: "user", content: answerUserPrompt },
+                ],
+                response_format: { type: "json_object" },
+              })
+            );
 
-        const answerResponseContent =
-          answerCompletion.choices[0]?.message?.content || "";
-        const answerParsedResponse = JSON.parse(answerResponseContent);
+            const answerParsedResponse = JSON.parse(
+              answerCompletion.choices[0]?.message?.content || ""
+            );
 
-        // 루브릭 항목별 점수 추출
-        const answerRubricScores: Record<string, number> = {};
-        if (answerParsedResponse.rubric_scores && rubricItems.length > 0) {
-          rubricItems.forEach((item) => {
-            const score =
-              answerParsedResponse.rubric_scores[item.evaluationArea];
-            if (typeof score === "number") {
-              answerRubricScores[item.evaluationArea] = Math.max(
-                0,
-                Math.min(5, Math.round(score))
-              );
+            const answerRubricScores: Record<string, number> = {};
+            if (answerParsedResponse.rubric_scores && rubricItems.length > 0) {
+              rubricItems.forEach((item) => {
+                const score = answerParsedResponse.rubric_scores[item.evaluationArea];
+                if (typeof score === "number") {
+                  answerRubricScores[item.evaluationArea] = Math.max(0, Math.min(5, Math.round(score)));
+                }
+              });
             }
-          });
-        }
 
-        stageGrading.answer = {
-          score: Math.max(
-            0,
-            Math.min(100, Math.round(answerParsedResponse.score || 0))
-          ),
-          comment: answerParsedResponse.comment || "답안 평가 완료",
-          rubric_scores:
-            Object.keys(answerRubricScores).length > 0
-              ? answerRubricScores
-              : undefined,
-        };
+            return {
+              score: Math.max(0, Math.min(100, Math.round(answerParsedResponse.score || 0))),
+              comment: answerParsedResponse.comment || "답안 평가 완료",
+              rubric_scores: Object.keys(answerRubricScores).length > 0 ? answerRubricScores : undefined,
+            };
+          })()
+        : Promise.resolve(null),
+    ]);
 
-        console.log(
-          `✅ [AUTO_GRADE] Question ${qIdx} answer stage: ${stageGrading.answer.score}점`
-        );
-      } catch (error) {
-        console.error(
-          `❌ [AUTO_GRADE] Error grading answer stage for question ${qIdx}:`,
-          error
-        );
-      }
+    // 결과 조합
+    const stageGrading: {
+      chat?: { score: number; comment: string; rubric_scores?: Record<string, number> };
+      answer?: { score: number; comment: string; rubric_scores?: Record<string, number> };
+    } = {};
+
+    if (chatResult.status === "fulfilled" && chatResult.value) {
+      stageGrading.chat = chatResult.value;
+    }
+
+    if (answerResult.status === "fulfilled" && answerResult.value) {
+      stageGrading.answer = answerResult.value;
     }
 
     // 8-3. 종합 점수 계산 (0-100 범위 보장)
@@ -518,7 +449,6 @@ ${submission.answer || "답안이 없습니다."}
       stageCount++;
     }
 
-    // 0-100 범위로 명시적으로 제한 (평균 계산 후)
     const finalScore =
       stageCount > 0
         ? Math.max(0, Math.min(100, Math.round(overallScore / stageCount)))
@@ -527,22 +457,36 @@ ${submission.answer || "답안이 없습니다."}
       stageGrading.chat?.score || "N/A"
     }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점`;
 
-    // 최소 하나의 단계라도 채점되었으면 추가
     if (Object.keys(stageGrading).length > 0) {
-      grades.push({
+      return {
         q_idx: qIdx,
-        score: finalScore, // 0-100 점수
+        score: finalScore,
         comment: overallComment,
         stage_grading: stageGrading,
-      });
-
-      console.log(
-        `✅ [AUTO_GRADE] Question ${qIdx} overall: ${finalScore}점 (stages: ${Object.keys(
-          stageGrading
-        ).join(", ")})`
-      );
+      };
     }
-  }
+
+    return null;
+  });
+
+  // 모든 문제 병렬 채점 실행
+  const gradeResults = await Promise.allSettled(gradePromises);
+  const grades: GradeResult[] = gradeResults
+    .filter(
+      (r): r is PromiseFulfilledResult<GradeResult | null> =>
+        r.status === "fulfilled" && r.value !== null
+    )
+    .map((r) => r.value!);
+
+  // 실패한 문제 로깅
+  gradeResults.forEach((r) => {
+    if (r.status === "rejected") {
+      logError("[AUTO_GRADE] Question grading failed", r.reason, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId },
+      });
+    }
+  });
 
   // 9. 채점 결과 저장
   if (grades.length > 0) {
@@ -557,18 +501,8 @@ ${submission.answer || "답안이 없습니다."}
     );
 
     if (insertError) {
-      console.error(`❌ [AUTO_GRADE] Database insert error:`, insertError);
       throw insertError;
     }
-    console.log(`✅ [AUTO_GRADE] Saved ${grades.length} grades`);
-  } else {
-    console.warn(
-      `⚠️ [AUTO_GRADE] No grades generated for session ${sessionId}. ` +
-        `Submissions: ${submissions?.length || 0}, ` +
-        `Messages: ${messages?.length || 0}, ` +
-        `Questions: ${questions.length}`
-    );
-    // grades가 비어있어도 에러를 throw하지 않음 (경고만)
   }
 
   // 10. 요약 평가 생성
@@ -582,15 +516,9 @@ ${submission.answer || "답안이 없습니다."}
       messagesByQuestion,
       grades
     );
-  } catch (error) {
-    console.error(`❌ [AUTO_GRADE] Error generating summary:`, error);
+  } catch {
     // 요약 생성 실패해도 채점 결과는 반환
   }
-
-  const duration = Date.now() - startTime;
-  console.log(
-    `✅ [AUTO_GRADE] Completed in ${duration}ms | Session: ${sessionId} | Grades: ${grades.length}`
-  );
 
   return { grades, summary };
 }
@@ -711,14 +639,16 @@ ${
         "keyQuotes": ["인용구1", "인용구2"]
       }`;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-    });
+    const completion = await callOpenAI(() =>
+      openai.chat.completions.create({
+        model: AI_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" },
+      })
+    );
 
     const result = JSON.parse(
       completion.choices[0]?.message?.content || "{}"
@@ -731,26 +661,15 @@ ${
       .eq("id", sessionId);
 
     if (updateError) {
-      console.error(
-        `❌ [AUTO_GRADE] Error saving summary to database:`,
-        updateError
-      );
       // 컬럼이 없는 경우 에러를 무시하고 계속 진행 (마이그레이션 필요)
-      if (
-        updateError.code === "42703" ||
-        updateError.message?.includes("does not exist")
-      ) {
-        console.warn(
-          `⚠️ [AUTO_GRADE] ai_summary column does not exist. Please run migration to add the column.`
-        );
-      }
-    } else {
-      console.log(`✅ [AUTO_GRADE] Summary saved for session: ${sessionId}`);
+      logError("[AUTO_GRADE] Error saving summary to database", updateError, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId },
+      });
     }
 
     return result;
-  } catch (error) {
-    console.error("Error generating summary:", error);
+  } catch {
     return null;
   }
 }

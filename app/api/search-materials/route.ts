@@ -28,13 +28,6 @@ export async function POST(request: NextRequest) {
       return errorJson("MISSING_QUERY", "query 필드가 필요합니다 (문자열)", 400);
     }
 
-    console.log("[search-materials] 검색 요청:", {
-      query: query.substring(0, 100),
-      examId,
-      matchThreshold,
-      matchCount,
-    });
-
     // 벡터 유사도 검색
     const results = await searchMaterialChunks(query, {
       examId,
@@ -51,7 +44,6 @@ export async function POST(request: NextRequest) {
       count: results.length,
     });
   } catch (error) {
-    console.error("[search-materials] 에러:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     return errorJson("SEARCH_FAILED", "검색 실패", 500, errorMessage);

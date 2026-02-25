@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
 import { successJson, errorJson } from "@/lib/api-response";
 import { batchGetUserInfo } from "@/lib/clerk-users";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
@@ -99,7 +96,7 @@ export async function GET(
           const decompressed = decompressData(message.compressed_content);
           content = typeof decompressed === "string" ? decompressed : content;
         } catch (error) {
-          console.error("Error decompressing message content:", error);
+          // Use original content on decompression failure
         }
       }
 
@@ -125,7 +122,6 @@ export async function GET(
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Error fetching live messages:", error);
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

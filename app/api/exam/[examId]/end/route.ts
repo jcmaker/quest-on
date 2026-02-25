@@ -1,20 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Missing Supabase environment variables");
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = getSupabaseServer();
 
 /**
  * POST /api/exam/[examId]/end
- * 
+ *
  * Gate End 신호: 교수가 "End Exam" 버튼을 클릭하면
  * - exams.status를 "closed"로 변경
  * - 비상 강제 종료 (모든 진행 중 시험 종료)
@@ -76,7 +69,6 @@ export async function POST(
       .eq("id", examId);
 
     if (updateExamError) {
-      console.error("[END_EXAM] Failed to update exam:", updateExamError);
       return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);
     }
 
@@ -90,13 +82,11 @@ export async function POST(
       .eq("status", "in_progress")
       .is("submitted_at", null);
 
-    if (sessionsError) {
-      console.error("[END_EXAM] Failed to fetch active sessions:", sessionsError);
-    } else if (activeSessions && activeSessions.length > 0) {
+    if (!sessionsError && activeSessions && activeSessions.length > 0) {
       const sessionIds = activeSessions.map((s) => s.id);
 
       // 진행 중인 세션을 모두 제출 처리 (비상 강제 종료)
-      const { error: updateSessionsError } = await supabase
+      await supabase
         .from("sessions")
         .update({
           status: "submitted",
@@ -104,20 +94,7 @@ export async function POST(
           updated_at: now,
         })
         .in("id", sessionIds);
-
-      if (updateSessionsError) {
-        console.error(
-          "[END_EXAM] Failed to force submit sessions:",
-          updateSessionsError
-        );
-      } else {
-        console.log(
-          `[END_EXAM] ✅ Force submitted ${sessionIds.length} active sessions`
-        );
-      }
     }
-
-    console.log(`[END_EXAM] ✅ Exam ${examId} ended successfully`);
 
     return successJson({
       examId,
@@ -126,7 +103,6 @@ export async function POST(
       sessionsForceSubmitted: activeSessions?.length || 0,
     });
   } catch (error) {
-    console.error("[END_EXAM] ❌ Error:", error);
     return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);
   }
 }

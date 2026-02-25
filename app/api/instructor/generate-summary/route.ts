@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
 import { successJson, errorJson } from "@/lib/api-response";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function POST(request: NextRequest) {
   try {
@@ -74,7 +71,7 @@ export async function POST(request: NextRequest) {
           const decompressed = decompressData(sub.compressed_answer_data);
           answer = (decompressed as { answer?: string }).answer || answer;
         } catch (e) {
-          console.error("Decompression error", e);
+          // Use original answer on decompression failure
         }
       }
       return {
@@ -148,13 +145,11 @@ JSON 형식으로 응답해주세요:
       .eq("id", sessionId);
 
     if (updateError) {
-      console.error("Error saving summary to database:", updateError);
-      // Don't fail the request, just log the error
+      // Don't fail the request if saving summary fails
     }
 
     return successJson({ summary: result });
   } catch (error: unknown) {
-    console.error("Summary generation error:", error);
     return errorJson(
       "SUMMARY_GENERATION_FAILED",
       (error as Error).message || "Internal server error",

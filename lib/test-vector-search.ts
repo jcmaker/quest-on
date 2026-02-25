@@ -3,23 +3,17 @@
  * RPC 함수를 직접 테스트하기 위한 헬퍼
  */
 
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { createEmbedding } from "./embedding";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 /**
  * 벡터 검색 직접 테스트
  */
 export async function testVectorSearch(examId: string, query: string) {
-  console.log("🧪 [test-vector-search] 테스트 시작:", { examId, query });
-
   // 1. 임베딩 생성
   const queryEmbedding = await createEmbedding(query);
-  console.log("✅ 임베딩 생성:", { dimensions: queryEmbedding.length });
 
   // 2. DB에서 직접 벡터 확인
   const { data: chunks, error: chunksError } = await supabase
@@ -29,22 +23,10 @@ export async function testVectorSearch(examId: string, query: string) {
     .limit(3);
 
   if (chunksError) {
-    console.error("❌ 청크 조회 실패:", chunksError);
     return;
   }
 
-  console.log("📊 저장된 청크 샘플:", {
-    count: chunks?.length || 0,
-    samples: chunks?.map((c) => ({
-      id: c.id,
-      contentLength: c.content?.length || 0,
-      hasEmbedding: c.embedding !== null,
-      embeddingType: typeof c.embedding,
-    })),
-  });
-
   // 3. RPC 함수 테스트 (임계값 0.0으로 모든 결과 가져오기)
-  console.log("🔎 RPC 함수 테스트 (임계값 0.0)...");
   const { data: rpcData, error: rpcError } = await supabase.rpc(
     "match_exam_materials",
     {
@@ -56,23 +38,8 @@ export async function testVectorSearch(examId: string, query: string) {
   );
 
   if (rpcError) {
-    console.error("❌ RPC 함수 에러:", {
-      message: rpcError.message,
-      code: rpcError.code,
-      details: rpcError.details,
-      hint: rpcError.hint,
-    });
     return;
   }
-
-  console.log("📥 RPC 함수 결과:", {
-    resultsCount: rpcData?.length || 0,
-    results: rpcData?.map((r: any) => ({
-      id: r.id,
-      similarity: r.similarity?.toFixed(4),
-      contentPreview: r.content?.substring(0, 50),
-    })),
-  });
 
   return { chunks, rpcData, rpcError };
 }

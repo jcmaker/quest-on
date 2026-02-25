@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { compressData } from "@/lib/compression";
 import { chunkText, formatChunkMetadata } from "@/lib/chunking";
@@ -7,31 +7,17 @@ import { createEmbeddings } from "@/lib/embedding";
 import { saveChunksToDB, deleteChunksByFileUrl } from "@/lib/save-chunks";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
+import { logError } from "@/lib/logger";
 
 // Initialize Supabase client with service role key for server-side operations
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  console.error("Missing Supabase environment variables:", {
-    hasUrl: !!supabaseUrl,
-    hasKey: !!supabaseKey,
-  });
-}
-
-const supabase = createClient(supabaseUrl || "", supabaseKey || "");
+const supabase = getSupabaseServer();
 
 export async function POST(request: NextRequest) {
-  if (!supabaseUrl || !supabaseKey) {
-    return errorJson("SERVER_CONFIG_ERROR", "Server configuration error: Missing Supabase credentials", 500);
-  }
-
   try {
     let body;
     try {
       body = await request.json();
     } catch (jsonError) {
-      console.error("JSON parsing error:", jsonError);
       return errorJson("INVALID_JSON", "Invalid JSON in request body", 400);
     }
 
@@ -92,7 +78,6 @@ export async function POST(request: NextRequest) {
         return errorJson("INVALID_ACTION", `Invalid action: ${action}`, 400);
     }
   } catch (error) {
-    console.error("Supabase API error:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     return errorJson(
@@ -144,10 +129,8 @@ async function createExam(data: {
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
-    console.log("Create exam - User role:", userRole, "User ID:", user.id);
 
     if (userRole !== "instructor") {
-      console.log("Create exam - Access denied. User role:", userRole);
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403, `User role: ${userRole || "not set"}`);
     }
 
@@ -176,20 +159,6 @@ async function createExam(data: {
       updated_at: data.updated_at,
     };
 
-    console.log("[api] Creating exam with materials_text:", {
-      materialsCount: examData.materials.length,
-      materialsTextCount: examData.materials_text.length,
-      materialsTextPreview: Array.isArray(examData.materials_text)
-        ? examData.materials_text.map((m: unknown) => {
-            const mt = m as { fileName?: string; text?: string };
-            return {
-              fileName: mt?.fileName || "unknown",
-              textLength: mt?.text?.length || 0,
-            };
-          })
-        : "not an array",
-    });
-
     const { data: exam, error } = await supabase
       .from("exams")
       .insert([examData])
@@ -197,7 +166,6 @@ async function createExam(data: {
       .single();
 
     if (error) {
-      console.error("Supabase error:", error);
       return errorJson("DATABASE_ERROR", `Database error: ${error.message}`, 500);
     }
 
@@ -244,9 +212,9 @@ async function createExam(data: {
       .single();
 
     if (nodeError) {
-      console.error("Failed to create exam node:", nodeError);
       // Exam is created but node creation failed - this is not critical
       // but we should log it
+      logError("Failed to create exam node", nodeError, { path: "/api/supa", user_id: user.id });
     }
 
     // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
@@ -256,17 +224,6 @@ async function createExam(data: {
       examData.materials_text.length > 0
     ) {
       try {
-        console.log("🚀 [createExam] RAG 처리 시작:", {
-          examId: exam.id,
-          materialsCount: examData.materials_text.length,
-          materialsPreview: examData.materials_text.map(
-            (m: { fileName?: string; text?: string }) => ({
-              fileName: m.fileName || "unknown",
-              textLength: m.text?.length || 0,
-            })
-          ),
-        });
-
         let totalChunksSaved = 0;
 
         for (let idx = 0; idx < examData.materials_text.length; idx++) {
@@ -277,48 +234,19 @@ async function createExam(data: {
             fileName: string;
           };
 
-          console.log(
-            `📄 [createExam] 파일 ${idx + 1}/${
-              examData.materials_text.length
-            } 처리:`,
-            {
-              fileName: materialData.fileName,
-              url: materialData.url,
-              textLength: materialData.text?.length || 0,
-            }
-          );
-
           if (!materialData.text || materialData.text.trim().length === 0) {
-            console.log(
-              `⚠️ [createExam] 텍스트가 비어있어 건너뜀: ${materialData.fileName}`
-            );
             continue;
           }
 
           // 1. 텍스트 청킹
-          console.log(`✂️ [createExam] 청킹 시작: ${materialData.fileName}`);
-          const chunkStartTime = Date.now();
           const chunks = chunkText(materialData.text, {
             chunkSize: 800,
             chunkOverlap: 200,
           });
-          const chunkDuration = Date.now() - chunkStartTime;
 
           if (chunks.length === 0) {
-            console.log(
-              `⚠️ [createExam] 청크 생성 실패: ${materialData.fileName}`
-            );
             continue;
           }
-
-          console.log(`✅ [createExam] 청킹 완료:`, {
-            fileName: materialData.fileName,
-            chunksCount: chunks.length,
-            duration: `${chunkDuration}ms`,
-            avgChunkSize: Math.round(
-              chunks.reduce((sum, c) => sum + c.text.length, 0) / chunks.length
-            ),
-          });
 
           // 2. 기존 청크 삭제 (파일 재처리 시)
           await deleteChunksByFileUrl(exam.id, materialData.url);
@@ -329,22 +257,8 @@ async function createExam(data: {
           );
 
           // 4. 임베딩 생성 (배치)
-          console.log(
-            `🧮 [createExam] 임베딩 생성 시작: ${materialData.fileName}`
-          );
-          const embeddingStartTime = Date.now();
           const chunkTexts = formattedChunks.map((c) => c.content);
           const embeddings = await createEmbeddings(chunkTexts);
-          const embeddingDuration = Date.now() - embeddingStartTime;
-
-          console.log(`✅ [createExam] 임베딩 생성 완료:`, {
-            fileName: materialData.fileName,
-            embeddingsCount: embeddings.length,
-            duration: `${embeddingDuration}ms`,
-            avgDurationPerEmbedding: `${Math.round(
-              embeddingDuration / embeddings.length
-            )}ms`,
-          });
 
           // 5. DB에 저장
           const chunksToSave = formattedChunks.map((chunk, index) => ({
@@ -355,42 +269,19 @@ async function createExam(data: {
 
           await saveChunksToDB(exam.id, chunksToSave);
           totalChunksSaved += chunksToSave.length;
-
-          console.log(`💾 [createExam] 파일 처리 완료:`, {
-            fileName: materialData.fileName,
-            chunksSaved: chunksToSave.length,
-            totalChunksSaved,
-          });
         }
-
-        console.log("🎉 [createExam] RAG 처리 완료:", {
-          examId: exam.id,
-          filesProcessed: examData.materials_text.length,
-          totalChunksSaved,
-        });
       } catch (ragError) {
         // RAG 처리 실패해도 시험 생성은 성공으로 처리
-        console.error("❌ [createExam] RAG 처리 실패 (시험 생성은 성공):", {
-          examId: exam.id,
-          error:
-            ragError instanceof Error ? ragError.message : String(ragError),
-          stack: ragError instanceof Error ? ragError.stack : undefined,
+        logError("[createExam] RAG processing failed (exam creation succeeded)", ragError, {
+          path: "/api/supa",
+          user_id: user.id,
+          additionalData: { examId: exam.id },
         });
       }
-    } else {
-      console.log("ℹ️ [createExam] RAG 처리 건너뜀:", {
-        examId: exam.id,
-        hasMaterialsText: !!examData.materials_text,
-        isArray: Array.isArray(examData.materials_text),
-        length: Array.isArray(examData.materials_text)
-          ? examData.materials_text.length
-          : 0,
-      });
     }
 
     return successJson({ exam, examNode });
   } catch (error) {
-    console.error("Create exam error:", error);
     return errorJson("CREATE_EXAM_FAILED", `Failed to create exam: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
   }
 }
@@ -400,31 +291,43 @@ async function updateExam(data: {
   update: Record<string, unknown>;
 }) {
   try {
+    // Require instructor auth + ownership
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
+    }
+
     const { data: exam, error } = await supabase
       .from("exams")
       .update(data.update)
       .eq("id", data.id)
+      .eq("instructor_id", user.id)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === "PGRST116") {
+        return errorJson("EXAM_NOT_FOUND", "Exam not found or access denied", 404);
+      }
+      throw error;
+    }
 
     // Audit log: exam status change
     if (data.update.status) {
-      const user = await currentUser();
-      if (user) {
-        auditLog({
-          action: "exam_status_change",
-          userId: user.id,
-          targetId: data.id,
-          details: { newStatus: data.update.status },
-        });
-      }
+      auditLog({
+        action: "exam_status_change",
+        userId: user.id,
+        targetId: data.id,
+        details: { newStatus: data.update.status },
+      });
     }
 
     return successJson({ exam });
   } catch (error) {
-    console.error("Update exam error:", error);
     return errorJson("UPDATE_EXAM_FAILED", "Failed to update exam", 500);
   }
 }
@@ -439,6 +342,15 @@ async function submitExam(data: {
   feedbackResponses?: unknown[];
 }) {
   try {
+    // Verify current user matches the studentId
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    if (user.id !== data.studentId) {
+      return errorJson("UNAUTHORIZED", "Student ID mismatch", 403);
+    }
+
     // Compress the session data
     const sessionData = {
       chatHistory: data.chatHistory || [],
@@ -450,6 +362,7 @@ async function submitExam(data: {
     const compressedSessionData = compressData(sessionData);
 
     // Update session with compressed data and deactivate
+    // Guard: only update if not already submitted (prevents duplicate submissions)
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .update({
@@ -459,10 +372,17 @@ async function submitExam(data: {
         is_active: false, // Deactivate session on submission
       })
       .eq("id", data.sessionId)
+      .is("submitted_at", null)
       .select()
       .single();
 
-    if (sessionError) throw sessionError;
+    if (sessionError) {
+      // If no rows matched, session was already submitted
+      if (sessionError.code === "PGRST116") {
+        return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
+      }
+      throw sessionError;
+    }
 
     // Store individual submissions with compressed data
     const submissionInserts = data.answers.map(
@@ -495,14 +415,6 @@ async function submitExam(data: {
 
     if (submissionsError) throw submissionsError;
 
-    console.log("Exam submission compressed and stored:", {
-      sessionId: data.sessionId,
-      originalSize: compressedSessionData.metadata.originalSize,
-      compressedSize: compressedSessionData.metadata.compressedSize,
-      compressionRatio: compressedSessionData.metadata.compressionRatio,
-      submissionsCount: submissions.length,
-    });
-
     // Audit log: session submit
     auditLog({
       action: "session_submit",
@@ -517,7 +429,6 @@ async function submitExam(data: {
       compressionStats: compressedSessionData.metadata,
     });
   } catch (error) {
-    console.error("Submit exam error:", error);
     return errorJson("SUBMIT_EXAM_FAILED", "Failed to submit exam", 500);
   }
 }
@@ -539,23 +450,18 @@ async function getExam(data: { code: string }) {
 
     return successJson({ exam });
   } catch (error) {
-    console.error("Get exam error:", error);
     return errorJson("GET_EXAM_FAILED", "Failed to get exam", 500);
   }
 }
 
 async function getExamById(data: { id: string }) {
   try {
-    console.log("API: getExamById called with data:", data);
-
     // Validate input
     if (!data || !data.id) {
-      console.error("API: Missing exam ID");
       return errorJson("MISSING_EXAM_ID", "Missing exam ID", 400, "The 'id' field is required");
     }
 
     if (typeof data.id !== "string" || data.id.trim() === "") {
-      console.error("API: Invalid exam ID format:", data.id);
       return errorJson("INVALID_EXAM_ID", "Invalid exam ID", 400, "Exam ID must be a non-empty string");
     }
 
@@ -564,32 +470,19 @@ async function getExamById(data: { id: string }) {
     try {
       user = await currentUser();
     } catch (authError) {
-      console.error("API: Error getting current user:", authError);
       return errorJson("AUTH_ERROR", "Authentication error", 401, authError instanceof Error ? authError.message : "Unknown auth error");
     }
 
     if (!user) {
-      console.error("API: No user found");
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    console.log("API: User found:", user.id);
-
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
-    console.log("API: User role:", userRole);
 
     if (userRole !== "instructor") {
-      console.error("API: User is not instructor");
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
-
-    console.log(
-      "API: Querying exam with ID:",
-      data.id,
-      "for instructor:",
-      user.id
-    );
 
     // First, check if exam exists at all (without instructor filter)
     const { data: examExists, error: checkError } = await supabase
@@ -599,7 +492,6 @@ async function getExamById(data: { id: string }) {
       .single();
 
     if (checkError) {
-      console.error("API: Error checking exam existence:", checkError);
       if (checkError.code === "PGRST116") {
         return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "No exam exists with this ID");
       }
@@ -608,11 +500,6 @@ async function getExamById(data: { id: string }) {
 
     // Check if exam belongs to this instructor
     if (examExists && examExists.instructor_id !== user.id) {
-      console.error("API: Exam belongs to different instructor:", {
-        examId: data.id,
-        examInstructorId: examExists.instructor_id,
-        currentUserId: user.id,
-      });
       return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "Exam does not belong to this instructor");
     }
 
@@ -627,7 +514,6 @@ async function getExamById(data: { id: string }) {
       .single();
 
     if (error) {
-      console.error("API: Database error:", error);
       if (error.code === "PGRST116") {
         return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "No exam found matching the criteria");
       }
@@ -635,19 +521,15 @@ async function getExamById(data: { id: string }) {
     }
 
     if (!exam) {
-      console.error("API: Exam query returned no data");
       return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "Exam data is null");
     }
 
-    console.log("API: Exam found successfully:", exam.id);
     return successJson({ exam });
   } catch (error) {
-    console.error("Get exam by ID error:", error);
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     const errorDetails =
       error instanceof Error && error.stack ? error.stack : undefined;
-    console.error("Error details:", { errorMessage, errorDetails });
     return errorJson(
       "GET_EXAM_FAILED",
       "Failed to get exam",
@@ -712,90 +594,60 @@ async function getInstructorExams() {
 
     return successJson({ exams: examsWithCounts });
   } catch (error) {
-    console.error("Get instructor exams error:", error);
     return errorJson("GET_EXAMS_FAILED", "Failed to get exams", 500);
   }
 }
 
 async function createOrGetSession(data: { examId: string; studentId: string }) {
   try {
-    if (process.env.NODE_ENV === "development") {
-      console.log("Creating or getting session for:", data);
+    // Verify current user matches the studentId
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    if (user.id !== data.studentId) {
+      return errorJson("UNAUTHORIZED", "Student ID mismatch", 403);
     }
 
-    // Check if session already exists
-    const { data: existingSessions, error: checkError } = await supabase
+    // Upsert session (race-safe: uses UNIQUE(exam_id, student_id) constraint)
+    const { data: session, error: upsertError } = await supabase
       .from("sessions")
-      .select("*")
-      .eq("exam_id", data.examId)
-      .eq("student_id", data.studentId)
-      .order("created_at", { ascending: false });
-
-    console.log("Session check result:", { existingSessions, checkError });
-
-    if (checkError) {
-      console.error("Session check error:", checkError);
-      throw checkError;
-    }
-
-    // Use the most recent session if multiple exist
-    const existingSession =
-      existingSessions && existingSessions.length > 0
-        ? existingSessions[0]
-        : null;
-
-    if (existingSession) {
-      // Get existing messages for this session
-      const { data: messages, error: messagesError } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("session_id", existingSession.id)
-        .order("created_at", { ascending: true });
-
-      if (messagesError) throw messagesError;
-
-      // 프론트엔드가 기대하는 형식으로 변환 (qIdx 포함)
-      const formattedMessages = (messages || []).map((msg) => ({
-        type: msg.role === "user" ? "user" : "assistant",
-        message: msg.content,
-        timestamp: msg.created_at,
-        qIdx: msg.q_idx || 0,
-      }));
-
-      console.log(
-        "📨 Loading existing messages:",
-        formattedMessages.length,
-        "messages"
-      );
-
-      return successJson({
-        session: existingSession,
-        messages: formattedMessages,
-      });
-    }
-
-    // Create new session
-    const { data: newSession, error: createError } = await supabase
-      .from("sessions")
-      .insert([
+      .upsert(
         {
           exam_id: data.examId,
           student_id: data.studentId,
           used_clarifications: 0,
           created_at: new Date().toISOString(),
         },
-      ])
+        { onConflict: "exam_id,student_id", ignoreDuplicates: true }
+      )
       .select()
       .single();
 
-    if (createError) throw createError;
+    if (upsertError) throw upsertError;
+
+    // Get existing messages for this session
+    const { data: messages, error: messagesError } = await supabase
+      .from("messages")
+      .select("*")
+      .eq("session_id", session.id)
+      .order("created_at", { ascending: true });
+
+    if (messagesError) throw messagesError;
+
+    // 프론트엔드가 기대하는 형식으로 변환 (qIdx 포함)
+    const formattedMessages = (messages || []).map((msg) => ({
+      type: msg.role === "user" ? "user" : "assistant",
+      message: msg.content,
+      timestamp: msg.created_at,
+      qIdx: msg.q_idx || 0,
+    }));
 
     return successJson({
-      session: newSession,
-      messages: [],
+      session,
+      messages: formattedMessages,
     });
   } catch (error) {
-    console.error("Create or get session error:", error);
     return errorJson("SESSION_FAILED", "Failed to create or get session", 500);
   }
 }
@@ -807,11 +659,14 @@ async function initExamSession(data: {
   deviceFingerprint?: string;
 }) {
   try {
-    console.log("[INIT_EXAM_SESSION] Starting session init:", {
-      examCode: data.examCode,
-      studentId: data.studentId,
-      hasDeviceFingerprint: !!data.deviceFingerprint,
-    });
+    // Verify current user matches the studentId
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    if (user.id !== data.studentId) {
+      return errorJson("UNAUTHORIZED", "Student ID mismatch", 403);
+    }
 
     // 1. Fetch Exam by Code
     const { data: exam, error: examError } = await supabase
@@ -875,10 +730,6 @@ async function initExamSession(data: {
 
     if (mostRecentSubmittedSession) {
       // 제출된 세션이 있으면 재시험 불가 - 제출된 세션만 반환
-      console.log(
-        "[INIT_EXAM_SESSION] Submitted session found - preventing retake:",
-        mostRecentSubmittedSession.id
-      );
 
       // Get messages for submitted session (read-only)
       const { data: sessionMessages } = await supabase
@@ -925,19 +776,6 @@ async function initExamSession(data: {
     let existingSession: (typeof existingSessions)[0] | null =
       exactDeviceMatch || claimableLegacySession || null;
 
-    console.log("[INIT_EXAM_SESSION] Existing session selected:", {
-      selected: !!existingSession,
-      selectedId: existingSession?.id,
-      reason: exactDeviceMatch
-        ? "device_match"
-        : claimableLegacySession
-        ? "legacy_claim"
-        : mostRecentSubmittedSession
-        ? "submitted_fallback"
-        : "none",
-      incomingHasFingerprint: !!incomingFingerprint,
-    });
-
     let session = existingSession;
     let messages: Array<{
       type: "user" | "assistant";
@@ -964,11 +802,6 @@ async function initExamSession(data: {
 
         // 시간 종료 체크 및 자동 제출 처리
         if (timeRemaining <= 0) {
-        console.log(
-          "[INIT_EXAM_SESSION] Session time expired - auto-submitting:",
-          existingSession.id
-        );
-
         // 기존 답안 가져오기
         const { data: existingSubmissions } = await supabase
           .from("submissions")
@@ -1019,11 +852,6 @@ async function initExamSession(data: {
       
       // 이미 InProgress인 경우 (시험이 시작된 경우)
       if (currentStatus === "in_progress") {
-        console.log(
-          "[INIT_EXAM_SESSION] Session already in progress:",
-          existingSession.id
-        );
-        
         const { data: updatedSession, error: updateError } = await supabase
           .from("sessions")
           .update({
@@ -1040,11 +868,6 @@ async function initExamSession(data: {
         session = updatedSession;
       } else if (examStarted && currentStatus === "waiting") {
         // 시험이 시작되었고 세션이 waiting 상태인 경우 → in_progress로 전환
-        console.log(
-          "[INIT_EXAM_SESSION] Exam started - updating session to in_progress:",
-          existingSession.id
-        );
-        
         const { data: updatedSession, error: updateError } = await supabase
           .from("sessions")
           .update({
@@ -1064,11 +887,6 @@ async function initExamSession(data: {
         session = updatedSession;
       } else {
         // Waiting 상태인 경우 (시험 시작 대기 중)
-        console.log(
-          "[INIT_EXAM_SESSION] Session in waiting state:",
-          existingSession.id
-        );
-        
         const { data: updatedSession, error: updateError } = await supabase
           .from("sessions")
           .update({
@@ -1102,8 +920,6 @@ async function initExamSession(data: {
       }));
     } else {
       // ✅ 새 세션 생성: 기본적으로 시작 전에는 waiting 상태
-      console.log("[INIT_EXAM_SESSION] Creating new session");
-      
       // 시험이 이미 시작되었는지 확인 (started_at이 있고 status가 running)
       const examStarted = examStatus === "running" && startedAt !== null && nowTime >= startedAt;
       
@@ -1111,9 +927,10 @@ async function initExamSession(data: {
       // 시작 후: in_progress 상태 (실제 응시 가능)
       const initialStatus = examStarted ? "in_progress" : "waiting";
       
-      const { data: newSession, error: createError } = await supabase
+      // Upsert session (race-safe: uses UNIQUE(exam_id, student_id) constraint)
+      const { data: upsertedSession, error: upsertError } = await supabase
         .from("sessions")
-        .insert([
+        .upsert(
           {
             exam_id: exam.id,
             student_id: data.studentId,
@@ -1123,19 +940,16 @@ async function initExamSession(data: {
             device_fingerprint: incomingFingerprint,
             created_at: now,
             status: initialStatus,
-            // 시험이 이미 시작되었으면 타이머 시작 시간 설정
             started_at: examStarted ? now : null,
             attempt_timer_started_at: examStarted ? now : null,
           },
-        ])
+          { onConflict: "exam_id,student_id" }
+        )
         .select()
         .single();
 
-      if (createError) throw createError;
-      session = newSession;
-      console.log(
-        `[INIT_EXAM_SESSION] ✅ New session created: ${newSession.id} (status: ${initialStatus}, examStarted: ${examStarted})`
-      );
+      if (upsertError) throw upsertError;
+      session = upsertedSession;
     }
 
     // ✅ Gate 방식: 타이머 계산 (attempt_timer_started_at 기준)
@@ -1175,7 +989,6 @@ async function initExamSession(data: {
       gateStarted: examStatus === "running" && startedAt !== null && nowTime >= startedAt, // 시험 시작 여부
     });
   } catch (error) {
-    console.error("[INIT_EXAM_SESSION] ❌ Error:", error);
     return errorJson("INIT_SESSION_FAILED", "Failed to initialize exam session", 500);
   }
 }
@@ -1186,19 +999,29 @@ async function saveDraft(data: {
   answer: string;
 }) {
   try {
-    // Check if submission already exists
-    const { data: existingSubmission, error: checkError } = await supabase
-      .from("submissions")
-      .select("*")
-      .eq("session_id", data.sessionId)
-      .eq("q_idx", data.questionId)
+    // Verify session ownership
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    const { data: sessionCheck } = await supabase
+      .from("sessions")
+      .select("student_id")
+      .eq("id", data.sessionId)
       .single();
-
-    if (checkError && checkError.code !== "PGRST116") {
-      throw checkError;
+    if (!sessionCheck || sessionCheck.student_id !== user.id) {
+      return errorJson("UNAUTHORIZED", "Session access denied", 403);
     }
 
     const now = new Date().toISOString();
+
+    // First, try to get existing submission for history tracking
+    const { data: existingSubmission } = await supabase
+      .from("submissions")
+      .select("id, answer, answer_history, edit_count, updated_at, created_at")
+      .eq("session_id", data.sessionId)
+      .eq("q_idx", data.questionId)
+      .maybeSingle();
 
     if (existingSubmission) {
       // 답안이 변경된 경우에만 히스토리 업데이트
@@ -1211,7 +1034,7 @@ async function saveDraft(data: {
           answerHistory = Array.isArray(existingSubmission.answer_history)
             ? existingSubmission.answer_history
             : [];
-        } catch (e) {
+        } catch {
           answerHistory = [];
         }
       }
@@ -1243,10 +1066,10 @@ async function saveDraft(data: {
       if (updateError) throw updateError;
       return successJson({ submission: updatedSubmission });
     } else {
-      // Create new submission
-      const { data: newSubmission, error: createError } = await supabase
+      // Upsert new submission (race-safe: uses UNIQUE(session_id, q_idx) constraint)
+      const { data: newSubmission, error: upsertError } = await supabase
         .from("submissions")
-        .insert([
+        .upsert(
           {
             session_id: data.sessionId,
             q_idx: data.questionId,
@@ -1256,15 +1079,15 @@ async function saveDraft(data: {
             edit_count: 0,
             answer_history: [],
           },
-        ])
+          { onConflict: "session_id,q_idx" }
+        )
         .select()
         .single();
 
-      if (createError) throw createError;
+      if (upsertError) throw upsertError;
       return successJson({ submission: newSubmission });
     }
   } catch (error) {
-    console.error("Save draft error:", error);
     return errorJson("SAVE_DRAFT_FAILED", "Failed to save draft", 500);
   }
 }
@@ -1274,6 +1097,20 @@ async function saveAllDrafts(data: {
   drafts: Array<{ questionId: string; text: string }>;
 }) {
   try {
+    // Verify session ownership
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    const { data: sessionCheck } = await supabase
+      .from("sessions")
+      .select("student_id")
+      .eq("id", data.sessionId)
+      .single();
+    if (!sessionCheck || sessionCheck.student_id !== user.id) {
+      return errorJson("UNAUTHORIZED", "Session access denied", 403);
+    }
+
     const results = [];
 
     for (const draft of data.drafts) {
@@ -1293,7 +1130,6 @@ async function saveAllDrafts(data: {
 
     return successJson({ submissions: results });
   } catch (error) {
-    console.error("Save all drafts error:", error);
     return errorJson("SAVE_ALL_DRAFTS_FAILED", "Failed to save all drafts", 500);
   }
 }
@@ -1303,42 +1139,60 @@ async function saveDraftAnswers(data: {
   answers: Array<{ questionId: string; text: string }>;
 }) {
   try {
+    // Verify session ownership
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    const { data: sessionCheck } = await supabase
+      .from("sessions")
+      .select("student_id")
+      .eq("id", data.sessionId)
+      .single();
+    if (!sessionCheck || sessionCheck.student_id !== user.id) {
+      return errorJson("UNAUTHORIZED", "Session access denied", 403);
+    }
+
+    // Fetch session and exam once outside the loop (avoid N+1 queries)
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("exam_id")
+      .eq("id", data.sessionId)
+      .single();
+
+    if (!session) {
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
+    }
+
+    const { data: exam } = await supabase
+      .from("exams")
+      .select("questions")
+      .eq("id", session.exam_id)
+      .single();
+
+    if (!exam || !exam.questions) {
+      return errorJson("EXAM_NOT_FOUND", "Exam or questions not found", 404);
+    }
+
+    const questions = exam.questions as Array<{ id: string }>;
     const results = [];
 
     for (const answer of data.answers) {
       if (answer.text.trim()) {
-        // Find the question index from the questionId
-        const { data: session } = await supabase
-          .from("sessions")
-          .select("exam_id")
-          .eq("id", data.sessionId)
-          .single();
+        const questionIndex = questions.findIndex(
+          (q) => q.id === answer.questionId
+        );
 
-        if (session) {
-          const { data: exam } = await supabase
-            .from("exams")
-            .select("questions")
-            .eq("id", session.exam_id)
-            .single();
+        if (questionIndex !== -1) {
+          const result = await saveDraft({
+            sessionId: data.sessionId,
+            questionId: questionIndex.toString(),
+            answer: answer.text,
+          });
 
-          if (exam && exam.questions) {
-            const questions = exam.questions as Array<{ id: string }>;
-            const questionIndex = questions.findIndex(
-              (q) => q.id === answer.questionId
-            );
-
-            if (questionIndex !== -1) {
-              const result = await saveDraft({
-                sessionId: data.sessionId,
-                questionId: questionIndex.toString(),
-                answer: answer.text,
-              });
-
-              if (result.status === 200) {
-                const resultData = await result.json();
-                results.push(resultData.submission);
-              }
-            }
+          if (result.status === 200) {
+            const resultData = await result.json();
+            results.push(resultData.submission);
           }
         }
       }
@@ -1346,13 +1200,37 @@ async function saveDraftAnswers(data: {
 
     return successJson({ submissions: results });
   } catch (error) {
-    console.error("Save draft answers error:", error);
     return errorJson("SAVE_DRAFT_ANSWERS_FAILED", "Failed to save draft answers", 500);
   }
 }
 
 async function getSessionSubmissions(data: { sessionId: string }) {
   try {
+    // Verify session ownership (student or instructor who owns the exam)
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    const { data: sessionCheck } = await supabase
+      .from("sessions")
+      .select("student_id, exam_id")
+      .eq("id", data.sessionId)
+      .single();
+    if (!sessionCheck) {
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
+    }
+    // Allow access if user is the session owner (student) or the exam's instructor
+    if (sessionCheck.student_id !== user.id) {
+      const { data: examCheck } = await supabase
+        .from("exams")
+        .select("instructor_id")
+        .eq("id", sessionCheck.exam_id)
+        .single();
+      if (!examCheck || examCheck.instructor_id !== user.id) {
+        return errorJson("UNAUTHORIZED", "Session access denied", 403);
+      }
+    }
+
     const { data: submissions, error } = await supabase
       .from("submissions")
       .select("*")
@@ -1363,13 +1241,36 @@ async function getSessionSubmissions(data: { sessionId: string }) {
 
     return successJson({ submissions: submissions || [] });
   } catch (error) {
-    console.error("Get session submissions error:", error);
     return errorJson("GET_SUBMISSIONS_FAILED", "Failed to get session submissions", 500);
   }
 }
 
 async function getSessionMessages(data: { sessionId: string }) {
   try {
+    // Verify session ownership (student or instructor who owns the exam)
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    const { data: sessionCheck } = await supabase
+      .from("sessions")
+      .select("student_id, exam_id")
+      .eq("id", data.sessionId)
+      .single();
+    if (!sessionCheck) {
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
+    }
+    if (sessionCheck.student_id !== user.id) {
+      const { data: examCheck } = await supabase
+        .from("exams")
+        .select("instructor_id")
+        .eq("id", sessionCheck.exam_id)
+        .single();
+      if (!examCheck || examCheck.instructor_id !== user.id) {
+        return errorJson("UNAUTHORIZED", "Session access denied", 403);
+      }
+    }
+
     const { data: messages, error } = await supabase
       .from("messages")
       .select("*")
@@ -1380,7 +1281,6 @@ async function getSessionMessages(data: { sessionId: string }) {
 
     return successJson({ messages: messages || [] });
   } catch (error) {
-    console.error("Get session messages error:", error);
     return errorJson("GET_MESSAGES_FAILED", "Failed to get session messages", 500);
   }
 }
@@ -1440,7 +1340,6 @@ async function createFolder(data: { name: string; parent_id?: string | null }) {
 
     return successJson({ folder });
   } catch (error) {
-    console.error("Create folder error:", error);
     return errorJson("CREATE_FOLDER_FAILED", "Failed to create folder", 500);
   }
 }
@@ -1458,10 +1357,6 @@ async function getFolderContents(data: { folder_id?: string | null }) {
     }
 
     const parentId = data.folder_id || null;
-    console.log("[api] getFolderContents called:", {
-      folder_id: parentId,
-      userId: user.id,
-    });
 
     // Build query
     let query = supabase
@@ -1496,21 +1391,8 @@ async function getFolderContents(data: { folder_id?: string | null }) {
     }); // 최근 수정된 것이 먼저
 
     if (error) {
-      console.error("[api] Supabase query error in getFolderContents:", {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-        folder_id: parentId,
-        userId: user.id,
-      });
       throw error;
     }
-
-    console.log("[api] getFolderContents query successful:", {
-      nodesCount: nodes?.length || 0,
-      folder_id: parentId,
-    });
 
     let nodesWithCounts = nodes || [];
 
@@ -1531,7 +1413,7 @@ async function getFolderContents(data: { folder_id?: string | null }) {
         .in("exam_id", examIds);
 
       if (sessionsError) {
-        console.error("Session count query error:", sessionsError);
+        logError("Session count query error", sessionsError, { path: "/api/supa" });
       } else if (sessionsData) {
         // Use Map for O(1) lookups instead of nested objects
         const studentCountMap = new Map<string, Set<string>>();
@@ -1561,11 +1443,6 @@ async function getFolderContents(data: { folder_id?: string | null }) {
 
     return successJson({ nodes: nodesWithCounts });
   } catch (error) {
-    console.error("[api] Get folder contents error:", {
-      error,
-      message: error instanceof Error ? error.message : "Unknown error",
-      stack: error instanceof Error ? error.stack : undefined,
-    });
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
     return errorJson("GET_FOLDER_CONTENTS_FAILED", "Failed to get folder contents", 500, errorMessage);
@@ -1577,6 +1454,11 @@ async function getBreadcrumb(data: { folder_id: string }) {
     const user = await currentUser();
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     // Use recursive CTE to get all parent folders
@@ -1608,7 +1490,6 @@ async function getBreadcrumb(data: { folder_id: string }) {
 
     return successJson({ breadcrumb: rpcData || [] });
   } catch (error) {
-    console.error("Get breadcrumb error:", error);
     return errorJson("GET_BREADCRUMB_FAILED", "Failed to get breadcrumb", 500);
   }
 }
@@ -1649,7 +1530,6 @@ async function moveNode(data: {
 
     return successJson({ node });
   } catch (error) {
-    console.error("Move node error:", error);
     return errorJson("MOVE_NODE_FAILED", "Failed to move node", 500);
   }
 }
@@ -1692,7 +1572,6 @@ async function updateNode(data: { node_id: string; name?: string }) {
 
     return successJson({ node });
   } catch (error) {
-    console.error("Update node error:", error);
     return errorJson("UPDATE_NODE_FAILED", "Failed to update node", 500);
   }
 }
@@ -1745,7 +1624,6 @@ async function deleteNode(data: { node_id: string }) {
 
     return successJson({});
   } catch (error) {
-    console.error("Delete node error:", error);
     return errorJson("DELETE_NODE_FAILED", "Failed to delete node", 500);
   }
 }
@@ -1785,8 +1663,10 @@ async function sessionHeartbeat(data: {
       .single();
 
     if (examError || !exam) {
-      console.error("Failed to fetch exam for heartbeat:", examError);
       // 시험 정보를 가져오지 못해도 하트비트는 계속 진행
+      if (examError) {
+        logError("Failed to fetch exam for heartbeat", examError, { path: "/api/supa" });
+      }
     } else {
       // ✅ Gate 방식: attempt_timer_started_at 기준으로 시간 체크
       // InProgress 상태이고 타이머가 시작된 경우만 시간 체크
@@ -1805,11 +1685,6 @@ async function sessionHeartbeat(data: {
 
         if (timeRemaining <= 0) {
           // ✅ 시간 종료 - 자동 제출 처리
-          console.log(
-            "[SESSION_HEARTBEAT] Time expired - auto-submitting session:",
-            data.sessionId
-          );
-
           const { error: updateError } = await supabase
             .from("sessions")
             .update({
@@ -1821,7 +1696,7 @@ async function sessionHeartbeat(data: {
             .eq("id", data.sessionId);
 
           if (updateError) {
-            console.error("Failed to auto-submit session:", updateError);
+            logError("Failed to auto-submit session", updateError, { path: "/api/supa", additionalData: { sessionId: data.sessionId } });
           }
 
           return successJson({
@@ -1871,7 +1746,6 @@ async function sessionHeartbeat(data: {
       return errorJson("SESSION_INACTIVE", "Session is not active", 400);
     }
   } catch (error) {
-    console.error("Session heartbeat error:", error);
     return errorJson("HEARTBEAT_FAILED", "Failed to update heartbeat", 500);
   }
 }
@@ -1906,7 +1780,6 @@ async function deactivateSession(data: {
 
     return successJson({});
   } catch (error) {
-    console.error("Deactivate session error:", error);
     return errorJson("DEACTIVATE_SESSION_FAILED", "Failed to deactivate session", 500);
   }
 }
@@ -1926,7 +1799,6 @@ async function getInstructorDrive() {
     // Get root level nodes (parent_id is null)
     return await getFolderContents({ folder_id: null });
   } catch (error) {
-    console.error("Get instructor drive error:", error);
     return errorJson("GET_DRIVE_FAILED", "Failed to get instructor drive", 500);
   }
 }
@@ -1964,7 +1836,7 @@ async function copyExam(data: { exam_id: string }) {
       .single();
 
     if (nodeError || !originalNode) {
-      console.error("Original exam node not found:", nodeError);
+      logError("Original exam node not found", nodeError, { path: "/api/supa", user_id: user.id, additionalData: { examId: data.exam_id } });
     }
 
     // Generate new exam code
@@ -2030,7 +1902,6 @@ async function copyExam(data: { exam_id: string }) {
       .single();
 
     if (createError || !newExam) {
-      console.error("Failed to create copied exam:", createError);
       return errorJson("COPY_EXAM_FAILED", "Failed to create copied exam", 500);
     }
 
@@ -2074,8 +1945,8 @@ async function copyExam(data: { exam_id: string }) {
       .single();
 
     if (nodeCreateError) {
-      console.error("Failed to create exam node:", nodeCreateError);
       // Exam is created but node creation failed - this is not critical
+      logError("Failed to create exam node for copy", nodeCreateError, { path: "/api/supa", user_id: user.id, additionalData: { examId: newExam.id } });
     }
 
     // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
@@ -2085,11 +1956,6 @@ async function copyExam(data: { exam_id: string }) {
       examData.materials_text.length > 0
     ) {
       try {
-        console.log("🚀 [copyExam] RAG 처리 시작:", {
-          examId: newExam.id,
-          materialsCount: examData.materials_text.length,
-        });
-
         let totalChunksSaved = 0;
 
         for (let idx = 0; idx < examData.materials_text.length; idx++) {
@@ -2101,9 +1967,6 @@ async function copyExam(data: { exam_id: string }) {
           };
 
           if (!materialData.text || materialData.text.trim().length === 0) {
-            console.log(
-              `⚠️ [copyExam] 텍스트가 비어있어 건너뜀: ${materialData.fileName}`
-            );
             continue;
           }
 
@@ -2114,9 +1977,6 @@ async function copyExam(data: { exam_id: string }) {
           });
 
           if (chunks.length === 0) {
-            console.log(
-              `⚠️ [copyExam] 청크 생성 실패: ${materialData.fileName}`
-            );
             continue;
           }
 
@@ -2142,25 +2002,18 @@ async function copyExam(data: { exam_id: string }) {
           await saveChunksToDB(newExam.id, chunksToSave);
           totalChunksSaved += chunksToSave.length;
         }
-
-        console.log("🎉 [copyExam] RAG 처리 완료:", {
-          examId: newExam.id,
-          filesProcessed: examData.materials_text.length,
-          totalChunksSaved,
-        });
       } catch (ragError) {
         // RAG 처리 실패해도 시험 복사는 성공으로 처리
-        console.error("❌ [copyExam] RAG 처리 실패 (시험 복사는 성공):", {
-          examId: newExam.id,
-          error:
-            ragError instanceof Error ? ragError.message : String(ragError),
+        logError("[copyExam] RAG processing failed (exam copy succeeded)", ragError, {
+          path: "/api/supa",
+          user_id: user.id,
+          additionalData: { examId: newExam.id },
         });
       }
     }
 
     return successJson({ exam: newExam, examNode });
   } catch (error) {
-    console.error("Copy exam error:", error);
     return errorJson("COPY_EXAM_FAILED", `Failed to copy exam: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
   }
 }

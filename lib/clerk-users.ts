@@ -65,8 +65,7 @@ export async function batchGetUserInfo(
         });
       }
     }
-  } catch (error) {
-    console.error("[clerk-users] Batch user fetch failed:", error);
+  } catch {
     // 전체 실패 시 모든 ID에 fallback 설정
     for (const id of uniqueIds) {
       result.set(id, {

@@ -127,10 +127,9 @@ export default function AnswerSubmission() {
 
       if (response.ok) {
         setLastSaved(new Date().toLocaleTimeString());
-        console.log("Answers saved manually");
       }
-    } catch (error) {
-      console.error("Error saving answers manually:", error);
+    } catch {
+      // Save failure is non-critical; auto-save will retry
     } finally {
       setIsSaving(false);
     }
@@ -172,10 +171,9 @@ export default function AnswerSubmission() {
 
       if (response.ok) {
         setLastSaved(new Date().toLocaleTimeString());
-        console.log("Answers auto-saved successfully");
       }
-    } catch (error) {
-      console.error("Error auto-saving answers:", error);
+    } catch {
+      // Auto-save failure is non-critical; will retry on next interval
     } finally {
       setIsSaving(false);
     }
@@ -219,13 +217,10 @@ export default function AnswerSubmission() {
             // This prevents overriding server data with potentially older localStorage data
             if (!sessionId) {
               setAnswers(parsed.answers);
-              console.log(
-                "Loaded saved answers from localStorage (no session yet)"
-              );
             }
           }
-        } catch (error) {
-          console.error("Error loading saved answers:", error);
+        } catch {
+          // localStorage parse failure is non-critical
         }
       }
     }
@@ -237,11 +232,6 @@ export default function AnswerSubmission() {
       if (!sessionId || !exam) return;
 
       try {
-        console.log(
-          "Loading saved answers from server for session:",
-          sessionId
-        );
-
         const response = await fetch("/api/supa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -253,7 +243,6 @@ export default function AnswerSubmission() {
 
         if (response.ok) {
           const result = await response.json();
-          console.log("Server submissions result:", result);
 
           if (result.submissions && result.submissions.length > 0) {
             // Convert server submissions to answers format
@@ -268,10 +257,6 @@ export default function AnswerSubmission() {
             });
 
             setAnswers(serverAnswers);
-            console.log(
-              "Loaded saved answers from server:",
-              serverAnswers.length
-            );
 
             // Update localStorage with server data
             const saveData = {
@@ -285,8 +270,8 @@ export default function AnswerSubmission() {
             );
           }
         }
-      } catch (error) {
-        console.error("Error loading saved answers from server:", error);
+      } catch {
+        // Server load failure is non-critical; localStorage backup exists
       }
     };
 
@@ -298,20 +283,12 @@ export default function AnswerSubmission() {
     const startQuestionParam = searchParams.get("startQuestion");
     const chatHistoryParam = searchParams.get("chatHistory");
 
-    console.log(
-      "Answer page loaded with startQuestion param:",
-      startQuestionParam
-    );
-    console.log("Answer page loaded with chatHistory param:", chatHistoryParam);
-
     if (startQuestionParam) {
       const questionIndex = parseInt(startQuestionParam, 10);
-      console.log("Parsed question index:", questionIndex);
 
       if (!isNaN(questionIndex) && questionIndex >= 0) {
         setStartQuestion(questionIndex);
         setCurrentQuestion(questionIndex);
-        console.log("Set current question to:", questionIndex);
       }
     }
 
@@ -321,7 +298,6 @@ export default function AnswerSubmission() {
         const parsedChatHistory = JSON.parse(
           decodeURIComponent(chatHistoryParam)
         );
-        console.log("Loaded chat history from URL:", parsedChatHistory);
 
         // Store for display in left panel
         setLoadedChatHistory(parsedChatHistory);
@@ -336,8 +312,8 @@ export default function AnswerSubmission() {
         );
 
         setChatMessages(convertedChatHistory);
-      } catch (error) {
-        console.error("Error parsing chat history from URL:", error);
+      } catch {
+        // Chat history parse failure is non-critical
       }
     }
   }, [searchParams]);
@@ -346,14 +322,8 @@ export default function AnswerSubmission() {
   const getOrCreateSession = useCallback(
     async (examId: string) => {
       if (!user) {
-        console.log("User not found, cannot create session");
         return;
       }
-
-      console.log("Getting/creating session for:", {
-        examId,
-        studentId: user.id,
-      });
 
       try {
         const response = await fetch("/api/supa", {
@@ -370,11 +340,9 @@ export default function AnswerSubmission() {
 
         if (response.ok) {
           const result = await response.json();
-          console.log("Session result:", result);
 
           if (result.session) {
             setSessionId(result.session.id);
-            console.log("Session ID set:", result.session.id);
 
             // Load existing chat history from session if not already loaded from URL
             if (
@@ -382,19 +350,12 @@ export default function AnswerSubmission() {
               result.messages.length > 0 &&
               loadedChatHistory.length === 0
             ) {
-              console.log(
-                "Loading chat history from session:",
-                result.messages.length
-              );
               setLoadedChatHistory(result.messages);
             }
           }
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-          console.error("Session creation error:", errorData);
         }
-      } catch (error) {
-        console.error("Error creating session:", error);
+      } catch {
+        // Session creation failure handled by sessionId remaining null
       }
     },
     [user, loadedChatHistory.length]
@@ -409,7 +370,6 @@ export default function AnswerSubmission() {
       }
 
       try {
-        console.log("Fetching exam data for answer page:", examCode);
         setError(null);
 
         const response = await fetch("/api/supa", {
@@ -423,7 +383,6 @@ export default function AnswerSubmission() {
 
         if (response.ok) {
           const result = await response.json();
-          console.log("Exam data received:", result);
 
           if (result.exam) {
             setExam(result.exam);
@@ -435,25 +394,15 @@ export default function AnswerSubmission() {
             }));
             setAnswers(initialAnswers);
 
-            console.log(
-              "Answers initialized:",
-              initialAnswers.length,
-              "questions"
-            );
-
             // Get or create session for this exam
             await getOrCreateSession(result.exam.id);
           } else {
-            console.error("Exam not found in database");
             setError("시험을 찾을 수 없습니다. 시험 코드를 확인해주세요.");
           }
         } else {
-          const errorData = await response.json().catch(() => ({}));
-          console.error("Failed to fetch exam:", errorData);
           setError("시험 데이터를 불러오는 중 오류가 발생했습니다.");
         }
-      } catch (error) {
-        console.error("Error fetching exam:", error);
+      } catch {
         setError("네트워크 오류가 발생했습니다. 다시 시도해주세요.");
       } finally {
         setIsLoading(false);
@@ -490,8 +439,8 @@ export default function AnswerSubmission() {
             },
           }),
         });
-      } catch (error) {
-        console.error("Error saving answers before going back:", error);
+      } catch {
+        // Save failure before navigation is non-critical
       }
     }
 
@@ -529,31 +478,10 @@ export default function AnswerSubmission() {
     setIsTyping(true);
 
     // 학생의 반박 메시지를 데이터베이스에 저장
-    console.log("🔍 Checking conditions before saving:", {
-      hasSessionId: !!sessionId,
-      sessionId,
-      hasStartQuestion: startQuestion !== undefined,
-      startQuestion,
-      replyLength: replyContent.length,
-    });
-
     if (sessionId && startQuestion !== undefined) {
       try {
-        console.log("💾 Saving student reply to DB:", {
-          sessionId,
-          qIdx: startQuestion,
-          replyLength: replyContent.length,
-        });
-
         // Sanitize HTML before sending
         const sanitizedReply = replyContent.replace(/\u0000/g, "");
-
-        console.log("📤 Sending student reply:", {
-          sessionId,
-          qIdx: startQuestion,
-          replyLength: sanitizedReply.length,
-          replyPreview: sanitizedReply.substring(0, 100),
-        });
 
         const response = await fetch("/api/submission/reply", {
           method: "POST",
@@ -565,38 +493,11 @@ export default function AnswerSubmission() {
           }),
         });
 
-        console.log("📥 Response status:", response.status);
-
-        if (response.ok) {
-          const result = await response.json();
-          console.log("✅ Student reply saved successfully:", result);
-        } else {
-          const errorText = await response.text();
-          console.error("❌ Failed to save student reply:", {
-            status: response.status,
-            statusText: response.statusText,
-            errorText: errorText,
-          });
-
-          // Try to parse as JSON
-          try {
-            const errorData = JSON.parse(errorText);
-            console.error("Parsed error data:", errorData);
-          } catch {
-            console.error("Could not parse error as JSON");
-          }
-        }
-      } catch (error) {
-        console.error("❌ Error saving student reply:", error);
+        // Response handling: no action needed on success or failure
+        // The reply is sent best-effort; the UI has already updated
+      } catch {
+        // Reply save failure is non-critical
       }
-    } else {
-      console.warn(
-        "⚠️ Cannot save student reply - missing sessionId or startQuestion:",
-        {
-          sessionId,
-          startQuestion,
-        }
-      );
     }
 
     // 학생 답변 즉시 "수고하셨습니다" 메시지 표시
@@ -626,7 +527,6 @@ export default function AnswerSubmission() {
 
     // Check if sessionId is available
     if (!sessionId) {
-      console.error("Session ID not available");
       alert("세션 정보를 찾을 수 없습니다. 페이지를 새로고침해주세요.");
       return;
     }
@@ -634,9 +534,6 @@ export default function AnswerSubmission() {
     setIsSubmitting(true);
 
     try {
-      // Submit answers to API with session ID, chat history and student ID
-      console.log("Submitting with sessionId:", sessionId);
-
       // Sanitize answers before sending
       const sanitizedAnswers = answers.map((answer) => ({
         ...answer,
@@ -658,7 +555,6 @@ export default function AnswerSubmission() {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Submission successful:", data);
         setFeedback(data.feedback);
         setIsSubmitted(true);
 
@@ -667,12 +563,9 @@ export default function AnswerSubmission() {
         //   startChatMode();
         // }, 1000); // 1초 후에 자동으로 채팅 모드 시작
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("Submission failed:", errorData);
         alert("답안 제출에 실패했습니다. 다시 시도해주세요.");
       }
-    } catch (error) {
-      console.error("Error submitting answers:", error);
+    } catch {
       alert("답안 제출 중 오류가 발생했습니다. 다시 시도해주세요.");
     } finally {
       setIsSubmitting(false);
@@ -697,27 +590,6 @@ export default function AnswerSubmission() {
         isInternal,
       } = pasteData;
 
-      if (isInternal) {
-        console.log(
-          "%c[Paste Check] ✅ Internal Copy Detected",
-          "color: blue; font-weight: bold; font-size: 12px;"
-        );
-        console.log("Source: Internal content (from exam page)");
-      } else {
-        console.warn(
-          "%c[Paste Check] ⚠️ External Copy Detected",
-          "color: red; font-weight: bold; font-size: 12px;"
-        );
-        console.warn("Source: External clipboard");
-      }
-      console.log("Paste details:", {
-        length: pastedText.length,
-        start: pasteStart,
-        end: pasteEnd,
-        answerLengthBefore,
-        isInternal,
-      });
-
       // Log to server
       try {
         await fetch("/api/log/paste", {
@@ -736,8 +608,8 @@ export default function AnswerSubmission() {
             sessionId: sessionId,
           }),
         });
-      } catch (err) {
-        console.error("Failed to log paste event", err);
+      } catch {
+        // Paste logging failure is non-critical
       }
     },
     [examCode, exam, currentQuestion, sessionId]

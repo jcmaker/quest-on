@@ -27,7 +27,6 @@ export async function createEmbedding(text: string): Promise<number[]> {
 
     return response.data[0].embedding;
   } catch (error) {
-    console.error("[embedding] 임베딩 생성 실패:", error);
     throw new Error(
       `임베딩 생성 실패: ${
         error instanceof Error ? error.message : String(error)
@@ -59,7 +58,6 @@ export async function createEmbeddings(texts: string[]): Promise<number[][]> {
 
     return response.data.map((item) => item.embedding);
   } catch (error) {
-    console.error("[embedding] 배치 임베딩 생성 실패:", error);
     throw new Error(
       `배치 임베딩 생성 실패: ${
         error instanceof Error ? error.message : String(error)

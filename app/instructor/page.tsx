@@ -10,8 +10,30 @@ import { useEffect, useState, useMemo, useCallback, memo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
-// 동적 임포트로 아이콘 최적화
-import dynamic from "next/dynamic";
+import {
+  BookOpen,
+  Plus,
+  FileText,
+  Calendar,
+  Loader2,
+  Menu,
+  LayoutDashboard,
+  FolderOpen,
+  List,
+  Folder,
+  Search,
+  LayoutGrid,
+  MoreVertical,
+  Copy,
+  Files as FilesIcon,
+  Trash2,
+  FolderPlus,
+  Edit,
+  Home,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,74 +84,6 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "@/components/animate-ui/components/base/alert-dialog";
-
-// 무거운 컴포넌트는 동적 임포트로 지연 로딩
-const BookOpen = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.BookOpen }))
-);
-const Plus = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Plus }))
-);
-const FileText = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.FileText }))
-);
-const Calendar = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Calendar }))
-);
-const Loader2 = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Loader2 }))
-);
-const Menu = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Menu }))
-);
-const LayoutDashboard = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.LayoutDashboard }))
-);
-const FolderOpen = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.FolderOpen }))
-);
-const List = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.List }))
-);
-const Folder = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Folder }))
-);
-const Search = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Search }))
-);
-const LayoutGrid = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.LayoutGrid }))
-);
-const MoreVertical = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.MoreVertical }))
-);
-const Copy = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Copy }))
-);
-const FilesIcon = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Files }))
-);
-const Trash2 = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Trash2 }))
-);
-const FolderPlus = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.FolderPlus }))
-);
-const Edit = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Edit }))
-);
-const Home = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Home }))
-);
-const ChevronRight = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.ChevronRight }))
-);
-const ChevronDown = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.ChevronDown }))
-);
-const ChevronUp = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.ChevronUp }))
-);
 
 interface ExamNode {
   id: string;
@@ -202,7 +156,6 @@ export default function InstructorHome() {
             errorData = JSON.parse(text);
           }
         } catch (parseError) {
-          console.error("Failed to parse error response:", parseError);
           errorData = {
             error: `서버 오류 (${response.status}): ${response.statusText}`,
           };
@@ -336,7 +289,6 @@ export default function InstructorHome() {
         id: "copy-exam-code", // 중복 방지
       });
     } catch (error) {
-      console.error("Copy exam code error:", error);
       toast.error("시험 코드를 복사하지 못했습니다.", {
         id: "copy-exam-code-error",
       });
@@ -380,7 +332,6 @@ export default function InstructorHome() {
       // Refresh folder contents
       refetchFolderContents();
     } catch (error) {
-      console.error("Error copying exam:", error);
       const errorMessage =
         error instanceof Error ? error.message : "시험 복사에 실패했습니다.";
       toast.error(errorMessage, {
@@ -449,7 +400,6 @@ export default function InstructorHome() {
         );
       }
     } catch (error) {
-      console.error("Error deleting node:", error);
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       const isEnglish =
@@ -569,7 +519,6 @@ export default function InstructorHome() {
         });
       }
     } catch (error) {
-      console.error("Error updating node:", error);
       const errorMessage = getErrorMessage(error, "이름 변경에 실패했습니다");
       toast.error(errorMessage, {
         duration: 5000,
@@ -757,7 +706,6 @@ export default function InstructorHome() {
         });
       }
     } catch (error) {
-      console.error("Error creating folder:", error);
       const errorMessage = getErrorMessage(error, "폴더 생성에 실패했습니다");
       toast.error(errorMessage, {
         duration: 5000,
@@ -873,7 +821,6 @@ export default function InstructorHome() {
         });
       }
     } catch (error) {
-      console.error("Error moving node:", error);
       const errorMessage = getErrorMessage(error, "이동에 실패했습니다");
       toast.error(errorMessage, {
         duration: 5000,
@@ -931,7 +878,6 @@ export default function InstructorHome() {
         });
       }
     } catch (error) {
-      console.error("Error moving node:", error);
       const errorMessage = getErrorMessage(error, "이동에 실패했습니다");
       toast.error(errorMessage, {
         duration: 5000,

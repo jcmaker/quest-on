@@ -119,8 +119,6 @@ export default function ExamDetail({
       ]);
 
       if (!examResponse.ok) {
-        const errorText = await examResponse.text();
-        console.error("API Error Response:", errorText);
         throw new Error(
           `Failed to fetch exam details: ${examResponse.status} ${examResponse.statusText}`
         );

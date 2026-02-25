@@ -75,7 +75,7 @@ export default function ProfileSetupPage() {
         }
       }
     } catch (error) {
-      console.error("Error loading profile:", error);
+      // Ignore profile load errors
     } finally {
       setIsLoadingProfile(false);
     }
@@ -105,7 +105,7 @@ export default function ProfileSetupPage() {
           setSchoolSuggestions(data.universities || []);
         }
       } catch (error) {
-        console.error("Error searching universities:", error);
+        // Ignore search errors
       } finally {
         setIsSearching(false);
       }
@@ -185,7 +185,6 @@ export default function ProfileSetupPage() {
         setError(data.error || "프로필 저장에 실패했습니다.");
       }
     } catch (error) {
-      console.error("Error saving profile:", error);
       setError("서버 오류가 발생했습니다.");
     } finally {
       setIsSubmitting(false);

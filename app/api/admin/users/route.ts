@@ -11,7 +11,8 @@ const clerk = createClerkClient({
 export async function GET() {
   try {
     // 어드민 인증 확인
-    await requireAdmin();
+    const denied = await requireAdmin();
+    if (denied) return denied;
 
     // 모든 사용자 정보 가져오기
     const users = await clerk.users.getUserList({
@@ -42,12 +43,6 @@ export async function GET() {
       stats,
     });
   } catch (error) {
-    console.error("Error fetching users:", error);
-
-    if (error instanceof Error && error.message === "Admin access required") {
-      return errorJson("FORBIDDEN", "Admin access required", 403);
-    }
-
     return errorJson("INTERNAL_ERROR", "Failed to fetch users", 500);
   }
 }

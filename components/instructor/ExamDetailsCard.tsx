@@ -25,8 +25,7 @@ export function ExamDetailsCard({
       toast.success("시험 코드가 복사되었습니다.", {
         id: "copy-exam-code", // 중복 방지
       });
-    } catch (error) {
-      console.error("Copy exam code error:", error);
+    } catch {
       toast.error("시험 코드를 복사하지 못했습니다.", {
         id: "copy-exam-code-error",
       });

@@ -4,6 +4,7 @@ import { createAdminToken } from "@/lib/admin-auth";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, adminAuthSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
+import { auditLog } from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,12 +42,25 @@ export async function POST(request: NextRequest) {
         path: "/",
       });
 
+      auditLog({
+        action: "admin_login_success",
+        userId: "admin",
+        targetId: "admin-session",
+        details: { ip, username },
+      });
+
       return successJson();
     } else {
+      auditLog({
+        action: "admin_login_failure",
+        userId: "anonymous",
+        targetId: "admin-session",
+        details: { ip, username },
+      });
+
       return errorJson("UNAUTHORIZED", "Invalid credentials", 401);
     }
   } catch (error) {
-    console.error("Admin auth error:", error);
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }
@@ -57,7 +71,6 @@ export async function DELETE() {
     cookieStore.delete("admin-session");
     return successJson();
   } catch (error) {
-    console.error("Admin logout error:", error);
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

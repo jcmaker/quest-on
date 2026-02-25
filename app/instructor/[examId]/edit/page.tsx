@@ -85,7 +85,6 @@ export default function EditExam({
         );
         setIsRubricPublic(exam.rubric_public || false);
       } catch (error) {
-        console.error("Error fetching exam:", error);
         toast.error("시험 데이터를 불러오는 중 오류가 발생했습니다.");
         router.push(`/instructor/${resolvedParams.examId}`);
       } finally {
@@ -494,7 +493,6 @@ export default function EditExam({
 
             return urlData.publicUrl;
           } catch (error) {
-            console.error(`Error uploading ${file.name}:`, error);
             throw error;
           }
         });
@@ -548,7 +546,6 @@ export default function EditExam({
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error("API Error:", errorData);
         const errorMessage = extractErrorMessage(
           errorData,
           "시험 수정에 실패했습니다",
@@ -557,13 +554,11 @@ export default function EditExam({
         throw new Error(errorMessage);
       }
 
-      const result = await response.json();
-      console.log("Exam updated successfully:", result);
+      await response.json();
 
       toast.success("시험이 성공적으로 수정되었습니다.");
       router.push(`/instructor/${resolvedParams.examId}`);
     } catch (error) {
-      console.error("Error updating exam:", error);
       const errorMessage = getErrorMessage(
         error,
         "시험 수정 중 오류가 발생했습니다. 다시 시도해주세요"

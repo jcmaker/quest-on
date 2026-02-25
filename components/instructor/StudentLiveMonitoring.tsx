@@ -72,7 +72,7 @@ export function StudentLiveMonitoring({
             messagesMapRef.current.set(msg.id, msg);
           });
         } catch (e) {
-          console.error("Error parsing saved messages:", e);
+          // Ignore parse errors
         }
       }
 
@@ -81,16 +81,6 @@ export function StudentLiveMonitoring({
       if (response.ok) {
         const data = await response.json();
         const newMessages = data.messages || [];
-        
-        // 디버깅: API 응답 확인
-        if (process.env.NODE_ENV === "development") {
-          console.log("[StudentLiveMonitoring] API messages:", newMessages);
-          const roleCounts = newMessages.reduce((acc: Record<string, number>, msg: LiveMessage) => {
-            acc[msg.role] = (acc[msg.role] || 0) + 1;
-            return acc;
-          }, {});
-          console.log("[StudentLiveMonitoring] Message roles:", roleCounts);
-        }
         
         // 중복 제거하면서 추가
         newMessages.forEach((msg: LiveMessage) => {
@@ -111,7 +101,7 @@ export function StudentLiveMonitoring({
         localStorage.setItem(storageKey, JSON.stringify(allMessages));
       }
     } catch (error) {
-      console.error("Error loading initial messages:", error);
+      // Ignore load errors
     } finally {
       setIsLoading(false);
     }
@@ -160,7 +150,7 @@ export function StudentLiveMonitoring({
               const decompressed = decompressData(newMessage.compressed_content);
               content = typeof decompressed === "string" ? decompressed : content;
             } catch (error) {
-              console.error("Error decompressing message:", error);
+              // Use original content on decompression failure
             }
           }
 
@@ -202,9 +192,7 @@ export function StudentLiveMonitoring({
           }
         }
       )
-      .subscribe((status) => {
-        console.log("Subscription status:", status);
-      });
+      .subscribe();
 
     subscriptionRef.current = channel;
 

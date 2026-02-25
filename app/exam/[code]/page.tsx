@@ -531,10 +531,8 @@ export default function ExamPage() {
 
       if (initData.messages) {
         setChatHistory(initData.messages);
-        console.log("[INIT_EXAM] Loaded chat history:", initData.messages.length, "messages");
       } else {
         setChatHistory([]);
-        console.log("[INIT_EXAM] No messages found in session");
       }
     } else {
       setSessionError(true);
@@ -595,7 +593,7 @@ export default function ExamPage() {
             data: { sessionId, studentId: user.id },
           }),
           keepalive: true,
-        }).catch(console.error);
+        }).catch(() => {});
       }
     };
 
@@ -612,7 +610,7 @@ export default function ExamPage() {
             data: { sessionId, studentId: user.id },
           }),
           keepalive: true,
-        }).catch(console.error);
+        }).catch(() => {});
       }
     };
   }, [sessionId, user, isSubmitted]);
@@ -620,7 +618,6 @@ export default function ExamPage() {
   const { data: savedAnswersData } = useQuery({
     queryKey: ["session-submissions", sessionId],
     queryFn: async () => {
-      console.log("Loading saved answers from server for session:", sessionId);
       const response = await fetch("/api/supa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -630,9 +627,7 @@ export default function ExamPage() {
         }),
       });
       if (!response.ok) return null;
-      const result = await response.json();
-      console.log("Server submissions result:", result);
-      return result;
+      return response.json();
     },
     enabled: !!sessionId && !!exam,
     staleTime: Infinity,
@@ -650,7 +645,6 @@ export default function ExamPage() {
     });
 
     setDraftAnswers(serverAnswers);
-    console.log("Loaded saved answers from server:", serverAnswers.length);
   }, [savedAnswersData, exam]);
 
   // Manual save function
@@ -676,10 +670,9 @@ export default function ExamPage() {
 
       if (response.ok) {
         setLastSaved(new Date().toLocaleTimeString());
-        console.log("Answers saved manually");
       }
-    } catch (error) {
-      console.error("Error saving answers manually:", error);
+    } catch {
+      // Save failure is non-critical; auto-save will retry
     } finally {
       setIsSaving(false);
     }
@@ -721,10 +714,9 @@ export default function ExamPage() {
 
       if (response.ok) {
         setLastSaved(new Date().toLocaleTimeString());
-        console.log("Answers auto-saved successfully");
       }
-    } catch (error) {
-      console.error("Error auto-saving answers:", error);
+    } catch {
+      // Auto-save failure is non-critical; will retry on next interval
     } finally {
       setIsSaving(false);
     }
@@ -810,8 +802,6 @@ export default function ExamPage() {
         const errorData = await response
           .json()
           .catch(() => ({ error: "Failed to parse error response" }));
-        console.error("Chat API error response:", errorData);
-
         let errorMessage =
           "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.";
 
@@ -835,8 +825,7 @@ export default function ExamPage() {
         // Scroll to bottom after receiving assistant response
         scrollToBottom();
       }
-    } catch (error) {
-      console.error("Error sending chat message:", error);
+    } catch {
       const errorMessage = {
         type: "assistant" as const,
         message:
@@ -880,28 +869,6 @@ export default function ExamPage() {
         isInternal,
       } = pasteData;
 
-      if (isInternal) {
-        console.log(
-          "%c[Paste Check] ✅ Internal Copy Detected",
-          "color: blue; font-weight: bold; font-size: 12px;"
-        );
-        console.log("Source: Internal content (from exam page)");
-      } else {
-        console.warn(
-          "%c[Paste Check] ⚠️ External Copy Detected",
-          "color: red; font-weight: bold; font-size: 12px;"
-        );
-        console.warn("Source: External clipboard");
-      }
-
-      console.log("Paste details:", {
-        length: pastedText.length,
-        start: pasteStart,
-        end: pasteEnd,
-        answerLengthBefore,
-        isInternal,
-      });
-
       try {
         await fetch("/api/log/paste", {
           method: "POST",
@@ -919,8 +886,8 @@ export default function ExamPage() {
             sessionId: sessionId,
           }),
         });
-      } catch (err) {
-        console.error("Failed to log paste event", err);
+      } catch {
+        // Paste logging failure is non-critical
       }
     },
     [examCode, exam, currentQuestion, sessionId]
@@ -986,14 +953,11 @@ export default function ExamPage() {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        console.log("Submission successful:", data);
         setIsSubmitted(true);
       } else {
         alert("답안 제출에 실패했습니다. 다시 시도해주세요.");
       }
-    } catch (error) {
-      console.error("Error submitting answers:", error);
+    } catch {
       alert("답안 제출 중 오류가 발생했습니다. 다시 시도해주세요.");
     } finally {
       setIsSubmitting(false);
@@ -1096,7 +1060,6 @@ export default function ExamPage() {
   // Preflight Modal 수락 핸들러
   const handlePreflightAccept = async () => {
     if (!sessionId) {
-      console.error("[PREFLIGHT] No session ID");
       return;
     }
 
@@ -1106,8 +1069,6 @@ export default function ExamPage() {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        console.log("[PREFLIGHT] ✅ Preflight accepted:", data);
         setShowPreflight(false);
         setSessionStatus("waiting");
         setIsInWaitingRoom(true);
@@ -1117,26 +1078,19 @@ export default function ExamPage() {
         if (contentType && contentType.includes("application/json")) {
           try {
             errorData = await response.json();
-          } catch (e) {
-            console.error("[PREFLIGHT] Failed to parse error response as JSON:", e);
+          } catch {
+            // JSON parse failed; will use text fallback below
           }
         } else {
           const text = await response.text().catch(() => "");
           errorData = { message: text || "알 수 없는 오류" };
         }
         
-        console.error("[PREFLIGHT] ❌ Failed to accept preflight:", {
-          status: response.status,
-          statusText: response.statusText,
-          error: errorData,
-        });
-        
         // 사용자에게 에러 알림
         const errorMessage = errorData.details || errorData.message || errorData.error || "알 수 없는 오류";
         alert(`Preflight 수락에 실패했습니다: ${errorMessage}`);
       }
-    } catch (error) {
-      console.error("[PREFLIGHT] ❌ Error accepting preflight:", error);
+    } catch {
       alert("Preflight 수락 중 오류가 발생했습니다. 다시 시도해주세요.");
     }
   };
@@ -1309,8 +1263,8 @@ export default function ExamPage() {
                   setIsSubmitted(true);
                   // 자동 제출 알림은 ExamHeader에서 표시됨
                 }
-              } catch (error) {
-                console.error("Auto-submit error:", error);
+              } catch {
+                // Auto-submit failure is handled by the UI state
               } finally {
                 setIsSubmitting(false);
               }

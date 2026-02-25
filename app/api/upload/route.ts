@@ -2,15 +2,12 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { randomUUID } from "crypto";
 
 // Initialize Supabase client with service role key for server-side operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 // 표준화된 에러 응답 헬퍼
 function errorJson(
@@ -20,7 +17,6 @@ function errorJson(
   status = 400
 ) {
   const traceId = randomUUID();
-  console.error(`[${traceId}] ${code}:`, message, details);
   return NextResponse.json(
     { ok: false, code, message, details, traceId },
     { status }
@@ -40,10 +36,6 @@ function makeSafeObjectKey(originalName: string, extFallback = ".bin") {
 
 // OPTIONS 요청 처리 (CORS preflight)
 export async function OPTIONS(request: NextRequest) {
-  console.log("[upload] OPTIONS request received:", {
-    url: request.url,
-    method: request.method,
-  });
   return NextResponse.json(
     {},
     {
@@ -57,10 +49,6 @@ export async function OPTIONS(request: NextRequest) {
 
 // GET 요청에 대한 명확한 에러 처리
 export async function GET(request: NextRequest) {
-  console.log("[upload] GET request received (NOT ALLOWED):", {
-    url: request.url,
-    method: request.method,
-  });
   return errorJson(
     "METHOD_NOT_ALLOWED",
     "GET 메서드는 지원하지 않습니다. POST 메서드를 사용하세요.",
@@ -73,39 +61,6 @@ export async function POST(request: NextRequest) {
   let objectKey: string | null = null;
 
   try {
-    console.log("[upload] POST request received:", {
-      url: request.url,
-      method: request.method,
-      contentType: request.headers.get("content-type"),
-      userAgent: request.headers.get("user-agent"),
-      origin: request.headers.get("origin"),
-      referer: request.headers.get("referer"),
-      timestamp: new Date().toISOString(),
-      runtime: "nodejs", // 명시적으로 Runtime 표시
-    });
-
-    // 환경 변수 확인
-    console.log("[upload] Environment check:", {
-      hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      supabaseUrlPrefix:
-        process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + "...",
-    });
-
-    // Supabase 연결 테스트
-    try {
-      const { data: buckets, error: listError } =
-        await supabase.storage.listBuckets();
-      console.log("[upload] Supabase connection test:", {
-        canListBuckets: !listError,
-        bucketsFound: buckets?.length || 0,
-        hasExamMaterials: buckets?.some((b) => b.name === "exam-materials"),
-        listError: listError?.message,
-      });
-    } catch (testError) {
-      console.error("[upload] Supabase connection failed:", testError);
-    }
-
     // Get current user
     const user = await currentUser();
     if (!user) {
@@ -114,7 +69,6 @@ export async function POST(request: NextRequest) {
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
-    console.log("[upload] User:", { id: user.id, role: userRole });
 
     if (userRole !== "instructor") {
       return errorJson(
@@ -174,25 +128,9 @@ export async function POST(request: NextRequest) {
     // objectKey는 이미 날짜/uuid.ext 형식이므로 그대로 사용
     const storagePath = `instructor-${user.id}/${objectKey}`;
 
-    console.log("[upload] Storage path generated:", {
-      originalName,
-      objectKey,
-      storagePath,
-      fileSize: file.size,
-      fileType: file.type,
-      userId: user.id,
-    });
-
     // Convert file to buffer (no compression - direct upload)
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-
-    console.log("[upload] Uploading to Supabase:", {
-      bucket: "exam-materials",
-      path: storagePath,
-      bufferSize: buffer.length,
-      contentType: file.type,
-    });
 
     // Supabase Storage 업로드 시도
     const { data, error } = await supabase.storage
@@ -202,24 +140,7 @@ export async function POST(request: NextRequest) {
         upsert: true, // 임시로 덮어쓰기 허용 (중복 파일 에러 방지)
       });
 
-    console.log("[upload] Supabase response:", {
-      hasData: !!data,
-      hasError: !!error,
-      dataPath: data?.path,
-      errorMessage: error?.message,
-      errorDetails: error,
-    });
-
     if (error) {
-      console.error("[upload] Supabase storage error details:", {
-        message: error.message,
-        name: error.name,
-        statusCode: (error as { statusCode?: number }).statusCode,
-        error: JSON.stringify(error, null, 2),
-        storagePath: storagePath,
-        bucket: "exam-materials",
-      });
-
       // 에러 타입별 구체적인 메시지
       let userMessage = "파일 저장 중 오류가 발생했습니다.";
       let errorCode = "STORAGE_ERROR";
@@ -257,8 +178,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("[upload] Upload successful:", data.path);
-
     // Get public URL
     const { data: urlData } = supabase.storage
       .from("exam-materials")
@@ -279,8 +198,6 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("[upload] Unexpected error:", error);
-
     // 구조화된 에러 응답
     return errorJson(
       "UPLOAD_FAILED",

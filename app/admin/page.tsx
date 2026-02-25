@@ -146,8 +146,7 @@ export default function AdminDashboard() {
       } else {
         setError("역할 변경에 실패했습니다.");
       }
-    } catch (error) {
-      console.error("Error updating user role:", error);
+    } catch {
       setError("서버 오류가 발생했습니다.");
     }
   };

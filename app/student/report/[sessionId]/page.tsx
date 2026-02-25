@@ -248,8 +248,7 @@ export default function StudentReportPage() {
         user?.fullName || "학생"
       }_리포트카드.pdf`;
       pdf.save(filename);
-    } catch (error) {
-      console.error("Error downloading PDF:", error);
+    } catch {
       alert("PDF 생성 중 오류가 발생했습니다.");
     } finally {
       setDownloading(false);

@@ -111,14 +111,12 @@ export function QuickActionsCard({
                 if (sheet.ownerNode && sheet.ownerNode.parentNode) {
                   sheet.ownerNode.parentNode.removeChild(sheet.ownerNode);
                 }
-              } catch (e) {
+              } catch {
                 // Ignore cross-origin or other errors
-                console.error(e);
               }
             });
-          } catch (e) {
+          } catch {
             // Ignore errors
-            console.error(e);
           }
 
           // Convert all computed styles to inline RGB
@@ -192,7 +190,6 @@ export function QuickActionsCard({
       }_리포트카드.pdf`;
       pdf.save(filename);
     } catch (error) {
-      console.error("Error downloading PDF:", error);
       alert(
         error instanceof Error
           ? error.message

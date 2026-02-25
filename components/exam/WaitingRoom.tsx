@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Clock, Users, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { createSupabaseClient } from "@/lib/supabase-client";
 
 interface WaitingRoomProps {
   examTitle?: string;
@@ -27,49 +27,78 @@ export function WaitingRoom({
   examId,
   studentId,
 }: WaitingRoomProps) {
-  const [isPolling, setIsPolling] = useState(true);
+  const [isWaiting, setIsWaiting] = useState(true);
+  const onGateStartRef = useRef(onGateStart);
+  onGateStartRef.current = onGateStart;
 
-  // Gate Start 신호를 주기적으로 확인 (Polling)
+  // Lightweight status check (used for fallback polling only)
+  const checkExamStatus = useCallback(async () => {
+    if (!examCode || !studentId) return;
+    try {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "init_exam_session",
+          data: { examCode, studentId },
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.gateStarted && result.sessionStatus === "in_progress") {
+          setIsWaiting(false);
+          onGateStartRef.current?.();
+        }
+      }
+    } catch {
+      // Non-critical polling error
+    }
+  }, [examCode, studentId]);
+
+  // Supabase Realtime subscription for exam status changes
   useEffect(() => {
-    if (!sessionId || !examCode || !studentId || !isPolling) return;
+    if (!examId || !isWaiting) return;
 
-    const checkGateStart = async () => {
-      try {
-        const response = await fetch("/api/supa", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "init_exam_session",
-            data: {
-              examCode,
-              studentId,
-            },
-          }),
-        });
+    const supabase = createSupabaseClient();
 
-        if (response.ok) {
-          const result = await response.json();
-          // Gate Start 신호가 수신되었고 세션이 InProgress 상태인지 확인
-          if (result.gateStarted && result.sessionStatus === "in_progress") {
-            setIsPolling(false);
-            if (onGateStart) {
-              onGateStart();
-            }
+    const channel = supabase
+      .channel(`exam_gate_${examId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "exams",
+          filter: `id=eq.${examId}`,
+        },
+        (payload) => {
+          // When exam status changes to "running", trigger gate start check
+          const newStatus = payload.new?.status;
+          if (newStatus === "running") {
+            checkExamStatus();
           }
         }
-      } catch (error) {
-        console.error("Error checking gate start:", error);
-      }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
+  }, [examId, isWaiting, checkExamStatus]);
 
-    // 초기 확인
-    checkGateStart();
+  // Fallback polling: 30-second interval (instead of 3-second)
+  useEffect(() => {
+    if (!sessionId || !examCode || !studentId || !isWaiting) return;
 
-    // 3초마다 확인 (Gate Start 신호 대기)
-    const interval = setInterval(checkGateStart, 3000);
+    // Initial check
+    checkExamStatus();
+
+    // 30-second fallback polling
+    const interval = setInterval(checkExamStatus, 30000);
 
     return () => clearInterval(interval);
-  }, [sessionId, examCode, studentId, isPolling, onGateStart]);
+  }, [sessionId, examCode, studentId, isWaiting, checkExamStatus]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
@@ -116,7 +145,7 @@ export function WaitingRoom({
               <div className="space-y-2">
                 <p className="font-semibold">시험 시작 대기 중</p>
                 <p className="text-sm">
-                  강사가 "시험 시작" 버튼을 클릭하면 시험이 시작됩니다. 이 페이지를
+                  강사가 &quot;시험 시작&quot; 버튼을 클릭하면 시험이 시작됩니다. 이 페이지를
                   닫지 마세요.
                 </p>
                 {!allowDraftInWaiting && !allowChatInWaiting && (

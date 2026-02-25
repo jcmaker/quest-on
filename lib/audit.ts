@@ -4,7 +4,9 @@ export type AuditAction =
   | "grade_update"
   | "exam_status_change"
   | "exam_delete"
-  | "session_submit";
+  | "session_submit"
+  | "admin_login_success"
+  | "admin_login_failure";
 
 interface AuditLogParams {
   action: AuditAction;
@@ -28,7 +30,6 @@ export async function auditLog({
     const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceRoleKey) {
-      console.error("[audit] Missing Supabase environment variables");
       return false;
     }
 
@@ -42,13 +43,11 @@ export async function auditLog({
     });
 
     if (error) {
-      console.error("[audit] Failed to insert audit log:", error);
       return false;
     }
 
     return true;
-  } catch (error) {
-    console.error("[audit] Error in auditLog:", error);
+  } catch {
     return false;
   }
 }

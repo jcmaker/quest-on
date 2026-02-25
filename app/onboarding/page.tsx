@@ -53,8 +53,7 @@ export default function OnboardingPage() {
       } else {
         router.push("/student");
       }
-    } catch (error) {
-      console.error("Error updating role:", error);
+    } catch {
       setIsSubmitting(false);
     }
   };

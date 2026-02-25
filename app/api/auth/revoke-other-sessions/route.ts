@@ -33,8 +33,7 @@ export async function POST(_request: NextRequest) {
       message:
         "Session revocation is temporarily disabled. No sessions were revoked.",
     });
-  } catch (error) {
-    console.error("[REVOKE_SESSIONS] Error:", error);
+  } catch {
     return errorJson("INTERNAL_ERROR", "Failed to revoke sessions", 500);
   }
 }

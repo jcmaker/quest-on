@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
 import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
@@ -91,7 +89,7 @@ export async function GET(
       .order("q_idx", { ascending: true });
 
     if (submissionsError) {
-      console.error("Error fetching submissions:", submissionsError);
+      logError("Error fetching submissions", submissionsError);
     }
 
     // Get messages
@@ -112,7 +110,7 @@ export async function GET(
       .order("created_at", { ascending: true });
 
     if (messagesError) {
-      console.error("Error fetching messages:", messagesError);
+      logError("Error fetching messages", messagesError);
     }
 
     // Get grades
@@ -131,7 +129,7 @@ export async function GET(
       .order("q_idx", { ascending: true });
 
     if (gradesError) {
-      console.error("Error fetching grades:", gradesError);
+      logError("Error fetching grades", gradesError);
     }
 
     // Decompress session data if available
@@ -145,7 +143,7 @@ export async function GET(
           session.compressed_session_data
         );
       } catch (error) {
-        console.error("Error decompressing session data:", error);
+        // Decompression failed, continue with null
       }
     }
 
@@ -181,7 +179,7 @@ export async function GET(
                   : answer) || answer;
             }
           } catch (error) {
-            console.error("Error decompressing answer:", error);
+            // Decompression failed, continue with original
           }
         }
 
@@ -189,7 +187,7 @@ export async function GET(
           try {
             aiFeedback = decompressData(submission.compressed_feedback_data);
           } catch (error) {
-            console.error("Error decompressing feedback:", error);
+            // Decompression failed, continue with original
           }
         }
 
@@ -219,7 +217,7 @@ export async function GET(
           try {
             content = decompressData(message.compressed_content);
           } catch (error) {
-            console.error("Error decompressing message:", error);
+            // Decompression failed, continue with original
           }
         }
 
@@ -283,7 +281,6 @@ export async function GET(
       aiSummary: session.ai_summary || null,
     });
   } catch (error) {
-    console.error("Get student report error:", error);
     return errorJson("FETCH_REPORT_FAILED", "Failed to get report", 500);
   }
 }

@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { successJson, errorJson } from "@/lib/api-response";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 const ITEMS_PER_PAGE = 10;
 
@@ -45,7 +42,6 @@ export async function GET(request: NextRequest) {
       .order("created_at", { ascending: false });
 
     if (sessionsError) {
-      console.error("Error fetching student sessions:", sessionsError);
       throw sessionsError;
     }
 
@@ -118,7 +114,6 @@ export async function GET(request: NextRequest) {
       .in("id", examIds);
 
     if (examsError) {
-      console.error("Error fetching exams:", examsError);
       throw examsError;
     }
 
@@ -135,7 +130,6 @@ export async function GET(request: NextRequest) {
       .in("session_id", sessionIds);
 
     if (submissionsError) {
-      console.error("Error fetching submissions:", submissionsError);
     }
 
     // Fetch all grades for all sessions in one query
@@ -145,7 +139,6 @@ export async function GET(request: NextRequest) {
       .in("session_id", sessionIds);
 
     if (gradesError) {
-      console.error("Error fetching grades:", gradesError);
     }
 
     // Create maps for O(1) lookups
@@ -222,7 +215,6 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("Get student sessions error:", error);
     return errorJson("FETCH_SESSIONS_FAILED", "Failed to get student sessions", 500);
   }
 }

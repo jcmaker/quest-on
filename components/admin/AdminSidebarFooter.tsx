@@ -15,8 +15,8 @@ export function AdminSidebarFooter() {
     try {
       await fetch("/api/admin/auth", { method: "DELETE" });
       router.push("/admin/login");
-    } catch (error) {
-      console.error("Logout error:", error);
+    } catch {
+      // Logout error handled silently
     }
   };
 

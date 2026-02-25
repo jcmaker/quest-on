@@ -44,8 +44,7 @@ export default function AdminLoginPage() {
       } else {
         setError(data.error || "로그인에 실패했습니다.");
       }
-    } catch (error) {
-      console.error("Login error:", error);
+    } catch {
       setError("서버 오류가 발생했습니다.");
     } finally {
       setIsLoading(false);

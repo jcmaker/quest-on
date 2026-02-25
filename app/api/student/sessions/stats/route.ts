@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { successJson, errorJson } from "@/lib/api-response";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET() {
   try {
@@ -30,7 +27,6 @@ export async function GET() {
       .eq("student_id", user.id);
 
     if (sessionsError) {
-      console.error("Error fetching student sessions:", sessionsError);
       throw sessionsError;
     }
 
@@ -64,7 +60,7 @@ export async function GET() {
       .in("session_id", sessionIds);
 
     if (gradesError) {
-      console.error("Error fetching grades:", gradesError);
+      // Non-critical: grades fetch failed
     }
 
     // Calculate overall average score
@@ -100,7 +96,6 @@ export async function GET() {
       overallAverageScore,
     });
   } catch (error) {
-    console.error("Get student stats error:", error);
     return errorJson("FETCH_STATS_FAILED", "Failed to get student stats", 500);
   }
 }

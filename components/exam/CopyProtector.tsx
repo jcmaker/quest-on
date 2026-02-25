@@ -31,8 +31,8 @@ export function CopyProtector({ children, className, metadata }: CopyProtectorPr
     if (metadata) {
       try {
         e.clipboardData.setData("application/x-queston-meta", JSON.stringify(metadata));
-      } catch (err) {
-        console.error("Failed to serialize metadata for copy event", err);
+      } catch {
+        // Serialization error, non-critical
       }
     }
   };

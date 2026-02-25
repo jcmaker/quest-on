@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { successJson, errorJson } from "@/lib/api-response";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 // Update submission with student reply (by submissionId)
 export async function PATCH(
@@ -86,13 +83,11 @@ export async function PATCH(
     }
 
     if (error) {
-      console.error("Error updating submission:", error);
       return errorJson("UPDATE_SUBMISSION_FAILED", "Failed to update submission", 500);
     }
 
     return successJson({ submission: data });
   } catch (error) {
-    console.error("Submission update error:", error);
     return errorJson("INTERNAL_SERVER_ERROR", "Internal server error", 500);
   }
 }

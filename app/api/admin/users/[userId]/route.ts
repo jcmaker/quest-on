@@ -14,7 +14,8 @@ export async function PATCH(
 ) {
   try {
     // 어드민 인증 확인
-    await requireAdmin();
+    const denied = await requireAdmin();
+    if (denied) return denied;
 
     const { userId } = await params;
     const { role } = await request.json();
@@ -39,12 +40,6 @@ export async function PATCH(
       },
     });
   } catch (error) {
-    console.error("Error updating user role:", error);
-
-    if (error instanceof Error && error.message === "Admin access required") {
-      return errorJson("FORBIDDEN", "Admin access required", 403);
-    }
-
     return errorJson("INTERNAL_ERROR", "Failed to update user role", 500);
   }
 }
@@ -55,7 +50,8 @@ export async function GET(
 ) {
   try {
     // 어드민 인증 확인
-    await requireAdmin();
+    const denied = await requireAdmin();
+    if (denied) return denied;
 
     const { userId } = await params;
 
@@ -77,12 +73,6 @@ export async function GET(
 
     return successJson({ user: userInfo });
   } catch (error) {
-    console.error("Error fetching user:", error);
-
-    if (error instanceof Error && error.message === "Admin access required") {
-      return errorJson("FORBIDDEN", "Admin access required", 403);
-    }
-
     return errorJson("INTERNAL_ERROR", "Failed to fetch user", 500);
   }
 }

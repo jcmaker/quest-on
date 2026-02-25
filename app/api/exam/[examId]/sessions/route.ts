@@ -1,54 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { successJson, errorJson } from "@/lib/api-response";
 import { batchGetUserInfo } from "@/lib/clerk-users";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ examId: string }> }
 ) {
-  const requestStartTime = Date.now();
   try {
     const { examId } = await params;
-    console.log(`📊 [EXAM_SESSIONS] Request received | Exam: ${examId}`);
 
     let user;
     try {
       user = await currentUser();
     } catch (clerkError) {
-      console.error(
-        `❌ [AUTH] Clerk API error | Exam: ${examId}`,
-        clerkError
-      );
       return errorJson("INTERNAL_ERROR", "Authentication service error", 500);
     }
 
     if (!user) {
-      console.error(
-        `❌ [AUTH] Unauthorized exam sessions access | Exam: ${examId}`
-      );
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      console.error(
-        `❌ [AUTH] Non-instructor access attempt | User: ${user.id} | Exam: ${examId}`
-      );
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
-
-    console.log(
-      `✅ [AUTH] Instructor authenticated | User: ${user.id} | Exam: ${examId}`
-    );
 
     // Get exam to verify instructor owns it
     const { data: exam, error: examError } = await supabase
@@ -160,14 +141,6 @@ export async function GET(
       };
     });
 
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Exam sessions GET completed in ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Exam sessions retrieved | Exam: ${exam.id} | Sessions: ${sessions.length}`
-    );
-
     return successJson({
       exam: {
         id: exam.id,
@@ -176,13 +149,6 @@ export async function GET(
       sessions: processedSessions,
     });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    console.error("Get exam sessions error:", error);
-    console.error(
-      `❌ [ERROR] Exam sessions GET failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`
-    );
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

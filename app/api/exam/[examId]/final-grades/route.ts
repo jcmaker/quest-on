@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@clerk/nextjs/server";
 import { successJson, errorJson } from "@/lib/api-response";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
@@ -48,7 +45,6 @@ export async function GET(
       .eq("exam_id", examId);
 
     if (sessionsError) {
-      console.error("Error fetching sessions:", sessionsError);
       return errorJson("INTERNAL_ERROR", "Failed to fetch sessions", 500);
     }
 
@@ -65,7 +61,6 @@ export async function GET(
       .in("session_id", sessionIds);
 
     if (gradesError) {
-      console.error("Error fetching grades:", gradesError);
       return errorJson("INTERNAL_ERROR", "Failed to fetch grades", 500);
     }
 
@@ -128,7 +123,6 @@ export async function GET(
 
     return successJson({ grades: finalGrades });
   } catch (error) {
-    console.error("Final grades API error:", error);
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

@@ -6,12 +6,13 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@clerk/nextjs/server";
-import { openai, AI_MODEL } from "@/lib/openai";
-import { createClient } from "@supabase/supabase-js";
+import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { compressData } from "@/lib/compression";
 import { buildFeedbackChatSystemPrompt, type RubricItem } from "@/lib/prompts";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
 
 // 메시지 타입 분류 함수 (개념/계산/전략/기타)
 async function classifyMessageType(
@@ -45,19 +46,14 @@ async function classifyMessageType(
 
     return "other";
   } catch (error) {
-    console.error("Error classifying message type:", error);
     return "other";
   }
 }
 
 // Supabase 서버 전용 클라이언트
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function POST(request: NextRequest) {
-  const requestStartTime = Date.now();
   try {
     // Authentication check
     const user = await currentUser();
@@ -124,20 +120,16 @@ export async function POST(request: NextRequest) {
       message,
     });
 
-    const aiStartTime = Date.now();
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: message },
-      ],
-      max_completion_tokens: 500,
-    });
-    const aiDuration = Date.now() - aiStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Feedback OpenAI response time: ${aiDuration}ms`
+    const completion = await callOpenAI(() =>
+      openai.chat.completions.create({
+        model: AI_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: message },
+        ],
+        max_completion_tokens: 500,
+      })
     );
-
     const response = completion.choices[0]?.message?.content;
     const tokensUsed = completion.usage?.total_tokens || null; // 토큰 사용량 추출
 
@@ -223,28 +215,13 @@ export async function POST(request: NextRequest) {
         ]);
 
         if (insertError) {
-          console.error("Failed to store chat interaction:", insertError);
-        } else {
-          console.log("Chat interaction compressed and stored:", {
-            sessionId,
-            originalSize: compressedData.metadata.originalSize,
-            compressedSize: compressedData.metadata.compressedSize,
-            compressionRatio: compressedData.metadata.compressionRatio,
-          });
+          logError("Failed to store chat interaction", insertError);
         }
       } catch (error) {
-        console.error("Error storing chat interaction:", error);
+        logError("Error storing chat interaction", error);
         // Continue with response even if storage fails
       }
     }
-
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Total feedback chat request time: ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Feedback chat completed | Student: ${studentId} | Question: ${questionId}`
-    );
 
     return successJson({
       response,
@@ -253,13 +230,6 @@ export async function POST(request: NextRequest) {
       questionId,
     });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    console.error("Feedback chat API error:", error);
-    console.error(
-      `❌ [ERROR] Feedback chat failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`
-    );
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

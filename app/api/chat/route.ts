@@ -5,14 +5,15 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import { openai, AI_MODEL } from "@/lib/openai";
-import { createClient } from "@supabase/supabase-js";
+import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { searchRelevantMaterials } from "@/lib/material-search";
 import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
 import { handleCorsPreFlight } from "@/lib/cors";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, chatRequestSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
 import type { ResponseOutputItem, ResponseOutputMessage, ResponseOutputText } from "openai/resources/responses/responses";
 
 export async function OPTIONS(request: NextRequest) {
@@ -20,7 +21,6 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function GET() {
-  console.log("[chat] GET /api/chat (healthcheck)");
   return NextResponse.json(
     { ok: true, route: "/api/chat", methods: ["POST", "OPTIONS"] },
     { status: 200, headers: { Allow: "POST, OPTIONS" } }
@@ -28,10 +28,7 @@ export async function GET() {
 }
 
 // Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!, // 서버 전용 env 사용 (NEXT_PUBLIC은 브라우저에서도 접근 가능하지만 서버에서는 안전하게 사용)
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 type MessageType = "concept" | "calculation" | "strategy" | "other";
 
@@ -89,8 +86,7 @@ async function classifyMessageType(message: string): Promise<MessageType> {
 
     // 기본값: 기타
     return "other";
-  } catch (error) {
-    console.error("Error classifying message type:", error);
+  } catch {
     return "other";
   }
 }
@@ -129,11 +125,6 @@ async function getRagContext(params: {
   }
 
   try {
-    console.log("🔍 [chat] RAG 벡터 검색 시작:", {
-      examId,
-      questionPreview: message.substring(0, 100),
-    });
-
     const { searchMaterialChunks, formatSearchResultsAsContext } = await import(
       "@/lib/search-chunks"
     );
@@ -148,22 +139,9 @@ async function getRagContext(params: {
     const topSimilarity =
       typeof topSimilarityRaw === "number" ? topSimilarityRaw : null;
 
-    console.log("📊 [chat] 벡터 검색 결과:", {
-      resultsCount: searchResults.length,
-      topSimilarity: topSimilarity?.toFixed(3) ?? "N/A",
-      fileNames: searchResults.map(
-        (r: { metadata?: { fileName?: string } }) =>
-          r.metadata?.fileName || "unknown"
-      ),
-    });
-
     if (searchResults.length > 0) {
       const context = formatSearchResultsAsContext(searchResults);
       const cleaned = cleanContext(context);
-      console.log("✅ [chat] 컨텍스트 생성 완료:", {
-        contextLength: cleaned.length,
-        preview: cleaned.substring(0, 200),
-      });
       return {
         relevantMaterialsText: cleaned,
         topSimilarity,
@@ -171,8 +149,6 @@ async function getRagContext(params: {
         method: "vector",
       };
     }
-
-    console.log("⚠️ [chat] 벡터 검색 결과 없음, 키워드 검색으로 폴백");
 
     let materials = examMaterialsText;
     if (!materials) {
@@ -202,10 +178,6 @@ async function getRagContext(params: {
 
     const keywordContext = searchRelevantMaterials(materials, message, 3, 2000);
     const cleaned = cleanContext(keywordContext);
-    console.log("📝 [chat] 키워드 검색 결과:", {
-      found: cleaned.length > 0,
-      length: cleaned.length,
-    });
     return {
       relevantMaterialsText: cleaned,
       topSimilarity: null,
@@ -213,11 +185,7 @@ async function getRagContext(params: {
       method: "keyword",
     };
   } catch (error) {
-    console.error("❌ [chat] RAG 검색 실패:", error);
-    console.error("상세 에러:", {
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
+    logError("[chat] RAG 검색 실패", error, { path: "/api/chat" });
     return {
       relevantMaterialsText: "",
       topSimilarity: null,
@@ -233,38 +201,17 @@ async function getAIResponse(
   userMessage: string,
   previousResponseId: string | null = null
 ): Promise<{ response: string; responseId: string; tokensUsed?: number }> {
-  const aiStartTime = Date.now();
   try {
-    if (process.env.NODE_ENV === "development") {
-      console.log(
-        "Calling OpenAI Responses API with prompt length:",
-        systemPrompt.length,
-        "| Previous response ID:",
-        previousResponseId || "none (first message)"
-      );
-    }
-
-    // Responses API 사용
-    const response = await openai.responses.create({
-      model: AI_MODEL,
-      instructions: systemPrompt,
-      input: userMessage,
-      previous_response_id: previousResponseId || undefined,
-      store: true, // 응답을 저장하여 나중에 참조 가능하도록
-    });
-
-    const aiDuration = Date.now() - aiStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] OpenAI Responses API response time: ${aiDuration}ms`
+    // Responses API 사용 (callOpenAI로 동시성 제한 + 429 retry)
+    const response = await callOpenAI(() =>
+      openai.responses.create({
+        model: AI_MODEL,
+        instructions: systemPrompt,
+        input: userMessage,
+        previous_response_id: previousResponseId || undefined,
+        store: true, // 응답을 저장하여 나중에 참조 가능하도록
+      })
     );
-
-    if (process.env.NODE_ENV === "development") {
-      console.log("OpenAI Responses API response received:", {
-        responseId: response.id,
-        hasOutput: !!response.output,
-        outputLength: response.output?.length || 0,
-      });
-    }
 
     // output 배열에서 메시지 타입 찾기
     let responseText = "";
@@ -289,7 +236,6 @@ async function getAIResponse(
     }
 
     if (!responseText || responseText.trim().length === 0) {
-      console.warn("OpenAI returned empty or null response");
       return {
         response:
           "I'm sorry, I couldn't process your question. Please try rephrasing it.",
@@ -305,7 +251,7 @@ async function getAIResponse(
       tokensUsed: undefined, // Responses API는 usage 정보를 제공하지 않음
     };
   } catch (openaiError) {
-    console.error("OpenAI Responses API error:", openaiError);
+    logError("OpenAI Responses API error", openaiError, { path: "/api/chat" });
     throw new Error(
       `OpenAI Responses API failed: ${(openaiError as Error).message}`
     );
@@ -329,7 +275,7 @@ async function fetchPreviousResponseId(params: {
     .single();
 
   if (error && error.code !== "PGRST116") {
-    console.error("Error fetching previous response_id:", error);
+    logError("Error fetching previous response_id", error, { path: "/api/chat" });
   }
 
   return data?.response_id || null;
@@ -352,12 +298,9 @@ async function incrementUsedClarifications(params: {
     if (!error) return;
 
     // function 미존재 등은 폴백
-    console.warn("[chat] increment_used_clarifications rpc failed, fallback", {
-      code: error.code,
-      message: error.message,
-    });
-  } catch (e) {
-    console.warn("[chat] increment_used_clarifications rpc threw, fallback", e);
+    // RPC not available, fall back to manual update
+  } catch {
+    // RPC threw, fall back to manual update
   }
 
   // 폴백: 현재 값 기반 단일 update (동시성 완전 보장은 아니지만 왕복 최소화)
@@ -491,20 +434,13 @@ async function handleChatLogic(params: {
         },
       },
     ]);
-    if (error) console.error("Error saving user message:", error);
+    if (error) logError("Error saving user message", error, { path: "/api/chat" });
   })();
 
   // 세 작업은 동시에 시작되며, 응답 반환 전에는 반드시 모두 완료되도록 await
   const rag = await ragPromise;
   const previousResponseId = await previousResponsePromise;
   await insertUserPromise;
-
-  if (process.env.NODE_ENV === "development") {
-    console.log(
-      "📜 Previous response_id:",
-      previousResponseId || "none (first message)"
-    );
-  }
 
   const systemPrompt = buildStudentChatSystemPrompt({
     examTitle,
@@ -552,13 +488,12 @@ async function handleChatLogic(params: {
     incrementPromise,
   ]);
   if (aiInsertResult.error)
-    console.error("Error saving AI message:", aiInsertResult.error);
+    logError("Error saving AI message", aiInsertResult.error, { path: "/api/chat" });
 
   return { aiResponse, responseId, topSimilarity: rag.topSimilarity };
 }
 
 export async function POST(request: NextRequest) {
-  const requestStartTime = Date.now();
   try {
     const body = await request.json();
 
@@ -660,11 +595,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ✅ 정규 세션 처리 (컨텍스트 조회)
-    console.log(
-      "🔍 DEBUG: Entering REGULAR session processing for sessionId:",
-      sessionId
-    );
-
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .select("id, exam_id, used_clarifications")
@@ -672,17 +602,10 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (sessionError || !session) {
-      console.error(
-        "Error fetching session:",
-        sessionError,
-        "SessionId:",
-        sessionId
-      );
       return errorJson("INVALID_SESSION", "Invalid session", 400, sessionError?.message);
     }
 
     if (!session.exam_id) {
-      console.error("Session has no exam_id:", session);
       return errorJson("MISSING_EXAM_INFO", "Session is missing exam information", 400);
     }
 
@@ -693,12 +616,6 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (examError || !exam) {
-      console.error(
-        "Error fetching exam:",
-        examError,
-        "ExamId:",
-        session.exam_id
-      );
       return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, examError?.message);
     }
 
@@ -729,11 +646,6 @@ export async function POST(request: NextRequest) {
       usedClarificationsFallback: session.used_clarifications ?? 0,
     });
 
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Total request time (regular): ${requestDuration}ms`
-    );
-
     return successJson({
       response: aiResponse,
       timestamp: new Date().toISOString(),
@@ -741,15 +653,8 @@ export async function POST(request: NextRequest) {
       questionId,
     });
   } catch (error) {
-    console.error("Chat API error:", error);
+    logError("Chat API error", error, { path: "/api/chat" });
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
-
-    console.error("Chat API error details:", {
-      message: errorMessage,
-      stack: errorStack,
-      errorType: typeof error,
-    });
 
     return errorJson(
       "INTERNAL_ERROR",

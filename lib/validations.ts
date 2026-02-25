@@ -79,6 +79,131 @@ export const supaActionSchema = z.object({
   action: z.string().min(1),
 });
 
+// ========== Supa Route Action Schemas ==========
+
+// Exam creation/update
+export const createExamSchema = z.object({
+  title: z.string().min(1, "Title is required").max(500),
+  code: z.string().min(1).max(20),
+  duration: z.number().int().min(0),
+  questions: z.array(z.object({
+    id: z.string(),
+    text: z.string(),
+    type: z.enum(["multiple-choice", "essay", "short-answer"]),
+    options: z.array(z.string()).optional(),
+    correctAnswer: z.string().optional(),
+  })),
+  materials: z.array(z.string()).optional(),
+  materials_text: z.array(z.object({
+    url: z.string(),
+    text: z.string(),
+    fileName: z.string(),
+  })).optional(),
+  rubric: z.array(z.object({
+    evaluationArea: z.string(),
+    detailedCriteria: z.string(),
+  })).optional(),
+  rubric_public: z.boolean().optional(),
+  status: z.string().min(1),
+  created_at: z.string(),
+  updated_at: z.string(),
+  parent_folder_id: z.string().nullable().optional(),
+});
+
+export const updateExamSchema = z.object({
+  id: z.string().uuid("Invalid exam ID"),
+  update: z.record(z.unknown()),
+});
+
+// Session operations
+export const initExamSessionSchema = z.object({
+  examCode: z.string().min(1, "Exam code is required").max(20),
+  studentId: z.string().min(1, "Student ID is required"),
+  deviceFingerprint: z.string().optional(),
+});
+
+export const createOrGetSessionSchema = z.object({
+  examId: z.string().uuid("Invalid exam ID"),
+  studentId: z.string().min(1, "Student ID is required"),
+});
+
+export const sessionHeartbeatSchema = z.object({
+  sessionId: z.string().uuid("Invalid session ID"),
+  studentId: z.string().min(1, "Student ID is required"),
+});
+
+export const deactivateSessionSchema = z.object({
+  sessionId: z.string().uuid("Invalid session ID"),
+  studentId: z.string().min(1, "Student ID is required"),
+});
+
+// Draft operations
+export const saveDraftSchema = z.object({
+  sessionId: z.string().uuid("Invalid session ID"),
+  questionId: z.string().min(1),
+  answer: z.string().max(100000, "Answer too long"),
+});
+
+export const saveAllDraftsSchema = z.object({
+  sessionId: z.string().uuid("Invalid session ID"),
+  drafts: z.array(z.object({
+    questionId: z.string(),
+    text: z.string().max(100000),
+  })),
+});
+
+export const saveDraftAnswersSchema = z.object({
+  sessionId: z.string().uuid("Invalid session ID"),
+  answers: z.array(z.object({
+    questionId: z.string(),
+    text: z.string().max(100000),
+  })),
+});
+
+// Exam submission
+export const submitExamSchema = z.object({
+  examId: z.string().uuid("Invalid exam ID"),
+  studentId: z.string().min(1),
+  sessionId: z.string().uuid("Invalid session ID"),
+  answers: z.array(z.unknown()),
+  chatHistory: z.array(z.unknown()).optional(),
+  feedback: z.string().optional(),
+  feedbackResponses: z.array(z.unknown()).optional(),
+});
+
+// Drive operations
+export const createFolderSchema = z.object({
+  name: z.string().min(1, "Folder name is required").max(255),
+  parent_id: z.string().uuid().nullable().optional(),
+});
+
+export const moveNodeSchema = z.object({
+  node_id: z.string().uuid("Invalid node ID"),
+  new_parent_id: z.string().uuid().nullable().optional(),
+  new_sort_order: z.number().int().min(0).optional(),
+});
+
+export const deleteNodeSchema = z.object({
+  node_id: z.string().uuid("Invalid node ID"),
+});
+
+export const copyExamSchema = z.object({
+  exam_id: z.string().uuid("Invalid exam ID"),
+});
+
+// Feedback chat
+export const feedbackChatSchema = z.object({
+  message: z.string().min(1, "Message is required").max(10000),
+  sessionId: z.string().min(1),
+  qIdx: z.number().int().min(0),
+  chatHistory: z.array(z.object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+  })).optional(),
+  examCode: z.string().optional(),
+  studentId: z.string().optional(),
+});
+
 // Helper to validate and return typed result or error response
 export function validateRequest<T>(
   schema: z.ZodSchema<T>,

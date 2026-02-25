@@ -19,7 +19,6 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function GET() {
-  console.log("[instructor-chat] GET /api/instructor/chat (healthcheck)");
   return NextResponse.json(
     { ok: true, route: "/api/instructor/chat", methods: ["POST", "OPTIONS"] },
     { status: 200, headers: { Allow: "POST, OPTIONS" } }
@@ -40,17 +39,7 @@ async function getAIResponse(
   userMessage: string,
   previousResponseId: string | null = null
 ): Promise<{ response: string; responseId: string }> {
-  const aiStartTime = Date.now();
   try {
-    if (process.env.NODE_ENV === "development") {
-      console.log(
-        "[instructor-chat] Calling OpenAI Responses API with prompt length:",
-        systemPrompt.length,
-        "| Previous response ID:",
-        previousResponseId || "none (first message)"
-      );
-    }
-
     // Responses API 사용
     const response = await openai.responses.create({
       model: AI_MODEL,
@@ -59,19 +48,6 @@ async function getAIResponse(
       previous_response_id: previousResponseId || undefined,
       store: true,
     });
-
-    const aiDuration = Date.now() - aiStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] OpenAI Responses API response time: ${aiDuration}ms`
-    );
-
-    if (process.env.NODE_ENV === "development") {
-      console.log("[instructor-chat] OpenAI Responses API response received:", {
-        responseId: response.id,
-        hasOutput: !!response.output,
-        outputLength: response.output?.length || 0,
-      });
-    }
 
     // output 배열에서 메시지 타입 찾기
     let responseText = "";
@@ -94,7 +70,6 @@ async function getAIResponse(
     }
 
     if (!responseText || responseText.trim().length === 0) {
-      console.warn("[instructor-chat] OpenAI returned empty or null response");
       return {
         response:
           "죄송합니다. 질문을 처리하는 중에 문제가 발생했습니다. 다시 시도해주세요.",
@@ -107,7 +82,6 @@ async function getAIResponse(
       responseId: response.id,
     };
   } catch (openaiError) {
-    console.error("[instructor-chat] OpenAI Responses API error:", openaiError);
     throw new Error(
       `OpenAI Responses API failed: ${(openaiError as Error).message}`
     );
@@ -115,7 +89,6 @@ async function getAIResponse(
 }
 
 export async function POST(request: NextRequest) {
-  const requestStartTime = Date.now();
   try {
     // Authentication check
     const user = await currentUser();
@@ -159,25 +132,12 @@ export async function POST(request: NextRequest) {
       previousResponseId
     );
 
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Total request time (instructor-chat): ${requestDuration}ms`
-    );
-
     return successJson({
       response: aiResponse,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("[instructor-chat] Chat API error:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
-
-    console.error("[instructor-chat] Chat API error details:", {
-      message: errorMessage,
-      stack: errorStack,
-      errorType: typeof error,
-    });
 
     return errorJson(
       "INTERNAL_ERROR",

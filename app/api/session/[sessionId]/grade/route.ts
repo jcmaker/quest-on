@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@clerk/nextjs/server";
 import { openai, AI_MODEL } from "@/lib/openai";
@@ -10,12 +10,10 @@ import {
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { batchGetUserInfo } from "@/lib/clerk-users";
+import { logError } from "@/lib/logger";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
@@ -24,16 +22,12 @@ export async function GET(
   const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
-    console.log("🔍 Fetching session for grading:", sessionId);
 
     const user = await currentUser();
 
     if (!user) {
-      console.log("❌ No user found");
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
-
-    console.log("✅ User authenticated:", user.id);
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
@@ -50,14 +44,11 @@ export async function GET(
       .single();
 
     if (sessionError || !session) {
-      console.log("❌ Session not found:", sessionError);
       return errorJson("NOT_FOUND", "Session not found", 404, {
         details: sessionError?.message,
         sessionId,
       });
     }
-
-    console.log("✅ Session found:", session.id);
 
     // Get exam data
     const { data: exam, error: examError } = await supabase
@@ -67,7 +58,6 @@ export async function GET(
       .single();
 
     if (examError || !exam) {
-      console.log("❌ Exam not found:", examError);
       return errorJson("NOT_FOUND", "Exam not found", 404, {
         details: examError?.message,
       });
@@ -83,17 +73,6 @@ export async function GET(
         ai_context: q.ai_context,
       }));
     }
-
-    console.log("📝 Exam data:", {
-      id: exam.id,
-      title: exam.title,
-      questionsType: typeof exam.questions,
-      questionsIsArray: Array.isArray(exam.questions),
-      questionsLength: Array.isArray(exam.questions)
-        ? exam.questions.length
-        : 0,
-      questions: exam.questions,
-    });
 
     // Optimized: Fetch submissions, messages, grades, and paste_logs in parallel
     const [submissionsResult, messagesResult, gradesResult, pasteLogsResult] =
@@ -167,45 +146,10 @@ export async function GET(
     const { data: grades, error: gradesError } = gradesResult;
     const { data: pasteLogs, error: pasteLogsError } = pasteLogsResult;
 
-    if (submissionsError) {
-      console.log("⚠️ Error fetching submissions:", submissionsError);
-    } else {
-      console.log("📤 Submissions fetched:", {
-        count: submissions?.length || 0,
-      });
-    }
-
-    if (messagesError) {
-      console.log("⚠️ Error fetching messages:", messagesError);
-    } else {
-      console.log("💬 Messages fetched:", {
-        count: messages?.length || 0,
-      });
-    }
-
-    if (gradesError) {
-      console.log("⚠️ Error fetching grades:", gradesError);
-    }
-
-    if (pasteLogsError) {
-      console.log("⚠️ Error fetching paste logs:", pasteLogsError);
-    } else {
-      console.log("📋 Paste logs fetched:", {
-        count: pasteLogs?.length || 0,
-        suspiciousCount: pasteLogs?.filter((log) => log.suspicious).length || 0,
-      });
-    }
-
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
-      console.log("❌ Instructor mismatch:", {
-        examInstructorId: exam.instructor_id,
-        userId: user.id,
-      });
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
-
-    console.log("✅ Instructor verified");
 
     // Get student info from Clerk (batch call for consistency)
     const clerkUserMap = await batchGetUserInfo([session.student_id]);
@@ -240,7 +184,9 @@ export async function GET(
           session.compressed_session_data
         );
       } catch (error) {
-        console.error("Error decompressing session data:", error);
+        logError("Error decompressing session data", error, {
+          path: `/api/session/${sessionId}/grade`,
+        });
       }
     }
 
@@ -261,7 +207,9 @@ export async function GET(
               submission.compressed_answer_data as string
             );
           } catch (error) {
-            console.error("Error decompressing answer data:", error);
+            logError("Error decompressing answer data", error, {
+              path: `/api/session/${sessionId}/grade`,
+            });
           }
         }
 
@@ -274,7 +222,9 @@ export async function GET(
               submission.compressed_feedback_data as string
             );
           } catch (error) {
-            console.error("Error decompressing feedback data:", error);
+            logError("Error decompressing feedback data", error, {
+              path: `/api/session/${sessionId}/grade`,
+            });
           }
         }
 
@@ -304,7 +254,9 @@ export async function GET(
               message.compressed_content as string
             );
           } catch (error) {
-            console.error("Error decompressing message content:", error);
+            logError("Error decompressing message content", error, {
+              path: `/api/session/${sessionId}/grade`,
+            });
           }
         }
 
@@ -336,9 +288,6 @@ export async function GET(
           );
 
           if (questionIndex !== -1 && questionIndex !== qIdx) {
-            console.log(
-              `📍 Mapping message from q_idx ${qIdx} to question index ${questionIndex}`
-            );
             if (!messagesByQuestion[questionIndex]) {
               messagesByQuestion[questionIndex] = [];
             }
@@ -417,37 +366,8 @@ export async function GET(
       aiSummary: session.ai_summary || null, // 하위 호환성을 위해 유지
     };
 
-    console.log("📊 Response data summary:", {
-      hasAiSummary: !!session.ai_summary,
-      gradesCount: grades?.length || 0,
-      overallScore,
-      gradesByQuestionKeys: Object.keys(gradesByQuestion),
-    });
-
-    console.log("📦 Returning response data:", {
-      examQuestionsLength: exam.questions?.length || 0,
-      submissionsKeys: Object.keys(submissionsByQuestion),
-      messagesKeys: Object.keys(messagesByQuestion),
-      gradesKeys: Object.keys(gradesByQuestion),
-    });
-
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Session grading GET completed in ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Grading data retrieved | Session: ${sessionId} | Exam: ${exam.code} | Student: ${session.student_id}`
-    );
-
     return successJson(responseData);
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    console.error("Get session for grading error:", error);
-    console.error(
-      `❌ [ERROR] Session grading GET failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`
-    );
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }
@@ -463,10 +383,6 @@ export async function POST(
     const user = await currentUser();
     const body = await request.json();
     const { questionIdx, score, comment, stageGrading } = body;
-
-    console.log(
-      `📊 [GRADING] Grade submission | Session: ${sessionId} | Question: ${questionIdx} | Score: ${score}`
-    );
 
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
@@ -549,12 +465,6 @@ export async function POST(
       result = data;
     }
 
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(`⏱️  [PERFORMANCE] Grade saved in ${requestDuration}ms`);
-    console.log(
-      `✅ [SUCCESS] Grade saved | Session: ${sessionId} | Question: ${questionIdx} | Score: ${score}`
-    );
-
     // Audit log: grade update
     auditLog({
       action: "grade_update",
@@ -567,13 +477,6 @@ export async function POST(
       grade: result,
     });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    console.error("Save grade error:", error);
-    console.error(
-      `❌ [ERROR] Grade save failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`
-    );
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }
@@ -589,10 +492,6 @@ export async function PUT(
     const user = await currentUser();
     const body = await request.json().catch(() => ({}));
     const { forceRegrade = false } = body;
-
-    console.log(
-      `🤖 [AUTO_GRADE] Starting auto-grading | Session: ${sessionId} | Force: ${forceRegrade}`
-    );
 
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
@@ -639,9 +538,6 @@ export async function PUT(
         .eq("session_id", sessionId);
 
       if (existingGrades && existingGrades.length > 0) {
-        console.log(
-          `⚠️ [AUTO_GRADE] Grades already exist, skipping auto-grade`
-        );
         return successJson({
           message: "Already graded",
           skipped: true,
@@ -669,12 +565,10 @@ export async function PUT(
       .eq("session_id", sessionId);
 
     if (submissionsError) {
-      console.error("Error fetching submissions:", submissionsError);
+      logError("Error fetching submissions for auto-grade", submissionsError, {
+        path: `/api/session/${sessionId}/grade`,
+      });
     }
-
-    console.log(
-      `📤 [AUTO_GRADE] Found ${submissions?.length || 0} submissions`
-    );
 
     // Get messages
     const { data: messages, error: messagesError } = await supabase
@@ -692,7 +586,9 @@ export async function PUT(
       .eq("session_id", sessionId);
 
     if (messagesError) {
-      console.error("Error fetching messages:", messagesError);
+      logError("Error fetching messages for auto-grade", messagesError, {
+        path: `/api/session/${sessionId}/grade`,
+      });
     }
 
     // Decompress submissions
@@ -720,7 +616,9 @@ export async function PUT(
             );
             answer = (decompressed as { answer?: string })?.answer || answer;
           } catch (error) {
-            console.error("Error decompressing answer data:", error);
+            logError("Error decompressing answer data in auto-grade", error, {
+              path: `/api/session/${sessionId}/grade`,
+            });
           }
         }
 
@@ -736,12 +634,6 @@ export async function PUT(
               : undefined,
         };
       });
-
-      console.log(
-        `📦 [AUTO_GRADE] Processed submissions for q_idx: ${Object.keys(
-          submissionsByQuestion
-        ).join(", ")}`
-      );
     }
 
     // Decompress and organize messages by question
@@ -765,7 +657,9 @@ export async function PUT(
                 message.compressed_content as string
               ) as string) || content;
           } catch (error) {
-            console.error("Error decompressing message content:", error);
+            logError("Error decompressing message content in auto-grade", error, {
+              path: `/api/session/${sessionId}/grade`,
+            });
           }
         }
 
@@ -793,12 +687,6 @@ export async function PUT(
         : []
       : [];
 
-    console.log(
-      `📝 [AUTO_GRADE] Questions: ${questions.length}, Submissions: ${
-        submissions?.length || 0
-      }`
-    );
-
     // Auto-grade each question
     const grades: Array<{
       q_idx: number;
@@ -820,16 +708,7 @@ export async function PUT(
       }
       const questionMessages = messagesByQuestion[qIdx] || [];
 
-      console.log(
-        `🔍 [AUTO_GRADE] Processing question ${qIdx}: submission=${!!submission}, messages=${
-          questionMessages.length
-        }, answer=${submission?.answer ? "yes" : "no"}`
-      );
-
       if (!submission) {
-        console.log(
-          `⚠️ [AUTO_GRADE] No submission found for question ${qIdx}, skipping`
-        );
         continue;
       }
 
@@ -896,10 +775,6 @@ ${questionMessages
           try {
             chatParsedResponse = JSON.parse(chatResponseContent);
           } catch (parseError) {
-            console.error(
-              `❌ [AUTO_GRADE] JSON parse error for chat stage question ${qIdx}:`,
-              parseError
-            );
             throw new Error(`JSON parse error: ${parseError}`);
           }
 
@@ -910,15 +785,10 @@ ${questionMessages
             ),
             comment: chatParsedResponse.comment || "채팅 단계 평가 완료",
           };
-
-          console.log(
-            `✅ [AUTO_GRADE] Question ${qIdx} chat stage graded: ${stageGrading.chat.score}점`
-          );
         } catch (error) {
-          console.error(
-            `❌ [AUTO_GRADE] Error grading chat stage for question ${qIdx}:`,
-            error
-          );
+          logError(`Error grading chat stage for question ${qIdx}`, error, {
+            path: `/api/session/${sessionId}/grade`,
+          });
         }
       }
 
@@ -957,10 +827,6 @@ ${submission.answer || "답안이 없습니다."}
           try {
             answerParsedResponse = JSON.parse(answerResponseContent);
           } catch (parseError) {
-            console.error(
-              `❌ [AUTO_GRADE] JSON parse error for answer stage question ${qIdx}:`,
-              parseError
-            );
             throw new Error(`JSON parse error: ${parseError}`);
           }
 
@@ -971,15 +837,10 @@ ${submission.answer || "답안이 없습니다."}
             ),
             comment: answerParsedResponse.comment || "답안 평가 완료",
           };
-
-          console.log(
-            `✅ [AUTO_GRADE] Question ${qIdx} answer stage graded: ${stageGrading.answer.score}점`
-          );
         } catch (error) {
-          console.error(
-            `❌ [AUTO_GRADE] Error grading answer stage for question ${qIdx}:`,
-            error
-          );
+          logError(`Error grading answer stage for question ${qIdx}`, error, {
+            path: `/api/session/${sessionId}/grade`,
+          });
           // Continue with other stages even if one fails
         }
       }
@@ -1010,24 +871,11 @@ ${submission.answer || "답안이 없습니다."}
           comment: overallComment,
           stage_grading: stageGrading,
         });
-
-        console.log(
-          `✅ [AUTO_GRADE] Question ${qIdx} overall graded: ${finalScore}점 (stages: ${Object.keys(
-            stageGrading
-          ).join(", ")})`
-        );
-      } else {
-        console.log(
-          `⚠️ [AUTO_GRADE] Question ${qIdx} - no stages graded, skipping`
-        );
       }
     }
 
     // Save all grades
     if (grades.length > 0) {
-      console.log(
-        `💾 [AUTO_GRADE] Saving ${grades.length} grades to database...`
-      );
       const { error: insertError } = await supabase.from("grades").insert(
         grades.map((grade) => ({
           session_id: sessionId,
@@ -1039,37 +887,15 @@ ${submission.answer || "답안이 없습니다."}
       );
 
       if (insertError) {
-        console.error(`❌ [AUTO_GRADE] Database insert error:`, insertError);
         throw insertError;
       }
-      console.log(`✅ [AUTO_GRADE] Successfully saved ${grades.length} grades`);
-    } else {
-      console.log(`⚠️ [AUTO_GRADE] No grades to save (grades.length = 0)`);
     }
-
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Auto-grading completed in ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Auto-graded ${grades.length} questions | Session: ${sessionId}`
-    );
 
     return successJson({
       gradesCount: grades.length,
       grades,
     });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    console.error("Auto-grade error:", error);
-    console.error(
-      `❌ [ERROR] Auto-grade failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`
-    );
-    console.error("Error stack:", (error as Error)?.stack);
-    console.error("Full error:", error);
-
     return errorJson(
       "INTERNAL_ERROR",
       (error as Error)?.message || "Unknown error occurred",
