@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { currentUser } from "@clerk/nextjs/server";
 import { decompressData } from "@/lib/compression";
 
 const supabase = createClient(
@@ -12,17 +13,36 @@ export async function GET(
   { params }: { params: Promise<{ examId: string }> }
 ) {
   try {
+    // Authentication + authorization
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return NextResponse.json(
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
     const { examId } = await params;
 
     // 1. 시험 정보 가져오기 (루브릭 정보 포함)
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, code, rubric, questions")
+      .select("id, title, code, rubric, questions, instructor_id")
       .eq("id", examId)
       .single();
 
     if (examError || !exam) {
       return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+    }
+
+    // Verify instructor owns this exam
+    if (exam.instructor_id !== user.id) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     // 시험 타입 확인: 모든 문제가 essay 타입인지 확인

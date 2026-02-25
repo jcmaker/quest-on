@@ -5,10 +5,12 @@
  * - 클라이언트에서 '/api/feedback-chat' 호출 시, 루브릭/문제 맥락 기반으로 응답 생성
  */
 import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
 import { compressData } from "@/lib/compression";
 import { buildFeedbackChatSystemPrompt, type RubricItem } from "@/lib/prompts";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 
 // 메시지 타입 분류 함수 (개념/계산/전략/기타)
 async function classifyMessageType(
@@ -56,19 +58,25 @@ const supabase = createClient(
 export async function POST(request: NextRequest) {
   const requestStartTime = Date.now();
   try {
+    // Authentication check
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Rate limiting
+    const rl = checkRateLimit(`feedback-chat:${user.id}`, RATE_LIMITS.chat);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 }
+      );
+    }
+
     const { message, examCode, questionId, conversationHistory, studentId } =
       await request.json();
 
-    console.log(
-      `📨 [FEEDBACK_CHAT] Request received | Student: ${
-        studentId || "unknown"
-      } | Exam: ${examCode} | Question: ${questionId}`
-    );
-
     if (!message || !examCode) {
-      console.error(
-        `❌ [VALIDATION] Missing required fields | examCode: ${!!examCode} | message: ${!!message}`
-      );
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }

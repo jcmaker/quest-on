@@ -9,26 +9,12 @@ import { openai, AI_MODEL } from "@/lib/openai";
 import { createClient } from "@supabase/supabase-js";
 import { searchRelevantMaterials } from "@/lib/material-search";
 import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
+import { handleCorsPreFlight } from "@/lib/cors";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { validateRequest, chatRequestSchema } from "@/lib/validations";
 
-// Some environments may send OPTIONS (preflight) or GET accidentally.
-// If we don't handle them, Next can return a non-JSON 405 which breaks clients expecting JSON.
 export async function OPTIONS(request: NextRequest) {
-  const origin = request.headers.get("origin") ?? "*";
-  console.log("[chat] OPTIONS /api/chat (preflight)", {
-    origin,
-    contentType: request.headers.get("content-type"),
-    userAgent: request.headers.get("user-agent")?.slice(0, 80),
-  });
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-      Vary: "Origin",
-    },
-  });
+  return handleCorsPreFlight(request);
 }
 
 export async function GET() {
@@ -567,48 +553,38 @@ async function handleChatLogic(params: {
 export async function POST(request: NextRequest) {
   const requestStartTime = Date.now();
   try {
-    console.log("[chat] incoming request", {
-      method: request.method,
-      path: request.nextUrl?.pathname,
-      contentType: request.headers.get("content-type"),
-      origin: request.headers.get("origin"),
-      referer: request.headers.get("referer"),
-      userAgent: request.headers.get("user-agent")?.slice(0, 80),
-    });
+    const body = await request.json();
 
-    const body = (await request.json()) as ChatRequestBody;
-
-    // 📊 사용자 활동 로그
-    console.log(
-      `👤 [USER_ACTIVITY] Student ${body.studentId || "unknown"} | Session ${
-        body.sessionId
-      } | Question ${body.questionIdx || body.questionId} | Exam ${
-        body.examCode || body.examId
-      }`
-    );
+    // Input validation
+    const validation = validateRequest(chatRequestSchema, body);
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.error },
+        { status: 400 }
+      );
+    }
 
     const {
       message,
       sessionId,
       questionId,
-      questionIdx, // Preferred: use question index
+      questionIdx,
       examTitle: requestExamTitle,
       examCode: requestExamCode,
       examId,
       studentId,
       currentQuestionText,
       currentQuestionAiContext,
-    } = body;
+    } = validation.data;
 
-    if (!message) {
+    // Rate limiting by session or student ID
+    const rateLimitKey = `chat:${studentId || sessionId}`;
+    const rl = checkRateLimit(rateLimitKey, RATE_LIMITS.chat);
+    if (!rl.allowed) {
       return NextResponse.json(
-        { error: "Missing message field" },
-        { status: 400 }
+        { error: "Too many requests. Please try again later." },
+        { status: 429 }
       );
-    }
-
-    if (!sessionId) {
-      return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
     }
 
     // 안전한 문제 인덱스 계산 (공통 로직)

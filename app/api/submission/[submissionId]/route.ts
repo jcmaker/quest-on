@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { currentUser } from "@clerk/nextjs/server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,14 +12,15 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ submissionId: string }> }
 ) {
-  const requestStartTime = Date.now();
   try {
+    // Authentication check
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { submissionId } = await params;
     const { studentReply, sessionId, qIdx } = await request.json();
-
-    console.log(
-      `📝 [SUBMISSION_PATCH] Update attempt | SubmissionId: ${submissionId} | Session: ${sessionId} | Question: ${qIdx}`
-    );
 
     if (!studentReply) {
       return NextResponse.json(
@@ -27,25 +29,26 @@ export async function PATCH(
       );
     }
 
-    // If sessionId and qIdx are provided, use them to find the submission
-    // Otherwise use submissionId directly
+    // Verify ownership: check that the session belongs to this user
+    const targetSessionId = sessionId;
+    if (targetSessionId) {
+      const { data: session } = await supabase
+        .from("sessions")
+        .select("student_id")
+        .eq("id", targetSessionId)
+        .single();
+
+      if (!session || session.student_id !== user.id) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+    }
+
     let data, error;
 
     if (sessionId !== undefined && qIdx !== undefined) {
-      console.log(
-        "Updating submission with student reply by sessionId and qIdx:",
-        {
-          sessionId,
-          qIdx,
-          studentReplyLength: studentReply.length,
-        }
-      );
-
       const result = await supabase
         .from("submissions")
-        .update({
-          student_reply: studentReply,
-        })
+        .update({ student_reply: studentReply })
         .eq("session_id", sessionId)
         .eq("q_idx", qIdx)
         .select()
@@ -54,16 +57,28 @@ export async function PATCH(
       data = result.data;
       error = result.error;
     } else {
-      console.log("Updating submission with student reply by submissionId:", {
-        submissionId,
-        studentReplyLength: studentReply.length,
-      });
+      // Verify ownership via submission's session
+      const { data: submission } = await supabase
+        .from("submissions")
+        .select("session_id")
+        .eq("id", submissionId)
+        .single();
+
+      if (submission) {
+        const { data: session } = await supabase
+          .from("sessions")
+          .select("student_id")
+          .eq("id", submission.session_id)
+          .single();
+
+        if (!session || session.student_id !== user.id) {
+          return NextResponse.json({ error: "Access denied" }, { status: 403 });
+        }
+      }
 
       const result = await supabase
         .from("submissions")
-        .update({
-          student_reply: studentReply,
-        })
+        .update({ student_reply: studentReply })
         .eq("id", submissionId)
         .select()
         .single();
@@ -75,33 +90,17 @@ export async function PATCH(
     if (error) {
       console.error("Error updating submission:", error);
       return NextResponse.json(
-        { error: "Failed to update submission", details: error.message },
+        { error: "Failed to update submission" },
         { status: 500 }
       );
     }
-
-    console.log("Submission updated successfully:", data);
-
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Submission PATCH completed in ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Submission updated | SubmissionId: ${submissionId}`
-    );
 
     return NextResponse.json({
       success: true,
       submission: data,
     });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
     console.error("Submission update error:", error);
-    console.error(
-      `❌ [ERROR] Submission PATCH failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`
-    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

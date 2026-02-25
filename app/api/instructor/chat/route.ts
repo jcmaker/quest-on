@@ -5,27 +5,15 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { buildInstructorChatSystemPrompt } from "@/lib/prompts";
+import { handleCorsPreFlight } from "@/lib/cors";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { validateRequest, instructorChatRequestSchema } from "@/lib/validations";
 
-// Some environments may send OPTIONS (preflight) or GET accidentally.
 export async function OPTIONS(request: NextRequest) {
-  const origin = request.headers.get("origin") ?? "*";
-  console.log("[instructor-chat] OPTIONS /api/instructor/chat (preflight)", {
-    origin,
-    contentType: request.headers.get("content-type"),
-    userAgent: request.headers.get("user-agent")?.slice(0, 80),
-  });
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-      Vary: "Origin",
-    },
-  });
+  return handleCorsPreFlight(request);
 }
 
 export async function GET() {
@@ -123,39 +111,41 @@ async function getAIResponse(
 export async function POST(request: NextRequest) {
   const requestStartTime = Date.now();
   try {
-    console.log("[instructor-chat] incoming request", {
-      method: request.method,
-      path: request.nextUrl?.pathname,
-      contentType: request.headers.get("content-type"),
-      origin: request.headers.get("origin"),
-      referer: request.headers.get("referer"),
-      userAgent: request.headers.get("user-agent")?.slice(0, 80),
-    });
+    // Authentication check
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    const body = (await request.json()) as InstructorChatRequestBody;
-
-    const { message, sessionId, context, scopeDescription, userId } = body;
-
-    if (!message) {
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
       return NextResponse.json(
-        { error: "Missing message field" },
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
+    // Rate limiting
+    const rl = checkRateLimit(`instructor-chat:${user.id}`, RATE_LIMITS.ai);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 }
+      );
+    }
+
+    const body = await request.json();
+
+    // Input validation
+    const validation = validateRequest(instructorChatRequestSchema, body);
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.error },
         { status: 400 }
       );
     }
 
-    if (!context) {
-      return NextResponse.json(
-        { error: "Missing context field" },
-        { status: 400 }
-      );
-    }
-
-    // 📊 사용자 활동 로그
-    console.log(
-      `👤 [INSTRUCTOR_ACTIVITY] User ${
-        userId || "unknown"
-      } | Session ${sessionId} | Scope: ${scopeDescription || "N/A"}`
-    );
+    const { message, sessionId, context, scopeDescription, userId } = validation.data;
 
     // 교수용 프롬프트 생성
     const systemPrompt = buildInstructorChatSystemPrompt({

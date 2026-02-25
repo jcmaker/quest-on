@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
+import { currentUser } from "@clerk/nextjs/server";
 import { compressData } from "@/lib/compression";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { autoGradeSession } from "@/lib/grading";
@@ -48,6 +49,12 @@ const supabase = createClient(
 
 export async function POST(request: NextRequest) {
   try {
+    // Authentication check
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { examCode, answers, examId, sessionId, chatHistory, studentId } =
       await request.json();
 

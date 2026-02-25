@@ -2,6 +2,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { currentUser } from "@clerk/nextjs/server";
 import { createEmbedding } from "@/lib/embedding";
 
 /**
@@ -10,6 +11,20 @@ import { createEmbedding } from "@/lib/embedding";
  */
 export async function POST(request: NextRequest) {
   try {
+    // Authentication check - only instructors should generate embeddings
+    const user = await currentUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return NextResponse.json(
+        { error: "Instructor access required" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { text } = body;
 

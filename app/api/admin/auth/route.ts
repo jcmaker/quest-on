@@ -1,17 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import crypto from "crypto";
-
-// 간단한 세션 ID 생성
-function generateSessionId(): string {
-  return crypto.randomBytes(32).toString('hex');
-}
+import { createAdminToken } from "@/lib/admin-auth";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { validateRequest, adminAuthSchema } from "@/lib/validations";
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json();
+    // Rate limiting by IP to prevent brute force
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const rl = checkRateLimit(`admin-login:${ip}`, RATE_LIMITS.adminLogin);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { error: "Too many login attempts. Please try again later." },
+        { status: 429 }
+      );
+    }
 
-    // 환경 변수에서 어드민 계정 정보 확인
+    const body = await request.json();
+    const validation = validateRequest(adminAuthSchema, body);
+    if (!validation.success) {
+      return NextResponse.json(
+        { error: validation.error },
+        { status: 400 }
+      );
+    }
+
+    const { username, password } = validation.data;
+
     const adminUsername = process.env.ADMIN_USERNAME;
     const adminPassword = process.env.ADMIN_PASSWORD;
 
@@ -22,18 +37,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 인증 확인
     if (username === adminUsername && password === adminPassword) {
-      // 세션 ID 생성
-      const sessionId = generateSessionId();
+      const token = createAdminToken();
 
-      // 쿠키에 세션 저장
       const cookieStore = await cookies();
-      cookieStore.set("admin-session", sessionId, {
+      cookieStore.set("admin-session", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
         sameSite: "lax",
-        maxAge: 24 * 60 * 60, // 24시간
+        maxAge: 24 * 60 * 60, // 24 hours
         path: "/",
       });
 
