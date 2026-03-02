@@ -4,6 +4,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import {
   Check,
   RefreshCw,
   MessageSquare,
@@ -56,46 +61,19 @@ export function GeneratedQuestionCard({
         {/* Header */}
         <div className="flex items-center justify-between">
           <h4 className="font-medium text-sm">문제 {index + 1}</h4>
-          <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onAccept}
-              className="h-7 text-xs gap-1"
-            >
-              <Check className="w-3 h-3" />
-              수락
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onRegenerate}
-              disabled={isGenerating}
-              className="h-7 text-xs gap-1"
-            >
-              <RefreshCw
-                className={`w-3 h-3 ${isGenerating ? "animate-spin" : ""}`}
-              />
-              재생성
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setIsSheetOpen(true)}
-              className="h-7 text-xs gap-1"
-            >
-              <MessageSquare className="w-3 h-3" />
-              수정 대화
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onRemove}
-              className="h-7 text-xs text-destructive hover:text-destructive"
-            >
-              <Trash2 className="w-3 h-3" />
-            </Button>
-          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={onRemove}
+                className="size-8 text-destructive hover:text-destructive"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>삭제</TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Question content */}
@@ -156,6 +134,40 @@ export function GeneratedQuestionCard({
             </div>
           </div>
         )}
+
+        {/* Footer actions */}
+        <div className="flex flex-wrap items-center gap-2 pt-3 border-t">
+          <Button
+            size="sm"
+            variant="default"
+            onClick={onAccept}
+            className="gap-1.5"
+          >
+            <Check className="w-3.5 h-3.5" />
+            수락
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setIsSheetOpen(true)}
+            className="gap-1.5"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            수정 대화
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onRegenerate}
+            disabled={isGenerating}
+            className="gap-1.5"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isGenerating ? "animate-spin" : ""}`}
+            />
+            재생성
+          </Button>
+        </div>
       </div>
 
       {/* Adjust Sheet */}

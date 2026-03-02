@@ -129,18 +129,16 @@ test.describe("Student — Exam Flow", () => {
       studentPage.getByText(/저장|saving|saved/i).first(),
     ).toBeVisible({ timeout: 5_000 });
 
-    // P2: Verify draft was saved to DB
-    // Allow time for the save to complete
-    await studentPage.waitForTimeout(1_000);
-    const { data: submissions } = await supabase
-      .from("submissions")
-      .select("*")
-      .eq("session_id", session.id)
-      .eq("q_idx", 0);
-    expect(submissions).toBeTruthy();
-    if (submissions && submissions.length > 0) {
-      expect(submissions[0].answer).toContain("Test answer for save");
-    }
+    // Verify draft was saved to DB (poll until persisted)
+    await expect(async () => {
+      const { data } = await supabase
+        .from("submissions")
+        .select("*")
+        .eq("session_id", session.id)
+        .eq("q_idx", 0);
+      expect(data!.length).toBeGreaterThan(0);
+      expect(data![0].answer).toContain("Test answer for save");
+    }).toPass({ timeout: 5_000, intervals: [500] });
   });
 
   test("submit button shows confirmation dialog", async ({ studentPage }) => {

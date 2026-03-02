@@ -20,6 +20,12 @@ export interface ChatMessage {
   explanation?: string; // 변경 사항 요약
 }
 
+export interface GenerationProgress {
+  stage: "idle" | "started" | "generating" | "complete";
+  current: number;
+  total: number;
+}
+
 interface GenerateParams {
   examTitle: string;
   difficulty: "basic" | "intermediate" | "advanced";
@@ -40,8 +46,11 @@ export interface UseQuestionGenerationReturn {
   isGenerating: boolean;
   isAdjusting: boolean;
   error: string | null;
+  generationProgress: GenerationProgress;
 
   generate(params: GenerateParams): Promise<void>;
+  generateStream(params: GenerateParams): Promise<void>;
+  cancelGeneration(): void;
   regenerateOne(
     questionId: string,
     params: GenerateParams
@@ -69,10 +78,19 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] =
+    useState<GenerationProgress>({
+      stage: "idle",
+      current: 0,
+      total: 0,
+    });
 
   // Per-question conversation history
   const adjustHistoryRef = useRef<Map<string, ChatMessage[]>>(new Map());
+  // AbortController for stream cancellation
+  const abortControllerRef = useRef<AbortController | null>(null);
 
+  // ── Existing non-streaming generate ──
   const generate = useCallback(async (params: GenerateParams) => {
     setIsGenerating(true);
     setError(null);
@@ -101,6 +119,132 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
     } finally {
       setIsGenerating(false);
     }
+  }, []);
+
+  // ── New SSE streaming generate ──
+  const generateStream = useCallback(async (params: GenerateParams) => {
+    setIsGenerating(true);
+    setError(null);
+    setGenerationProgress({ stage: "started", current: 0, total: params.questionCount });
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Track partial failures within the stream
+    let partialFailures = 0;
+    let totalRequested = params.questionCount;
+
+    try {
+      const res = await fetch("/api/ai/generate-questions-stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "문제 생성에 실패했습니다.");
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("스트림을 읽을 수 없습니다.");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let currentEvent = "";
+
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith("data: ") && currentEvent) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              switch (currentEvent) {
+                case "progress":
+                  setGenerationProgress({
+                    stage: data.stage,
+                    current: data.current,
+                    total: data.total,
+                  });
+                  break;
+
+                case "question":
+                  setGeneratedQuestions((prev) => [...prev, data.question]);
+                  break;
+
+                case "rubric":
+                  if (data.suggestedRubric?.length > 0) {
+                    setSuggestedRubric(data.suggestedRubric);
+                  }
+                  break;
+
+                case "complete":
+                  totalRequested = data.totalQuestions;
+                  partialFailures = data.totalQuestions - (data.successCount ?? data.totalQuestions);
+                  setGenerationProgress({
+                    stage: "complete",
+                    current: data.totalQuestions,
+                    total: data.totalQuestions,
+                  });
+                  break;
+
+                case "error":
+                  if (!data.partial) {
+                    throw new Error(data.message);
+                  }
+                  break;
+              }
+            } catch (parseErr) {
+              if (parseErr instanceof Error && parseErr.message !== "Unexpected end of JSON input") {
+                throw parseErr;
+              }
+            }
+            currentEvent = "";
+          } else if (line === "") {
+            currentEvent = "";
+          }
+        }
+      }
+
+      // After stream ends: surface partial failures
+      if (partialFailures > 0) {
+        const succeeded = totalRequested - partialFailures;
+        if (succeeded === 0) {
+          setError("문제 생성에 실패했습니다. 다시 시도해주세요.");
+        } else {
+          setError(`${totalRequested}개 중 ${partialFailures}개 문제 생성에 실패했습니다.`);
+        }
+      }
+    } catch (err) {
+      if ((err as Error).name === "AbortError") {
+        return;
+      }
+      const msg =
+        err instanceof Error ? err.message : "문제 생성 중 오류가 발생했습니다.";
+      setError(msg);
+    } finally {
+      abortControllerRef.current = null;
+      setIsGenerating(false);
+    }
+  }, []);
+
+  const cancelGeneration = useCallback(() => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setIsGenerating(false);
+    setGenerationProgress((prev) => ({ ...prev, stage: "complete" }));
   }, []);
 
   const regenerateOne = useCallback(
@@ -267,6 +411,7 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
     setGeneratedQuestions([]);
     setSuggestedRubric([]);
     setError(null);
+    setGenerationProgress({ stage: "idle", current: 0, total: 0 });
     adjustHistoryRef.current.clear();
   }, []);
 
@@ -276,7 +421,10 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
     isGenerating,
     isAdjusting,
     error,
+    generationProgress,
     generate,
+    generateStream,
+    cancelGeneration,
     regenerateOne,
     removeQuestion,
     adjustQuestion,

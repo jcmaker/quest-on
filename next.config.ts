@@ -61,6 +61,11 @@ const nextConfig: NextConfig = {
       "@radix-ui/react-dropdown-menu",
       "@radix-ui/react-dialog",
       "@radix-ui/react-select",
+      "date-fns",
+      "recharts",
+      "react-syntax-highlighter",
+      "@clerk/nextjs",
+      "rxjs",
     ],
   },
   // Turbopack 설정 (개발 모드용)

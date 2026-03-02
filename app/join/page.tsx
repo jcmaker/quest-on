@@ -40,13 +40,26 @@ export default function ExamCodeEntry() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const errorParam = params.get("error");
-    if (errorParam === "already_submitted") {
-      setError("이미 제출한 시험입니다. 재시험은 불가능합니다.");
-    } else if (errorParam === "exam_not_found") {
-      setError("시험을 찾을 수 없습니다. 시험 코드를 확인해주세요.");
-    } else if (errorParam === "network_error") {
-      setError("네트워크 오류가 발생했습니다. 다시 시도해주세요.");
-    }
+    if (!errorParam) return;
+
+    const errorMessages: Record<string, string> = {
+      already_submitted: "이미 제출한 시험입니다. 재시험은 불가능합니다.",
+      exam_not_found: "시험을 찾을 수 없습니다. 시험 코드를 확인해주세요.",
+      exam_not_available:
+        "현재 응시할 수 없는 시험입니다. 시험이 종료되었거나 비공개 상태입니다.",
+      entry_window_closed:
+        "시험 입장 시간이 마감되었습니다. 강사에게 문의해주세요.",
+      unauthorized: "로그인이 필요합니다. 다시 로그인해주세요.",
+      server_error:
+        "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+      network_error:
+        "네트워크 오류가 발생했습니다. 인터넷 연결을 확인하고 다시 시도해주세요.",
+    };
+
+    setError(
+      errorMessages[errorParam] ||
+        "알 수 없는 오류가 발생했습니다. 다시 시도해주세요."
+    );
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

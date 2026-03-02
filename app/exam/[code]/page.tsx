@@ -430,20 +430,24 @@ export default function ExamPage() {
   const { data: initData, isLoading: initLoading } = useQuery({
     queryKey: ["exam-session-init", examCode, user?.id],
     queryFn: async () => {
-      const deviceFingerprint = getDeviceFingerprint();
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "init_exam_session",
-          data: { examCode, studentId: user!.id, deviceFingerprint },
-        }),
-      });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        return { ok: false as const, errorData };
+      try {
+        const deviceFingerprint = getDeviceFingerprint();
+        const response = await fetch("/api/supa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "init_exam_session",
+            data: { examCode, studentId: user!.id, deviceFingerprint },
+          }),
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          return { ok: false as const, errorData };
+        }
+        return { ok: true as const, ...(await response.json()) };
+      } catch {
+        return { ok: false as const, errorData: { error: "NETWORK_ERROR" } };
       }
-      return { ok: true as const, ...(await response.json()) };
     },
     enabled: !!examCode && isLoaded && !!user,
     retry: false,
@@ -461,7 +465,16 @@ export default function ExamPage() {
       if (errorData.error === "Exam already submitted" || errorData.isRetakeBlocked) {
         router.push("/join?error=already_submitted");
       } else {
-        router.push("/join?error=network_error");
+        const errorCodeMap: Record<string, string> = {
+          UNAUTHORIZED: "unauthorized",
+          EXAM_NOT_FOUND: "exam_not_found",
+          EXAM_NOT_AVAILABLE: "exam_not_available",
+          ENTRY_WINDOW_CLOSED: "entry_window_closed",
+          INIT_SESSION_FAILED: "server_error",
+          NETWORK_ERROR: "network_error",
+        };
+        const errorParam = errorCodeMap[errorData.error] || "network_error";
+        router.push(`/join?error=${errorParam}`);
       }
       return;
     }

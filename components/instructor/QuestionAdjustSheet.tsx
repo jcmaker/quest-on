@@ -94,11 +94,11 @@ export function QuestionAdjustSheet({
                 {msg.role === "assistant" && msg.questionText && (
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="mt-2 h-7 text-xs"
+                    variant="default"
+                    className="mt-2 gap-1.5"
                     onClick={() => onApply(msg.questionText!)}
                   >
-                    <Check className="w-3 h-3 mr-1" />
+                    <Check className="w-3.5 h-3.5" />
                     적용하기
                   </Button>
                 )}

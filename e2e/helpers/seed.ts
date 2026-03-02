@@ -172,7 +172,8 @@ export async function seedGrade(
   sessionId: string,
   qIdx: number,
   score: number,
-  comment?: string
+  comment?: string,
+  gradeType: string = "manual"
 ) {
   const id = uuid();
   const data = {
@@ -181,10 +182,29 @@ export async function seedGrade(
     q_idx: qIdx,
     score,
     comment: comment ?? "Test grade comment",
+    grade_type: gradeType,
   };
 
   const { error } = await supabase.from("grades").insert(data);
   if (error) throw new Error(`seedGrade failed: ${error.message}`);
+  return data;
+}
+
+export async function seedStudentProfile(
+  studentId: string,
+  overrides: { name?: string; student_number?: string; school?: string } = {}
+) {
+  const data = {
+    student_id: studentId,
+    name: overrides.name ?? "Test Student",
+    student_number: overrides.student_number ?? "2024-0001",
+    school: overrides.school ?? "Test University",
+  };
+
+  const { error } = await supabase.from("student_profiles").upsert(data, {
+    onConflict: "student_id",
+  });
+  if (error) throw new Error(`seedStudentProfile failed: ${error.message}`);
   return data;
 }
 
@@ -204,6 +224,7 @@ export async function cleanupTestData() {
     "exam_material_chunks",
     "exam_nodes",
     "exams",
+    "error_logs",
     "student_profiles",
   ];
 

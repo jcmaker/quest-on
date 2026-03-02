@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -17,14 +18,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, ChevronDown, Loader2 } from "lucide-react";
+import { Sparkles, ChevronDown, X, Check } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   useQuestionGeneration,
-  type GeneratedQuestion,
   type RubricItem,
 } from "@/hooks/useQuestionGeneration";
 import { GeneratedQuestionCard } from "./GeneratedQuestionCard";
+import { QuestionSkeletonCard } from "./QuestionSkeletonCard";
 import type { Question } from "./QuestionEditor";
 
 interface CaseQuestionGeneratorProps {
@@ -32,6 +33,21 @@ interface CaseQuestionGeneratorProps {
   extractedTexts: Map<string, { text: string; fileName: string }>;
   onQuestionsAccepted: (questions: Question[]) => void;
   onRubricSuggested: (rubric: RubricItem[]) => void;
+}
+
+function getStageMessage(stage: string, current: number, total: number): string {
+  switch (stage) {
+    case "started":
+      return "시험 내용 분석 중...";
+    case "generating":
+      return total > 1
+        ? `문제 생성 중 (${current}/${total})...`
+        : "문제 생성 중...";
+    case "complete":
+      return "생성 완료!";
+    default:
+      return "준비 중...";
+  }
 }
 
 export function CaseQuestionGenerator({
@@ -44,7 +60,7 @@ export function CaseQuestionGenerator({
   const [difficulty, setDifficulty] = useState<
     "basic" | "intermediate" | "advanced"
   >("intermediate");
-  const [questionCount, setQuestionCount] = useState(2);
+  const [questionCount, setQuestionCount] = useState(1);
   const [topics, setTopics] = useState("");
   const [customInstructions, setCustomInstructions] = useState("");
 
@@ -54,7 +70,9 @@ export function CaseQuestionGenerator({
     isGenerating,
     isAdjusting,
     error,
-    generate,
+    generationProgress,
+    generateStream,
+    cancelGeneration,
     regenerateOne,
     removeQuestion,
     adjustQuestion,
@@ -63,6 +81,15 @@ export function CaseQuestionGenerator({
     acceptQuestion,
     acceptAll,
   } = useQuestionGeneration();
+
+  // Show toast when generation completes successfully
+  const wasGeneratingRef = useRef(false);
+  useEffect(() => {
+    if (wasGeneratingRef.current && !isGenerating && generationProgress.stage === "complete" && !error) {
+      toast.success("문제 생성이 완료되었습니다.");
+    }
+    wasGeneratingRef.current = isGenerating;
+  }, [isGenerating, generationProgress.stage, error]);
 
   const getGenerateParams = () => {
     const materialsText = Array.from(extractedTexts.entries()).map(
@@ -89,7 +116,7 @@ export function CaseQuestionGenerator({
       return;
     }
 
-    await generate(getGenerateParams());
+    await generateStream(getGenerateParams());
   };
 
   const handleAcceptOne = (questionId: string) => {
@@ -125,6 +152,21 @@ export function CaseQuestionGenerator({
 
   const isDisabled = !examTitle.trim();
 
+  // Calculate how many skeleton cards to show (based on batch progress, not total questions)
+  const skeletonCount = isGenerating
+    ? Math.max(0, generationProgress.total - generationProgress.current)
+    : 0;
+
+  const isMultiQuestion = generationProgress.total > 1;
+  const progressPercent =
+    isMultiQuestion && generationProgress.total > 0
+      ? (generationProgress.current / generationProgress.total) * 100
+      : 0;
+
+  const stageMessage = isGenerating
+    ? getStageMessage(generationProgress.stage, generationProgress.current, generationProgress.total)
+    : "";
+
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <div className="border rounded-lg bg-card">
@@ -155,7 +197,7 @@ export function CaseQuestionGenerator({
             {/* Difficulty */}
             <div className="space-y-1.5">
               <Label className="text-sm">난이도</Label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {(
                   [
                     { value: "basic", label: "기초" },
@@ -242,72 +284,136 @@ export function CaseQuestionGenerator({
               <p className="text-sm text-destructive">{error}</p>
             )}
 
-            {/* Generate button */}
-            <Button
-              type="button"
-              onClick={handleGenerate}
-              disabled={isDisabled || isGenerating}
-              className="gap-2"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  생성 중...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  문제 생성하기
-                </>
+            {/* Generate / Cancel buttons */}
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                onClick={handleGenerate}
+                disabled={isDisabled || isGenerating}
+                className="gap-2"
+              >
+                <Sparkles className="w-4 h-4" />
+                문제 생성하기
+              </Button>
+              {isGenerating && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={cancelGeneration}
+                  className="gap-1.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  취소
+                </Button>
               )}
-            </Button>
+            </div>
             {isDisabled && (
               <p className="text-xs text-muted-foreground">
                 시험 제목을 먼저 입력해야 문제를 생성할 수 있습니다.
               </p>
             )}
 
-            {/* Generated questions */}
-            {generatedQuestions.length > 0 && (
+            {/* Progress indicator during generation */}
+            {isGenerating && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{stageMessage}</span>
+                  {isMultiQuestion && (
+                    <span>{Math.round(progressPercent)}%</span>
+                  )}
+                </div>
+                <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                  {isMultiQuestion ? (
+                    <motion.div
+                      className="h-full bg-primary rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${progressPercent}%` }}
+                      transition={{ duration: 0.5, ease: "easeOut" }}
+                    />
+                  ) : (
+                    <motion.div
+                      className="h-full w-2/5 bg-primary/70 rounded-full"
+                      animate={{ x: ["-100%", "250%"] }}
+                      transition={{
+                        duration: 1.5,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Generated questions + skeletons */}
+            {(generatedQuestions.length > 0 || skeletonCount > 0) && (
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-medium text-muted-foreground">
                     생성된 문제
                   </h3>
-                  {generatedQuestions.length > 1 && (
+                  {generatedQuestions.length > 1 && !isGenerating && (
                     <Button
                       type="button"
                       size="sm"
                       onClick={handleAcceptAll}
-                      className="h-7 text-xs"
+                      className="gap-1.5"
                     >
-                      전체 수락
+                      <Check className="w-3.5 h-3.5" />
+                      전체 수락 ({generatedQuestions.length}개)
                     </Button>
                   )}
                 </div>
 
-                {generatedQuestions.map((q, idx) => (
-                  <GeneratedQuestionCard
-                    key={q.id}
-                    question={q}
-                    index={idx}
-                    rubric={suggestedRubric}
-                    isGenerating={isGenerating}
-                    isAdjusting={isAdjusting}
-                    adjustHistory={getAdjustHistory(q.id)}
-                    onAccept={() => handleAcceptOne(q.id)}
-                    onRegenerate={() =>
-                      regenerateOne(q.id, getGenerateParams())
-                    }
-                    onRemove={() => removeQuestion(q.id)}
-                    onAdjust={async (instruction) => {
-                      await adjustQuestion(q.id, instruction, examTitle);
-                    }}
-                    onApplyAdjustment={(newText) =>
-                      applyAdjustment(q.id, newText)
-                    }
-                  />
-                ))}
+                <AnimatePresence mode="popLayout">
+                  {generatedQuestions.map((q, idx) => (
+                    <motion.div
+                      key={q.id}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.3 }}
+                      layout
+                    >
+                      <GeneratedQuestionCard
+                        question={q}
+                        index={idx}
+                        rubric={suggestedRubric}
+                        isGenerating={isGenerating}
+                        isAdjusting={isAdjusting}
+                        adjustHistory={getAdjustHistory(q.id)}
+                        onAccept={() => handleAcceptOne(q.id)}
+                        onRegenerate={() =>
+                          regenerateOne(q.id, getGenerateParams())
+                        }
+                        onRemove={() => removeQuestion(q.id)}
+                        onAdjust={async (instruction) => {
+                          await adjustQuestion(q.id, instruction, examTitle);
+                        }}
+                        onApplyAdjustment={(newText) =>
+                          applyAdjustment(q.id, newText)
+                        }
+                      />
+                    </motion.div>
+                  ))}
+
+                  {/* Skeleton cards for pending questions */}
+                  {Array.from({ length: skeletonCount }, (_, i) => (
+                    <motion.div
+                      key={`skeleton-${generationProgress.current + i}`}
+                      initial={{ opacity: 0.5 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.2 }}
+                      layout
+                    >
+                      <QuestionSkeletonCard
+                        index={generationProgress.current + i}
+                      />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             )}
           </div>

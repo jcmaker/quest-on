@@ -85,10 +85,9 @@ test.describe("Instructor — Exam & Grading Flow", () => {
       'input[type="number"], input[placeholder*="점수"], input[placeholder*="score"]',
     ).first();
 
-    if (await scoreInput.isVisible({ timeout: 10_000 })) {
-      await scoreInput.fill("85");
-      await expect(scoreInput).toHaveValue("85");
-    }
+    await expect(scoreInput).toBeVisible({ timeout: 10_000 });
+    await scoreInput.fill("85");
+    await expect(scoreInput).toHaveValue("85");
   });
 
   test("grading page allows navigation between questions", async ({
@@ -110,13 +109,12 @@ test.describe("Instructor — Exam & Grading Flow", () => {
 
     // Click on question 2 navigation
     const q2Nav = instructorPage.getByText(/Question 2|문제 2|Q2/i).first();
-    if (await q2Nav.isVisible({ timeout: 5_000 })) {
-      await q2Nav.click();
+    await expect(q2Nav).toBeVisible({ timeout: 5_000 });
+    await q2Nav.click();
 
-      // Should show second question's content
-      await expect(
-        instructorPage.getByText(/Question 2/i).first(),
-      ).toBeVisible({ timeout: 5_000 });
-    }
+    // Should show second question's content
+    await expect(
+      instructorPage.getByText(/Question 2/i).first(),
+    ).toBeVisible({ timeout: 5_000 });
   });
 });
