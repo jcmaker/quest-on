@@ -681,7 +681,7 @@
   margin: 1rem 0;
   border: var(--pm-border) solid var(--pm-table-border);
   border-radius: 12px;
-  overflow: hidden;
+  overflow-x: auto;
   background: hsl(var(--card));
   box-shadow: var(--pm-shadow);
 }
@@ -762,15 +762,25 @@
   font-size: 1rem;
 }
 
+/* 모바일 overflow 방어 */
+.rich-text-content pre {
+  overflow-x: auto;
+}
+.rich-text-content img {
+  max-width: 100%;
+  height: auto;
+}
+
 /* 뷰어 테이블: 에디터와 동일 톤 */
 .rich-text-content table {
+  display: block;
+  overflow-x: auto;
   width: 100%;
   /* border-collapse: separate; */
   border-spacing: 0;
   margin: 1rem 0;
   border: var(--pm-border) solid var(--pm-table-border);
   border-radius: 12px;
-  overflow: hidden;
   background: hsl(var(--card));
   box-shadow: var(--pm-shadow);
 }

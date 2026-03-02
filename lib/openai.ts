@@ -34,7 +34,7 @@ export function getOpenAI(): OpenAI {
 }
 
 // AI 모델 상수 - 여기서 변경하면 전체 코드에 적용됨
-export const AI_MODEL = "gpt5.2-chat-latest";
+export const AI_MODEL = "gpt-5.2-chat-latest";
 
 // ============================================================
 // Global concurrency limiter for OpenAI API calls
@@ -53,7 +53,7 @@ class OpenAITimeoutError extends Error {
 
 /**
  * Wraps an OpenAI API call with:
- * 1. Global concurrency limit (max 15 simultaneous calls)
+ * 1. Global concurrency limit (max 30 simultaneous calls)
  * 2. Exponential backoff retry on 429 errors (max 3 attempts)
  * 3. 25-second timeout to prevent connection pool exhaustion
  */
@@ -95,12 +95,13 @@ export async function callOpenAI<T>(fn: () => Promise<T>): Promise<T> {
 export { OpenAITimeoutError };
 
 // ============================================================
-// Grading queue: max 10 concurrent autoGradeSession executions
+// Grading queue: max 20 concurrent autoGradeSession executions
+// Sized for 50-user classrooms where all students submit at once
 // ============================================================
-const gradingLimiter = pLimit(10);
+const gradingLimiter = pLimit(20);
 
 /**
- * Wraps a grading job so at most 3 run concurrently.
+ * Wraps a grading job so at most 20 run concurrently.
  * Combines with callOpenAI for double-throttling.
  */
 export function enqueueGrading<T>(fn: () => Promise<T>): Promise<T> {

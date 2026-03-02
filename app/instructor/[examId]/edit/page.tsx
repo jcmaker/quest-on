@@ -14,6 +14,7 @@ import {
 } from "@/components/instructor/RubricTable";
 import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
+import { CaseQuestionGenerator } from "@/components/instructor/CaseQuestionGenerator";
 
 export default function EditExam({
   params,
@@ -38,6 +39,9 @@ export default function EditExam({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [rubric, setRubric] = useState<RubricItem[]>([]);
   const [isRubricPublic, setIsRubricPublic] = useState(false);
+  const [extractedTexts] = useState<
+    Map<string, { text: string; fileName: string }>
+  >(new Map());
 
   // 기존 시험 데이터 불러오기
   useEffect(() => {
@@ -654,6 +658,31 @@ export default function EditExam({
           onRemove={removeRubricItem}
           isPublic={isRubricPublic}
           onPublicChange={setIsRubricPublic}
+        />
+
+        <CaseQuestionGenerator
+          examTitle={examData.title}
+          extractedTexts={extractedTexts}
+          onQuestionsAccepted={(newQuestions) => {
+            setQuestions((prev) => [
+              ...prev,
+              ...newQuestions.map((q) => ({
+                id: q.id,
+                text: q.text,
+                type: q.type as "essay" | "short-answer" | "multiple-choice",
+              })),
+            ]);
+          }}
+          onRubricSuggested={(newRubric) => {
+            setRubric((prev) => [
+              ...prev,
+              ...newRubric.map((r) => ({
+                id: Date.now().toString() + Math.random().toString(36).slice(2),
+                evaluationArea: r.evaluationArea,
+                detailedCriteria: r.detailedCriteria,
+              })),
+            ]);
+          }}
         />
 
         <QuestionsList

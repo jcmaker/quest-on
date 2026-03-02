@@ -59,7 +59,9 @@ test.describe("Chat — POST /api/chat", () => {
       data: {},
     });
 
-    // Validation should reject missing fields
-    expect([400, 500]).toContain(res.status());
+    // Validation should reject missing fields with 400
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("VALIDATION_ERROR");
   });
 });

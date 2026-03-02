@@ -30,6 +30,15 @@ export default defineConfig({
     {
       name: "browser-e2e",
       testDir: "./browser",
+      testIgnore: ["**/flows/**"],
+      use: {
+        baseURL: "http://localhost:3000",
+        browserName: "chromium",
+      },
+    },
+    {
+      name: "browser-flows",
+      testDir: "./browser/flows",
       use: {
         baseURL: "http://localhost:3000",
         browserName: "chromium",

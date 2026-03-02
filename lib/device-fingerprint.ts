@@ -1,6 +1,7 @@
 /**
- * Generate a simple device fingerprint for tracking concurrent access
- * Uses localStorage to persist the fingerprint across page reloads
+ * Generate a device fingerprint for tracking concurrent access.
+ * Uses crypto.getRandomValues() for unpredictable randomness.
+ * Persists in localStorage across page reloads.
  */
 export function getDeviceFingerprint(): string {
   if (typeof window === "undefined") {
@@ -13,26 +14,14 @@ export function getDeviceFingerprint(): string {
     return stored;
   }
 
-  // Generate a new fingerprint based on browser/user agent characteristics
-  const fingerprint = [
-    navigator.userAgent,
-    navigator.language,
-    screen.width,
-    screen.height,
-    new Date().getTimezoneOffset(),
-    // Add a random component to make it unique per browser instance
-    Math.random().toString(36).substring(2, 15),
-  ].join("|");
+  // Generate a cryptographically random component
+  const randomBytes = new Uint8Array(16);
+  crypto.getRandomValues(randomBytes);
+  const randomHex = Array.from(randomBytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 
-  // Create a simple hash (not cryptographically secure, just for identification)
-  let hash = 0;
-  for (let i = 0; i < fingerprint.length; i++) {
-    const char = fingerprint.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-
-  const deviceId = `device_${Math.abs(hash)}_${Date.now()}`;
+  const deviceId = `device_${randomHex}_${Date.now()}`;
 
   // Store in localStorage for persistence
   try {

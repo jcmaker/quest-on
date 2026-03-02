@@ -6,9 +6,12 @@ const COOKIE_NAME = "admin-session";
 const TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function getAdminSecret(): string {
-  const secret = process.env.ADMIN_SESSION_SECRET || process.env.ADMIN_PASSWORD;
+  const secret = process.env.ADMIN_SESSION_SECRET;
   if (!secret) {
-    throw new Error("ADMIN_SESSION_SECRET or ADMIN_PASSWORD must be set");
+    throw new Error(
+      "ADMIN_SESSION_SECRET must be set. " +
+      "Do not use ADMIN_PASSWORD as a signing key."
+    );
   }
   return secret;
 }

@@ -76,9 +76,7 @@ export async function POST(
       return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);
     }
 
-    // 4. (선택사항) 모든 진행 중 세션 강제 제출
-    // 주의: 이는 비상 상황에서만 사용해야 함
-    // 일반적으로는 개별 타이머로 자연 종료되도록 함
+    // 4. 모든 진행 중 세션 강제 제출 (재시도 로직 포함)
     const { data: activeSessions, error: sessionsError } = await supabase
       .from("sessions")
       .select("id, submitted_at")
@@ -86,25 +84,54 @@ export async function POST(
       .eq("status", "in_progress")
       .is("submitted_at", null);
 
+    let sessionsForceSubmitted = 0;
+    let forceSubmitFailed: string[] = [];
+
     if (!sessionsError && activeSessions && activeSessions.length > 0) {
       const sessionIds = activeSessions.map((s) => s.id);
 
-      // 진행 중인 세션을 모두 제출 처리 (비상 강제 종료)
-      await supabase
+      // 1차 시도: 일괄 업데이트
+      const { error: batchError } = await supabase
         .from("sessions")
         .update({
           status: "submitted",
           submitted_at: now,
-          updated_at: now,
+          auto_submitted: true,
         })
         .in("id", sessionIds);
+
+      if (!batchError) {
+        sessionsForceSubmitted = sessionIds.length;
+      } else {
+        // 2차 시도: 개별 업데이트로 폴백
+        for (const sid of sessionIds) {
+          const { error: individualError } = await supabase
+            .from("sessions")
+            .update({
+              status: "submitted",
+              submitted_at: now,
+              auto_submitted: true,
+            })
+            .eq("id", sid);
+
+          if (!individualError) {
+            sessionsForceSubmitted++;
+          } else {
+            forceSubmitFailed.push(sid);
+          }
+        }
+      }
     }
 
     return successJson({
       examId,
       status: "closed",
       endedAt: now,
-      sessionsForceSubmitted: activeSessions?.length || 0,
+      sessionsForceSubmitted,
+      ...(forceSubmitFailed.length > 0 && {
+        forceSubmitFailed,
+        warning: `${forceSubmitFailed.length} session(s) failed to force-submit`,
+      }),
     });
   } catch (error) {
     return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);

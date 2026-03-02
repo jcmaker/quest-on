@@ -26,6 +26,7 @@ import {
 } from "@/components/instructor/RubricTable";
 import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
+import { CaseQuestionGenerator } from "@/components/instructor/CaseQuestionGenerator";
 import {
   ScrollProgressProvider,
   ScrollProgress,
@@ -816,6 +817,31 @@ export default function CreateExam() {
               onDragAreaClick={handleDragAreaClick}
               onRemoveFile={removeFile}
               getFileIcon={getFileIcon}
+            />
+
+            <CaseQuestionGenerator
+              examTitle={examData.title}
+              extractedTexts={extractedTexts}
+              onQuestionsAccepted={(newQuestions) => {
+                setQuestions((prev) => [
+                  ...prev,
+                  ...newQuestions.map((q) => ({
+                    id: q.id,
+                    text: q.text,
+                    type: q.type as "essay" | "short-answer" | "multiple-choice",
+                  })),
+                ]);
+              }}
+              onRubricSuggested={(newRubric) => {
+                setRubric((prev) => [
+                  ...prev,
+                  ...newRubric.map((r) => ({
+                    id: Date.now().toString() + Math.random().toString(36).slice(2),
+                    evaluationArea: r.evaluationArea,
+                    detailedCriteria: r.detailedCriteria,
+                  })),
+                ]);
+              }}
             />
 
             <QuestionsList questions={questions} onUpdate={updateQuestion} />

@@ -120,6 +120,7 @@ export async function GET(
           score,
           comment,
           stage_grading,
+          grade_type,
           created_at
         `
           )
@@ -439,6 +440,7 @@ export async function POST(
           score,
           comment,
           stage_grading: stageGrading || null,
+          grade_type: "manual",
         },
         { onConflict: "session_id,q_idx" }
       )
@@ -865,7 +867,7 @@ ${submission.answer || "답안이 없습니다."}
       }
     }
 
-    // Save all grades
+    // Save all grades with grade_type='auto'
     if (grades.length > 0) {
       const { error: insertError } = await supabase.from("grades").insert(
         grades.map((grade) => ({
@@ -874,6 +876,7 @@ ${submission.answer || "답안이 없습니다."}
           score: grade.score,
           comment: grade.comment,
           stage_grading: grade.stage_grading || null,
+          grade_type: "auto",
         }))
       );
 

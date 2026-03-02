@@ -4,14 +4,17 @@ import { currentUser as clerkCurrentUser } from "@clerk/nextjs/server";
 /**
  * Test-aware wrapper around Clerk's currentUser().
  *
- * In NODE_ENV=test, reads user info from request headers instead of Clerk:
+ * When TEST_BYPASS_SECRET is set (loaded from .env.test), reads user info
+ * from request headers instead of Clerk:
  *   x-test-user-id   → user.id
  *   x-test-user-role  → user.unsafeMetadata.role
  *
  * In production/development, delegates to Clerk normally.
  */
 export async function currentUser() {
-  if (process.env.NODE_ENV === "test") {
+  // Check for test mode using TEST_BYPASS_SECRET env var
+  // (NODE_ENV is overridden to "development" by `next dev` at runtime)
+  if (process.env.TEST_BYPASS_SECRET) {
     const hdrs = await headers();
     const testUserId = hdrs.get("x-test-user-id");
     const testUserRole = hdrs.get("x-test-user-role") || "student";

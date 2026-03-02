@@ -12,9 +12,6 @@ import {
   InputGroupTextarea,
 } from "@/components/ui/input-group";
 import { Separator } from "@/components/ui/separator";
-import { RichTextViewer } from "@/components/ui/rich-text-viewer";
-import { AnswerTextarea } from "@/components/ui/answer-textarea";
-import { Label } from "@/components/ui/label";
 import {
   ResizablePanelGroup,
   ResizablePanel,
@@ -31,6 +28,10 @@ import {
 import { CopyProtector } from "@/components/exam/CopyProtector";
 import { ErrorAlert } from "@/components/ui/error-alert";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
+import { QuestionPanel } from "@/components/exam/QuestionPanel";
+import { AnswerPanel } from "@/components/exam/AnswerPanel";
+import { SubmitConfirmDialog } from "@/components/exam/SubmitConfirmDialog";
+import { useAutoSave } from "@/hooks/useAutoSave";
 import {
   Card,
   CardContent,
@@ -38,16 +39,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
@@ -55,12 +46,10 @@ import {
   MessageCircle,
   ArrowUp,
   AlertCircle,
-  Save,
   FileText,
   ChevronDown,
   ChevronUp,
   CheckCircle2,
-  ChevronsDown,
 } from "lucide-react";
 import { Sparkle } from "@/components/animate-ui/icons/sparkle";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
@@ -376,21 +365,18 @@ export default function ExamPage() {
     }>
   >([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [draftAnswers, setDraftAnswers] = useState<DraftAnswer[]>([]);
-
   const [examInitialized, setExamInitialized] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [sessionError, setSessionError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [lastSaved, setLastSaved] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
   const [hasOpenedQuestion, setHasOpenedQuestion] = useState(true);
   const [isQuestionVisible, setIsQuestionVisible] = useState(true);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
-  const [questionScrollTop, setQuestionScrollTop] = useState(0);
-  const [sessionStartTime, setSessionStartTime] = useState<string | null>(null);
+  const [sessionStartTime, setSessionStartTime] = useState<string | null>(
+    null
+  );
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   // Gate 방식 상태 관리
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
@@ -399,7 +385,20 @@ export default function ExamPage() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const questionScrollRef = useRef<HTMLDivElement>(null);
+  // Auto-save hook (handles draftAnswers, save logic, keyboard shortcut, interval)
+  const {
+    draftAnswers,
+    setDraftAnswers,
+    lastSaved,
+    isSaving,
+    saveError,
+    manualSave,
+    updateAnswer,
+  } = useAutoSave({
+    sessionId,
+    examExists: !!exam,
+    intervalMs: 60000,
+  });
 
   // Filter chat history by current question
   const currentQuestionChatHistory = chatHistory.filter(
@@ -556,8 +555,8 @@ export default function ExamPage() {
       return response.json();
     },
     enabled: !!sessionId && !!user && !isSubmitted,
-    refetchInterval: 30000,
-    refetchIntervalInBackground: true,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
     staleTime: 0,
     retry: false,
   });
@@ -615,6 +614,55 @@ export default function ExamPage() {
     };
   }, [sessionId, user, isSubmitted]);
 
+  // Warn user about unsaved answers when closing/refreshing tab during exam
+  useEffect(() => {
+    if (!sessionId || !exam || isSubmitted) return;
+
+    const handleUnsavedWarning = (e: BeforeUnloadEvent) => {
+      const hasContent = draftAnswers.some(
+        (a) => a.text && a.text.replace(/<[^>]*>/g, "").trim().length > 0
+      );
+      if (hasContent) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener("beforeunload", handleUnsavedWarning);
+    return () =>
+      window.removeEventListener("beforeunload", handleUnsavedWarning);
+  }, [sessionId, exam, isSubmitted, draftAnswers]);
+
+  // Detect tab switches (visibilitychange) for anti-cheat monitoring
+  useEffect(() => {
+    if (!sessionId || !user || isSubmitted) return;
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Student switched away from exam tab — log it
+        fetch("/api/log/paste", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            length: 0,
+            pasted_text: "[TAB_SWITCH]",
+            paste_start: 0,
+            paste_end: 0,
+            answer_length_before: 0,
+            isInternal: false,
+            ts: Date.now(),
+            examCode,
+            questionId: exam?.questions[currentQuestion]?.id,
+            sessionId,
+          }),
+        }).catch(() => {});
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [sessionId, user, isSubmitted, examCode, exam, currentQuestion]);
+
   const { data: savedAnswersData } = useQuery({
     queryKey: ["session-submissions", sessionId],
     queryFn: async () => {
@@ -647,101 +695,7 @@ export default function ExamPage() {
     setDraftAnswers(serverAnswers);
   }, [savedAnswersData, exam]);
 
-  // Manual save function
-  const manualSave = useCallback(async () => {
-    if (!sessionId || !exam) return;
-
-    setIsSaving(true);
-    try {
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "save_draft_answers",
-          data: {
-            sessionId,
-            answers: draftAnswers.map((answer) => ({
-              questionId: answer.questionId,
-              text: answer.text?.replace(/\u0000/g, "") || "",
-            })),
-          },
-        }),
-      });
-
-      if (response.ok) {
-        setLastSaved(new Date().toLocaleTimeString());
-      }
-    } catch {
-      // Save failure is non-critical; auto-save will retry
-    } finally {
-      setIsSaving(false);
-    }
-  }, [sessionId, exam, draftAnswers]);
-
-  // Keyboard shortcut for manual save (Ctrl+S / Cmd+S)
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
-        event.preventDefault();
-        manualSave();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [manualSave]);
-
-  // Auto-save functionality
-  const autoSaveAnswers = useCallback(async () => {
-    if (!sessionId || !exam) return;
-
-    setIsSaving(true);
-    try {
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "save_draft_answers",
-          data: {
-            sessionId,
-            answers: draftAnswers.map((answer) => ({
-              questionId: answer.questionId,
-              text: answer.text?.replace(/\u0000/g, "") || "",
-            })),
-          },
-        }),
-      });
-
-      if (response.ok) {
-        setLastSaved(new Date().toLocaleTimeString());
-      }
-    } catch {
-      // Auto-save failure is non-critical; will retry on next interval
-    } finally {
-      setIsSaving(false);
-    }
-  }, [sessionId, exam, draftAnswers]);
-
-  // Auto-save every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (
-        draftAnswers.some((answer) => answer.text && !isHtmlEmpty(answer.text))
-      ) {
-        autoSaveAnswers();
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [autoSaveAnswers, draftAnswers]);
-
-  const updateAnswer = (questionId: string, text: string) => {
-    setDraftAnswers((prev) =>
-      prev.map((answer) =>
-        answer.questionId === questionId ? { ...answer, text } : answer
-      )
-    );
-  };
+  // manualSave, updateAnswer, auto-save interval, and Ctrl+S are handled by useAutoSave hook
 
   const sendChatMessage = async () => {
     if (!chatMessage.trim()) {
@@ -971,13 +925,7 @@ export default function ExamPage() {
     }, 100);
   }, []);
 
-  // Reset question scroll position when question changes
-  useEffect(() => {
-    if (questionScrollRef.current) {
-      questionScrollRef.current.scrollTop = 0;
-      setQuestionScrollTop(0);
-    }
-  }, [currentQuestion]);
+  // QuestionPanel handles its own scroll reset via key prop
 
   if (!isLoaded || examLoading) {
     return (
@@ -1195,7 +1143,7 @@ export default function ExamPage() {
       className="flex-row-reverse"
       style={
         {
-          "--sidebar-width": "40vw",
+          "--sidebar-width": "min(40vw, 480px)",
           "--sidebar-width-icon": "3rem",
         } as React.CSSProperties & { [key: string]: string }
       }
@@ -1388,323 +1336,59 @@ export default function ExamPage() {
                   direction="vertical"
                   className="flex-1 min-h-0"
                 >
-                  {/* Question Content - Resizable */}
                   <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
-                    <div className="relative h-full flex flex-col border-b border-border bg-muted/20">
-                      <div
-                        ref={questionScrollRef}
-                        className="flex-1 overflow-y-auto hide-scrollbar animate-in slide-in-from-top-2 duration-300"
-                        onScroll={(e) => {
-                          const scrollTop = e.currentTarget.scrollTop;
-                          setQuestionScrollTop(scrollTop);
-                        }}
-                      >
-                        <div className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-                          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs sm:text-sm font-semibold bg-primary/10 text-primary border border-primary/20">
-                              문제 {currentQuestion + 1}
-                            </span>
-                            <span className="text-xs sm:text-sm font-medium text-muted-foreground">
-                              {exam.questions[currentQuestion]?.type === "essay"
-                                ? "서술형 문제"
-                                : "문제"}
-                            </span>
-                            <span className="text-xs sm:text-sm text-muted-foreground">
-                              배점: {exam.questions[currentQuestion]?.points}점
-                            </span>
-                          </div>
-
-                          {/* Question Title */}
-                          {exam.questions[currentQuestion]?.title && (
-                            <div className="bg-muted/40 p-3 sm:p-4 rounded-lg border border-border">
-                              <h3 className="text-base sm:text-lg font-semibold text-foreground">
-                                {exam.questions[currentQuestion]?.title}
-                              </h3>
-                            </div>
-                          )}
-
-                          {/* Question Content */}
-                          <div className="bg-card p-4 sm:p-5 rounded-lg border border-border shadow-sm">
-                            <CopyProtector>
-                              <RichTextViewer
-                                content={
-                                  exam.questions[currentQuestion]?.text || ""
-                                }
-                                className="text-sm sm:text-base leading-relaxed"
-                              />
-                            </CopyProtector>
-                          </div>
-
-                          {/* Requirements */}
-                          <div className="bg-muted/40 p-3 sm:p-4 rounded-lg border border-border">
-                            <h4 className="font-semibold mb-2 sm:mb-3 text-sm sm:text-base text-foreground">
-                              요구사항
-                            </h4>
-                            <ul className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-muted-foreground">
-                              <li className="flex items-start gap-2">
-                                <span className="text-primary mt-0.5">•</span>
-                                <span>문제를 정확히 이해하고 답변하세요</span>
-                              </li>
-                              <li className="flex items-start gap-2">
-                                <span className="text-primary mt-0.5">•</span>
-                                <span>
-                                  풀이 과정을 단계별로 명확히 작성하세요
-                                </span>
-                              </li>
-                            </ul>
-                          </div>
-
-                          {/* Rubric - 공개된 경우에만 표시 */}
-                          {exam.rubric_public &&
-                            exam.rubric &&
-                            exam.rubric.length > 0 && (
-                              <div className="bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800 p-4 sm:p-5 rounded-lg mt-4 shadow-sm">
-                                <h4 className="font-semibold mb-3 sm:mb-4 text-sm sm:text-base text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                                  <span className="text-lg">📋</span>
-                                  <span>평가 기준 (루브릭)</span>
-                                </h4>
-                                <div className="space-y-2.5 sm:space-y-3">
-                                  {exam.rubric.map((item, index) => (
-                                    <div
-                                      key={item.id || index}
-                                      className="bg-white dark:bg-blue-900/20 p-3 sm:p-4 rounded-md border border-blue-100 dark:border-blue-800/50 shadow-sm"
-                                    >
-                                      <div className="font-semibold text-sm sm:text-base text-blue-800 dark:text-blue-200 mb-1.5 sm:mb-2">
-                                        {item.evaluationArea ||
-                                          `평가 영역 ${index + 1}`}
-                                      </div>
-                                      <div className="text-xs sm:text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
-                                        {item.detailedCriteria ||
-                                          "세부 기준 미설정"}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                                <p className="text-xs sm:text-sm text-blue-600 dark:text-blue-400 mt-3 sm:mt-4 italic">
-                                  이 평가 기준에 따라 답안이 평가됩니다.
-                                </p>
-                              </div>
-                            )}
-                        </div>
-                      </div>
-                      {/* Scroll Down Button - Only visible at top, positioned at bottom */}
-                      {questionScrollTop === 0 && (
-                        <div className="sticky bottom-0 left-0 right-0 z-20 flex justify-center pb-2 pt-2 bg-gradient-to-t from-muted/20 via-muted/20 to-transparent pointer-events-none">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => {
-                              questionScrollRef.current?.scrollTo({
-                                top: 100,
-                                behavior: "smooth",
-                              });
-                            }}
-                            className="rounded-full bg-transparent hover:bg-transparent border-transparent hover:border-transparent min-h-[44px] px-4 gap-2 pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-300"
-                            aria-label="더 읽기"
-                          >
-                            <ChevronsDown
-                              className="w-4 h-4 animate-bounce"
-                              aria-hidden="true"
-                            />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
+                    <QuestionPanel
+                      question={exam.questions[currentQuestion]}
+                      questionNumber={currentQuestion + 1}
+                      rubric={exam.rubric}
+                      rubricPublic={exam.rubric_public}
+                    />
                   </ResizablePanel>
 
-                  {/* Resizable Handle */}
                   <ResizableHandle withHandle />
 
-                  {/* Answer Section - Resizable */}
                   <ResizablePanel defaultSize={60} minSize={30}>
-                    <div className="h-full overflow-y-auto hide-scrollbar bg-muted/20">
-                      {/* Document-style container with max-width and center alignment */}
-                      <div className="max-w-4xl mx-auto bg-background">
-                        <div className="p-4 sm:p-6 lg:p-8">
-                          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
-                            <Label className="text-base sm:text-lg font-semibold text-foreground flex items-center gap-2">
-                              <span className="text-muted-foreground">
-                                답안 작성
-                              </span>
-                            </Label>
-
-                            {/* Save Status Indicator */}
-                            <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
-                              {isSaving ? (
-                                <div className="flex items-center gap-2">
-                                  <div className="animate-spin rounded-full h-3 w-3 sm:h-4 sm:w-4 border-2 border-primary border-t-transparent"></div>
-                                  <span className="font-medium">
-                                    저장 중...
-                                  </span>
-                                </div>
-                              ) : lastSaved ? (
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <div className="flex items-center gap-1.5">
-                                    <Save
-                                      className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400"
-                                      aria-hidden="true"
-                                    />
-                                    <span className="font-medium text-green-600 dark:text-green-400">
-                                      저장됨
-                                    </span>
-                                  </div>
-                                  <span className="hidden sm:inline">•</span>
-                                  <span className="text-xs">{lastSaved}</span>
-                                  <span className="hidden sm:flex items-center gap-1 text-xs">
-                                    <span>•</span>
-                                    {saveShortcut}
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2">
-                                  <Save
-                                    className="w-3 h-3 sm:w-4 sm:h-4"
-                                    aria-hidden="true"
-                                  />
-                                  <span>자동 저장</span>
-                                  <span className="hidden sm:flex items-center gap-1 text-xs">
-                                    <span>•</span>
-                                    {saveShortcut}
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Answer Editor - Word/Google Docs style */}
-                          <div className="w-full space-y-4 mb-6 sm:mb-8">
-                            {/* Paper-like container - A4 format */}
-                            <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-sm shadow-sm min-h-[1123px] sm:min-h-[1123px] lg:min-h-[1123px] w-full">
-                              <AnswerTextarea
-                                placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;• 문제의 핵심을 파악하여 답변하세요&#10;• 풀이 과정을 단계별로 명확히 작성하세요&#10;• AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
-                                value={
-                                  draftAnswers[currentQuestion]?.text || ""
-                                }
-                                onChange={(value) =>
-                                  updateAnswer(
-                                    exam.questions[currentQuestion].id,
-                                    value
-                                  )
-                                }
-                                onPaste={handlePaste}
-                                className="!min-h-[1123px] !border-0 !shadow-none !focus:ring-0 !p-4 sm:!p-6 lg:!p-8 !text-base sm:!text-lg !leading-relaxed !font-sans !resize-none !bg-transparent !w-full"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    <AnswerPanel
+                      value={draftAnswers[currentQuestion]?.text || ""}
+                      onChange={(value) =>
+                        updateAnswer(
+                          exam.questions[currentQuestion].id,
+                          value
+                        )
+                      }
+                      onPaste={handlePaste}
+                      isSaving={isSaving}
+                      lastSaved={lastSaved}
+                      saveError={saveError}
+                      saveShortcut={saveShortcut}
+                    />
                   </ResizablePanel>
                 </ResizablePanelGroup>
               ) : (
-                <div className="flex-1 overflow-y-auto hide-scrollbar min-h-0 bg-muted/20">
-                  {/* Document-style container with max-width and center alignment */}
-                  <div className="max-w-4xl mx-auto bg-background min-h-full">
-                    <div className="p-4 sm:p-6 lg:p-8">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
-                        <Label className="text-base sm:text-lg font-semibold text-foreground flex items-center gap-2">
-                          <span className="text-muted-foreground">
-                            답변 작성
-                          </span>
-                        </Label>
-
-                        {/* Save Status Indicator */}
-                        <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
-                          {isSaving ? (
-                            <div className="flex items-center gap-2">
-                              <div className="animate-spin rounded-full h-3 w-3 sm:h-4 sm:w-4 border-2 border-primary border-t-transparent"></div>
-                              <span className="font-medium">저장 중...</span>
-                            </div>
-                          ) : lastSaved ? (
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="flex items-center gap-1.5">
-                                <Save
-                                  className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400"
-                                  aria-hidden="true"
-                                />
-                                <span className="font-medium text-green-600 dark:text-green-400">
-                                  저장됨
-                                </span>
-                              </div>
-                              <span className="hidden sm:inline">•</span>
-                              <span className="text-xs">{lastSaved}</span>
-                              <span className="hidden sm:flex items-center gap-1 text-xs">
-                                <span>•</span>
-                                {saveShortcut}
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <Save
-                                className="w-3 h-3 sm:w-4 sm:h-4"
-                                aria-hidden="true"
-                              />
-                              <span>자동 저장</span>
-                              <span className="hidden sm:flex items-center gap-1 text-xs">
-                                <span>•</span>
-                                {saveShortcut}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Answer Editor - Word/Google Docs style */}
-                      <div className="w-full space-y-4 mb-6 sm:mb-8">
-                        {/* Paper-like container - A4 format */}
-                        <div className="bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-sm shadow-sm min-h-[1123px] sm:min-h-[1123px] lg:min-h-[1123px] w-full">
-                          <AnswerTextarea
-                            placeholder="여기에 상세한 답안을 작성하세요...&#10;&#10;&#10;&#10; AI와의 대화를 통해 필요한 정보를 얻을 수 있습니다"
-                            value={draftAnswers[currentQuestion]?.text || ""}
-                            onChange={(value) =>
-                              updateAnswer(
-                                exam.questions[currentQuestion].id,
-                                value
-                              )
-                            }
-                            onPaste={handlePaste}
-                            className="!min-h-[1123px] !border-0 !shadow-none !focus:ring-0 !p-4 sm:!p-6 lg:!p-8 !text-base sm:!text-lg !leading-relaxed !font-sans !resize-none !bg-transparent !w-full"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <AnswerPanel
+                  value={draftAnswers[currentQuestion]?.text || ""}
+                  onChange={(value) =>
+                    updateAnswer(
+                      exam.questions[currentQuestion].id,
+                      value
+                    )
+                  }
+                  onPaste={handlePaste}
+                  isSaving={isSaving}
+                  lastSaved={lastSaved}
+                  saveError={saveError}
+                  saveShortcut={saveShortcut}
+                  fullHeight
+                />
               )}
             </div>
           </MainContentWrapper>
 
-          {/* Submit Confirmation Dialog */}
-          <AlertDialog
+          <SubmitConfirmDialog
             open={showSubmitConfirm}
             onOpenChange={setShowSubmitConfirm}
-          >
-            <AlertDialogContent className="max-w-md">
-              <AlertDialogHeader>
-                <AlertDialogTitle className="text-lg sm:text-xl font-bold">
-                  시험 제출 확인
-                </AlertDialogTitle>
-                <AlertDialogDescription className="text-sm sm:text-base">
-                  정말로 시험을 제출하시겠습니까?
-                  <br />
-                  <span className="font-semibold text-foreground mt-2 block">
-                    제출 후에는 답안을 수정할 수 없습니다.
-                  </span>
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter className="gap-2 sm:gap-3">
-                <AlertDialogCancel className="min-h-[44px]">
-                  취소
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleSubmit}
-                  className="min-h-[44px] bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                >
-                  제출하기
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+            onConfirm={handleSubmit}
+          />
         </div>
       </SidebarInset>
     </SidebarProvider>

@@ -466,3 +466,199 @@ export function buildSummaryEvaluationSystemPrompt(): string {
       - weaknesses에는 반드시 "이해도 부족의 근거"가 최소 1개 포함되도록 작성(트리거/교정 미반영/조건 변형 등 구체 근거 포함)
       `;
 }
+
+/**
+ * 사례형 문제(Case Question) 생성 프롬프트
+ */
+export function buildCaseQuestionGenerationPrompt(params: {
+  examTitle: string;
+  difficulty: "basic" | "intermediate" | "advanced";
+  questionCount: number;
+  topics?: string;
+  customInstructions?: string;
+  materialsContext?: string;
+}): { system: string; user: string } {
+  const {
+    examTitle,
+    difficulty,
+    questionCount,
+    topics,
+    customInstructions,
+    materialsContext,
+  } = params;
+
+  const difficultyGuide: Record<string, string> = {
+    basic: `**기초 난이도:**
+- 단일 개념을 하나의 명확한 시나리오에 적용
+- 시나리오의 조건이 비교적 단순하고 명확
+- 하위 질문이 개념 적용 → 분석 순서로 점진적 심화
+- 정답의 방향이 비교적 명확하되, 논거 제시 필요`,
+
+    intermediate: `**중급 난이도:**
+- 복수 개념을 통합하여 분석해야 하는 시나리오
+- 일부 조건이 모호하거나 추가 가정이 필요
+- 서로 다른 관점에서 분석 가능한 구조
+- 트레이드오프 분석이 포함된 의사결정 요구`,
+
+    advanced: `**심화 난이도:**
+- 복합 이해관계자(기업, 정부, 소비자 등)가 등장하는 복잡한 시나리오
+- 명시적 정보와 암묵적 조건이 혼재
+- 여러 이론/프레임워크를 종합 적용해야 하는 구조
+- 정답이 하나가 아닌, 논거의 질로 평가되는 개방형 질문`,
+  };
+
+  const system = `당신은 대학 시험 출제 전문가입니다. **사례형(Case-based) 시나리오 문제**를 설계합니다.
+
+## 문제 생성 6원칙
+1. **구체적 시나리오 필수**: 반드시 구체적인 시나리오(기업명/인물/수치/조건)를 포함. 실제 존재하는 기업이 아닌 가상 기업도 가능하지만, 현실적이고 구체적인 데이터를 포함할 것
+2. **적용·분석·종합 요구**: 단순 개념 암기가 아닌, 개념을 시나리오에 적용하고 분석·종합하는 사고 요구
+3. **시나리오 정독 필수 구조**: 시나리오를 꼼꼼히 읽지 않으면 풀 수 없는 구조. 시나리오 내 특수 조건/제약이 답변의 핵심
+4. **점진적 하위 질문 (2-4개)**: 하위 질문이 점진적으로 깊어지는 구조. 앞 질문의 분석이 뒷 질문의 기초가 됨
+5. **하위 질문의 독립성+연결성**: 각 하위 질문이 독립적으로도 의미 있지만, 전체적으로 하나의 분석 흐름을 형성
+6. **AI 단순 질문 방지**: AI에 단순 질문 한 번으로는 완전한 답을 얻을 수 없는 구조. 시나리오 특수 제약과 트레이드오프가 핵심
+
+${difficultyGuide[difficulty]}
+
+## 출력 형식
+반드시 아래 JSON 형식으로 응답하세요. 추가 텍스트 없이 JSON만 출력합니다.
+
+\`\`\`json
+{
+  "questions": [
+    {
+      "text": "<완전한 HTML: 시나리오 + 하위 질문이 하나의 텍스트>",
+      "type": "essay"
+    }
+  ],
+  "suggestedRubric": [
+    {
+      "evaluationArea": "평가 영역명",
+      "detailedCriteria": "세부 평가 기준 설명"
+    }
+  ]
+}
+\`\`\`
+
+## HTML 작성 가이드
+각 question.text는 다음 구조의 HTML이어야 합니다:
+- \`<h3>\`로 문제 제목
+- \`<p>\`로 시나리오 서술 (구체적 데이터, 조건, 배경)
+- 필요시 \`<table>\`로 재무/통계 데이터 표현
+- \`<ol>\`또는 번호가 매겨진 \`<p>\`로 하위 질문 2-4개
+- 하위 질문에는 "(30점)", "(25점)" 등 배점 표시
+
+## 루브릭 가이드
+- suggestedRubric은 시험 전체에 대한 평가 기준 (3-5개 항목)
+- 각 항목은 생성된 모든 문제를 아우르는 평가 영역
+
+## Few-shot 예시
+
+시험 제목: "미시경제학 중간고사"
+난이도: 중급
+문제 수: 1
+
+출력:
+{
+  "questions": [
+    {
+      "text": "<h3>사례: 그린테크 에너지의 태양광 패널 가격 전략</h3><p>그린테크 에너지는 국내 태양광 패널 시장에서 35%의 점유율을 가진 선도 기업입니다. 현재 주력 제품 'GT-500'의 가격은 대당 150만 원이며, 월 생산량은 5,000대입니다. 고정비용은 월 15억 원, 변동비용은 대당 80만 원입니다.</p><p>최근 정부가 탄소중립 정책의 일환으로 태양광 패널 설치 보조금을 대당 50만 원에서 30만 원으로 축소한다고 발표했습니다. 동시에, 중국산 저가 패널(대당 100만 원)의 수입이 급증하고 있으며, 그린테크의 기술 특허 2건이 내년 만료 예정입니다.</p><p>한편, 그린테크는 차세대 고효율 패널 'GT-700'의 개발을 거의 완료했으며, 양산 시 변동비용은 대당 120만 원, 예상 판매가는 250만 원입니다. 그러나 GT-700 양산 라인 구축에 추가로 50억 원의 투자가 필요합니다.</p><ol><li><strong>(25점)</strong> 보조금 축소와 중국산 저가 패널 수입 증가가 GT-500의 수요에 미치는 영향을 수요의 가격탄력성 개념을 활용하여 분석하시오. 태양광 패널이 필수재인지 사치재인지에 대한 본인의 판단을 근거와 함께 제시하시오.</li><li><strong>(25점)</strong> 그린테크가 GT-500의 가격을 인하할 경우와 현행 유지할 경우의 예상 수익을 비교 분석하시오. 가격 인하 시 120만 원으로 설정한다고 가정하고, 가격 인하에 따른 수요 변화는 수요의 가격탄력성을 1.5로 가정하시오.</li><li><strong>(25점)</strong> GT-500과 GT-700을 동시에 판매하는 전략 vs GT-700으로 전면 전환하는 전략의 장단점을 분석하시오. 자기잠식(cannibalization) 효과와 시장 세분화 관점에서 논의하시오.</li><li><strong>(25점)</strong> 그린테크의 CEO로서 향후 2년간의 가격 전략과 제품 포트폴리오 전략을 수립하시오. 위 분석 결과를 종합하고, 중국산 패널 경쟁과 특허 만료를 고려한 근거 있는 전략을 제시하시오.</li></ol>",
+      "type": "essay"
+    }
+  ],
+  "suggestedRubric": [
+    {
+      "evaluationArea": "경제학 개념 적용",
+      "detailedCriteria": "수요의 가격탄력성, 시장구조, 가격차별 등 핵심 개념을 시나리오에 정확하게 적용하였는가"
+    },
+    {
+      "evaluationArea": "정량적 분석",
+      "detailedCriteria": "주어진 수치 데이터를 활용하여 논리적인 계산과 비교 분석을 수행하였는가"
+    },
+    {
+      "evaluationArea": "전략적 사고",
+      "detailedCriteria": "다양한 시나리오를 고려하고 트레이드오프를 분석하여 실현 가능한 전략을 제시하였는가"
+    },
+    {
+      "evaluationArea": "논증의 일관성",
+      "detailedCriteria": "각 하위 질문의 분석이 최종 전략 제안과 논리적으로 연결되며, 근거가 구체적인가"
+    }
+  ]
+}
+
+## 중요 규칙
+- 반드시 한국어로 작성
+- JSON 외 추가 텍스트 금지
+- 각 문제의 text는 유효한 HTML이어야 함
+- 하위 질문은 반드시 2-4개
+- 문제 수는 정확히 ${questionCount}개 생성`;
+
+  let userPrompt = `시험 제목: "${examTitle}"
+난이도: ${difficulty === "basic" ? "기초" : difficulty === "intermediate" ? "중급" : "심화"}
+생성할 문제 수: ${questionCount}개`;
+
+  if (topics) {
+    userPrompt += `\n특정 토픽: ${topics}`;
+  }
+
+  if (customInstructions) {
+    userPrompt += `\n추가 지시사항: ${customInstructions}`;
+  }
+
+  if (materialsContext) {
+    userPrompt += `\n\n[수업 자료 참고 내용]\n${materialsContext}`;
+  }
+
+  userPrompt += `\n\n위 조건에 맞는 사례형 문제를 JSON 형식으로 생성해주세요.`;
+
+  return { system, user: userPrompt };
+}
+
+/**
+ * 사례형 문제 수정(AI 대화) 프롬프트
+ */
+export function buildCaseQuestionAdjustmentPrompt(params: {
+  currentQuestionText: string;
+  instruction: string;
+  conversationHistory?: Array<{ role: string; content: string }>;
+  examTitle?: string;
+}): { system: string; user: string } {
+  const { currentQuestionText, instruction, conversationHistory, examTitle } =
+    params;
+
+  const system = `당신은 시험 문제 편집 어시스턴트입니다. 교수자의 지시에 따라 기존 사례형 문제를 수정합니다.
+
+## 규칙
+1. 지시된 부분만 정확히 변경하고, 나머지 구조와 내용은 최대한 유지
+2. 수정 후에도 사례형 문제의 6원칙(구체적 시나리오, 적용·분석 요구, 정독 필수, 점진적 하위 질문, 독립성+연결성, AI 단순 질문 방지)을 유지
+3. HTML 구조를 유지하되, 필요시 개선 가능
+4. 하위 질문의 배점 합계가 100점이 되도록 유지
+5. 반드시 한국어로 작성
+
+## 출력 형식
+반드시 아래 JSON 형식으로 응답하세요. 추가 텍스트 없이 JSON만 출력합니다.
+
+\`\`\`json
+{
+  "questionText": "<수정된 완전한 HTML>",
+  "explanation": "변경 사항 요약 (1-2문장)"
+}
+\`\`\``;
+
+  let userPrompt = "";
+
+  if (examTitle) {
+    userPrompt += `시험: ${examTitle}\n\n`;
+  }
+
+  if (conversationHistory && conversationHistory.length > 0) {
+    userPrompt += `[이전 대화]\n`;
+    for (const msg of conversationHistory) {
+      userPrompt += `${msg.role === "user" ? "교수자" : "AI"}: ${msg.content}\n`;
+    }
+    userPrompt += `\n`;
+  }
+
+  userPrompt += `[현재 문제]\n${currentQuestionText}\n\n[수정 지시]\n${instruction}\n\n위 지시에 따라 문제를 수정하고 JSON으로 응답해주세요.`;
+
+  return { system, user: userPrompt };
+}

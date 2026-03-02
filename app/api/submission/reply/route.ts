@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
+import { sanitizeUserInput } from "@/lib/sanitize";
 
 const supabase = getSupabaseServer();
 
@@ -45,8 +46,8 @@ export async function POST(request: NextRequest) {
       return errorJson("ACCESS_DENIED", "Access denied", 403);
     }
 
-    // Sanitize HTML - remove null characters
-    const sanitizedReply = studentReply.replace(/\u0000/g, "");
+    // Sanitize input - strip dangerous HTML/scripts and null characters
+    const sanitizedReply = sanitizeUserInput(studentReply);
 
     // Check if submission exists (get the most recent one if multiple exist)
     const { data: existingSubmissions, error: checkError } = await supabase

@@ -1,35 +1,10 @@
 /**
- * Simple in-memory rate limiter.
+ * Rate limiter with Upstash Redis support for Vercel serverless.
  *
- * NOTE: This works for single-server deployments. For Vercel serverless
- * or multi-instance deployments, replace with @upstash/ratelimit + Redis.
+ * - When UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN are set → uses Upstash Redis
+ *   (works across all serverless instances, shared state)
+ * - Otherwise → falls back to in-memory Map (fine for local dev / single instance)
  */
-
-type RateLimitEntry = {
-  count: number;
-  resetAt: number;
-};
-
-const store = new Map<string, RateLimitEntry>();
-
-// Cleanup stale entries every 60 seconds
-let cleanupInterval: ReturnType<typeof setInterval> | null = null;
-
-function ensureCleanup() {
-  if (cleanupInterval) return;
-  cleanupInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of store) {
-      if (now > entry.resetAt) {
-        store.delete(key);
-      }
-    }
-  }, 60_000);
-  // Don't prevent Node from exiting
-  if (typeof cleanupInterval === "object" && "unref" in cleanupInterval) {
-    cleanupInterval.unref();
-  }
-}
 
 export type RateLimitConfig = {
   /** Maximum number of requests in the window */
@@ -44,11 +19,35 @@ export type RateLimitResult = {
   resetAt: number;
 };
 
-/**
- * Check rate limit for a given key.
- * Returns whether the request is allowed and remaining quota.
- */
-export function checkRateLimit(
+// ============================================================
+// In-memory fallback (local dev / single instance)
+// ============================================================
+
+type RateLimitEntry = {
+  count: number;
+  resetAt: number;
+};
+
+const store = new Map<string, RateLimitEntry>();
+
+let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+function ensureCleanup() {
+  if (cleanupInterval) return;
+  cleanupInterval = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of store) {
+      if (now > entry.resetAt) {
+        store.delete(key);
+      }
+    }
+  }, 60_000);
+  if (typeof cleanupInterval === "object" && "unref" in cleanupInterval) {
+    cleanupInterval.unref();
+  }
+}
+
+function checkRateLimitInMemory(
   key: string,
   config: RateLimitConfig
 ): RateLimitResult {
@@ -58,7 +57,6 @@ export function checkRateLimit(
   const entry = store.get(key);
 
   if (!entry || now > entry.resetAt) {
-    // New window
     const resetAt = now + config.windowSec * 1000;
     store.set(key, { count: 1, resetAt });
     return { allowed: true, remaining: config.limit - 1, resetAt };
@@ -74,6 +72,109 @@ export function checkRateLimit(
     remaining: config.limit - entry.count,
     resetAt: entry.resetAt,
   };
+}
+
+// ============================================================
+// Upstash Redis rate limiter (serverless-safe)
+// ============================================================
+
+let upstashRatelimit: import("@upstash/ratelimit").Ratelimit | null = null;
+let upstashInitialized = false;
+
+function getUpstashRatelimit(
+  config: RateLimitConfig
+): import("@upstash/ratelimit").Ratelimit | null {
+  // Only try to initialize once per config change — avoid repeated import failures
+  if (
+    !process.env.UPSTASH_REDIS_REST_URL ||
+    !process.env.UPSTASH_REDIS_REST_TOKEN
+  ) {
+    return null;
+  }
+
+  // Lazy init: we can't top-level import optional dependencies
+  if (!upstashInitialized) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { Ratelimit } = require("@upstash/ratelimit");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { Redis } = require("@upstash/redis");
+
+      const redis = new Redis({
+        url: process.env.UPSTASH_REDIS_REST_URL,
+        token: process.env.UPSTASH_REDIS_REST_TOKEN,
+      });
+
+      upstashRatelimit = new Ratelimit({
+        redis,
+        limiter: Ratelimit.fixedWindow(config.limit, `${config.windowSec} s`),
+        analytics: false,
+        prefix: "rl",
+      });
+    } catch {
+      // @upstash packages not installed — stay with in-memory
+      upstashRatelimit = null;
+    }
+    upstashInitialized = true;
+  }
+
+  return upstashRatelimit;
+}
+
+async function checkRateLimitUpstash(
+  key: string,
+  config: RateLimitConfig
+): Promise<RateLimitResult> {
+  const rl = getUpstashRatelimit(config);
+  if (!rl) {
+    return checkRateLimitInMemory(key, config);
+  }
+
+  try {
+    const { success, remaining, reset } = await rl.limit(key);
+    return {
+      allowed: success,
+      remaining,
+      resetAt: reset,
+    };
+  } catch {
+    // Upstash failure → graceful fallback to in-memory
+    return checkRateLimitInMemory(key, config);
+  }
+}
+
+// ============================================================
+// Public API — same signature, auto-selects backend
+// ============================================================
+
+/**
+ * Check rate limit for a given key.
+ * Uses Upstash Redis when available, falls back to in-memory.
+ *
+ * For synchronous callers that can't await, use `checkRateLimitSync` instead.
+ */
+export async function checkRateLimitAsync(
+  key: string,
+  config: RateLimitConfig
+): Promise<RateLimitResult> {
+  if (
+    process.env.UPSTASH_REDIS_REST_URL &&
+    process.env.UPSTASH_REDIS_REST_TOKEN
+  ) {
+    return checkRateLimitUpstash(key, config);
+  }
+  return checkRateLimitInMemory(key, config);
+}
+
+/**
+ * Synchronous rate limit check (in-memory only).
+ * Kept for backward compatibility — existing callers use this.
+ */
+export function checkRateLimit(
+  key: string,
+  config: RateLimitConfig
+): RateLimitResult {
+  return checkRateLimitInMemory(key, config);
 }
 
 // Predefined rate limit configs

@@ -14,7 +14,7 @@ import { QuestionPromptCard } from "@/components/instructor/QuestionPromptCard";
 import { AIConversationsCard } from "@/components/instructor/AIConversationsCard";
 import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
-import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
+// import { QuickActionsCard } from "@/components/instructor/QuickActionsCard"; // PDF 기능 임시 숨김
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import {
@@ -73,6 +73,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { StageKey } from "@/lib/types/grading";
+import { isAiGraded } from "@/lib/grading-utils";
 
 interface Conversation {
   id: string;
@@ -111,14 +112,6 @@ interface Grade {
     chat?: { score: number; comment: string };
     answer?: { score: number; comment: string };
   };
-}
-
-// 가채점 여부 판단 함수 (comment 패턴으로 확인)
-function isAiGraded(grade: Grade): boolean {
-  if (!grade.comment) return false;
-  // 자동 채점 comment 패턴: "채팅 단계:", "답안 단계:" 포함
-  const autoGradePattern = /(채팅 단계|답안 단계)/;
-  return autoGradePattern.test(grade.comment);
 }
 
 interface PasteLog {
@@ -744,7 +737,7 @@ export default function GradeStudentPage({
         subtitle="이 화면에 보이는 데이터 범위 안에서만 답변합니다."
       />
       <SidebarInset>
-        <div className="container mx-auto p-6 max-w-7xl">
+        <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
           <div className="mb-8">
             <GradeHeader
               studentName={sessionData.student.name}
@@ -1620,6 +1613,7 @@ export default function GradeStudentPage({
                 onSave={() => handleSaveGrade(selectedQuestionIdx)}
               />
 
+              {/* PDF 기능 임시 숨김 — 고도화 후 복원 예정
               <QuickActionsCard
                 sessionId={sessionData.session.id}
                 isGraded={
@@ -1640,7 +1634,7 @@ export default function GradeStudentPage({
                               prompt: q.prompt,
                             })
                           ),
-                          description: undefined, // Not available in SessionData
+                          description: undefined,
                         },
                         session: {
                           submitted_at: sessionData.session.submitted_at,
@@ -1663,11 +1657,12 @@ export default function GradeStudentPage({
                         ),
                         overallScore: sessionData.overallScore,
                         studentName: sessionData.student.name,
-                        aiSummary: undefined, // Can be fetched separately if needed
+                        aiSummary: undefined,
                       }
                     : undefined
                 }
               />
+              */}
             </div>
           </div>
         </div>

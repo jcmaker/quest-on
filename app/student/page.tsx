@@ -57,6 +57,7 @@ import {
 } from "@/components/ui/sheet";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { getScoreColor as getScoreColorUtil, getStatusColor as getStatusColorUtil, formatDateKo } from "@/lib/grading-utils";
 import {
   Area,
   AreaChart,
@@ -400,16 +401,12 @@ export default function StudentDashboard() {
     },
   } satisfies ChartConfig;
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20";
-      case "in-progress":
-        return "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20";
-      default:
-        return "bg-muted text-muted-foreground";
-    }
+  const getStatusColor = getStatusColorUtil;
+  const getScoreColor = (score: number | null, maxScore: number | null) => {
+    if (score === null || maxScore === null) return "text-muted-foreground";
+    return getScoreColorUtil((score / maxScore) * 100);
   };
+  const formatDate = formatDateKo;
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -420,26 +417,6 @@ export default function StudentDashboard() {
       default:
         return <Circle className="w-4 h-4" />;
     }
-  };
-
-  const getScoreColor = (score: number | null, maxScore: number | null) => {
-    if (score === null || maxScore === null) return "text-muted-foreground";
-    const percentage = (score / maxScore) * 100;
-    if (percentage >= 90) return "text-green-600 dark:text-green-400";
-    if (percentage >= 80) return "text-blue-600 dark:text-blue-400";
-    if (percentage >= 70) return "text-yellow-600 dark:text-yellow-400";
-    return "text-red-600 dark:text-red-400";
-  };
-
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return "날짜 없음";
-    return new Date(dateString).toLocaleDateString("ko-KR", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
   };
 
   const navigationItems = [

@@ -1,7 +1,49 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Security headers
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=63072000; includeSubDomains; preload",
+          },
+          {
+            key: "X-Content-Type-Options",
+            value: "nosniff",
+          },
+          {
+            key: "X-Frame-Options",
+            value: "DENY",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://va.vercel-scripts.com",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https://*.clerk.com https://img.clerk.com",
+              "font-src 'self' data:",
+              "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://*.supabase.co https://api.openai.com https://va.vercel-scripts.com https://clerk-telemetry.com",
+              "frame-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://www.youtube.com",
+              "worker-src 'self' blob:",
+            ].join("; "),
+          },
+        ],
+      },
+    ];
+  },
   images: {
     // 이미지 최적화 활성화 (성능 개선)
     formats: ["image/avif", "image/webp"],
@@ -22,7 +64,15 @@ const nextConfig: NextConfig = {
     ],
   },
   // Turbopack 설정 (개발 모드용)
-  turbopack: {},
+  turbopack: {
+    resolveAlias:
+      process.env.NODE_ENV === "test"
+        ? {
+            "@clerk/nextjs/server": "./lib/testing/clerk-server-mock.ts",
+            "@clerk/nextjs": "./lib/testing/clerk-mock.ts",
+          }
+        : {},
+  },
   // 웹팩 최적화 (프로덕션 빌드용만, 개발 모드에서는 Turbopack 사용)
   webpack: (config, { dev, isServer }) => {
     // 개발 모드에서는 webpack 설정을 건너뛰고 Turbopack 사용

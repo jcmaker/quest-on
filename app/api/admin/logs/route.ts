@@ -12,10 +12,12 @@ export async function GET(request: NextRequest) {
     const denied = await requireAdmin();
     if (denied) return denied;
 
-    // 쿼리 파라미터 파싱
+    // 쿼리 파라미터 파싱 + bounds 검증
     const searchParams = request.nextUrl.searchParams;
-    const limit = parseInt(searchParams.get("limit") || "100", 10);
-    const offset = parseInt(searchParams.get("offset") || "0", 10);
+    const rawLimit = parseInt(searchParams.get("limit") || "100", 10);
+    const rawOffset = parseInt(searchParams.get("offset") || "0", 10);
+    const limit = Math.min(Math.max(isNaN(rawLimit) ? 100 : rawLimit, 1), 500);
+    const offset = Math.max(isNaN(rawOffset) ? 0 : rawOffset, 0);
     const level = searchParams.get("level"); // 'error', 'warn', 'info' 또는 null (모두)
 
     // 쿼리 빌드

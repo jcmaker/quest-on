@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -17,9 +17,8 @@ import {
   MessageCircle,
   Award,
   TrendingUp,
-  Download,
 } from "lucide-react";
-import { ReportCardTemplate } from "@/components/report/ReportCardTemplate";
+import { getScoreColor } from "@/lib/grading-utils";
 
 interface Question {
   id: string;
@@ -84,10 +83,7 @@ export default function StudentReportPage() {
   const router = useRouter();
   const { user, isLoaded, isSignedIn } = useUser();
   const sessionId = params.sessionId as string;
-  const reportTemplateRef = useRef<HTMLDivElement>(null);
-
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState(0);
-  const [downloading, setDownloading] = useState(false);
   const userRole = (user?.unsafeMetadata?.role as string) || "student";
 
   const {
@@ -135,126 +131,6 @@ export default function StudentReportPage() {
     }
   }, [isLoaded, isSignedIn, user, sessionId, router]);
 
-  const getScoreColor = (score: number) => {
-    if (score >= 90) return "text-green-600 dark:text-green-400";
-    if (score >= 80) return "text-blue-600 dark:text-blue-400";
-    if (score >= 70) return "text-yellow-600 dark:text-yellow-400";
-    return "text-red-600 dark:text-red-400";
-  };
-
-  const handleDownloadPDF = async () => {
-    if (!reportTemplateRef.current || !reportData) return;
-
-    try {
-      setDownloading(true);
-
-      // Dynamically import libraries to avoid SSR issues
-      const html2canvas = (await import("html2canvas")).default;
-      const jsPDF = (await import("jspdf")).default;
-
-      // Wait a bit to ensure styles are loaded
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      const canvas = await html2canvas(reportTemplateRef.current, {
-        scale: 2,
-        logging: false,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        foreignObjectRendering: false, // Disable foreignObject rendering which may cause lab() issues
-        onclone: (clonedDoc) => {
-          // Remove all stylesheets before html2canvas processes them
-          try {
-            const styleSheets = Array.from(clonedDoc.styleSheets);
-            styleSheets.forEach((sheet) => {
-              try {
-                if (sheet.ownerNode && sheet.ownerNode.parentNode) {
-                  sheet.ownerNode.parentNode.removeChild(sheet.ownerNode);
-                }
-              } catch {
-                // Ignore cross-origin or other errors
-              }
-            });
-          } catch {
-            // Ignore errors
-          }
-
-          // Convert all computed styles to inline RGB
-          const clonedElement = clonedDoc.querySelector(
-            `[data-pdf-template="true"]`
-          ) as HTMLElement;
-
-          if (clonedElement && clonedDoc.defaultView) {
-            const allElements = [
-              clonedElement,
-              ...clonedElement.querySelectorAll("*"),
-            ];
-            allElements.forEach((el) => {
-              const htmlEl = el as HTMLElement;
-              try {
-                const computedStyle =
-                  clonedDoc.defaultView!.getComputedStyle(htmlEl);
-
-                // Get computed RGB values and set as inline styles
-                const bgColor = computedStyle.backgroundColor;
-                const color = computedStyle.color;
-                const borderColor = computedStyle.borderColor;
-
-                if (
-                  bgColor &&
-                  !bgColor.includes("lab") &&
-                  bgColor !== "rgba(0, 0, 0, 0)" &&
-                  bgColor !== "transparent"
-                ) {
-                  htmlEl.style.backgroundColor = bgColor;
-                }
-                if (color && !color.includes("lab")) {
-                  htmlEl.style.color = color;
-                }
-                if (
-                  borderColor &&
-                  !borderColor.includes("lab") &&
-                  borderColor !== "rgba(0, 0, 0, 0)" &&
-                  borderColor !== "transparent"
-                ) {
-                  htmlEl.style.borderColor = borderColor;
-                }
-              } catch {
-                // Ignore errors
-              }
-            });
-          }
-        },
-      });
-
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const imgWidth = 210;
-      const pageHeight = 295;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
-
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-      }
-
-      const filename = `${reportData.exam.title}_${
-        user?.fullName || "학생"
-      }_리포트카드.pdf`;
-      pdf.save(filename);
-    } catch {
-      alert("PDF 생성 중 오류가 발생했습니다.");
-    } finally {
-      setDownloading(false);
-    }
-  };
-
   if (!isLoaded || isLoading) {
     return (
       <div className="container mx-auto p-6">
@@ -293,7 +169,7 @@ export default function StudentReportPage() {
   const currentMessages = reportData.messages?.[selectedQuestionIdx] || [];
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
+    <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-4 mb-4">
@@ -329,6 +205,7 @@ export default function StudentReportPage() {
             )}
           </div>
           <div className="flex items-center gap-3">
+            {/* PDF 기능 임시 숨김 — 고도화 후 복원 예정
             <Button
               variant="default"
               size="sm"
@@ -347,6 +224,7 @@ export default function StudentReportPage() {
                 </>
               )}
             </Button>
+            */}
             <Badge
               variant="outline"
               className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
@@ -430,7 +308,7 @@ export default function StudentReportPage() {
                       }`}
                     >
                       {msg.role === "user" ? (
-                        <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-[70%]">
+                        <div className="bg-primary text-primary-foreground rounded-2xl px-4 py-3 max-w-[85%] sm:max-w-[70%]">
                           <p className="text-sm leading-relaxed whitespace-pre-wrap">
                             {msg.content}
                           </p>
@@ -560,7 +438,7 @@ export default function StudentReportPage() {
         </div>
       </div>
 
-      {/* Hidden Report Card Template for PDF Generation */}
+      {/* PDF 기능 임시 숨김 — 고도화 후 복원 예정
       <div style={{ position: "absolute", left: "-9999px", top: 0 }}>
         <ReportCardTemplate
           ref={reportTemplateRef}
@@ -575,6 +453,7 @@ export default function StudentReportPage() {
           aiSummary={reportData.aiSummary}
         />
       </div>
+      */}
     </div>
   );
 }

@@ -4,6 +4,43 @@ import { z } from "zod";
 const uuid = z.string().uuid();
 const sessionId = z.string().uuid("Invalid session ID format");
 
+// ========== Exam JSON Column Schemas ==========
+// These validate the JSON stored in exams.questions, exams.rubric, exams.materials
+
+export const examQuestionItemSchema = z.object({
+  id: z.union([z.string(), z.number()]),
+  text: z.string().optional(),
+  prompt: z.string().optional(),
+  type: z.string().optional(),
+  idx: z.number().optional(),
+  ai_context: z.string().optional().nullable(),
+  options: z.array(z.string()).optional(),
+  correctAnswer: z.string().optional(),
+}).passthrough();
+
+export const examQuestionsSchema = z.array(examQuestionItemSchema);
+
+export const examRubricItemSchema = z.object({
+  evaluationArea: z.string(),
+  detailedCriteria: z.string(),
+}).passthrough();
+
+export const examRubricSchema = z.array(examRubricItemSchema);
+
+export const examMaterialsSchema = z.array(z.string());
+
+/** Safely parse JSON column with Zod schema, returning fallback on failure */
+export function safeParseJson<T>(
+  schema: z.ZodSchema<T>,
+  data: unknown,
+  fallback: T
+): T {
+  const result = schema.safeParse(data);
+  if (result.success) return result.data;
+  console.warn("[safeParseJson] Validation failed:", result.error.errors[0]?.message);
+  return fallback;
+}
+
 // Chat API
 export const chatRequestSchema = z.object({
   message: z.string().min(1, "Message is required").max(10000, "Message too long"),
@@ -202,6 +239,32 @@ export const feedbackChatSchema = z.object({
   })).optional(),
   examCode: z.string().optional(),
   studentId: z.string().optional(),
+});
+
+// AI Case Question Generation
+export const generateCaseQuestionsSchema = z.object({
+  examTitle: z.string().min(1).max(500),
+  topics: z.string().max(500).optional(),
+  difficulty: z.enum(["basic", "intermediate", "advanced"]).default("intermediate"),
+  questionCount: z.number().int().min(1).max(5).default(2),
+  customInstructions: z.string().max(2000).optional(),
+  materialsText: z.array(z.object({
+    url: z.string(),
+    text: z.string(),
+    fileName: z.string(),
+  })).optional(),
+  existingRubric: z.array(examRubricItemSchema).optional(),
+});
+
+// AI Case Question Adjustment
+export const adjustCaseQuestionSchema = z.object({
+  questionText: z.string().min(1),
+  instruction: z.string().min(1).max(2000),
+  conversationHistory: z.array(z.object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+  })).optional(),
+  examTitle: z.string().optional(),
 });
 
 // Helper to validate and return typed result or error response

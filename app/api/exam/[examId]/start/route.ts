@@ -122,7 +122,6 @@ export async function POST(
         status: "in_progress",
         started_at: now,
         attempt_timer_started_at: now,
-        updated_at: now,
       })
       .eq("exam_id", examId)
       .eq("status", "waiting")

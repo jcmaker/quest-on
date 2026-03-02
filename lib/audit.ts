@@ -15,9 +15,14 @@ interface AuditLogParams {
   details?: Record<string, unknown>;
 }
 
+// Failure monitoring: track consecutive failures
+let consecutiveFailures = 0;
+const FAILURE_WARN_THRESHOLD = 5;
+
 /**
  * audit_logs 테이블에 감사 로그를 기록합니다.
  * 서버 사이드 전용 (Service Role Key 사용).
+ * 연속 실패 시 경고 로그를 출력합니다.
  */
 export async function auditLog({
   action,
@@ -30,6 +35,12 @@ export async function auditLog({
     const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !supabaseServiceRoleKey) {
+      consecutiveFailures++;
+      if (consecutiveFailures >= FAILURE_WARN_THRESHOLD) {
+        console.error(
+          `[audit] WARNING: ${consecutiveFailures} consecutive audit log failures (missing env vars)`
+        );
+      }
       return false;
     }
 
@@ -43,11 +54,25 @@ export async function auditLog({
     });
 
     if (error) {
+      consecutiveFailures++;
+      if (consecutiveFailures >= FAILURE_WARN_THRESHOLD) {
+        console.error(
+          `[audit] WARNING: ${consecutiveFailures} consecutive audit log failures. Last error: ${error.message}`
+        );
+      }
       return false;
     }
 
+    // Reset counter on success
+    consecutiveFailures = 0;
     return true;
-  } catch {
+  } catch (err) {
+    consecutiveFailures++;
+    if (consecutiveFailures >= FAILURE_WARN_THRESHOLD) {
+      console.error(
+        `[audit] WARNING: ${consecutiveFailures} consecutive audit log failures. Last error: ${err instanceof Error ? err.message : "unknown"}`
+      );
+    }
     return false;
   }
 }

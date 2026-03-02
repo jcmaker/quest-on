@@ -6,7 +6,43 @@ app.use(express.json());
 const PORT = Number(process.env.MOCK_SERVER_PORT) || 4010;
 
 // ---------- POST /v1/chat/completions ----------
-app.post("/v1/chat/completions", (_req, res) => {
+app.post("/v1/chat/completions", (req, res) => {
+  // Detect question generation requests (uses response_format: json_object)
+  const isQuestionGeneration =
+    req.body?.response_format?.type === "json_object";
+
+  const content = isQuestionGeneration
+    ? JSON.stringify({
+        questions: [
+          {
+            text: "Explain the concept of polymorphism in Object-Oriented Programming with examples.",
+            type: "essay",
+          },
+          {
+            text: "Compare and contrast inheritance and composition. When would you use each?",
+            type: "essay",
+          },
+        ],
+        suggestedRubric: [
+          {
+            evaluationArea: "Conceptual Understanding",
+            detailedCriteria: "Demonstrates clear understanding of core OOP concepts.",
+          },
+          {
+            evaluationArea: "Practical Application",
+            detailedCriteria: "Provides relevant real-world examples.",
+          },
+        ],
+      })
+    : JSON.stringify({
+        score: 75,
+        comment: "Good understanding of core concepts with room for improvement.",
+        stage_grading: {
+          chat: { score: 70, reasoning: "Adequate conversation quality" },
+          answer: { score: 80, reasoning: "Solid answer with minor gaps" },
+        },
+      });
+
   res.json({
     id: "chatcmpl-mock-001",
     object: "chat.completion",
@@ -17,14 +53,7 @@ app.post("/v1/chat/completions", (_req, res) => {
         index: 0,
         message: {
           role: "assistant",
-          content: JSON.stringify({
-            score: 75,
-            comment: "Good understanding of core concepts with room for improvement.",
-            stage_grading: {
-              chat: { score: 70, reasoning: "Adequate conversation quality" },
-              answer: { score: 80, reasoning: "Solid answer with minor gaps" },
-            },
-          }),
+          content,
         },
         finish_reason: "stop",
       },

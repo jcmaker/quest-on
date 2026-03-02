@@ -20,13 +20,13 @@ export function CustomSignUp() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex min-h-screen">
       {/* Left Section - Sign Up Form */}
-      <div className="flex-1 flex flex-col p-8 bg-white dark:bg-gray-950 relative overflow-y-auto">
+      <div className="flex-1 flex flex-col justify-center px-6 py-10 sm:p-8 bg-white dark:bg-gray-950 relative">
         {/* 로고 - 왼쪽 상단 */}
         <Link
           href="/"
-          className="absolute top-8 left-8 flex items-center gap-2 z-10"
+          className="absolute top-6 left-6 sm:top-8 sm:left-8 flex items-center gap-2 z-10"
         >
           <Image
             src="/qstn_logo_svg.svg"
@@ -41,15 +41,15 @@ export function CustomSignUp() {
           </span>
         </Link>
 
-        <div className="w-full max-w-md mx-auto mt-16 mb-8 flex flex-col flex-1 min-h-0">
+        <div className="w-full max-w-md mx-auto">
           <div className="space-y-2 mb-6">
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                  새로운 계정 만들기
-                </h1>
-                <p className="text-gray-600 dark:text-gray-400">
-                  Quest-On 계정을 만들어보세요
-                </p>
-              </div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              새로운 계정 만들기
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400">
+              Quest-On 계정을 만들어보세요
+            </p>
+          </div>
 
           {/* 역할 선택 - Flex 버튼 형태 */}
           <div className="mb-6">
@@ -100,9 +100,9 @@ export function CustomSignUp() {
                     </div>
 
           {/* 계정 생성 Form */}
-          <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex flex-col">
             <SignUp.Root>
-              <SignUp.Step name="start" className="space-y-4 flex-1 flex flex-col min-h-0">
+              <SignUp.Step name="start" className="space-y-4">
                 {/* 소셜 로그인 버튼들 */}
                 <div className="space-y-2">
                 <Clerk.Connection name="google" asChild>
@@ -189,7 +189,7 @@ export function CustomSignUp() {
               </SignUp.Step>
             </SignUp.Root>
 
-            <div className="text-center text-sm text-gray-600 dark:text-gray-400 mt-12">
+            <div className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
               이미 계정이 있으신가요?{" "}
               <Link
                 href="/sign-in"

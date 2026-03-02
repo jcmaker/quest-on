@@ -1,0 +1,631 @@
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { currentUser } from "@/lib/get-current-user";
+import { chunkText, formatChunkMetadata } from "@/lib/chunking";
+import { createEmbeddings } from "@/lib/embedding";
+import { saveChunksToDB, deleteChunksByFileUrl } from "@/lib/save-chunks";
+import { successJson, errorJson } from "@/lib/api-response";
+import { auditLog } from "@/lib/audit";
+import { logError } from "@/lib/logger";
+
+const supabase = getSupabaseServer();
+
+export interface QuestionData {
+  id: string;
+  text: string;
+  type: "multiple-choice" | "essay" | "short-answer";
+  options?: string[];
+  correctAnswer?: string;
+}
+
+export async function createExam(data: {
+  title: string;
+  code: string;
+  duration: number;
+  questions: QuestionData[];
+  materials?: string[];
+  materials_text?: Array<{
+    url: string;
+    text: string;
+    fileName: string;
+  }>;
+  rubric?: {
+    evaluationArea: string;
+    detailedCriteria: string;
+  }[];
+  rubric_public?: boolean;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  parent_folder_id?: string | null;
+}) {
+  try {
+    // Get current user
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    // Check if user is instructor
+    const userRole = user.unsafeMetadata?.role as string;
+
+    if (userRole !== "instructor") {
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403, `User role: ${userRole || "not set"}`);
+    }
+
+    // Create exam with the correct schema
+    // NOTE: core_ability(핵심 역량) 필드는 제거되었으므로 저장 시 항상 제거한다.
+    const sanitizedQuestions = (data.questions || []).map((q) => {
+      const { core_ability, ...rest } = q as QuestionData & {
+        core_ability?: unknown;
+      };
+      return rest;
+    });
+
+    const examData = {
+      title: data.title,
+      code: data.code,
+      description: null, // description 필드는 nullable이므로 null로 설정
+      duration: data.duration,
+      questions: sanitizedQuestions,
+      materials: data.materials || [],
+      materials_text: data.materials_text || [], // 추출된 텍스트 저장
+      rubric: data.rubric || [],
+      rubric_public: data.rubric_public || false,
+      status: data.status,
+      instructor_id: user.id, // Clerk user ID (e.g., "user_31ihNg56wMaE27ft10H4eApjc1J")
+      created_at: data.created_at,
+      updated_at: data.updated_at,
+    };
+
+    const { data: exam, error } = await supabase
+      .from("exams")
+      .insert([examData])
+      .select()
+      .single();
+
+    if (error) {
+      return errorJson("DATABASE_ERROR", `Database error: ${error.message}`, 500);
+    }
+
+    // Create exam node in exam_nodes table
+    // parent_id는 data에서 받거나 null (루트에 배치)
+    const parentId = data.parent_folder_id || null;
+
+    // Get the maximum sort_order for this parent folder
+    let sortQuery = supabase
+      .from("exam_nodes")
+      .select("sort_order")
+      .eq("instructor_id", user.id);
+
+    // Handle null parent_id (root level)
+    if (parentId === null) {
+      sortQuery = sortQuery.is("parent_id", null);
+    } else {
+      sortQuery = sortQuery.eq("parent_id", parentId);
+    }
+
+    const { data: existingNodes } = await sortQuery
+      .order("sort_order", { ascending: false })
+      .limit(1);
+
+    const nextSortOrder =
+      existingNodes && existingNodes.length > 0
+        ? existingNodes[0].sort_order + 1
+        : 0;
+
+    // Create exam node
+    const { data: examNode, error: nodeError } = await supabase
+      .from("exam_nodes")
+      .insert([
+        {
+          instructor_id: user.id,
+          parent_id: parentId,
+          kind: "exam",
+          name: data.title,
+          exam_id: exam.id,
+          sort_order: nextSortOrder,
+        },
+      ])
+      .select()
+      .single();
+
+    if (nodeError) {
+      // Exam is created but node creation failed - this is not critical
+      // but we should log it
+      logError("Failed to create exam node", nodeError, { path: "/api/supa", user_id: user.id });
+    }
+
+    // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
+    if (
+      examData.materials_text &&
+      Array.isArray(examData.materials_text) &&
+      examData.materials_text.length > 0
+    ) {
+      try {
+        let totalChunksSaved = 0;
+
+        for (let idx = 0; idx < examData.materials_text.length; idx++) {
+          const material = examData.materials_text[idx];
+          const materialData = material as {
+            url: string;
+            text: string;
+            fileName: string;
+          };
+
+          if (!materialData.text || materialData.text.trim().length === 0) {
+            continue;
+          }
+
+          // 1. 텍스트 청킹
+          const chunks = chunkText(materialData.text, {
+            chunkSize: 800,
+            chunkOverlap: 200,
+          });
+
+          if (chunks.length === 0) {
+            continue;
+          }
+
+          // 2. 기존 청크 삭제 (파일 재처리 시)
+          await deleteChunksByFileUrl(exam.id, materialData.url);
+
+          // 3. 청크 포맷팅
+          const formattedChunks = chunks.map((chunk) =>
+            formatChunkMetadata(chunk, materialData.fileName, materialData.url)
+          );
+
+          // 4. 임베딩 생성 (배치)
+          const chunkTexts = formattedChunks.map((c) => c.content);
+          const embeddings = await createEmbeddings(chunkTexts);
+
+          // 5. DB에 저장
+          const chunksToSave = formattedChunks.map((chunk, index) => ({
+            content: chunk.content,
+            embedding: embeddings[index],
+            metadata: chunk.metadata,
+          }));
+
+          await saveChunksToDB(exam.id, chunksToSave);
+          totalChunksSaved += chunksToSave.length;
+        }
+      } catch (ragError) {
+        // RAG 처리 실패해도 시험 생성은 성공으로 처리
+        logError("[createExam] RAG processing failed (exam creation succeeded)", ragError, {
+          path: "/api/supa",
+          user_id: user.id,
+          additionalData: { examId: exam.id },
+        });
+      }
+    }
+
+    return successJson({ exam, examNode });
+  } catch (error) {
+    return errorJson("CREATE_EXAM_FAILED", `Failed to create exam: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
+  }
+}
+
+export async function updateExam(data: {
+  id: string;
+  update: Record<string, unknown>;
+}) {
+  try {
+    // Require instructor auth + ownership
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
+    }
+
+    const { data: exam, error } = await supabase
+      .from("exams")
+      .update(data.update)
+      .eq("id", data.id)
+      .eq("instructor_id", user.id)
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return errorJson("EXAM_NOT_FOUND", "Exam not found or access denied", 404);
+      }
+      throw error;
+    }
+
+    // Audit log: exam status change
+    if (data.update.status) {
+      auditLog({
+        action: "exam_status_change",
+        userId: user.id,
+        targetId: data.id,
+        details: { newStatus: data.update.status },
+      });
+    }
+
+    return successJson({ exam });
+  } catch (error) {
+    return errorJson("UPDATE_EXAM_FAILED", "Failed to update exam", 500);
+  }
+}
+
+export async function getExam(data: { code: string }) {
+  try {
+    const { data: exam, error } = await supabase
+      .from("exams")
+      .select("*")
+      .eq("code", data.code)
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
+      }
+      throw error;
+    }
+
+    return successJson({ exam });
+  } catch (error) {
+    return errorJson("GET_EXAM_FAILED", "Failed to get exam", 500);
+  }
+}
+
+export async function getExamById(data: { id: string }) {
+  try {
+    // Validate input
+    if (!data || !data.id) {
+      return errorJson("MISSING_EXAM_ID", "Missing exam ID", 400, "The 'id' field is required");
+    }
+
+    if (typeof data.id !== "string" || data.id.trim() === "") {
+      return errorJson("INVALID_EXAM_ID", "Invalid exam ID", 400, "Exam ID must be a non-empty string");
+    }
+
+    // Get current user
+    let user;
+    try {
+      user = await currentUser();
+    } catch (authError) {
+      return errorJson("AUTH_ERROR", "Authentication error", 401, authError instanceof Error ? authError.message : "Unknown auth error");
+    }
+
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    // Check if user is instructor
+    const userRole = user.unsafeMetadata?.role as string;
+
+    if (userRole !== "instructor") {
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
+    }
+
+    // First, check if exam exists at all (without instructor filter)
+    const { data: examExists, error: checkError } = await supabase
+      .from("exams")
+      .select("id, instructor_id")
+      .eq("id", data.id)
+      .single();
+
+    if (checkError) {
+      if (checkError.code === "PGRST116") {
+        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "No exam exists with this ID");
+      }
+      throw checkError;
+    }
+
+    // Check if exam belongs to this instructor
+    if (examExists && examExists.instructor_id !== user.id) {
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "Exam does not belong to this instructor");
+    }
+
+    // Now fetch the full exam data (Gate 필드 포함)
+    const { data: exam, error } = await supabase
+      .from("exams")
+      .select(
+        "id, title, code, description, duration, questions, materials, rubric, rubric_public, status, instructor_id, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting"
+      )
+      .eq("id", data.id)
+      .eq("instructor_id", user.id) // Only allow instructors to view their own exams
+      .single();
+
+    if (error) {
+      if (error.code === "PGRST116") {
+        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "No exam found matching the criteria");
+      }
+      throw error;
+    }
+
+    if (!exam) {
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "Exam data is null");
+    }
+
+    return successJson({ exam });
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    const errorDetails =
+      error instanceof Error && error.stack ? error.stack : undefined;
+    return errorJson(
+      "GET_EXAM_FAILED",
+      "Failed to get exam",
+      500,
+      process.env.NODE_ENV === "development"
+        ? { message: errorMessage, stack: errorDetails }
+        : errorMessage
+    );
+  }
+}
+
+export async function getInstructorExams() {
+  try {
+    // Get current user
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    // Check if user is instructor
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
+    }
+
+    const { data: exams, error } = await supabase
+      .from("exams")
+      .select(
+        "id, title, code, description, duration, questions, materials, status, instructor_id, created_at, updated_at"
+      )
+      .eq("instructor_id", user.id) // Clerk user ID
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    // Transform exams to include questionsCount and student_count
+    const examsWithCounts = await Promise.all(
+      (exams || []).map(async (exam) => {
+        // Calculate questionsCount from questions array
+        const questionsCount = Array.isArray(exam.questions)
+          ? exam.questions.length
+          : 0;
+
+        // Get student count by counting distinct student_ids for this exam
+        const { data: sessions, error: countError } = await supabase
+          .from("sessions")
+          .select("student_id")
+          .eq("exam_id", exam.id);
+
+        // Count distinct student_ids
+        const student_count = countError
+          ? 0
+          : new Set((sessions || []).map((s) => s.student_id)).size;
+
+        return {
+          ...exam,
+          questionsCount,
+          student_count,
+        };
+      })
+    );
+
+    return successJson({ exams: examsWithCounts });
+  } catch (error) {
+    return errorJson("GET_EXAMS_FAILED", "Failed to get exams", 500);
+  }
+}
+
+export async function copyExam(data: { exam_id: string }) {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
+    }
+
+    // Get the original exam
+    const { data: originalExam, error: examError } = await supabase
+      .from("exams")
+      .select("*")
+      .eq("id", data.exam_id)
+      .eq("instructor_id", user.id)
+      .single();
+
+    if (examError || !originalExam) {
+      return errorJson("EXAM_NOT_FOUND", "Exam not found or access denied", 404);
+    }
+
+    // Get the original exam node to preserve parent folder
+    const { data: originalNode, error: nodeError } = await supabase
+      .from("exam_nodes")
+      .select("*")
+      .eq("exam_id", data.exam_id)
+      .eq("instructor_id", user.id)
+      .single();
+
+    if (nodeError || !originalNode) {
+      logError("Original exam node not found", nodeError, { path: "/api/supa", user_id: user.id, additionalData: { examId: data.exam_id } });
+    }
+
+    // Generate new exam code
+    const generateExamCode = () => {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+      let result = "";
+      for (let i = 0; i < 6; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return result;
+    };
+
+    let newCode = generateExamCode();
+    // Ensure code is unique
+    let codeCheck = await supabase
+      .from("exams")
+      .select("code")
+      .eq("code", newCode)
+      .single();
+
+    while (!codeCheck.error) {
+      newCode = generateExamCode();
+      codeCheck = await supabase
+        .from("exams")
+        .select("code")
+        .eq("code", newCode)
+        .single();
+    }
+
+    // Prepare copied exam data
+    const newTitle = `${originalExam.title} (복사본)`;
+    const now = new Date().toISOString();
+
+    // Sanitize questions (remove core_ability if present)
+    const sanitizedQuestions = Array.isArray(originalExam.questions)
+      ? originalExam.questions.map((q: QuestionData & { core_ability?: unknown }) => {
+          const { core_ability, ...rest } = q;
+          return rest;
+        })
+      : [];
+
+    const examData = {
+      title: newTitle,
+      code: newCode,
+      description: originalExam.description || null,
+      duration: originalExam.duration,
+      questions: sanitizedQuestions,
+      materials: originalExam.materials || [],
+      materials_text: originalExam.materials_text || [], // 복사본도 materials_text 포함
+      rubric: originalExam.rubric || [],
+      rubric_public: originalExam.rubric_public || false,
+      status: "draft", // 복사본은 초안 상태로 시작
+      instructor_id: user.id,
+      created_at: now,
+      updated_at: now,
+    };
+
+    // Create the new exam
+    const { data: newExam, error: createError } = await supabase
+      .from("exams")
+      .insert([examData])
+      .select()
+      .single();
+
+    if (createError || !newExam) {
+      return errorJson("COPY_EXAM_FAILED", "Failed to create copied exam", 500);
+    }
+
+    // Create exam node (preserve parent folder)
+    const parentId = originalNode?.parent_id || null;
+
+    // Get the maximum sort_order for this parent folder
+    let sortQuery = supabase
+      .from("exam_nodes")
+      .select("sort_order")
+      .eq("instructor_id", user.id);
+
+    if (parentId === null) {
+      sortQuery = sortQuery.is("parent_id", null);
+    } else {
+      sortQuery = sortQuery.eq("parent_id", parentId);
+    }
+
+    const { data: existingNodes } = await sortQuery
+      .order("sort_order", { ascending: false })
+      .limit(1);
+
+    const nextSortOrder =
+      existingNodes && existingNodes.length > 0
+        ? existingNodes[0].sort_order + 1
+        : 0;
+
+    const { data: examNode, error: nodeCreateError } = await supabase
+      .from("exam_nodes")
+      .insert([
+        {
+          instructor_id: user.id,
+          parent_id: parentId,
+          kind: "exam",
+          name: newTitle,
+          exam_id: newExam.id,
+          sort_order: nextSortOrder,
+        },
+      ])
+      .select()
+      .single();
+
+    if (nodeCreateError) {
+      // Exam is created but node creation failed - this is not critical
+      logError("Failed to create exam node for copy", nodeCreateError, { path: "/api/supa", user_id: user.id, additionalData: { examId: newExam.id } });
+    }
+
+    // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
+    if (
+      examData.materials_text &&
+      Array.isArray(examData.materials_text) &&
+      examData.materials_text.length > 0
+    ) {
+      try {
+        let totalChunksSaved = 0;
+
+        for (let idx = 0; idx < examData.materials_text.length; idx++) {
+          const material = examData.materials_text[idx];
+          const materialData = material as {
+            url: string;
+            text: string;
+            fileName: string;
+          };
+
+          if (!materialData.text || materialData.text.trim().length === 0) {
+            continue;
+          }
+
+          // 1. 텍스트 청킹
+          const chunks = chunkText(materialData.text, {
+            chunkSize: 800,
+            chunkOverlap: 200,
+          });
+
+          if (chunks.length === 0) {
+            continue;
+          }
+
+          // 2. 기존 청크 삭제 (이미 새 시험이므로 없을 것이지만 안전을 위해)
+          await deleteChunksByFileUrl(newExam.id, materialData.url);
+
+          // 3. 청크 포맷팅
+          const formattedChunks = chunks.map((chunk) =>
+            formatChunkMetadata(chunk, materialData.fileName, materialData.url)
+          );
+
+          // 4. 임베딩 생성 (배치)
+          const chunkTexts = formattedChunks.map((c) => c.content);
+          const embeddings = await createEmbeddings(chunkTexts);
+
+          // 5. DB에 저장
+          const chunksToSave = formattedChunks.map((chunk, index) => ({
+            content: chunk.content,
+            embedding: embeddings[index],
+            metadata: chunk.metadata,
+          }));
+
+          await saveChunksToDB(newExam.id, chunksToSave);
+          totalChunksSaved += chunksToSave.length;
+        }
+      } catch (ragError) {
+        // RAG 처리 실패해도 시험 복사는 성공으로 처리
+        logError("[copyExam] RAG processing failed (exam copy succeeded)", ragError, {
+          path: "/api/supa",
+          user_id: user.id,
+          additionalData: { examId: newExam.id },
+        });
+      }
+    }
+
+    return successJson({ exam: newExam, examNode });
+  } catch (error) {
+    return errorJson("COPY_EXAM_FAILED", `Failed to copy exam: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
+  }
+}
