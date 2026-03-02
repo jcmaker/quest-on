@@ -254,7 +254,7 @@ export async function getExam(data: { code: string }) {
   try {
     const { data: exam, error } = await supabase
       .from("exams")
-      .select("*")
+      .select("id, title, code, description, duration, questions, rubric, rubric_public, status, instructor_id, materials, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting")
       .eq("code", data.code)
       .single();
 
@@ -382,32 +382,37 @@ export async function getInstructorExams() {
 
     if (error) throw error;
 
-    // Transform exams to include questionsCount and student_count
-    const examsWithCounts = await Promise.all(
-      (exams || []).map(async (exam) => {
-        // Calculate questionsCount from questions array
-        const questionsCount = Array.isArray(exam.questions)
-          ? exam.questions.length
-          : 0;
+    // Batch fetch all session student_ids in a single query (N+1 → 2 queries)
+    const examIds = (exams || []).map((e) => e.id);
+    const studentCountMap = new Map<string, number>();
 
-        // Get student count by counting distinct student_ids for this exam
-        const { data: sessions, error: countError } = await supabase
-          .from("sessions")
-          .select("student_id")
-          .eq("exam_id", exam.id);
+    if (examIds.length > 0) {
+      const { data: allSessions } = await supabase
+        .from("sessions")
+        .select("exam_id, student_id")
+        .in("exam_id", examIds)
+        .limit(10000);
 
-        // Count distinct student_ids
-        const student_count = countError
-          ? 0
-          : new Set((sessions || []).map((s) => s.student_id)).size;
+      if (allSessions) {
+        // Group by exam_id and count distinct student_ids
+        const examStudents = new Map<string, Set<string>>();
+        for (const session of allSessions) {
+          if (!examStudents.has(session.exam_id)) {
+            examStudents.set(session.exam_id, new Set());
+          }
+          examStudents.get(session.exam_id)!.add(session.student_id);
+        }
+        for (const [examId, students] of examStudents) {
+          studentCountMap.set(examId, students.size);
+        }
+      }
+    }
 
-        return {
-          ...exam,
-          questionsCount,
-          student_count,
-        };
-      })
-    );
+    const examsWithCounts = (exams || []).map((exam) => ({
+      ...exam,
+      questionsCount: Array.isArray(exam.questions) ? exam.questions.length : 0,
+      student_count: studentCountMap.get(exam.id) || 0,
+    }));
 
     return successJson({ exams: examsWithCounts });
   } catch (error) {

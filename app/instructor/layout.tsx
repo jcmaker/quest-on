@@ -8,8 +8,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { GraduationCap } from "lucide-react";
+import { GraduationCap, LayoutDashboard, Plus, Menu } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -23,18 +22,7 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
-import { UserMenu } from "@/components/auth/UserMenu";
 import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
-import dynamic from "next/dynamic";
-import { Menu } from "lucide-react";
-
-// 동적 임포트로 아이콘 최적화
-const LayoutDashboard = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.LayoutDashboard }))
-);
-const Plus = dynamic(() =>
-  import("lucide-react").then((mod) => ({ default: mod.Plus }))
-);
 
 export default function InstructorLayout({
   children,

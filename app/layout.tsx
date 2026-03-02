@@ -22,7 +22,8 @@ const geistMono = Geist_Mono({
 const robotoMono = Roboto_Mono({
   variable: "--font-roboto-mono",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["500"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {

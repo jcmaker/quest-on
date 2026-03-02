@@ -602,7 +602,7 @@ export default function HeroSection({
   mode = "light",
 }: HeroSectionProps) {
   const colors = COLORS[mode];
-  const [isVideoOpen, setIsVideoOpen] = useState(true);
+  const [isVideoOpen, setIsVideoOpen] = useState(false);
 
   return (
     <div

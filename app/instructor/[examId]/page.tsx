@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import { redirect } from "next/navigation";
+import { redirect, useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import React, { useState, useEffect, use, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -240,6 +240,7 @@ export default function ExamDetail({
           started_at: examResult.exam.started_at || null,
         } as Exam,
         questionsCount: questionsArray.length,
+        questionsRaw: questionsArray as Question[],
       };
     },
     enabled: !!resolvedParams.examId,
@@ -386,26 +387,9 @@ export default function ExamDetail({
     });
   }, [analyticsData, exam?.id]); // analyticsData가 변경될 때마다 재실행
 
-  const { data: questionsData, isLoading: questionsLoading } = useQuery({
-    queryKey: qk.instructor.examQuestions(resolvedParams.examId),
-    queryFn: async () => {
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "get_exam_by_id",
-          data: { id: resolvedParams.examId },
-        }),
-      });
-      if (!response.ok) return [];
-      const result = await response.json();
-      return result.exam.questions || [];
-    },
-    enabled: questionsOpen && !!exam,
-    staleTime: Infinity,
-  });
-
-  const questions = questionsData ?? [];
+  // Questions are already fetched with examDetailData — no separate query needed
+  const questionsLoading = examDetailLoading;
+  const questions = (questionsOpen ? examDetailData?.questionsRaw : null) ?? [];
 
   // Filtered and sorted students
   const filteredAndSortedStudents = useMemo(() => {
@@ -936,6 +920,7 @@ function StudentListItem({
     standardDeviationExamDuration?: number;
   } | null;
 }) {
+  const router = useRouter();
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4 hover:bg-muted/50 transition-colors overflow-hidden">
       <div className="flex items-start gap-4 min-w-0 flex-1">
@@ -1045,7 +1030,7 @@ function StudentListItem({
                     params.set("stdDevExamDuration", String(analyticsData.standardDeviationExamDuration || 0));
                   }
                   const queryString = params.toString();
-                  window.location.href = `/instructor/${examId}/grade/${student.id}${queryString ? `?${queryString}` : ""}`;
+                  router.push(`/instructor/${examId}/grade/${student.id}${queryString ? `?${queryString}` : ""}`);
                 }}
               >
                 <ClipboardCheck size={14} className="sm:mr-1" />

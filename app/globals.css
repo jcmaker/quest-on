@@ -1,6 +1,5 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "katex/dist/katex.min.css";
 
 /* KaTeX 다크 모드 지원 */
 .dark .katex {

@@ -79,9 +79,7 @@ export function GeneratedQuestionCard({
         {/* Question content */}
         <div className="relative">
           <div
-            className={`overflow-hidden transition-all ${
-              isExpanded ? "" : ""
-            }`}
+            className="overflow-hidden transition-all"
             style={{
               maxHeight: isExpanded ? "none" : `${PREVIEW_HEIGHT}px`,
             }}
