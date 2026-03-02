@@ -844,7 +844,13 @@ export default function CreateExam() {
               }}
             />
 
-            <QuestionsList questions={questions} onUpdate={updateQuestion} />
+            <QuestionsList
+              questions={questions}
+              onUpdate={updateQuestion}
+              onRemove={(id) => {
+                setQuestions((prev) => prev.filter((q) => q.id !== id));
+              }}
+            />
 
             <RubricTable
               rubric={rubric}

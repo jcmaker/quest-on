@@ -688,6 +688,9 @@ export default function EditExam({
         <QuestionsList
           questions={questions}
           onUpdate={updateQuestion}
+          onRemove={(id) => {
+            setQuestions((prev) => prev.filter((q) => q.id !== id));
+          }}
         />
 
         {/* Submit */}

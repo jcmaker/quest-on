@@ -1,7 +1,8 @@
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
-import { Hash, HelpCircle } from "lucide-react";
+import { Hash, HelpCircle, Trash2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -24,28 +25,48 @@ interface QuestionEditorProps {
     field: keyof Question,
     value: string | boolean
   ) => void;
+  onRemove?: (id: string) => void;
 }
 
 export function QuestionEditor({
   question,
   index,
   onUpdate,
+  onRemove,
 }: QuestionEditorProps) {
   return (
     <div className="border rounded-lg p-5 bg-card shadow-sm relative overflow-hidden">
       {/* 문제 번호 인디케이터 */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary/60"></div>
 
-      <div className="flex items-center gap-3 mb-5">
-        <Badge
-          variant="default"
-          className="text-base font-semibold px-3 py-1 h-8 flex items-center gap-1.5"
-        >
-          <Hash className="h-4 w-4" />
-          {index + 1}
-        </Badge>
-        <div className="h-6 w-px bg-border"></div>
-        <span className="text-sm text-muted-foreground">문제 출제 중</span>
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <Badge
+            variant="default"
+            className="text-base font-semibold px-3 py-1 h-8 flex items-center gap-1.5"
+          >
+            <Hash className="h-4 w-4" />
+            {index + 1}
+          </Badge>
+          <div className="h-6 w-px bg-border"></div>
+          <span className="text-sm text-muted-foreground">문제 출제 중</span>
+        </div>
+        {onRemove && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                onClick={() => onRemove(question.id)}
+                className="size-8 text-destructive hover:text-destructive"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>문제 삭제</TooltipContent>
+          </Tooltip>
+        )}
       </div>
       <div className="space-y-4">
         <div className="space-y-2">
