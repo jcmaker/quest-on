@@ -557,15 +557,48 @@ export default function AnswerSubmission() {
         const data = await response.json();
         setFeedback(data.feedback);
         setIsSubmitted(true);
-
-        // 바로 채팅 모드로 전환 -> 주석 처리
-        // setTimeout(() => {
-        //   startChatMode();
-        // }, 1000); // 1초 후에 자동으로 채팅 모드 시작
+      } else if (response.status === 409) {
+        // 이미 제출된 경우 성공으로 처리
+        setIsSubmitted(true);
       } else {
+        // 제출 실패 시 서버에서 실제 제출 상태 확인
+        try {
+          const checkResponse = await fetch("/api/student/sessions");
+          if (checkResponse.ok) {
+            const checkData = await checkResponse.json();
+            const submittedSession = checkData.sessions?.find(
+              (s: { examCode: string; submittedAt: string | null }) =>
+                s.examCode === examCode && s.submittedAt !== null
+            );
+            if (submittedSession) {
+              // 실제로는 제출 완료됨
+              setIsSubmitted(true);
+              return;
+            }
+          }
+        } catch {
+          // 상태 확인 실패는 무시
+        }
         alert("답안 제출에 실패했습니다. 다시 시도해주세요.");
       }
     } catch {
+      // 네트워크 오류 시에도 서버 상태 확인
+      try {
+        const checkResponse = await fetch("/api/student/sessions");
+        if (checkResponse.ok) {
+          const checkData = await checkResponse.json();
+          const submittedSession = checkData.sessions?.find(
+            (s: { examCode: string; submittedAt: string | null }) =>
+              s.examCode === examCode && s.submittedAt !== null
+          );
+          if (submittedSession) {
+            setIsSubmitted(true);
+            return;
+          }
+        }
+      } catch {
+        // 상태 확인도 실패
+      }
       alert("답안 제출 중 오류가 발생했습니다. 다시 시도해주세요.");
     } finally {
       setIsSubmitting(false);

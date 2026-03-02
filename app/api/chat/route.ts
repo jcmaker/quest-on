@@ -14,7 +14,9 @@ import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, chatRequestSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
-import type { ResponseOutputItem, ResponseOutputMessage, ResponseOutputText } from "openai/resources/responses/responses";
+import { currentUser } from "@/lib/get-current-user";
+import { classifyMessageType, type MessageType } from "@/lib/message-classification";
+import { extractResponseText } from "@/lib/parse-openai-response";
 
 export async function OPTIONS(request: NextRequest) {
   return handleCorsPreFlight(request);
@@ -29,8 +31,6 @@ export async function GET() {
 
 // Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
 const supabase = getSupabaseServer();
-
-type MessageType = "concept" | "calculation" | "strategy" | "other";
 
 type RagResult = {
   relevantMaterialsText: string;
@@ -51,45 +51,6 @@ type ChatRequestBody = {
   currentQuestionText?: string;
   currentQuestionAiContext?: string;
 };
-
-// 메시지 타입 분류 함수 (개념/계산/전략/기타)
-async function classifyMessageType(message: string): Promise<MessageType> {
-  try {
-    // 간단한 키워드 기반 분류 (빠른 응답을 위해)
-    const lowerMessage = message.toLowerCase();
-
-    // 계산 관련 키워드
-    if (
-      /\d+|\+|\-|\*|\/|계산|연산|공식|수식|값|결과/.test(lowerMessage) ||
-      /how much|calculate|compute|solve|equation/.test(lowerMessage)
-    ) {
-      return "calculation";
-    }
-
-    // 전략/방법 관련 키워드
-    if (
-      /방법|전략|접근|절차|과정|어떻게|how to|way|method|strategy|approach/.test(
-        lowerMessage
-      )
-    ) {
-      return "strategy";
-    }
-
-    // 개념 관련 키워드
-    if (
-      /무엇|뭐|의미|정의|개념|이유|왜|what|meaning|definition|concept|why/.test(
-        lowerMessage
-      )
-    ) {
-      return "concept";
-    }
-
-    // 기본값: 기타
-    return "other";
-  } catch {
-    return "other";
-  }
-}
 
 // 수업 자료 컨텍스트 정제 (노이즈 제거)
 function cleanContext(text: string): string {
@@ -213,27 +174,8 @@ async function getAIResponse(
       })
     );
 
-    // output 배열에서 메시지 타입 찾기
-    let responseText = "";
-    const outputArray: ResponseOutputItem[] = response.output;
-    if (outputArray && Array.isArray(outputArray)) {
-      // type이 'message'인 항목 찾기
-      const messageOutput = outputArray.find(
-        (item: ResponseOutputItem): item is ResponseOutputMessage =>
-          item.type === "message" && "content" in item
-      );
-
-      if (messageOutput && Array.isArray(messageOutput.content)) {
-        // content 배열에서 텍스트 추출
-        const textParts = messageOutput.content
-          .filter(
-            (part): part is ResponseOutputText =>
-              part.type === "output_text" && "text" in part
-          )
-          .map((part) => part.text);
-        responseText = textParts.join("");
-      }
-    }
+    // output 배열에서 텍스트 추출
+    const responseText = extractResponseText(response.output);
 
     if (!responseText || responseText.trim().length === 0) {
       return {
@@ -442,6 +384,14 @@ async function handleChatLogic(params: {
   const previousResponseId = await previousResponsePromise;
   await insertUserPromise;
 
+  // RAG 검색 결과에 따라 주의문 추가
+  let ragWarning = "";
+  if (rag.resultsCount === 0) {
+    ragWarning = "\n\n[수업 자료 검색 결과 없음] 이 질문과 관련된 수업 자료를 찾지 못했습니다. 수업 자료에 없는 내용을 만들어내지 마세요. 모르면 모른다고 답하세요.";
+  } else if (rag.topSimilarity !== null && rag.topSimilarity < 0.3) {
+    ragWarning = "\n\n[관련성 낮음] 검색된 수업 자료의 관련성이 낮습니다. 답변 시 주의하고, 확신할 수 없는 내용은 추측하지 마세요.";
+  }
+
   const systemPrompt = buildStudentChatSystemPrompt({
     examTitle,
     examCode,
@@ -450,7 +400,7 @@ async function handleChatLogic(params: {
     currentQuestionAiContext,
     relevantMaterialsText: rag.relevantMaterialsText,
     rubric,
-  });
+  }) + ragWarning;
 
   const { response: aiResponse, responseId } = await getAIResponse(
     systemPrompt,
@@ -516,6 +466,12 @@ export async function POST(request: NextRequest) {
       currentQuestionAiContext,
     } = validation.data;
 
+    // Verify student ownership: studentId from body must match authenticated user
+    const user = await currentUser();
+    if (studentId && user && user.id !== studentId) {
+      return errorJson("FORBIDDEN", "Student ID mismatch", 403);
+    }
+
     // Rate limiting by session or student ID
     const rateLimitKey = `chat:${studentId || sessionId}`;
     const rl = checkRateLimit(rateLimitKey, RATE_LIMITS.chat);
@@ -548,6 +504,15 @@ export async function POST(request: NextRequest) {
       // temp_로 남아있는 경우(DB 적재 불가): AI 응답은 하되 DB 저장은 생략
       if (!actualSessionId || actualSessionId.startsWith("temp_")) {
         const rag = await getRagContext({ message, examId });
+
+        // RAG 검색 결과에 따라 주의문 추가
+        let tempRagWarning = "";
+        if (rag.resultsCount === 0) {
+          tempRagWarning = "\n\n[수업 자료 검색 결과 없음] 이 질문과 관련된 수업 자료를 찾지 못했습니다. 수업 자료에 없는 내용을 만들어내지 마세요. 모르면 모른다고 답하세요.";
+        } else if (rag.topSimilarity !== null && rag.topSimilarity < 0.3) {
+          tempRagWarning = "\n\n[관련성 낮음] 검색된 수업 자료의 관련성이 낮습니다. 답변 시 주의하고, 확신할 수 없는 내용은 추측하지 마세요.";
+        }
+
         const prompt = buildStudentChatSystemPrompt({
           examTitle: requestExamTitle,
           examCode: requestExamCode || "TEMP",
@@ -555,7 +520,7 @@ export async function POST(request: NextRequest) {
           currentQuestionText,
           currentQuestionAiContext,
           relevantMaterialsText: rag.relevantMaterialsText,
-        });
+        }) + tempRagWarning;
 
         const previousResponseId = null;
         const { response: aiResponse } = await getAIResponse(
@@ -597,12 +562,17 @@ export async function POST(request: NextRequest) {
     // ✅ 정규 세션 처리 (컨텍스트 조회)
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, exam_id, used_clarifications")
+      .select("id, exam_id, student_id, used_clarifications")
       .eq("id", sessionId)
       .single();
 
     if (sessionError || !session) {
       return errorJson("INVALID_SESSION", "Invalid session", 400, sessionError?.message);
+    }
+
+    // Verify session ownership: session must belong to authenticated user
+    if (user && session.student_id && session.student_id !== user.id) {
+      return errorJson("FORBIDDEN", "Session does not belong to this user", 403);
     }
 
     if (!session.exam_id) {
@@ -611,7 +581,7 @@ export async function POST(request: NextRequest) {
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("*")
+      .select("id, code, title, rubric, materials_text, chat_weight")
       .eq("id", session.exam_id)
       .single();
 

@@ -44,6 +44,8 @@ import {
   ChevronUp,
   AlertTriangle,
   Copy,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -227,7 +229,7 @@ export default function GradeStudentPage({
   }, [isLoaded, isSignedIn, user]);
 
   // Query for session data
-  const { data: sessionData, isLoading: loading } = useQuery({
+  const { data: sessionData, isLoading: loading, error: sessionError, refetch } = useQuery({
     queryKey: qk.session.grade(resolvedParams.studentId),
     queryFn: async ({ signal }) => {
       // studentId is actually sessionId in the URL
@@ -237,7 +239,8 @@ export default function GradeStudentPage({
       );
 
       if (!response.ok) {
-        throw new Error("Failed to fetch session data");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `채점 데이터 로드 실패 (${response.status})`);
       }
 
       const data: SessionData = await response.json();
@@ -250,6 +253,47 @@ export default function GradeStudentPage({
       (user?.unsafeMetadata?.role as string) === "instructor"
     ),
   });
+
+  // AI 재채점 상태
+  const [isRegrading, setIsRegrading] = useState(false);
+
+  // AI 재채점 핸들러
+  const handleRegrade = async () => {
+    setIsRegrading(true);
+    try {
+      const response = await fetch(
+        `/api/session/${resolvedParams.studentId}/grade`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ forceRegrade: true }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "AI 재채점에 실패했습니다");
+      }
+
+      const data = await response.json();
+      toast.success(
+        data.skipped
+          ? "이미 채점이 완료되어 있습니다."
+          : `AI 재채점이 완료되었습니다. (${data.gradesCount || 0}개 문제)`
+      );
+
+      // 데이터 리프레시
+      queryClient.invalidateQueries({
+        queryKey: qk.session.grade(resolvedParams.studentId),
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "AI 재채점 중 오류가 발생했습니다"
+      );
+    } finally {
+      setIsRegrading(false);
+    }
+  };
 
   // Effect to initialize state from sessionData
   useEffect(() => {
@@ -688,16 +732,28 @@ export default function GradeStudentPage({
     );
   }
 
-  if (!sessionData) {
+  if (sessionError || !sessionData) {
     return (
       <div className="container mx-auto p-6">
-        <div className="text-center py-12">
+        <div className="text-center py-12 space-y-4">
+          <AlertTriangle className="h-12 w-12 text-destructive mx-auto" />
           <h2 className="text-xl font-semibold text-red-600 mb-2">
-            제출물을 찾을 수 없습니다
+            {sessionError ? "채점 데이터를 불러오는 중 오류가 발생했습니다" : "제출물을 찾을 수 없습니다"}
           </h2>
-          <Link href={`/instructor/${resolvedParams.examId}`}>
-            <Button variant="outline">돌아가기</Button>
-          </Link>
+          {sessionError && (
+            <p className="text-sm text-muted-foreground max-w-md mx-auto">
+              {sessionError.message}
+            </p>
+          )}
+          <div className="flex items-center justify-center gap-3">
+            <Button variant="outline" onClick={() => refetch()}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              다시 시도
+            </Button>
+            <Link href={`/instructor/${resolvedParams.examId}`}>
+              <Button variant="outline">돌아가기</Button>
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -749,6 +805,42 @@ export default function GradeStudentPage({
               onBackClick={handleBackClick}
             />
           </div>
+
+          {/* AI 재채점 경고 배너 */}
+          {(sessionData.overallScore === null || sessionData.overallScore === 0) &&
+            Object.keys(sessionData.grades).length === 0 && (
+            <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <div>
+                  <p className="font-medium text-amber-800 dark:text-amber-200">
+                    자동 채점 결과가 없습니다
+                  </p>
+                  <p className="text-sm text-amber-600 dark:text-amber-400">
+                    배경 자동 채점이 실패했을 수 있습니다. AI 재채점을 실행해주세요.
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={handleRegrade}
+                disabled={isRegrading}
+                variant="outline"
+                className="border-amber-300 dark:border-amber-700 shrink-0"
+              >
+                {isRegrading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    재채점 중...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    AI 재채점
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
 
           {/* 데이터 표시 */}
           {examStats && (

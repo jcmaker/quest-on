@@ -1,3 +1,5 @@
+export const maxDuration = 120;
+
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
@@ -301,10 +303,27 @@ ${answersText}
         }
 
         // 백그라운드에서 자동 채점 시작 (채점 큐로 동시에 최대 3명만 채점)
+        // 최대 2회 재시도 + exponential backoff (5s, 10s)
         if (actualSessionId) {
-          enqueueGrading(() => autoGradeSession(actualSessionId))
+          const MAX_GRADING_RETRIES = 2;
+          const gradeWithRetry = async () => {
+            for (let attempt = 0; attempt <= MAX_GRADING_RETRIES; attempt++) {
+              try {
+                return await autoGradeSession(actualSessionId);
+              } catch (error) {
+                const isLastAttempt = attempt === MAX_GRADING_RETRIES;
+                if (isLastAttempt) throw error;
+                const delay = 5000 * Math.pow(2, attempt); // 5s, 10s
+                logError(`Background grading attempt ${attempt + 1} failed, retrying in ${delay}ms`, error, {
+                  additionalData: { sessionId: actualSessionId, attempt },
+                });
+                await new Promise((resolve) => setTimeout(resolve, delay));
+              }
+            }
+          };
+          enqueueGrading(gradeWithRetry)
             .catch((error) => {
-              logError("Background grading failed", error, {
+              logError("Background grading failed after all retries", error, {
                 additionalData: { sessionId: actualSessionId },
               });
             });

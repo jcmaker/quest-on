@@ -369,7 +369,14 @@ export async function GET(
 
     return successJson(responseData);
   } catch (error) {
-    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
+    logError("Grade GET handler error", error, {
+      path: `/api/session/grade`,
+    });
+    return errorJson(
+      "INTERNAL_ERROR",
+      (error as Error)?.message || "Internal server error",
+      500
+    );
   }
 }
 
@@ -462,7 +469,14 @@ export async function POST(
       grade: result,
     });
   } catch (error) {
-    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
+    logError("Grade POST handler error", error, {
+      path: `/api/session/grade`,
+    });
+    return errorJson(
+      "INTERNAL_ERROR",
+      (error as Error)?.message || "Internal server error",
+      500
+    );
   }
 }
 
@@ -534,6 +548,9 @@ export async function PUT(
       summary,
     });
   } catch (error) {
+    logError("Grade PUT handler error", error, {
+      path: `/api/session/grade`,
+    });
     return errorJson(
       "INTERNAL_ERROR",
       (error as Error)?.message || "Unknown error occurred",

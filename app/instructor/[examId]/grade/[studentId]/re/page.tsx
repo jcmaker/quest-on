@@ -38,7 +38,7 @@ export default function RegradePage() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            forceRegrade: false,
+            forceRegrade: true,
           }),
         });
 
