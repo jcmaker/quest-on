@@ -1,12 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@/lib/get-current-user";
-import { openai, AI_MODEL } from "@/lib/openai";
-import {
-  buildChatGradingSystemPrompt,
-  buildAnswerGradingSystemPrompt,
-} from "@/lib/prompts";
+import { autoGradeSession } from "@/lib/grading";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { batchGetUserInfo } from "@/lib/clerk-users";
@@ -470,12 +466,11 @@ export async function POST(
   }
 }
 
-// Auto-grade all questions based on rubric
+// Auto-grade all questions based on rubric — delegates to autoGradeSession()
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
-  const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
 
@@ -490,16 +485,15 @@ export async function PUT(
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
-    // Get session
+    // Verify session exists and instructor owns the exam
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, exam_id, student_id")
+      .select("id, exam_id")
       .eq("id", sessionId)
       .single();
 
@@ -507,19 +501,13 @@ export async function PUT(
       return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
-    // Get exam with rubric
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, questions, rubric, instructor_id")
+      .select("instructor_id")
       .eq("id", session.exam_id)
       .single();
 
-    if (examError || !exam) {
-      return errorJson("NOT_FOUND", "Exam not found", 404);
-    }
-
-    // Check if instructor owns the exam
-    if (exam.instructor_id !== user.id) {
+    if (examError || !exam || exam.instructor_id !== user.id) {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
@@ -531,363 +519,19 @@ export async function PUT(
         .eq("session_id", sessionId);
 
       if (existingGrades && existingGrades.length > 0) {
-        return successJson({
-          message: "Already graded",
-          skipped: true,
-        });
+        return successJson({ message: "Already graded", skipped: true });
       }
     } else {
-      // Delete existing grades if force regrade
       await supabase.from("grades").delete().eq("session_id", sessionId);
     }
 
-    // Get submissions
-    const { data: submissions, error: submissionsError } = await supabase
-      .from("submissions")
-      .select(
-        `
-        id,
-        q_idx,
-        answer,
-        ai_feedback,
-        student_reply,
-        compressed_answer_data,
-        compressed_feedback_data
-      `
-      )
-      .eq("session_id", sessionId);
-
-    if (submissionsError) {
-      logError("Error fetching submissions for auto-grade", submissionsError, {
-        path: `/api/session/${sessionId}/grade`,
-      });
-    }
-
-    // Get messages
-    const { data: messages, error: messagesError } = await supabase
-      .from("messages")
-      .select(
-        `
-        id,
-        q_idx,
-        role,
-        content,
-        compressed_content,
-        created_at
-      `
-      )
-      .eq("session_id", sessionId);
-
-    if (messagesError) {
-      logError("Error fetching messages for auto-grade", messagesError, {
-        path: `/api/session/${sessionId}/grade`,
-      });
-    }
-
-    // Decompress submissions
-    const submissionsByQuestion: Record<
-      number,
-      {
-        answer: string;
-        ai_feedback?: string;
-        student_reply?: string;
-      }
-    > = {};
-
-    if (submissions) {
-      submissions.forEach((submission: Record<string, unknown>) => {
-        const qIdx = submission.q_idx as number;
-        let answer = submission.answer as string;
-
-        if (
-          submission.compressed_answer_data &&
-          typeof submission.compressed_answer_data === "string"
-        ) {
-          try {
-            const decompressed = decompressData(
-              submission.compressed_answer_data as string
-            );
-            answer = (decompressed as { answer?: string })?.answer || answer;
-          } catch (error) {
-            logError("Error decompressing answer data in auto-grade", error, {
-              path: `/api/session/${sessionId}/grade`,
-            });
-          }
-        }
-
-        submissionsByQuestion[qIdx] = {
-          answer: answer || "",
-          ai_feedback:
-            typeof submission.ai_feedback === "string"
-              ? submission.ai_feedback
-              : undefined,
-          student_reply:
-            typeof submission.student_reply === "string"
-              ? submission.student_reply
-              : undefined,
-        };
-      });
-    }
-
-    // Decompress and organize messages by question
-    const messagesByQuestion: Record<
-      number,
-      Array<{ role: string; content: string }>
-    > = {};
-
-    if (messages) {
-      messages.forEach((message: Record<string, unknown>) => {
-        const qIdx = message.q_idx as number;
-        let content = message.content as string;
-
-        if (
-          message.compressed_content &&
-          typeof message.compressed_content === "string"
-        ) {
-          try {
-            content =
-              (decompressData(
-                message.compressed_content as string
-              ) as string) || content;
-          } catch (error) {
-            logError("Error decompressing message content in auto-grade", error, {
-              path: `/api/session/${sessionId}/grade`,
-            });
-          }
-        }
-
-        if (!messagesByQuestion[qIdx]) {
-          messagesByQuestion[qIdx] = [];
-        }
-
-        messagesByQuestion[qIdx].push({
-          role: message.role as string,
-          content: content || "",
-        });
-      });
-    }
-
-    // Normalize questions
-    const questions = exam.questions
-      ? Array.isArray(exam.questions)
-        ? exam.questions.map((q: Record<string, unknown>, index: number) => ({
-            id: q.id,
-            idx: q.idx !== undefined ? (q.idx as number) : index,
-            type: q.type,
-            prompt: q.prompt || q.text,
-            ai_context: q.ai_context,
-          }))
-        : []
-      : [];
-
-    // Auto-grade each question
-    const grades: Array<{
-      q_idx: number;
-      score: number;
-      comment: string;
-      stage_grading?: {
-        chat?: { score: number; comment: string };
-        answer?: { score: number; comment: string };
-      };
-    }> = [];
-
-    for (const question of questions) {
-      const qIdx = question.idx as number;
-      // Try to find submission by q_idx, if not found try by question index
-      let submission = submissionsByQuestion[qIdx];
-      if (!submission && questions.indexOf(question) >= 0) {
-        const questionIndex = questions.indexOf(question);
-        submission = submissionsByQuestion[questionIndex];
-      }
-      const questionMessages = messagesByQuestion[qIdx] || [];
-
-      if (!submission) {
-        continue;
-      }
-
-      // Build rubric text
-      const rubricText =
-        exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
-          ? `
-**평가 루브릭 기준:**
-${exam.rubric
-  .map(
-    (
-      item: {
-        evaluationArea: string;
-        detailedCriteria: string;
-      },
-      index: number
-    ) =>
-      `${index + 1}. ${item.evaluationArea}
-           - 세부 기준: ${item.detailedCriteria}`
-  )
-  .join("\n")}
-`
-          : "";
-
-      const stageGrading: {
-        chat?: { score: number; comment: string };
-        answer?: { score: number; comment: string };
-      } = {};
-
-      // 1. Chat stage grading
-      if (questionMessages.length > 0) {
-        try {
-          const chatSystemPrompt = buildChatGradingSystemPrompt({
-            rubricText,
-            // rubricScoresSchema 없음 (이 엔드포인트는 루브릭별 점수를 반환하지 않음)
-          });
-
-          const chatUserPrompt = `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
-
-**문제:**
-${question.prompt || ""}
-
-${question.ai_context ? `**문제 컨텍스트:**\n${question.ai_context}\n` : ""}
-
-**학생과 AI의 대화 기록:**
-${questionMessages
-  .map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`)
-  .join("\n\n")}
-
-위 정보를 바탕으로 루브릭 기준에 따라 채팅 단계의 점수와 피드백을 제공해주세요.`;
-
-          const chatCompletion = await openai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [
-              { role: "system", content: chatSystemPrompt },
-              { role: "user", content: chatUserPrompt },
-            ],
-            response_format: { type: "json_object" },
-          });
-
-          const chatResponseContent =
-            chatCompletion.choices[0]?.message?.content || "";
-          let chatParsedResponse;
-          try {
-            chatParsedResponse = JSON.parse(chatResponseContent);
-          } catch (parseError) {
-            throw new Error(`JSON parse error: ${parseError}`);
-          }
-
-          stageGrading.chat = {
-            score: Math.max(
-              0,
-              Math.min(100, Math.round(chatParsedResponse.score || 0))
-            ),
-            comment: chatParsedResponse.comment || "채팅 단계 평가 완료",
-          };
-        } catch (error) {
-          logError(`Error grading chat stage for question ${qIdx}`, error, {
-            path: `/api/session/${sessionId}/grade`,
-          });
-        }
-      }
-
-      // 2. Answer stage grading
-      if (submission.answer) {
-        try {
-          const answerSystemPrompt = buildAnswerGradingSystemPrompt({
-            rubricText,
-            // rubricScoresSchema 없음 (이 엔드포인트는 루브릭별 점수를 반환하지 않음)
-          });
-
-          const answerUserPrompt = `다음 정보를 바탕으로 최종 답안을 평가해주세요:
-
-**문제:**
-${question.prompt || ""}
-
-${question.ai_context ? `**문제 컨텍스트:**\n${question.ai_context}\n` : ""}
-
-**학생의 최종 답안:**
-${submission.answer || "답안이 없습니다."}
-
-위 정보를 바탕으로 루브릭 기준에 따라 답안의 점수와 피드백을 제공해주세요.`;
-
-          const answerCompletion = await openai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [
-              { role: "system", content: answerSystemPrompt },
-              { role: "user", content: answerUserPrompt },
-            ],
-            response_format: { type: "json_object" },
-          });
-
-          const answerResponseContent =
-            answerCompletion.choices[0]?.message?.content || "";
-          let answerParsedResponse;
-          try {
-            answerParsedResponse = JSON.parse(answerResponseContent);
-          } catch (parseError) {
-            throw new Error(`JSON parse error: ${parseError}`);
-          }
-
-          stageGrading.answer = {
-            score: Math.max(
-              0,
-              Math.min(100, Math.round(answerParsedResponse.score || 0))
-            ),
-            comment: answerParsedResponse.comment || "답안 평가 완료",
-          };
-        } catch (error) {
-          logError(`Error grading answer stage for question ${qIdx}`, error, {
-            path: `/api/session/${sessionId}/grade`,
-          });
-          // Continue with other stages even if one fails
-        }
-      }
-
-      // Calculate overall score from stage scores
-      let overallScore = 0;
-      let stageCount = 0;
-      if (stageGrading.chat) {
-        overallScore += stageGrading.chat.score;
-        stageCount++;
-      }
-      if (stageGrading.answer) {
-        overallScore += stageGrading.answer.score;
-        stageCount++;
-      }
-
-      const finalScore =
-        stageCount > 0 ? Math.round(overallScore / stageCount) : 0;
-      const overallComment = `채팅 단계: ${
-        stageGrading.chat?.score || "N/A"
-      }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점`;
-
-      // Only add grade if at least one stage was graded
-      if (Object.keys(stageGrading).length > 0) {
-        grades.push({
-          q_idx: qIdx,
-          score: finalScore,
-          comment: overallComment,
-          stage_grading: stageGrading,
-        });
-      }
-    }
-
-    // Save all grades with grade_type='auto'
-    if (grades.length > 0) {
-      const { error: insertError } = await supabase.from("grades").insert(
-        grades.map((grade) => ({
-          session_id: sessionId,
-          q_idx: grade.q_idx,
-          score: grade.score,
-          comment: grade.comment,
-          stage_grading: grade.stage_grading || null,
-          grade_type: "auto",
-        }))
-      );
-
-      if (insertError) {
-        throw insertError;
-      }
-    }
+    // Delegate to centralized grading logic (parallel, retry, timeout)
+    const { grades, summary } = await autoGradeSession(sessionId);
 
     return successJson({
       gradesCount: grades.length,
       grades,
+      summary,
     });
   } catch (error) {
     return errorJson(

@@ -182,9 +182,9 @@ export default function StudentReportPage() {
             대시보드로 돌아가기
           </Button>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold">{reportData.exam.title}</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold">{reportData.exam.title}</h1>
             <p className="text-muted-foreground mt-2">
               제출일:{" "}
               {new Date(reportData.session.submitted_at).toLocaleString(

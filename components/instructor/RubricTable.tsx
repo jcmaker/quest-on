@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import {
   Table,
   TableBody,
@@ -11,7 +13,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Trash2, HelpCircle } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Plus, Trash2, HelpCircle, Settings, ChevronDown } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -31,6 +38,8 @@ interface RubricTableProps {
   onRemove: (id: string) => void;
   isPublic?: boolean;
   onPublicChange?: (isPublic: boolean) => void;
+  chatWeight?: number | null;
+  onChatWeightChange?: (weight: number | null) => void;
 }
 
 export function RubricTable({
@@ -40,7 +49,12 @@ export function RubricTable({
   onRemove,
   isPublic = false,
   onPublicChange,
+  chatWeight,
+  onChatWeightChange,
 }: RubricTableProps) {
+  const [isWeightOpen, setIsWeightOpen] = useState(false);
+  const isCustomWeight = chatWeight !== null && chatWeight !== undefined;
+  const effectiveWeight = chatWeight ?? 50;
   return (
     <>
       <Separator />
@@ -218,6 +232,89 @@ export function RubricTable({
             평가 기준 추가
           </Button>
         </div>
+
+        {onChatWeightChange && (
+          <Collapsible open={isWeightOpen} onOpenChange={setIsWeightOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-2 w-full px-4 py-3 text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
+              >
+                <Settings className="h-4 w-4" />
+                <span>채점 가중치 설정</span>
+                <span className="ml-auto text-xs">
+                  {isCustomWeight
+                    ? `채팅 ${effectiveWeight}% / 답안 ${100 - effectiveWeight}%`
+                    : `자동 (채팅 50% / 답안 50%)`}
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 transition-transform ${
+                    isWeightOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="px-4 py-4 space-y-4 border rounded-lg mt-2 bg-muted/20">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm font-medium">직접 설정</Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs">
+                          채팅 단계(AI 대화 과정)와 답안 단계(최종 답안)의 채점
+                          비중을 설정하세요
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <Switch
+                    checked={isCustomWeight}
+                    onCheckedChange={(checked) => {
+                      onChatWeightChange(checked ? 50 : null);
+                    }}
+                  />
+                </div>
+
+                {isCustomWeight ? (
+                  <div className="space-y-3">
+                    <Slider
+                      value={[effectiveWeight]}
+                      onValueChange={([value]) =>
+                        onChatWeightChange(value)
+                      }
+                      min={0}
+                      max={100}
+                      step={10}
+                      className="w-full"
+                    />
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        채팅 과정{" "}
+                        <span className="font-semibold text-foreground">
+                          {effectiveWeight}%
+                        </span>
+                      </span>
+                      <span className="text-muted-foreground">
+                        최종 답안{" "}
+                        <span className="font-semibold text-foreground">
+                          {100 - effectiveWeight}%
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    채팅 과정과 최종 답안을 동일 비중(50:50)으로 평가합니다
+                  </p>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
     </>
   );

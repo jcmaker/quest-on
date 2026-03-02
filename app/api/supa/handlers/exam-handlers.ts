@@ -33,6 +33,7 @@ export async function createExam(data: {
     detailedCriteria: string;
   }[];
   rubric_public?: boolean;
+  chat_weight?: number | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -71,6 +72,7 @@ export async function createExam(data: {
       materials_text: data.materials_text || [], // 추출된 텍스트 저장
       rubric: data.rubric || [],
       rubric_public: data.rubric_public || false,
+      chat_weight: data.chat_weight ?? 50,
       status: data.status,
       instructor_id: user.id, // Clerk user ID (e.g., "user_31ihNg56wMaE27ft10H4eApjc1J")
       created_at: data.created_at,
@@ -254,7 +256,7 @@ export async function getExam(data: { code: string }) {
   try {
     const { data: exam, error } = await supabase
       .from("exams")
-      .select("id, title, code, description, duration, questions, rubric, rubric_public, status, instructor_id, materials, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting")
+      .select("id, title, code, description, duration, questions, rubric, rubric_public, chat_weight, status, instructor_id, materials, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting")
       .eq("code", data.code)
       .single();
 
@@ -324,7 +326,7 @@ export async function getExamById(data: { id: string }) {
     const { data: exam, error } = await supabase
       .from("exams")
       .select(
-        "id, title, code, description, duration, questions, materials, rubric, rubric_public, status, instructor_id, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting"
+        "id, title, code, description, duration, questions, materials, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting"
       )
       .eq("id", data.id)
       .eq("instructor_id", user.id) // Only allow instructors to view their own exams
@@ -505,6 +507,7 @@ export async function copyExam(data: { exam_id: string }) {
       materials_text: originalExam.materials_text || [], // 복사본도 materials_text 포함
       rubric: originalExam.rubric || [],
       rubric_public: originalExam.rubric_public || false,
+      chat_weight: originalExam.chat_weight ?? 50,
       status: "draft", // 복사본은 초안 상태로 시작
       instructor_id: user.id,
       created_at: now,

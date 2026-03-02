@@ -67,6 +67,7 @@ export default function CreateExam() {
     },
   ]);
   const [isRubricPublic, setIsRubricPublic] = useState(false);
+  const [chatWeight, setChatWeight] = useState<number | null>(null);
   // 추출된 텍스트 저장: Map<fileUrl, {text: string, fileName: string}>
   const [extractedTexts, setExtractedTexts] = useState<
     Map<string, { text: string; fileName: string }>
@@ -450,6 +451,7 @@ export default function CreateExam() {
       questions: Question[];
       rubric: RubricItem[];
       rubric_public: boolean;
+      chat_weight: number | null;
       materials: string[];
       status: string;
       created_at: string;
@@ -714,6 +716,7 @@ export default function CreateExam() {
         questions: questions,
         rubric: rubric, // 루브릭 데이터 추가
         rubric_public: isRubricPublic, // 루브릭 공개 여부
+        chat_weight: chatWeight, // 채점 가중치 (null = 기본값 50)
         materials: materialUrls, // Array of file URLs
         materials_text: materialsText, // 추출된 텍스트 배열
         status: "draft", // Start as draft
@@ -859,6 +862,8 @@ export default function CreateExam() {
               onRemove={removeRubricItem}
               isPublic={isRubricPublic}
               onPublicChange={setIsRubricPublic}
+              chatWeight={chatWeight}
+              onChatWeightChange={setChatWeight}
             />
 
             {/* Submit */}

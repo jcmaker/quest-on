@@ -39,6 +39,7 @@ export default function EditExam({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [rubric, setRubric] = useState<RubricItem[]>([]);
   const [isRubricPublic, setIsRubricPublic] = useState(false);
+  const [chatWeight, setChatWeight] = useState<number | null>(null);
   const [extractedTexts] = useState<
     Map<string, { text: string; fileName: string }>
   >(new Map());
@@ -88,6 +89,7 @@ export default function EditExam({
               ]
         );
         setIsRubricPublic(exam.rubric_public || false);
+        setChatWeight(exam.chat_weight ?? null);
       } catch (error) {
         toast.error("시험 데이터를 불러오는 중 오류가 발생했습니다.");
         router.push(`/instructor/${resolvedParams.examId}`);
@@ -529,6 +531,7 @@ export default function EditExam({
         questions: questions,
         rubric: rubric,
         rubric_public: isRubricPublic,
+        chat_weight: chatWeight,
         materials: materialUrls,
         updated_at: new Date().toISOString(),
       };
@@ -658,6 +661,8 @@ export default function EditExam({
           onRemove={removeRubricItem}
           isPublic={isRubricPublic}
           onPublicChange={setIsRubricPublic}
+          chatWeight={chatWeight}
+          onChatWeightChange={setChatWeight}
         />
 
         <CaseQuestionGenerator

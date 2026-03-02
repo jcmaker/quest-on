@@ -4,6 +4,8 @@ import { decompressData } from "@/lib/compression";
 import {
   buildChatGradingSystemPrompt,
   buildAnswerGradingSystemPrompt,
+  buildChatGradingUserPrompt,
+  buildAnswerGradingUserPrompt,
   buildSummaryEvaluationSystemPrompt,
 } from "@/lib/prompts";
 import { logError } from "@/lib/logger";
@@ -51,7 +53,7 @@ export async function autoGradeSession(
   // 2. 시험 정보 가져오기 (루브릭 포함)
   const { data: exam, error: examError } = await supabase
     .from("exams")
-    .select("id, title, questions, rubric")
+    .select("id, title, questions, rubric, chat_weight")
     .eq("id", session.exam_id)
     .single();
 
@@ -322,19 +324,11 @@ ${rubricItems
               rubricScoresSchema,
             });
 
-            const chatUserPrompt = `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
-
-**문제:**
-${question.prompt || ""}
-
-${question.ai_context ? `**문제 컨텍스트:**\n${question.ai_context}\n` : ""}
-
-**학생과 AI의 대화 기록:**
-${questionMessages
-  .map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`)
-  .join("\n\n")}
-
-위 정보를 바탕으로 루브릭 기준에 따라 채팅 단계의 점수와 피드백을 제공해주세요.`;
+            const chatUserPrompt = buildChatGradingUserPrompt({
+              questionPrompt: question.prompt || "",
+              questionAiContext: question.ai_context,
+              messages: questionMessages,
+            });
 
             const chatCompletion = await callOpenAI(() =>
               openai.chat.completions.create({
@@ -377,17 +371,11 @@ ${questionMessages
               rubricScoresSchema,
             });
 
-            const answerUserPrompt = `다음 정보를 바탕으로 최종 답안을 평가해주세요:
-
-**문제:**
-${question.prompt || ""}
-
-${question.ai_context ? `**문제 컨텍스트:**\n${question.ai_context}\n` : ""}
-
-**학생의 최종 답안:**
-${submission.answer || "답안이 없습니다."}
-
-위 정보를 바탕으로 루브릭 기준에 따라 답안의 점수와 피드백을 제공해주세요.`;
+            const answerUserPrompt = buildAnswerGradingUserPrompt({
+              questionPrompt: question.prompt || "",
+              questionAiContext: question.ai_context,
+              answer: submission.answer || "",
+            });
 
             const answerCompletion = await callOpenAI(() =>
               openai.chat.completions.create({
@@ -437,22 +425,22 @@ ${submission.answer || "답안이 없습니다."}
       stageGrading.answer = answerResult.value;
     }
 
-    // 8-3. 종합 점수 계산 (0-100 범위 보장)
-    let overallScore = 0;
-    let stageCount = 0;
-    if (stageGrading.chat) {
-      overallScore += stageGrading.chat.score;
-      stageCount++;
-    }
-    if (stageGrading.answer) {
-      overallScore += stageGrading.answer.score;
-      stageCount++;
-    }
+    // 8-3. 종합 점수 계산 — 가중 평균 (0-100 범위 보장)
+    const chatWeight = (exam.chat_weight ?? 50) / 100;
+    const answerWeight = 1 - chatWeight;
 
-    const finalScore =
-      stageCount > 0
-        ? Math.max(0, Math.min(100, Math.round(overallScore / stageCount)))
-        : 0;
+    let finalScore = 0;
+    if (stageGrading.chat && stageGrading.answer) {
+      finalScore = Math.round(
+        stageGrading.chat.score * chatWeight +
+          stageGrading.answer.score * answerWeight
+      );
+    } else if (stageGrading.chat) {
+      finalScore = stageGrading.chat.score;
+    } else if (stageGrading.answer) {
+      finalScore = stageGrading.answer.score;
+    }
+    finalScore = Math.max(0, Math.min(100, finalScore));
     const overallComment = `채팅 단계: ${
       stageGrading.chat?.score || "N/A"
     }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점`;
@@ -497,6 +485,7 @@ ${submission.answer || "답안이 없습니다."}
         score: grade.score,
         comment: grade.comment,
         stage_grading: grade.stage_grading || null,
+        grade_type: "auto",
       }))
     );
 

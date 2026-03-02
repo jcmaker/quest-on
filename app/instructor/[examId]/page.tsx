@@ -552,7 +552,7 @@ export default function ExamDetail({
       />
 
       <SidebarInset>
-        <div className="container mx-auto p-6">
+        <div className="container mx-auto p-4 sm:p-6">
           <ExamDetailHeader
             title={exam.title}
             code={exam.code}
@@ -659,7 +659,7 @@ export default function ExamDetail({
           </div>
 
           {/* 아래쪽: 좌우 그리드 (차트 | 학생 목록) */}
-          <div className="grid gap-6 lg:grid-cols-[1fr_500px]">
+          <div className="grid gap-6 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_500px]">
             {/* 왼쪽: 차트 */}
             <div className="space-y-4">
               {analyticsData && !analyticsLoading && (
@@ -695,7 +695,7 @@ export default function ExamDetail({
             {/* 오른쪽: 학생 목록 */}
             <div className="space-y-4">
               {/* 검색 및 필터링 */}
-              <div className="flex gap-4">
+              <div className="flex flex-col sm:flex-row gap-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
@@ -709,7 +709,7 @@ export default function ExamDetail({
                   value={sortOption}
                   onValueChange={(v) => setSortOption(v as SortOption)}
                 >
-                  <SelectTrigger className="w-[200px]">
+                  <SelectTrigger className="w-full sm:w-[200px]">
                     <SelectValue placeholder="정렬 기준" />
                   </SelectTrigger>
                   <SelectContent>

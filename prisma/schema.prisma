@@ -54,6 +54,7 @@ model exams {
   started_at           DateTime?              @db.Timestamptz(6) // Gate Start 신호 시간 (교수 Start Exam 클릭 시)
   allow_draft_in_waiting Boolean?              @default(false)   // Waiting Room에서 Drafting 허용 여부
   allow_chat_in_waiting  Boolean?              @default(false)   // Waiting Room에서 AI Chat 허용 여부
+  chat_weight          Int?                   @default(50)      // 채팅 단계 가중치 (0-100), answer_weight = 100 - chat_weight
   exam_nodes           exam_nodes[]
   exam_material_chunks exam_material_chunks[]
 

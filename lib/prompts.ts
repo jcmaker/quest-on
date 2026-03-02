@@ -423,6 +423,54 @@ export function buildSummaryEvaluationSystemPrompt(): string {
 }
 
 /**
+ * 채팅 단계 채점 유저 프롬프트
+ */
+export function buildChatGradingUserPrompt(params: {
+  questionPrompt: string;
+  questionAiContext?: string;
+  messages: Array<{ role: string; content: string }>;
+}): string {
+  const { questionPrompt, questionAiContext, messages } = params;
+
+  return `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
+
+**문제:**
+${questionPrompt || ""}
+
+${questionAiContext ? `**문제 컨텍스트:**\n${questionAiContext}\n` : ""}
+
+**학생과 AI의 대화 기록:**
+${messages
+  .map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`)
+  .join("\n\n")}
+
+위 정보를 바탕으로 루브릭 기준에 따라 채팅 단계의 점수와 피드백을 제공해주세요.`;
+}
+
+/**
+ * 답안 단계 채점 유저 프롬프트
+ */
+export function buildAnswerGradingUserPrompt(params: {
+  questionPrompt: string;
+  questionAiContext?: string;
+  answer: string;
+}): string {
+  const { questionPrompt, questionAiContext, answer } = params;
+
+  return `다음 정보를 바탕으로 최종 답안을 평가해주세요:
+
+**문제:**
+${questionPrompt || ""}
+
+${questionAiContext ? `**문제 컨텍스트:**\n${questionAiContext}\n` : ""}
+
+**학생의 최종 답안:**
+${answer || "답안이 없습니다."}
+
+위 정보를 바탕으로 루브릭 기준에 따라 답안의 점수와 피드백을 제공해주세요.`;
+}
+
+/**
  * 사례형 문제(Case Question) 생성 프롬프트
  */
 export function buildCaseQuestionGenerationPrompt(params: {
