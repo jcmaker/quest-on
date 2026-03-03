@@ -86,7 +86,7 @@ test.describe("Upload API — /api/upload", () => {
 
     expect(res.status()).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe("INVALID_FILE_TYPE");
+    expect(body.code).toBe("INVALID_FILE_EXTENSION");
   });
 
   // ── Oversized file ──

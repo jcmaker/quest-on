@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env.test") });
 
-const BYPASS_SECRET = process.env.TEST_BYPASS_SECRET ?? "e2e-test-bypass-token-2024";
+export const BYPASS_SECRET = process.env.TEST_BYPASS_SECRET ?? "e2e-test-bypass-token-2024";
 
 // --------------- Admin token generation ---------------
 

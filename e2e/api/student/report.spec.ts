@@ -1,4 +1,4 @@
-import { test, expect } from "../../fixtures/auth.fixture";
+import { test, expect, BYPASS_SECRET } from "../../fixtures/auth.fixture";
 import {
   seedExam,
   seedSession,
@@ -91,6 +91,7 @@ test.describe("Student Report — GET /api/student/session/[sessionId]/report", 
       extraHTTPHeaders: {
         "x-test-user-id": "test-student-id",
         "x-test-user-role": "student",
+        "x-test-bypass-token": BYPASS_SECRET,
         Accept: "application/json",
       },
     });

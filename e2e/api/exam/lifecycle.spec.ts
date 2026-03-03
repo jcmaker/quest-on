@@ -1,4 +1,4 @@
-import { test, expect } from "../../fixtures/auth.fixture";
+import { test, expect, BYPASS_SECRET } from "../../fixtures/auth.fixture";
 import {
   seedExam,
   seedSession,
@@ -106,6 +106,7 @@ test.describe("Exam Lifecycle — start / end / sessions", () => {
       extraHTTPHeaders: {
         "x-test-user-id": "test-instructor-id",
         "x-test-user-role": "instructor",
+        "x-test-bypass-token": BYPASS_SECRET,
         Accept: "application/json",
       },
     });
