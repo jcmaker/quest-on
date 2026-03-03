@@ -50,7 +50,9 @@ export async function seedStudentExamScenario(
         ? now
         : null,
     preflight_accepted_at:
-      sessionStatus !== "not_joined" ? now : null,
+      sessionStatus !== "not_joined" && sessionStatus !== "joined"
+        ? now
+        : null,
     attempt_timer_started_at:
       sessionStatus === "in_progress" || sessionStatus === "submitted"
         ? now
