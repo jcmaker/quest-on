@@ -30,7 +30,7 @@ test.describe("Student — Exam Flow", () => {
     await expect(studentPage.locator("body")).not.toBeEmpty();
     // Preflight acceptance is needed for joined sessions
     await expect(
-      studentPage.getByText(/시험 안내|preflight|시작/i),
+      studentPage.getByRole("heading", { name: /시험 시작 전 안내사항/ }),
     ).toBeVisible({ timeout: 10_000 });
   });
 
