@@ -120,7 +120,7 @@ jobs:
           mkdir -p test-results
           npx playwright test --project=api-integration --config=e2e/playwright.config.ts
         env:
-          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/api-results.json
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/api-results.xml
           NODE_ENV: test
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
@@ -147,7 +147,7 @@ jobs:
         if: always()
         uses: test-summary/action@v2
         with:
-          paths: test-results/api-results.json
+          paths: test-results/api-results.xml
 
   browser-e2e-test:
     name: Browser E2E Tests
@@ -191,7 +191,7 @@ jobs:
           mkdir -p test-results
           npx playwright test --project=browser-e2e --project=browser-flows --config=e2e/playwright.config.ts
         env:
-          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/browser-results.json
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: test-results/browser-results.xml
           NODE_ENV: test
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
@@ -218,4 +218,4 @@ jobs:
         if: always()
         uses: test-summary/action@v2
         with:
-          paths: test-results/browser-results.json
+          paths: test-results/browser-results.xml

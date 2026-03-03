@@ -15,13 +15,13 @@ export default defineConfig({
     ? [
         ["list"],
         [
-          "json",
+          "junit",
           {
             outputFile: path.resolve(
               __dirname,
               "..",
-              process.env.PLAYWRIGHT_JSON_OUTPUT_NAME ||
-                "test-results/results.json",
+              process.env.PLAYWRIGHT_JUNIT_OUTPUT_NAME ||
+                "test-results/results.xml",
             ),
           },
         ],
