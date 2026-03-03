@@ -17,9 +17,12 @@ export default defineConfig({
         [
           "json",
           {
-            outputFile:
+            outputFile: path.resolve(
+              __dirname,
+              "..",
               process.env.PLAYWRIGHT_JSON_OUTPUT_NAME ||
-              "test-results/results.json",
+                "test-results/results.json",
+            ),
           },
         ],
       ]
