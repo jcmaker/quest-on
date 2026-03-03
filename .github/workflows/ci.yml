@@ -100,6 +100,19 @@ jobs:
         run: npx prisma db push --accept-data-loss
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      - name: Create non-Prisma tables
+        run: |
+          psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "
+            CREATE TABLE IF NOT EXISTS error_logs (
+              id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+              level TEXT NOT NULL DEFAULT 'error',
+              message TEXT NOT NULL,
+              payload JSONB,
+              path TEXT,
+              user_id TEXT,
+              created_at TIMESTAMPTZ DEFAULT now()
+            );
+          "
       - name: Start mock server
         run: npx tsx scripts/start-mock-server.ts &
       - name: Run API integration tests
@@ -118,6 +131,7 @@ jobs:
           ADMIN_SESSION_SECRET: test-secret-for-hmac-signing-minimum-32-chars
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy
           CLERK_SECRET_KEY: sk_test_dummy
+          TEST_BYPASS_SECRET: e2e-test-bypass-token-2024
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
@@ -155,6 +169,19 @@ jobs:
         run: npx prisma db push --accept-data-loss
         env:
           DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      - name: Create non-Prisma tables
+        run: |
+          psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "
+            CREATE TABLE IF NOT EXISTS error_logs (
+              id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+              level TEXT NOT NULL DEFAULT 'error',
+              message TEXT NOT NULL,
+              payload JSONB,
+              path TEXT,
+              user_id TEXT,
+              created_at TIMESTAMPTZ DEFAULT now()
+            );
+          "
       - name: Start mock server
         run: npx tsx scripts/start-mock-server.ts &
       - name: Run browser E2E tests
