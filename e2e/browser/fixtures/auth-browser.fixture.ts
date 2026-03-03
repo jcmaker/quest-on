@@ -70,7 +70,7 @@ async function setupAuthPage(
     },
   ]);
 
-  // Inject x-test-user-* headers on all API calls
+  // Inject x-test-user-* headers and bypass token on all API calls
   await page.route("**/api/**", (route) => {
     const headers = route.request().headers();
     return route.continue({
@@ -78,6 +78,7 @@ async function setupAuthPage(
         ...headers,
         "x-test-user-id": user.id,
         "x-test-user-role": user.unsafeMetadata.role,
+        "x-test-bypass-token": BYPASS_SECRET,
       },
     });
   });

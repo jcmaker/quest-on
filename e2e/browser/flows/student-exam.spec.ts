@@ -8,6 +8,7 @@ import {
   cleanupTestData,
 } from "../helpers/test-data-builder";
 import { getTestSupabase } from "../../helpers/supabase-test-client";
+import { StudentExamPage } from "../pages";
 
 const supabase = getTestSupabase();
 
@@ -24,14 +25,11 @@ test.describe("Student — Exam Flow", () => {
       sessionStatus: "joined",
     });
 
-    await studentPage.goto(`/exam/${exam.code}`);
+    const examPage = new StudentExamPage(studentPage);
+    await examPage.goto(exam.code);
 
-    // The page should load and show exam title or preflight content
-    await expect(studentPage.locator("body")).not.toBeEmpty();
     // Preflight acceptance is needed for joined sessions
-    await expect(
-      studentPage.getByRole("heading", { name: /시험 시작 전 안내사항/ }),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(examPage.preflightHeading).toBeVisible({ timeout: 10_000 });
   });
 
   test("shows question panel after preflight is accepted (in_progress session)", async ({
@@ -43,7 +41,8 @@ test.describe("Student — Exam Flow", () => {
       withSubmissions: false,
     });
 
-    await studentPage.goto(`/exam/${exam.code}`);
+    const examPage = new StudentExamPage(studentPage);
+    await examPage.goto(exam.code);
 
     // Should show the question content
     await expect(
@@ -59,7 +58,8 @@ test.describe("Student — Exam Flow", () => {
       sessionStatus: "in_progress",
     });
 
-    await studentPage.goto(`/exam/${exam.code}`);
+    const examPage = new StudentExamPage(studentPage);
+    await examPage.goto(exam.code);
 
     // Wait for first question to load
     await expect(
@@ -67,9 +67,8 @@ test.describe("Student — Exam Flow", () => {
     ).toBeVisible({ timeout: 15_000 });
 
     // Navigate to next question — button must be visible
-    const nextBtn = studentPage.getByRole("button", { name: "다음 문제" });
-    await expect(nextBtn).toBeVisible({ timeout: 10_000 });
-    await nextBtn.click();
+    await expect(examPage.nextBtn).toBeVisible({ timeout: 10_000 });
+    await examPage.nextBtn.click();
     // Second question should show
     await expect(
       studentPage.getByText(/stack|queue/i),
@@ -82,18 +81,17 @@ test.describe("Student — Exam Flow", () => {
       sessionStatus: "in_progress",
     });
 
-    await studentPage.goto(`/exam/${exam.code}`);
+    const examPage = new StudentExamPage(studentPage);
+    await examPage.goto(exam.code);
 
-    // Wait for answer area to be available (use placeholder to avoid matching AI chat textarea)
-    const answerArea = studentPage.getByPlaceholder(/답안을 작성/i);
-    await expect(answerArea).toBeVisible({ timeout: 15_000 });
+    // Wait for answer area to be available
+    await expect(examPage.answerArea).toBeVisible({ timeout: 15_000 });
 
     // Type an answer
-    await answerArea.click();
-    await answerArea.fill("This is my test answer about polymorphism.");
+    await examPage.typeAnswer("This is my test answer about polymorphism.");
 
     // Verify the text was entered
-    await expect(answerArea).toHaveValue(/polymorphism/);
+    await expect(examPage.answerArea).toHaveValue(/polymorphism/);
   });
 
   test("manual save with Ctrl+S triggers save indicator", async ({
@@ -104,26 +102,23 @@ test.describe("Student — Exam Flow", () => {
       sessionStatus: "in_progress",
     });
 
-    await studentPage.goto(`/exam/${exam.code}`);
+    const examPage = new StudentExamPage(studentPage);
+    await examPage.goto(exam.code);
 
     // Wait for the page to load
     await expect(
       studentPage.getByText(/polymorphism/i),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Type something in the answer area (use placeholder to avoid matching AI chat textarea)
-    const answerArea = studentPage.getByPlaceholder(/답안을 작성/i);
-    await expect(answerArea).toBeVisible({ timeout: 10_000 });
-    await answerArea.click();
-    await answerArea.fill("Test answer for save");
+    // Type something in the answer area
+    await expect(examPage.answerArea).toBeVisible({ timeout: 10_000 });
+    await examPage.typeAnswer("Test answer for save");
 
     // Trigger Ctrl+S
-    await studentPage.keyboard.press("Control+s");
+    await examPage.manualSave();
 
-    // Should show saving/saved indicator
-    await expect(
-      studentPage.getByText(/저장|saving|saved/i).first(),
-    ).toBeVisible({ timeout: 5_000 });
+    // Should show saving/saved indicator via data-testid
+    await expect(examPage.saveIndicator).toBeVisible({ timeout: 5_000 });
 
     // Verify draft was saved to DB (poll until persisted)
     await expect(async () => {
@@ -144,14 +139,12 @@ test.describe("Student — Exam Flow", () => {
       withSubmissions: true,
     });
 
-    await studentPage.goto(`/exam/${exam.code}`);
+    const examPage = new StudentExamPage(studentPage);
+    await examPage.goto(exam.code);
 
     // Find and click the submit button — must be visible
-    const submitBtn = studentPage.getByRole("button", {
-      name: /제출|submit/i,
-    });
-    await expect(submitBtn).toBeVisible({ timeout: 10_000 });
-    await submitBtn.click();
+    await expect(examPage.submitBtn).toBeVisible({ timeout: 10_000 });
+    await examPage.submitBtn.click();
 
     // Confirmation dialog should appear
     await expect(
@@ -167,12 +160,11 @@ test.describe("Student — Exam Flow", () => {
       sessionStatus: "waiting",
     });
 
-    await studentPage.goto(`/exam/${exam.code}`);
+    const examPage = new StudentExamPage(studentPage);
+    await examPage.goto(exam.code);
 
-    // Should show a waiting state or message about exam not started
-    await expect(
-      studentPage.getByText(/대기|waiting|시작되지|not started/i).first(),
-    ).toBeVisible({ timeout: 15_000 });
+    // Should show waiting room via data-testid
+    await expect(examPage.waitingRoom).toBeVisible({ timeout: 15_000 });
   });
 
   test("shows submitted state for already submitted session", async ({
@@ -184,11 +176,12 @@ test.describe("Student — Exam Flow", () => {
       withSubmissions: true,
     });
 
-    await studentPage.goto(`/exam/${exam.code}`);
+    const examPage = new StudentExamPage(studentPage);
+    await examPage.goto(exam.code);
 
-    // Should show submission complete or similar message
+    // Should show submission complete message
     await expect(
-      studentPage.getByText(/제출 완료|submitted|완료/i).first(),
+      studentPage.getByText(/제출.*완료/i),
     ).toBeVisible({ timeout: 15_000 });
   });
 });

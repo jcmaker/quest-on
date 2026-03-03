@@ -86,7 +86,7 @@ function SaveStatusIndicator({
 }) {
   if (saveError) {
     return (
-      <div className="flex items-center gap-2 text-xs sm:text-sm text-red-600 dark:text-red-400">
+      <div data-testid="save-status" className="flex items-center gap-2 text-xs sm:text-sm text-red-600 dark:text-red-400">
         <AlertTriangle className="w-3 h-3 sm:w-4 sm:h-4" aria-hidden="true" />
         <span className="font-medium">저장 실패 — 네트워크를 확인하세요</span>
         <span className="hidden sm:flex items-center gap-1 text-xs">
@@ -100,7 +100,7 @@ function SaveStatusIndicator({
 
   if (isSaving) {
     return (
-      <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+      <div data-testid="save-status" className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
         <div className="animate-spin rounded-full h-3 w-3 sm:h-4 sm:w-4 border-2 border-primary border-t-transparent" />
         <span className="font-medium">저장 중...</span>
       </div>
@@ -109,7 +109,7 @@ function SaveStatusIndicator({
 
   if (lastSaved) {
     return (
-      <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+      <div data-testid="save-status" className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <Save
             className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400"
@@ -130,7 +130,7 @@ function SaveStatusIndicator({
   }
 
   return (
-    <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+    <div data-testid="save-status" className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
       <Save className="w-3 h-3 sm:w-4 sm:h-4" aria-hidden="true" />
       <span>자동 저장</span>
       <span className="hidden sm:flex items-center gap-1 text-xs">

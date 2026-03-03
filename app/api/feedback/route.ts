@@ -11,38 +11,7 @@ import { buildFeedbackSystemPrompt, type RubricItem } from "@/lib/prompts";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
-
-// Helper function to sanitize text for JSON storage
-function sanitizeText(text: string): string {
-  if (!text) return "";
-
-  try {
-    // First try to JSON.stringify to check if it's valid
-    JSON.stringify(text);
-    return text.trim();
-  } catch (error) {
-    // More conservative approach: only remove problematic lone surrogates
-    return text
-      .replace(/[\uD800-\uDFFF]/g, (match, offset, string) => {
-        // Check if it's a proper surrogate pair
-        const charCode = match.charCodeAt(0);
-        if (charCode >= 0xd800 && charCode <= 0xdbff) {
-          // High surrogate - check if followed by low surrogate
-          const nextChar = string[offset + 1];
-          if (
-            nextChar &&
-            nextChar.charCodeAt(0) >= 0xdc00 &&
-            nextChar.charCodeAt(0) <= 0xdfff
-          ) {
-            return match; // Keep valid surrogate pair
-          }
-        }
-        return ""; // Remove lone surrogate
-      })
-      .replace(/\u0000/g, "") // Remove null characters
-      .trim();
-  }
-}
+import { sanitizeUserInput } from "@/lib/sanitize";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -226,8 +195,8 @@ ${answersText}
               typeof answer === "string" ? answer : answer.text || "";
 
             // Sanitize the answer text to prevent JSON encoding issues
-            const answerText = sanitizeText(rawAnswerText);
-            const sanitizedFeedback = sanitizeText(feedback);
+            const answerText = sanitizeUserInput(rawAnswerText);
+            const sanitizedFeedback = sanitizeUserInput(feedback);
 
             const submissionData = {
               answer: answerText,

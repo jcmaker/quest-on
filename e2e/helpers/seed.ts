@@ -226,6 +226,33 @@ export async function seedStudentProfile(
   return data;
 }
 
+interface SeedExamNodeOverrides {
+  id?: string;
+  kind?: "folder" | "exam";
+  name?: string;
+  parent_id?: string | null;
+  instructor_id?: string;
+  exam_id?: string | null;
+  sort_order?: number;
+}
+
+export async function seedExamNode(overrides: SeedExamNodeOverrides = {}) {
+  const id = overrides.id ?? uuid();
+  const data = {
+    id,
+    kind: overrides.kind ?? "folder",
+    name: overrides.name ?? "Test Folder",
+    parent_id: overrides.parent_id ?? null,
+    instructor_id: overrides.instructor_id ?? "test-instructor-id",
+    exam_id: overrides.exam_id ?? null,
+    sort_order: overrides.sort_order ?? 0,
+  };
+
+  const { error } = await supabase.from("exam_nodes").insert(data);
+  if (error) throw new Error(`seedExamNode failed: ${error.message}`);
+  return data;
+}
+
 // --------------- Cleanup ---------------
 
 /**

@@ -5,6 +5,8 @@ import dotenv from "dotenv";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env.test") });
 
+const BYPASS_SECRET = process.env.TEST_BYPASS_SECRET ?? "e2e-test-bypass-token-2024";
+
 // --------------- Admin token generation ---------------
 
 function createTestAdminToken(): string {
@@ -42,6 +44,7 @@ export const test = base.extend<AuthFixtures>({
       extraHTTPHeaders: {
         "x-test-user-id": "test-instructor-id",
         "x-test-user-role": "instructor",
+        "x-test-bypass-token": BYPASS_SECRET,
         Accept: "application/json",
       },
     });
@@ -55,6 +58,7 @@ export const test = base.extend<AuthFixtures>({
       extraHTTPHeaders: {
         "x-test-user-id": "test-student-id",
         "x-test-user-role": "student",
+        "x-test-bypass-token": BYPASS_SECRET,
         Accept: "application/json",
       },
     });

@@ -102,7 +102,7 @@ export function WaitingRoom({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
+      <Card className="w-full max-w-2xl" data-testid="waiting-room">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
             <div className="relative">

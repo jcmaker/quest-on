@@ -20,9 +20,9 @@ test.describe("Error Scenarios — Edge Cases", () => {
 
     await studentPage.goto(`/exam/${exam.code}`);
 
-    // Should show completed/submitted state
+    // Should show completed/submitted state (use .first() as regex matches multiple UI elements)
     await expect(
-      studentPage.getByText(/제출 완료|submitted|종료|완료/i).first()
+      studentPage.getByText(/제출.*완료|submitted|시험.*종료/i).first()
     ).toBeVisible({ timeout: 15_000 });
   });
 
@@ -63,19 +63,18 @@ test.describe("Error Scenarios — Edge Cases", () => {
     await studentPage.goto(`/exam/${exam.code}`);
     await studentPage.waitForLoadState("networkidle");
 
-    // Wait for the page to load content first
+    // Wait for the page to load content first — check for actual exam content
     await expect(
-      studentPage.locator("body")
-    ).not.toBeEmpty({ timeout: 15_000 });
+      studentPage.getByText(/polymorphism/i)
+    ).toBeVisible({ timeout: 15_000 });
 
     // Abort a specific API call to simulate network failure
     await studentPage.route("**/api/supa**", (route) => route.abort("failed"));
 
-    // Try to trigger an API call (e.g., auto-save)
+    // Try to trigger an API call (e.g., auto-save) — wait for the aborted request
+    const savePromise = studentPage.waitForEvent("requestfailed").catch(() => {});
     await studentPage.keyboard.press("Control+s");
-
-    // Wait a moment for any error handling
-    await studentPage.waitForTimeout(2_000);
+    await savePromise;
 
     // Filter out known benign errors (React hydration, etc.)
     const criticalErrors = pageErrors.filter(

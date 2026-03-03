@@ -1,6 +1,7 @@
 import { test, expect } from "../fixtures/auth-browser.fixture";
 import { cleanupTestData } from "../helpers/test-data-builder";
 import { seedExam } from "../../helpers/seed";
+import { InstructorEditExamPage } from "../pages";
 
 test.describe("Instructor — Edit Exam Flow", () => {
   test.afterEach(async () => {
@@ -14,12 +15,12 @@ test.describe("Instructor — Edit Exam Flow", () => {
       instructor_id: "test-instructor-id",
     });
 
-    await instructorPage.goto(`/instructor/${exam.id}/edit`);
+    const editExam = new InstructorEditExamPage(instructorPage);
+    await editExam.goto(exam.id);
 
     // Title input should have the existing value (skip networkidle — dev-mode HMR keeps connections open)
-    const titleInput = instructorPage.getByLabel(/제목|시험 제목/i).first();
-    await expect(titleInput).toBeVisible({ timeout: 30_000 });
-    await expect(titleInput).toHaveValue("E2E Edit Test Exam");
+    await expect(editExam.titleInput).toBeVisible({ timeout: 30_000 });
+    await expect(editExam.titleInput).toHaveValue("E2E Edit Test Exam");
   });
 
   test("edit title and save → success", async ({ instructorPage }) => {
@@ -29,26 +30,21 @@ test.describe("Instructor — Edit Exam Flow", () => {
       instructor_id: "test-instructor-id",
     });
 
-    await instructorPage.goto(`/instructor/${exam.id}/edit`);
+    const editExam = new InstructorEditExamPage(instructorPage);
+    await editExam.goto(exam.id);
 
-    const titleInput = instructorPage.getByLabel(/제목|시험 제목/i).first();
-    await expect(titleInput).toBeVisible({ timeout: 30_000 });
+    await expect(editExam.titleInput).toBeVisible({ timeout: 30_000 });
 
     // Clear and type new title
-    await titleInput.clear();
-    await titleInput.fill("Updated Title via E2E");
+    await editExam.titleInput.clear();
+    await editExam.titleInput.fill("Updated Title via E2E");
 
     // Submit
-    const submitBtn = instructorPage.getByRole("button", {
-      name: /수정하기|저장|수정 완료/i,
-    });
-    await submitBtn.click();
+    await editExam.submitBtn.click();
 
     // Should show success toast or redirect
     await expect(
-      instructorPage
-        .getByText(/수정.*완료|저장.*완료|성공/i)
-        .first()
+      instructorPage.getByText(/수정.*완료|저장.*완료|성공/i)
     ).toBeVisible({ timeout: 15_000 });
   });
 
@@ -59,23 +55,20 @@ test.describe("Instructor — Edit Exam Flow", () => {
       instructor_id: "test-instructor-id",
     });
 
-    await instructorPage.goto(`/instructor/${exam.id}/edit`);
+    const editExam = new InstructorEditExamPage(instructorPage);
+    await editExam.goto(exam.id);
 
-    const titleInput = instructorPage.getByLabel(/제목|시험 제목/i).first();
-    await expect(titleInput).toBeVisible({ timeout: 30_000 });
+    await expect(editExam.titleInput).toBeVisible({ timeout: 30_000 });
 
     // Clear title
-    await titleInput.clear();
+    await editExam.titleInput.clear();
 
     // Submit
-    const submitBtn = instructorPage.getByRole("button", {
-      name: /수정하기|저장|수정 완료/i,
-    });
-    await submitBtn.click();
+    await editExam.submitBtn.click();
 
     // Should show validation error about title
     await expect(
-      instructorPage.getByText(/제목.*입력|시험 제목/i).first()
+      instructorPage.getByText(/제목.*입력|시험 제목/i)
     ).toBeVisible({ timeout: 5_000 });
   });
 
@@ -88,30 +81,22 @@ test.describe("Instructor — Edit Exam Flow", () => {
       instructor_id: "test-instructor-id",
     });
 
-    await instructorPage.goto(`/instructor/${exam.id}/edit`);
+    const editExam = new InstructorEditExamPage(instructorPage);
+    await editExam.goto(exam.id);
 
     // Wait for form to load before interacting
-    await expect(
-      instructorPage.getByRole("button", { name: /취소|돌아가기/i }).first()
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(editExam.cancelBtn).toBeVisible({ timeout: 30_000 });
 
-    // Click cancel button
-    const cancelBtn = instructorPage.getByRole("link", {
-      name: /취소|돌아가기/i,
-    });
-    if (await cancelBtn.isVisible({ timeout: 5_000 })) {
-      await cancelBtn.click();
+    // Click cancel button (try link first, then button)
+    if (await editExam.cancelLink.isVisible({ timeout: 5_000 })) {
+      await editExam.cancelLink.click();
       await instructorPage.waitForURL(
         new RegExp(`/instructor/${exam.id}|/instructor`),
         { timeout: 10_000 }
       );
       expect(instructorPage.url()).toContain("/instructor");
     } else {
-      // Fallback: try button instead of link
-      const cancelButton = instructorPage.getByRole("button", {
-        name: /취소|돌아가기/i,
-      });
-      await cancelButton.click();
+      await editExam.cancelBtn.click();
       await instructorPage.waitForURL(
         new RegExp(`/instructor/${exam.id}|/instructor`),
         { timeout: 10_000 }

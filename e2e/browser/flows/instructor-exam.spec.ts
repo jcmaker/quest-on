@@ -8,6 +8,7 @@ import {
   cleanupTestData,
 } from "../helpers/test-data-builder";
 import { seedExam } from "../../helpers/seed";
+import { InstructorGradePage } from "../pages";
 
 test.describe("Instructor — Exam & Grading Flow", () => {
   test.afterEach(async () => {
@@ -42,9 +43,9 @@ test.describe("Instructor — Exam & Grading Flow", () => {
       timeout: 15_000,
     });
 
-    // Should show student info or submission stats
+    // Should show student list heading
     await expect(
-      instructorPage.getByText(/제출|submitted|학생|student/i).first(),
+      instructorPage.getByRole("heading", { name: /학생 목록/i }),
     ).toBeVisible({ timeout: 10_000 });
   });
 
@@ -54,19 +55,17 @@ test.describe("Instructor — Exam & Grading Flow", () => {
     const { exam, students } = await seedInstructorGradingScenario();
     const session = students[0].session;
 
-    // URL param [studentId] actually expects the session UUID, not student_id string
-    await instructorPage.goto(
-      `/instructor/${exam.id}/grade/${session.id}`,
-    );
+    const gradePage = new InstructorGradePage(instructorPage);
+    await gradePage.goto(exam.id, session.id);
 
-    // Should show question prompt
+    // Should show question prompt (scoped to rich-text container to avoid matching ai_context/answer)
     await expect(
-      instructorPage.getByText(/Question 1|Explain/i).first(),
+      instructorPage.locator(".rich-text-content").getByText(/Question 1/i),
     ).toBeVisible({ timeout: 15_000 });
 
     // Should show student's answer
     await expect(
-      instructorPage.getByText(/Student 0 answer/i).first(),
+      instructorPage.getByText("Student 0 answer to question 1"),
     ).toBeVisible({ timeout: 10_000 });
   });
 
@@ -74,18 +73,13 @@ test.describe("Instructor — Exam & Grading Flow", () => {
     const { exam, students } = await seedInstructorGradingScenario();
     const session = students[0].session;
 
-    await instructorPage.goto(
-      `/instructor/${exam.id}/grade/${session.id}`,
-    );
+    const gradePage = new InstructorGradePage(instructorPage);
+    await gradePage.goto(exam.id, session.id);
 
-    // Find a score input field
-    const scoreInput = instructorPage.locator(
-      'input[type="number"], input[placeholder*="점수"], input[placeholder*="score"]',
-    ).first();
-
-    await expect(scoreInput).toBeVisible({ timeout: 10_000 });
-    await scoreInput.fill("85");
-    await expect(scoreInput).toHaveValue("85");
+    // Find a score input field via data-testid
+    await expect(gradePage.scoreInput).toBeVisible({ timeout: 10_000 });
+    await gradePage.setScore("85");
+    await expect(gradePage.scoreInput).toHaveValue("85");
   });
 
   test("grading page allows navigation between questions", async ({
@@ -96,23 +90,19 @@ test.describe("Instructor — Exam & Grading Flow", () => {
     });
     const session = students[0].session;
 
-    await instructorPage.goto(
-      `/instructor/${exam.id}/grade/${session.id}`,
-    );
+    const gradePage = new InstructorGradePage(instructorPage);
+    await gradePage.goto(exam.id, session.id);
 
-    // Wait for page to load
-    await expect(
-      instructorPage.getByText(/Question 1|문제 1/i).first(),
-    ).toBeVisible({ timeout: 15_000 });
+    // Wait for page to load — use question nav button
+    await expect(gradePage.questionNavButton(0)).toBeVisible({ timeout: 15_000 });
 
     // Click on question 2 navigation
-    const q2Nav = instructorPage.getByText(/Question 2|문제 2|Q2/i).first();
-    await expect(q2Nav).toBeVisible({ timeout: 5_000 });
-    await q2Nav.click();
+    await expect(gradePage.questionNavButton(1)).toBeVisible({ timeout: 5_000 });
+    await gradePage.questionNavButton(1).click();
 
-    // Should show second question's content
+    // Should show second question's content (scoped to rich-text container)
     await expect(
-      instructorPage.getByText(/Question 2/i).first(),
+      instructorPage.locator(".rich-text-content").getByText(/Question 2/i),
     ).toBeVisible({ timeout: 5_000 });
   });
 });

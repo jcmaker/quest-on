@@ -24,7 +24,7 @@ test.describe("Student — Dashboard & Report Flow", () => {
 
     // Dashboard should load with session/exam data
     await expect(
-      studentPage.getByText(/Test Exam|시험|대시보드|dashboard/i).first(),
+      studentPage.getByRole("heading", { name: "학생 대시보드" }),
     ).toBeVisible({ timeout: 15_000 });
   });
 
@@ -43,12 +43,12 @@ test.describe("Student — Dashboard & Report Flow", () => {
 
     // Should show exam title
     await expect(
-      studentPage.getByText(exam.title).first(),
+      studentPage.getByText(exam.title),
     ).toBeVisible({ timeout: 15_000 });
 
     // Should show score or grade info
     await expect(
-      studentPage.getByText(/85|점수|score/i).first(),
+      studentPage.getByText(/전체 점수/),
     ).toBeVisible({ timeout: 10_000 });
   });
 
@@ -58,14 +58,11 @@ test.describe("Student — Dashboard & Report Flow", () => {
     await studentPage.goto("/student");
 
     // Should show empty state or "no exams" message
-    // The page should at least load without errors
-    await expect(studentPage.locator("body")).not.toBeEmpty();
     await studentPage.waitForLoadState("networkidle");
 
     // Either shows empty state message or the dashboard frame
     const hasContent = await studentPage
       .getByText(/시험|exam|대시보드|dashboard|없습니다|no exam/i)
-      .first()
       .isVisible({ timeout: 10_000 })
       .catch(() => false);
 

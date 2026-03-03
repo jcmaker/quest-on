@@ -8,13 +8,11 @@ import { auditLog } from "@/lib/audit";
 
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting by IP to prevent brute force (skip in test mode)
+    // Rate limiting by IP to prevent brute force (always applied)
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-    if (!process.env.TEST_BYPASS_SECRET) {
-      const rl = checkRateLimit(`admin-login:${ip}`, RATE_LIMITS.adminLogin);
-      if (!rl.allowed) {
-        return errorJson("RATE_LIMITED", "Too many login attempts. Please try again later.", 429);
-      }
+    const rl = checkRateLimit(`admin-login:${ip}`, RATE_LIMITS.adminLogin);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many login attempts. Please try again later.", 429);
     }
 
     const body = await request.json();

@@ -2,6 +2,7 @@ import { test, expect } from "../fixtures/auth-browser.fixture";
 import { test as baseTest } from "@playwright/test";
 import { mockExternalRoutes } from "../helpers/mock-routes";
 import { cleanupTestData } from "../helpers/test-data-builder";
+import { AdminLoginPage } from "../pages";
 
 test.describe("Admin — Authenticated Flows", () => {
   test.afterEach(async () => {
@@ -13,7 +14,7 @@ test.describe("Admin — Authenticated Flows", () => {
 
     // Admin dashboard should show user management or stats
     await expect(
-      adminPage.getByText(/관리자|admin|사용자|user/i).first(),
+      adminPage.getByText(/관리자/i),
     ).toBeVisible({ timeout: 15_000 });
   });
 
@@ -22,7 +23,7 @@ test.describe("Admin — Authenticated Flows", () => {
 
     // Should show statistics about users
     await expect(
-      adminPage.getByText(/전체|total|instructor|student/i).first(),
+      adminPage.getByText(/전체/i),
     ).toBeVisible({ timeout: 15_000 });
   });
 });
@@ -37,14 +38,11 @@ baseTest.describe("Admin — Login Flow", () => {
   }) => {
     await mockExternalRoutes(page);
 
-    await page.goto("/admin/login");
+    const loginPage = new AdminLoginPage(page);
+    await loginPage.goto();
 
-    // Fill in credentials
-    await page.getByLabel(/사용자명/i).fill("test-admin");
-    await page.getByLabel(/비밀번호/i).fill("test-password");
-
-    // Submit the form
-    await page.locator("form").getByRole("button", { name: /로그인/i }).click();
+    // Fill in credentials and submit
+    await loginPage.login("test-admin", "test-password");
 
     // Should redirect to admin dashboard or show success
     await page.waitForURL("**/admin", { timeout: 10_000 }).catch(() => {
@@ -63,19 +61,14 @@ baseTest.describe("Admin — Login Flow", () => {
   baseTest("admin login with wrong password shows error", async ({ page }) => {
     await mockExternalRoutes(page);
 
-    await page.goto("/admin/login");
+    const loginPage = new AdminLoginPage(page);
+    await loginPage.goto();
 
-    // Fill in wrong credentials
-    await page.getByLabel(/사용자명/i).fill("test-admin");
-    await page.getByLabel(/비밀번호/i).fill("wrong-password");
-
-    // Submit the form
-    await page.locator("form").getByRole("button", { name: /로그인/i }).click();
+    // Fill in wrong credentials and submit
+    await loginPage.login("test-admin", "wrong-password");
 
     // Should show an error message (API returns "Invalid credentials" via data.message)
-    await expect(
-      page.getByText(/실패|error|invalid|잘못|unauthorized|credentials/i).first(),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(loginPage.errorMessage).toBeVisible({ timeout: 10_000 });
 
     // Should still be on the login page
     expect(page.url()).toContain("/admin/login");

@@ -16,6 +16,20 @@ import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { classifyMessageType } from "@/lib/message-classification";
+import { sanitizeUserInput } from "@/lib/sanitize";
+import { z } from "zod";
+
+// Zod schema for this route's specific request shape
+const feedbackChatRouteSchema = z.object({
+  message: z.string().min(1, "Message is required").max(10000).transform(sanitizeUserInput),
+  examCode: z.string().min(1, "Exam code is required"),
+  questionId: z.string().optional(),
+  conversationHistory: z.array(z.object({
+    type: z.string(),
+    content: z.string(),
+  })).optional(),
+  studentId: z.string().optional(),
+});
 
 // Supabase 서버 전용 클라이언트
 const supabase = getSupabaseServer();
@@ -34,12 +48,13 @@ export async function POST(request: NextRequest) {
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
-    const { message, examCode, questionId, conversationHistory, studentId } =
-      await request.json();
-
-    if (!message || !examCode) {
-      return errorJson("BAD_REQUEST", "Missing required fields", 400);
+    const body = await request.json();
+    const validation = feedbackChatRouteSchema.safeParse(body);
+    if (!validation.success) {
+      const firstError = validation.error.errors[0];
+      return errorJson("VALIDATION_ERROR", firstError ? `${firstError.path.join(".")}: ${firstError.message}` : "Invalid request body", 400);
     }
+    const { message, examCode, questionId, conversationHistory, studentId } = validation.data;
 
     // 시험 정보 조회
     const { data: exam, error: examError } = await supabase
@@ -64,16 +79,11 @@ export async function POST(request: NextRequest) {
       exam.questions?.[0];
 
     // 대화 히스토리에서 이전 메시지들을 프롬프트로 구성
-    interface MessageData {
-      type: string;
-      content: string;
-    }
-
     const conversationContext =
       conversationHistory
         ?.slice(-10) // 최근 10개 메시지만 사용
         .map(
-          (msg: MessageData) =>
+          (msg) =>
             `${msg.type === "ai" ? "AI" : "Student"}: ${msg.content}`
         )
         .join("\n") || "";

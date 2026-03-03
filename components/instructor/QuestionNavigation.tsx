@@ -45,6 +45,7 @@ export function QuestionNavigation({
             variant={selectedQuestionIdx === idx ? "default" : "outline"}
             size="sm"
             onClick={() => onSelectQuestion(idx)}
+            data-testid={`question-nav-${idx}`}
           >
             문제 {idx + 1}
             {grades[idx] && (

@@ -1,5 +1,6 @@
 import { test, expect } from "../fixtures/auth-browser.fixture";
 import { cleanupTestData } from "../helpers/test-data-builder";
+import { OnboardingPage, ProfileSetupPage } from "../pages";
 
 test.describe("Onboarding — Role Selection", () => {
   test.afterEach(async () => {
@@ -7,38 +8,32 @@ test.describe("Onboarding — Role Selection", () => {
   });
 
   test("role selection page renders correctly", async ({ studentPage }) => {
-    await studentPage.goto("/onboarding");
+    const onboarding = new OnboardingPage(studentPage);
+    await onboarding.goto();
     // Should show welcome message
-    await expect(
-      studentPage.getByText(/환영합니다|역할.*선택/i).first()
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(onboarding.welcomeHeading).toBeVisible({ timeout: 15_000 });
   });
 
   test("student radio is default selected", async ({ studentPage }) => {
-    await studentPage.goto("/onboarding");
+    const onboarding = new OnboardingPage(studentPage);
+    await onboarding.goto();
     // Wait for the page to fully render
-    await expect(
-      studentPage.getByText(/환영합니다|역할.*선택/i).first()
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(onboarding.welcomeHeading).toBeVisible({ timeout: 15_000 });
 
     // Student radio should be checked by default
-    const studentRadio = studentPage.locator('button[role="radio"][value="student"]');
-    await expect(studentRadio).toHaveAttribute("data-state", "checked");
+    await expect(onboarding.studentRadio).toHaveAttribute("data-state", "checked");
   });
 
   test("instructor radio can be selected", async ({ studentPage }) => {
-    await studentPage.goto("/onboarding");
-    await expect(
-      studentPage.getByText(/환영합니다|역할.*선택/i).first()
-    ).toBeVisible({ timeout: 15_000 });
+    const onboarding = new OnboardingPage(studentPage);
+    await onboarding.goto();
+    await expect(onboarding.welcomeHeading).toBeVisible({ timeout: 15_000 });
 
     // Click on instructor label/radio
-    const instructorLabel = studentPage.getByText(/강사|시험 출제자/i);
-    await instructorLabel.click();
+    await onboarding.instructorLabel.click();
 
     // Instructor radio should now be checked
-    const instructorRadio = studentPage.locator('button[role="radio"][value="instructor"]');
-    await expect(instructorRadio).toHaveAttribute("data-state", "checked");
+    await expect(onboarding.instructorRadio).toHaveAttribute("data-state", "checked");
   });
 });
 
@@ -60,14 +55,11 @@ test.describe("Profile Setup — /student/profile-setup", () => {
       return route.continue();
     });
 
-    await studentPage.goto("/student/profile-setup");
+    const profile = new ProfileSetupPage(studentPage);
+    await profile.goto();
     // Should show form fields — name, student number, school
-    await expect(
-      studentPage.getByLabel(/이름|name/i).first()
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(
-      studentPage.getByLabel(/학번|student.*number/i).first()
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(profile.nameInput).toBeVisible({ timeout: 15_000 });
+    await expect(profile.studentNumberInput).toBeVisible({ timeout: 10_000 });
   });
 
   test("empty name → submit button is disabled", async ({ studentPage }) => {
@@ -83,19 +75,15 @@ test.describe("Profile Setup — /student/profile-setup", () => {
       return route.continue();
     });
 
-    await studentPage.goto("/student/profile-setup");
+    const profile = new ProfileSetupPage(studentPage);
+    await profile.goto();
 
     // Wait for form to be ready
-    await expect(
-      studentPage.getByLabel(/이름|name/i).first()
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(profile.nameInput).toBeVisible({ timeout: 15_000 });
 
     // Submit button should be disabled when name is empty
-    const submitBtn = studentPage.getByRole("button", {
-      name: /저장|완료|시작|설정 완료|프로필/i,
-    });
-    await expect(submitBtn).toBeVisible({ timeout: 5_000 });
-    await expect(submitBtn).toBeDisabled();
+    await expect(profile.submitBtn).toBeVisible({ timeout: 5_000 });
+    await expect(profile.submitBtn).toBeDisabled();
   });
 
   test("valid input + submit → redirects to /student", async ({
@@ -140,30 +128,24 @@ test.describe("Profile Setup — /student/profile-setup", () => {
       })
     );
 
-    await studentPage.goto("/student/profile-setup");
+    const profile = new ProfileSetupPage(studentPage);
+    await profile.goto();
 
     // Fill the form
-    const nameInput = studentPage.getByLabel(/이름|name/i).first();
-    await expect(nameInput).toBeVisible({ timeout: 15_000 });
-    await nameInput.fill("테스트 학생");
-
-    const studentNumInput = studentPage.getByLabel(/학번|student.*number/i).first();
-    await studentNumInput.fill("2024-00001");
+    await expect(profile.nameInput).toBeVisible({ timeout: 15_000 });
+    await profile.nameInput.fill("테스트 학생");
+    await profile.studentNumberInput.fill("2024-00001");
 
     // Fill school: type to trigger search, then select from dropdown
-    const schoolInput = studentPage.getByLabel(/학교|school/i).first();
-    await schoolInput.fill("서울");
+    await profile.schoolInput.fill("서울");
     // Wait for suggestions dropdown to appear
-    const suggestion = studentPage.getByText("서울대학교").first();
+    const suggestion = studentPage.getByText("서울대학교");
     await expect(suggestion).toBeVisible({ timeout: 5_000 });
     await suggestion.click();
 
     // Submit
-    const submitBtn = studentPage.getByRole("button", {
-      name: /저장|완료|시작|설정 완료|프로필/i,
-    });
-    await expect(submitBtn).toBeEnabled({ timeout: 5_000 });
-    await submitBtn.click();
+    await expect(profile.submitBtn).toBeEnabled({ timeout: 5_000 });
+    await profile.submitBtn.click();
 
     // Should redirect to student dashboard
     await studentPage.waitForURL(/\/student/, { timeout: 15_000 });

@@ -1,8 +1,12 @@
 import { z } from "zod";
+import { sanitizeUserInput } from "@/lib/sanitize";
 
 // Reusable field schemas
 const uuid = z.string().uuid();
 const sessionId = z.string().uuid("Invalid session ID format");
+
+// Sanitized string: strips XSS vectors at validation time
+const sanitizedString = (schema: z.ZodString) => schema.transform(sanitizeUserInput);
 
 // ========== Exam JSON Column Schemas ==========
 // These validate the JSON stored in exams.questions, exams.rubric, exams.materials
@@ -43,7 +47,7 @@ export function safeParseJson<T>(
 
 // Chat API
 export const chatRequestSchema = z.object({
-  message: z.string().min(1, "Message is required").max(10000, "Message too long"),
+  message: sanitizedString(z.string().min(1, "Message is required").max(10000, "Message too long")),
   sessionId: z.string().min(1, "Session ID is required"),
   questionId: z.string().optional(),
   questionIdx: z.union([z.number(), z.string()]).optional(),
@@ -57,7 +61,7 @@ export const chatRequestSchema = z.object({
 
 // Instructor Chat API
 export const instructorChatRequestSchema = z.object({
-  message: z.string().min(1, "Message is required").max(10000, "Message too long"),
+  message: sanitizedString(z.string().min(1, "Message is required").max(10000, "Message too long")),
   sessionId: z.string().min(1),
   context: z.string().min(1, "Context is required"),
   scopeDescription: z.string().optional(),
@@ -66,7 +70,7 @@ export const instructorChatRequestSchema = z.object({
 
 // Submission Reply API
 export const submissionReplySchema = z.object({
-  studentReply: z.string().min(1, "Student reply is required").max(100000),
+  studentReply: sanitizedString(z.string().min(1, "Student reply is required").max(100000)),
   sessionId: sessionId,
   qIdx: z.number().int().min(0),
 });
@@ -93,7 +97,7 @@ export const adminAuthSchema = z.object({
 
 // Feedback API
 export const feedbackRequestSchema = z.object({
-  message: z.string().min(1).max(10000),
+  message: sanitizedString(z.string().min(1).max(10000)),
   examCode: z.string().min(1),
   studentId: z.string().min(1),
   sessionId: z.string().optional(),
@@ -106,7 +110,7 @@ export const gradeUpdateSchema = z.object({
     z.object({
       q_idx: z.number().int().min(0),
       score: z.number().min(0).max(100),
-      comment: z.string().max(5000).optional(),
+      comment: z.string().max(5000).optional().transform(v => v ? sanitizeUserInput(v) : v),
     })
   ),
 });
@@ -178,14 +182,14 @@ export const deactivateSessionSchema = z.object({
 export const saveDraftSchema = z.object({
   sessionId: z.string().uuid("Invalid session ID"),
   questionId: z.string().min(1),
-  answer: z.string().max(100000, "Answer too long"),
+  answer: sanitizedString(z.string().max(100000, "Answer too long")),
 });
 
 export const saveAllDraftsSchema = z.object({
   sessionId: z.string().uuid("Invalid session ID"),
   drafts: z.array(z.object({
     questionId: z.string(),
-    text: z.string().max(100000),
+    text: z.string().max(100000).transform(sanitizeUserInput),
   })),
 });
 
@@ -193,7 +197,7 @@ export const saveDraftAnswersSchema = z.object({
   sessionId: z.string().uuid("Invalid session ID"),
   answers: z.array(z.object({
     questionId: z.string(),
-    text: z.string().max(100000),
+    text: z.string().max(100000).transform(sanitizeUserInput),
   })),
 });
 
@@ -230,7 +234,7 @@ export const copyExamSchema = z.object({
 
 // Feedback chat
 export const feedbackChatSchema = z.object({
-  message: z.string().min(1, "Message is required").max(10000),
+  message: sanitizedString(z.string().min(1, "Message is required").max(10000)),
   sessionId: z.string().min(1),
   qIdx: z.number().int().min(0),
   chatHistory: z.array(z.object({

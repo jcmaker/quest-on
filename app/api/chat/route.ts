@@ -472,8 +472,8 @@ export async function POST(request: NextRequest) {
       return errorJson("FORBIDDEN", "Student ID mismatch", 403);
     }
 
-    // Rate limiting by session or student ID
-    const rateLimitKey = `chat:${studentId || sessionId}`;
+    // Rate limiting by authenticated user ID (falls back to sessionId for unauthenticated)
+    const rateLimitKey = `chat:${user?.id || sessionId}`;
     const rl = checkRateLimit(rateLimitKey, RATE_LIMITS.chat);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);

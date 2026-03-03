@@ -148,6 +148,7 @@ export function GradingPanel({
               <input
                 type="number"
                 id="score"
+                data-testid="grade-score-input"
                 min="0"
                 max="100"
                 value={scoreInput}
@@ -239,6 +240,7 @@ export function GradingPanel({
           onClick={onSave}
           disabled={saving || isAiGradedOnly}
           className="w-full"
+          data-testid="grade-save-btn"
         >
           {saving
             ? "저장 중..."

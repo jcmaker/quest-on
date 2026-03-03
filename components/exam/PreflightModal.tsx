@@ -160,6 +160,7 @@ export function PreflightModal({
             <div className="flex items-start gap-3">
               <Checkbox
                 id="rules"
+                data-testid="preflight-rules-checkbox"
                 checked={rulesAccepted}
                 onCheckedChange={(checked) =>
                   setRulesAccepted(checked === true)
@@ -176,6 +177,7 @@ export function PreflightModal({
             <div className="flex items-start gap-3">
               <Checkbox
                 id="ai-log"
+                data-testid="preflight-ailog-checkbox"
                 checked={aiLogAccepted}
                 onCheckedChange={(checked) =>
                   setAiLogAccepted(checked === true)
@@ -200,6 +202,7 @@ export function PreflightModal({
           <Button
             onClick={handleAccept}
             disabled={!rulesAccepted || !aiLogAccepted}
+            data-testid="preflight-accept-btn"
           >
             확인 및 입장
           </Button>
