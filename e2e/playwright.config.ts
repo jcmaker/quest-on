@@ -11,7 +11,19 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: 1, // Sequential for DB consistency
 
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: process.env.CI
+    ? [
+        ["list"],
+        [
+          "json",
+          {
+            outputFile:
+              process.env.PLAYWRIGHT_JSON_OUTPUT_NAME ||
+              "test-results/results.json",
+          },
+        ],
+      ]
+    : [["list"], ["html", { open: "never" }]],
 
   globalSetup: path.resolve(__dirname, "global-setup.ts"),
   globalTeardown: path.resolve(__dirname, "global-teardown.ts"),

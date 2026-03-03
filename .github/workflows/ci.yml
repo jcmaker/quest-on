@@ -118,7 +118,7 @@ jobs:
       - name: Run API integration tests
         run: |
           mkdir -p test-results
-          npx playwright test --project=api-integration --config=e2e/playwright.config.ts --reporter=list,json
+          npx playwright test --project=api-integration --config=e2e/playwright.config.ts
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/api-results.json
           NODE_ENV: test
@@ -189,7 +189,7 @@ jobs:
       - name: Run browser E2E tests
         run: |
           mkdir -p test-results
-          npx playwright test --project=browser-e2e --project=browser-flows --config=e2e/playwright.config.ts --reporter=list,json
+          npx playwright test --project=browser-e2e --project=browser-flows --config=e2e/playwright.config.ts
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/browser-results.json
           NODE_ENV: test
