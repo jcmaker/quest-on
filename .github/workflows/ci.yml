@@ -116,7 +116,9 @@ jobs:
       - name: Start mock server
         run: npx tsx scripts/start-mock-server.ts &
       - name: Run API integration tests
-        run: npx playwright test --project=api-integration --config=e2e/playwright.config.ts --reporter=list,json
+        run: |
+          mkdir -p test-results
+          npx playwright test --project=api-integration --config=e2e/playwright.config.ts --reporter=list,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/api-results.json
           NODE_ENV: test
@@ -185,7 +187,9 @@ jobs:
       - name: Start mock server
         run: npx tsx scripts/start-mock-server.ts &
       - name: Run browser E2E tests
-        run: npx playwright test --project=browser-e2e --project=browser-flows --config=e2e/playwright.config.ts --reporter=list,json
+        run: |
+          mkdir -p test-results
+          npx playwright test --project=browser-e2e --project=browser-flows --config=e2e/playwright.config.ts --reporter=list,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/browser-results.json
           NODE_ENV: test
