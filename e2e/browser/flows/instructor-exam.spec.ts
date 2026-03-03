@@ -54,8 +54,9 @@ test.describe("Instructor — Exam & Grading Flow", () => {
     const { exam, students } = await seedInstructorGradingScenario();
     const session = students[0].session;
 
+    // URL param [studentId] actually expects the session UUID, not student_id string
     await instructorPage.goto(
-      `/instructor/${exam.id}/grade/${session.student_id}`,
+      `/instructor/${exam.id}/grade/${session.id}`,
     );
 
     // Should show question prompt
@@ -74,11 +75,8 @@ test.describe("Instructor — Exam & Grading Flow", () => {
     const session = students[0].session;
 
     await instructorPage.goto(
-      `/instructor/${exam.id}/grade/${session.student_id}`,
+      `/instructor/${exam.id}/grade/${session.id}`,
     );
-
-    // Wait for grading page to load
-    await instructorPage.waitForLoadState("networkidle");
 
     // Find a score input field
     const scoreInput = instructorPage.locator(
@@ -99,7 +97,7 @@ test.describe("Instructor — Exam & Grading Flow", () => {
     const session = students[0].session;
 
     await instructorPage.goto(
-      `/instructor/${exam.id}/grade/${session.student_id}`,
+      `/instructor/${exam.id}/grade/${session.id}`,
     );
 
     // Wait for page to load

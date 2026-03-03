@@ -107,8 +107,9 @@ jobs:
       - name: Start mock server
         run: npx tsx scripts/start-mock-server.ts &
       - name: Run API integration tests
-        run: npm run test:api
+        run: npx playwright test --project=api-integration --config=e2e/playwright.config.ts --reporter=list,json
         env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/api-results.json
           NODE_ENV: test
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
@@ -121,6 +122,20 @@ jobs:
           ADMIN_SESSION_SECRET: test-secret-for-hmac-signing-minimum-32-chars
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy
           CLERK_SECRET_KEY: sk_test_dummy
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-api
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+      - name: Test Summary
+        if: always()
+        uses: test-summary/action@v2
+        with:
+          paths: test-results/api-results.json
 
   browser-e2e-test:
     name: Browser E2E Tests
@@ -145,8 +160,9 @@ jobs:
       - name: Start mock server
         run: npx tsx scripts/start-mock-server.ts &
       - name: Run browser E2E tests
-        run: npm run test:browser
+        run: npx playwright test --project=browser-e2e --project=browser-flows --config=e2e/playwright.config.ts --reporter=list,json
         env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/browser-results.json
           NODE_ENV: test
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           SUPABASE_SERVICE_ROLE_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU
@@ -160,3 +176,17 @@ jobs:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy
           CLERK_SECRET_KEY: sk_test_dummy
           TEST_BYPASS_SECRET: e2e-test-bypass-token-2024
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-browser
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+      - name: Test Summary
+        if: always()
+        uses: test-summary/action@v2
+        with:
+          paths: test-results/browser-results.json

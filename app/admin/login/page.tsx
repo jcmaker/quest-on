@@ -42,7 +42,7 @@ export default function AdminLoginPage() {
       if (response.ok) {
         router.push("/admin");
       } else {
-        setError(data.error || "로그인에 실패했습니다.");
+        setError(data.message || data.error || "로그인에 실패했습니다.");
       }
     } catch {
       setError("서버 오류가 발생했습니다.");

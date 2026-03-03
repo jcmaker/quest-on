@@ -8,7 +8,7 @@ dotenv.config({ path: path.resolve(__dirname, "../.env.test") });
 export default defineConfig({
   testDir: ".",
   timeout: 30_000,
-  retries: 0,
+  retries: process.env.CI ? 1 : 0,
   workers: 1, // Sequential for DB consistency
 
   reporter: [["list"], ["html", { open: "never" }]],
@@ -34,6 +34,8 @@ export default defineConfig({
       use: {
         baseURL: "http://localhost:3000",
         browserName: "chromium",
+        screenshot: "only-on-failure",
+        trace: "retain-on-failure",
       },
     },
     {
@@ -42,6 +44,8 @@ export default defineConfig({
       use: {
         baseURL: "http://localhost:3000",
         browserName: "chromium",
+        screenshot: "only-on-failure",
+        trace: "retain-on-failure",
       },
     },
   ],

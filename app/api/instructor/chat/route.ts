@@ -12,7 +12,7 @@ import { handleCorsPreFlight } from "@/lib/cors";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, instructorChatRequestSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
-import type { ResponseOutputItem, ResponseOutputMessage, ResponseOutputText } from "openai/resources/responses/responses";
+import { extractResponseText } from "@/lib/parse-openai-response";
 
 export async function OPTIONS(request: NextRequest) {
   return handleCorsPreFlight(request);
@@ -49,25 +49,8 @@ async function getAIResponse(
       store: true,
     });
 
-    // output 배열에서 메시지 타입 찾기
-    let responseText = "";
-    const outputArray: ResponseOutputItem[] = response.output;
-    if (outputArray && Array.isArray(outputArray)) {
-      const messageOutput = outputArray.find(
-        (item: ResponseOutputItem): item is ResponseOutputMessage =>
-          item.type === "message" && "content" in item
-      );
-
-      if (messageOutput && Array.isArray(messageOutput.content)) {
-        const textParts = messageOutput.content
-          .filter(
-            (part): part is ResponseOutputText =>
-              part.type === "output_text" && "text" in part
-          )
-          .map((part) => part.text);
-        responseText = textParts.join("");
-      }
-    }
+    // output 배열에서 텍스트 추출
+    const responseText = extractResponseText(response.output);
 
     if (!responseText || responseText.trim().length === 0) {
       return {

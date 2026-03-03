@@ -44,7 +44,7 @@ baseTest.describe("Admin — Login Flow", () => {
     await page.getByLabel(/비밀번호/i).fill("test-password");
 
     // Submit the form
-    await page.getByRole("button", { name: /로그인/i }).click();
+    await page.locator("form").getByRole("button", { name: /로그인/i }).click();
 
     // Should redirect to admin dashboard or show success
     await page.waitForURL("**/admin", { timeout: 10_000 }).catch(() => {
@@ -70,11 +70,11 @@ baseTest.describe("Admin — Login Flow", () => {
     await page.getByLabel(/비밀번호/i).fill("wrong-password");
 
     // Submit the form
-    await page.getByRole("button", { name: /로그인/i }).click();
+    await page.locator("form").getByRole("button", { name: /로그인/i }).click();
 
-    // Should show an error message
+    // Should show an error message (API returns "Invalid credentials" via data.message)
     await expect(
-      page.getByText(/실패|error|invalid|잘못/i).first(),
+      page.getByText(/실패|error|invalid|잘못|unauthorized|credentials/i).first(),
     ).toBeVisible({ timeout: 10_000 });
 
     // Should still be on the login page

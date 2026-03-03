@@ -112,6 +112,7 @@ export async function seedInstructorGradingScenario(
   const questions = Array.from({ length: questionCount }, (_, i) => ({
     idx: i,
     type: "open_ended" as const,
+    text: `Question ${i + 1}: Explain the concept.`,
     prompt: `Question ${i + 1}: Explain the concept.`,
     ai_context: `Context for question ${i + 1}`,
   }));

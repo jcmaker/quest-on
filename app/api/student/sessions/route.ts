@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
 
 const ITEMS_PER_PAGE = 10;
+const MAX_ITEMS_PER_PAGE = 50;
 
 export async function GET(request: NextRequest) {
   try {
@@ -22,30 +24,41 @@ export async function GET(request: NextRequest) {
       return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
-    // Get pagination parameters
+    // Get pagination parameters with limit cap
     const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get("page") || "1", 10);
-    const limit = parseInt(
-      searchParams.get("limit") || String(ITEMS_PER_PAGE),
-      10
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
+    const limit = Math.min(
+      MAX_ITEMS_PER_PAGE,
+      Math.max(1, parseInt(searchParams.get("limit") || String(ITEMS_PER_PAGE), 10))
     );
     const offset = (page - 1) * limit;
 
-    // Note: We'll calculate total count after filtering duplicates
-    // This is more accurate than counting all sessions
-
-    // Get all sessions for this student (we need to filter duplicates before pagination)
-    const { data: allSessions, error: sessionsError } = await supabase
+    // Two-query approach: fetch submitted and latest-unsubmitted sessions separately from DB
+    // 1. All submitted sessions (these are always included)
+    const submittedPromise = supabase
       .from("sessions")
       .select("id, exam_id, submitted_at, created_at")
       .eq("student_id", user.id)
+      .not("submitted_at", "is", null)
       .order("created_at", { ascending: false });
 
-    if (sessionsError) {
-      throw sessionsError;
-    }
+    // 2. Unsubmitted sessions (need deduplication per exam)
+    const unsubmittedPromise = supabase
+      .from("sessions")
+      .select("id, exam_id, submitted_at, created_at")
+      .eq("student_id", user.id)
+      .is("submitted_at", null)
+      .order("created_at", { ascending: false });
 
-    if (!allSessions || allSessions.length === 0) {
+    const [submittedResult, unsubmittedResult] = await Promise.all([submittedPromise, unsubmittedPromise]);
+
+    if (submittedResult.error) throw submittedResult.error;
+    if (unsubmittedResult.error) throw unsubmittedResult.error;
+
+    const submittedSessions = submittedResult.data || [];
+    const allUnsubmitted = unsubmittedResult.data || [];
+
+    if (submittedSessions.length === 0 && allUnsubmitted.length === 0) {
       return successJson({
         sessions: [],
         pagination: {
@@ -57,50 +70,26 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ✅ 필터링 로직 개선: 같은 시험에 제출된 세션이 있으면 미제출 세션 제외
-    // 1. 먼저 제출된 세션이 있는 시험 ID 수집
-    const examsWithSubmittedSessions = new Set<string>();
-    const submittedSessions: typeof allSessions = [];
-
-    for (const session of allSessions) {
-      if (session.submitted_at) {
-        // 제출된 세션: 모두 보관하고, 해당 시험 ID 기록
-        submittedSessions.push(session);
-        examsWithSubmittedSessions.add(session.exam_id);
+    // Filter unsubmitted: only keep if no submitted session exists for that exam, latest per exam
+    const examsWithSubmitted = new Set(submittedSessions.map(s => s.exam_id));
+    const examSessionMap = new Map<string, (typeof allUnsubmitted)[0]>();
+    for (const session of allUnsubmitted) {
+      if (!examsWithSubmitted.has(session.exam_id) && !examSessionMap.has(session.exam_id)) {
+        examSessionMap.set(session.exam_id, session);
       }
     }
 
-    // 2. 미제출 세션 중에서 제출된 세션이 없는 시험의 세션만 유지
-    const examSessionMap = new Map<string, (typeof allSessions)[0]>();
-    for (const session of allSessions) {
-      if (!session.submitted_at) {
-        const examId = session.exam_id;
-        
-        // ✅ 같은 시험에 제출된 세션이 있으면 미제출 세션 무시
-        if (examsWithSubmittedSessions.has(examId)) {
-          continue; // 제출된 세션이 있는 시험이면 미제출 세션 건너뛰기
-        }
-        
-        // 제출된 세션이 없는 시험의 미제출 세션만 유지 (시험당 최신 1개)
-        if (!examSessionMap.has(examId)) {
-          examSessionMap.set(examId, session);
-        }
-      }
-    }
-
-    // 3. 결합: 미제출 세션(제출된 세션이 없는 시험만) + 모든 제출된 세션
-    const unsubmittedSessions = Array.from(examSessionMap.values());
+    // Combine and sort
     const filteredSessions = [
-      ...unsubmittedSessions,
+      ...Array.from(examSessionMap.values()),
       ...submittedSessions,
     ].sort((a, b) => {
-      // Sort by created_at desc (most recent first)
       const dateA = new Date(a.created_at).getTime();
       const dateB = new Date(b.created_at).getTime();
       return dateB - dateA;
     });
 
-    // Apply pagination after filtering
+    // Apply pagination
     const sessions = filteredSessions.slice(offset, offset + limit);
     const filteredTotalCount = filteredSessions.length;
 
@@ -130,6 +119,7 @@ export async function GET(request: NextRequest) {
       .in("session_id", sessionIds);
 
     if (submissionsError) {
+      logError("Failed to fetch submissions for sessions", submissionsError, { path: "/api/student/sessions" });
     }
 
     // Fetch all grades for all sessions in one query
@@ -139,6 +129,7 @@ export async function GET(request: NextRequest) {
       .in("session_id", sessionIds);
 
     if (gradesError) {
+      logError("Failed to fetch grades for sessions", gradesError, { path: "/api/student/sessions" });
     }
 
     // Create maps for O(1) lookups

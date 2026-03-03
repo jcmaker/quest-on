@@ -44,12 +44,14 @@ export async function seedExam(overrides: SeedExamOverrides = {}) {
       {
         idx: 0,
         type: "open_ended",
+        text: "Explain the concept of polymorphism in OOP.",
         prompt: "Explain the concept of polymorphism in OOP.",
         ai_context: "Focus on compile-time vs runtime polymorphism.",
       },
       {
         idx: 1,
         type: "open_ended",
+        text: "Describe the difference between a stack and a queue.",
         prompt: "Describe the difference between a stack and a queue.",
         ai_context: "Include real-world examples.",
       },
@@ -75,6 +77,22 @@ export async function seedExam(overrides: SeedExamOverrides = {}) {
 
   const { error } = await supabase.from("exams").insert(data);
   if (error) throw new Error(`seedExam failed: ${error.message}`);
+
+  // Also create exam_node so the exam appears in the instructor drive UI
+  const { error: nodeError } = await supabase.from("exam_nodes").insert({
+    id: uuid(),
+    instructor_id: data.instructor_id,
+    parent_id: null,
+    kind: "exam",
+    name: data.title,
+    exam_id: data.id,
+    sort_order: 0,
+  });
+  if (nodeError) {
+    // Non-critical: log but don't fail (some tests don't need nodes)
+    console.warn(`seedExam: exam_nodes insert failed: ${nodeError.message}`);
+  }
+
   return data;
 }
 

@@ -67,13 +67,13 @@ test.describe("Student — Exam Flow", () => {
     ).toBeVisible({ timeout: 15_000 });
 
     // Navigate to next question — button must be visible
-    const nextBtn = studentPage.getByRole("button", { name: /다음|next/i });
-    await expect(nextBtn).toBeVisible({ timeout: 5_000 });
+    const nextBtn = studentPage.getByRole("button", { name: "다음 문제" });
+    await expect(nextBtn).toBeVisible({ timeout: 10_000 });
     await nextBtn.click();
     // Second question should show
     await expect(
       studentPage.getByText(/stack|queue/i),
-    ).toBeVisible({ timeout: 5_000 });
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test("can type an answer in the answer panel", async ({ studentPage }) => {
@@ -84,10 +84,8 @@ test.describe("Student — Exam Flow", () => {
 
     await studentPage.goto(`/exam/${exam.code}`);
 
-    // Wait for answer area to be available
-    const answerArea = studentPage.locator(
-      'textarea, [contenteditable="true"], [role="textbox"]',
-    ).first();
+    // Wait for answer area to be available (use placeholder to avoid matching AI chat textarea)
+    const answerArea = studentPage.getByPlaceholder(/답안을 작성/i);
     await expect(answerArea).toBeVisible({ timeout: 15_000 });
 
     // Type an answer
@@ -95,7 +93,7 @@ test.describe("Student — Exam Flow", () => {
     await answerArea.fill("This is my test answer about polymorphism.");
 
     // Verify the text was entered
-    await expect(answerArea).toContainText("polymorphism");
+    await expect(answerArea).toHaveValue(/polymorphism/);
   });
 
   test("manual save with Ctrl+S triggers save indicator", async ({
@@ -113,10 +111,8 @@ test.describe("Student — Exam Flow", () => {
       studentPage.getByText(/polymorphism/i),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Type something in the answer area — must be visible
-    const answerArea = studentPage.locator(
-      'textarea, [contenteditable="true"], [role="textbox"]',
-    ).first();
+    // Type something in the answer area (use placeholder to avoid matching AI chat textarea)
+    const answerArea = studentPage.getByPlaceholder(/답안을 작성/i);
     await expect(answerArea).toBeVisible({ timeout: 10_000 });
     await answerArea.click();
     await answerArea.fill("Test answer for save");
@@ -149,7 +145,6 @@ test.describe("Student — Exam Flow", () => {
     });
 
     await studentPage.goto(`/exam/${exam.code}`);
-    await studentPage.waitForLoadState("networkidle");
 
     // Find and click the submit button — must be visible
     const submitBtn = studentPage.getByRole("button", {

@@ -1,10 +1,12 @@
 // Node.js Runtime 사용
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { createEmbedding } from "@/lib/embedding";
 import { successJson, errorJson } from "@/lib/api-response";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 
 /**
  * POST /api/embed
@@ -21,6 +23,12 @@ export async function POST(request: NextRequest) {
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Instructor access required", 403);
+    }
+
+    // Rate limiting
+    const rl = checkRateLimit(`embed:${user.id}`, RATE_LIMITS.ai);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     const body = await request.json();

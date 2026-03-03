@@ -4,6 +4,8 @@
  * - 향후 답안 제출 후 AI와의 대화형 피드백을 제공하기 위한 API 엔드포인트
  * - 클라이언트에서 '/api/feedback-chat' 호출 시, 루브릭/문제 맥락 기반으로 응답 생성
  */
+export const maxDuration = 60;
+
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
@@ -13,42 +15,7 @@ import { buildFeedbackChatSystemPrompt, type RubricItem } from "@/lib/prompts";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
-
-// 메시지 타입 분류 함수 (개념/계산/전략/기타)
-async function classifyMessageType(
-  message: string
-): Promise<"concept" | "calculation" | "strategy" | "other"> {
-  try {
-    const lowerMessage = message.toLowerCase();
-
-    if (
-      /\d+|\+|\-|\*|\/|계산|연산|공식|수식|값|결과/.test(lowerMessage) ||
-      /how much|calculate|compute|solve|equation/.test(lowerMessage)
-    ) {
-      return "calculation";
-    }
-
-    if (
-      /방법|전략|접근|절차|과정|어떻게|how to|way|method|strategy|approach/.test(
-        lowerMessage
-      )
-    ) {
-      return "strategy";
-    }
-
-    if (
-      /무엇|뭐|의미|정의|개념|이유|왜|what|meaning|definition|concept|why/.test(
-        lowerMessage
-      )
-    ) {
-      return "concept";
-    }
-
-    return "other";
-  } catch (error) {
-    return "other";
-  }
-}
+import { classifyMessageType } from "@/lib/message-classification";
 
 // Supabase 서버 전용 클라이언트
 const supabase = getSupabaseServer();
@@ -77,7 +44,7 @@ export async function POST(request: NextRequest) {
     // 시험 정보 조회
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("*")
+      .select("id, title, code, questions, rubric")
       .eq("code", examCode)
       .single();
 
@@ -138,7 +105,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Store feedback chat interaction with compression
-    if (studentId) {
+    // Security: use authenticated user's ID, never trust studentId from body
+    const verifiedStudentId = user.id;
+    if (verifiedStudentId) {
       try {
         // 메시지 타입 분류
         const messageType = await classifyMessageType(message);
@@ -148,7 +117,7 @@ export async function POST(request: NextRequest) {
           .from("sessions")
           .select("id")
           .eq("exam_id", exam.id)
-          .eq("student_id", studentId)
+          .eq("student_id", verifiedStudentId)
           .single();
 
         let sessionId;
@@ -159,7 +128,7 @@ export async function POST(request: NextRequest) {
             .insert([
               {
                 exam_id: exam.id,
-                student_id: studentId,
+                student_id: verifiedStudentId,
                 submitted_at: new Date().toISOString(),
               },
             ])

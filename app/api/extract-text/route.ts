@@ -1,10 +1,12 @@
 // Node.js Runtime 사용
 export const runtime = "nodejs";
+export const maxDuration = 120;
 
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import mammoth from "mammoth";
 import AdmZip from "adm-zip";
 import { chunkText, formatChunkMetadata } from "@/lib/chunking";
@@ -297,6 +299,12 @@ export async function POST(request: NextRequest) {
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Forbidden", 403);
+    }
+
+    // Rate limiting
+    const rl = checkRateLimit(`extract-text:${user.id}`, RATE_LIMITS.upload);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     const body = await request.json();

@@ -1,6 +1,9 @@
+export const maxDuration = 60;
+
 import { NextRequest } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
+import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { adjustCaseQuestionSchema, validateRequest } from "@/lib/validations";
 import { buildCaseQuestionAdjustmentPrompt } from "@/lib/prompts";
 import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
@@ -16,6 +19,12 @@ export async function POST(request: NextRequest) {
     const role = (user.unsafeMetadata?.role as string) || "student";
     if (role !== "instructor") {
       return errorJson("FORBIDDEN", "교수자만 문제를 수정할 수 있습니다.", 403);
+    }
+
+    // Rate limiting
+    const rl = checkRateLimit(`adjust-question:${user.id}`, RATE_LIMITS.ai);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     // Validate body

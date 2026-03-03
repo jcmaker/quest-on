@@ -149,15 +149,16 @@ export function getErrorMessage(
  * API 응답에서 에러 메시지를 추출하고 한글로 변환
  */
 export function extractErrorMessage(
-  errorData: any,
+  errorData: unknown,
   defaultMessage: string,
   status?: number
 ): string {
   // 여러 필드에서 에러 메시지 추출
+  const data = errorData as Record<string, unknown> | null | undefined;
   const errorMsg =
-    errorData?.error ||
-    errorData?.message ||
-    errorData?.details ||
+    data?.error ||
+    data?.message ||
+    data?.details ||
     (status ? getHttpStatusMessage(status) : null);
 
   if (!errorMsg) {

@@ -99,7 +99,8 @@ export default function EditExam({
     };
 
     fetchExam();
-  }, [resolvedParams.examId, isLoaded, user, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedParams.examId, isLoaded, user?.id]);
 
   const generateExamCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";

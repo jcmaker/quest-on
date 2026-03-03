@@ -1,3 +1,5 @@
+export const maxDuration = 120;
+
 import { NextRequest } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { errorJson } from "@/lib/api-response";

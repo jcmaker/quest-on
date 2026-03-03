@@ -3,6 +3,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
+import { logError } from "@/lib/logger";
 
 const supabase = getSupabaseServer();
 
@@ -98,55 +99,81 @@ export async function POST(
     }
 
     // 4-5. 시험 상태 + 세션 전환을 원자적으로 처리
-    // 시험 상태 업데이트 먼저 수행
-    const { data: updatedExam, error: updateExamError } = await supabase
-      .from("exams")
-      .update(updateData)
-      .eq("id", examId)
-      .eq("status", exam.status) // 낙관적 잠금: 상태가 변하지 않았을 때만 업데이트
-      .select("id")
-      .single();
+    // Try RPC-based atomic transaction first, fall back to sequential queries
+    let updatedSessionsCount = 0;
 
-    if (updateExamError || !updatedExam) {
-      return errorJson(
-        "CONFLICT",
-        "Exam state changed concurrently, please retry",
-        409
-      );
-    }
+    try {
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("start_exam_atomic", {
+        p_exam_id: examId,
+        p_expected_status: exam.status || "draft",
+        p_started_at: now,
+        p_close_at: closeAt ? new Date(closeAt).toISOString() : null,
+      });
 
-    // 5. 모든 Waiting 세션을 InProgress로 전환
-    const { data: updatedSessions, error: sessionsError } = await supabase
-      .from("sessions")
-      .update({
-        status: "in_progress",
-        started_at: now,
-        attempt_timer_started_at: now,
-      })
-      .eq("exam_id", examId)
-      .eq("status", "waiting")
-      .select("id");
-
-    if (sessionsError) {
-      // 세션 전환 실패 시 시험 상태 롤백
-      await supabase
+      if (!rpcError && rpcResult !== null) {
+        updatedSessionsCount = typeof rpcResult === "number" ? rpcResult : 0;
+      } else {
+        throw new Error(rpcError?.message || "RPC not available");
+      }
+    } catch {
+      // Fallback: sequential queries with optimistic locking + manual rollback
+      const { data: updatedExam, error: updateExamError } = await supabase
         .from("exams")
-        .update({
-          started_at: exam.started_at,
-          status: exam.status || "draft",
-          updated_at: now,
-          close_at: null,
-        })
-        .eq("id", examId);
+        .update(updateData)
+        .eq("id", examId)
+        .eq("status", exam.status) // 낙관적 잠금: 상태가 변하지 않았을 때만 업데이트
+        .select("id")
+        .single();
 
-      return errorJson("INTERNAL_ERROR", "Failed to update sessions, exam state rolled back", 500);
+      if (updateExamError || !updatedExam) {
+        return errorJson(
+          "CONFLICT",
+          "Exam state changed concurrently, please retry",
+          409
+        );
+      }
+
+      // 모든 Waiting 세션을 InProgress로 전환
+      const { data: updatedSessions, error: sessionsError } = await supabase
+        .from("sessions")
+        .update({
+          status: "in_progress",
+          started_at: now,
+          attempt_timer_started_at: now,
+        })
+        .eq("exam_id", examId)
+        .eq("status", "waiting")
+        .select("id");
+
+      if (sessionsError) {
+        // 세션 전환 실패 시 시험 상태 롤백
+        const { error: rollbackError } = await supabase
+          .from("exams")
+          .update({
+            started_at: exam.started_at,
+            status: exam.status || "draft",
+            updated_at: now,
+            close_at: null,
+          })
+          .eq("id", examId);
+
+        if (rollbackError) {
+          logError("Failed to rollback exam state after session update failure", rollbackError, {
+            path: "/api/exam/start",
+          });
+        }
+
+        return errorJson("INTERNAL_ERROR", "Failed to update sessions, exam state rolled back", 500);
+      }
+
+      updatedSessionsCount = updatedSessions?.length || 0;
     }
 
     return successJson({
       examId,
       startedAt: now,
       status: "running",
-      sessionsUpdated: updatedSessions?.length || 0,
+      sessionsUpdated: updatedSessionsCount,
     });
   } catch (error) {
     return errorJson("INTERNAL_ERROR", "Failed to start exam", 500);
