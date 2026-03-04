@@ -625,7 +625,7 @@ export default function StudentDashboard() {
                   <div className="flex items-center space-x-2 shrink-0">
                     <Badge
                       variant="outline"
-                      className="bg-primary/10 text-primary border-primary/20 text-xs hidden sm:inline-flex"
+                      className="bg-background text-primary border-primary/20 text-xs hidden sm:inline-flex"
                       aria-label="학생 모드"
                     >
                       학생 모드

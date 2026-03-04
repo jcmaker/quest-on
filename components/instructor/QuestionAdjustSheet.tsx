@@ -34,11 +34,19 @@ export function QuestionAdjustSheet({
   onApply,
 }: QuestionAdjustSheetProps) {
   const [input, setInput] = useState("");
+  const [appliedIdx, setAppliedIdx] = useState<number | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [history]);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setAppliedIdx(null);
+    }
+    onOpenChange(nextOpen);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,10 +58,10 @@ export function QuestionAdjustSheet({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="w-full sm:max-w-lg flex flex-col gap-0 p-0">
         <SheetHeader className="px-6 py-4 border-b shrink-0">
-          <SheetTitle>문제 수정 대화</SheetTitle>
+          <SheetTitle>AI와 문제 수정</SheetTitle>
         </SheetHeader>
 
         {/* Current question preview */}
@@ -95,16 +103,20 @@ export function QuestionAdjustSheet({
                 {msg.role === "assistant" && msg.questionText && (
                   <Button
                     size="sm"
-                    variant="default"
-                    className="mt-2 gap-1.5"
+                    variant={appliedIdx === idx ? "default" : "default"}
+                    className={`mt-2 gap-1.5 ${appliedIdx === idx ? "bg-green-600 hover:bg-green-600" : ""}`}
+                    disabled={appliedIdx !== null}
                     onClick={() => {
                       onApply(msg.questionText!);
+                      setAppliedIdx(idx);
                       toast.success("수정 사항이 적용되었습니다.");
-                      onOpenChange(false);
+                      setTimeout(() => {
+                        handleOpenChange(false);
+                      }, 800);
                     }}
                   >
                     <Check className="w-3.5 h-3.5" />
-                    적용하기
+                    {appliedIdx === idx ? "적용 완료!" : "적용하기"}
                   </Button>
                 )}
               </div>

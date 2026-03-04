@@ -974,8 +974,11 @@ export default function CreateExam() {
               onQuestionsAccepted={(newQuestions) => {
                 const newIds = newQuestions.map((q) => q.id);
                 setQuestions((prev) => {
-                  // 빈 초기 문제 자동 제거
-                  const nonEmpty = prev.filter((q) => q.text.trim() !== "");
+                  // 빈 초기 문제 자동 제거 (HTML 태그 strip 후 체크)
+                  const nonEmpty = prev.filter((q) => {
+                    const stripped = q.text.replace(/<[^>]*>/g, "").trim();
+                    return stripped !== "";
+                  });
                   return [
                     ...nonEmpty,
                     ...newQuestions.map((q) => ({
@@ -1018,6 +1021,7 @@ export default function CreateExam() {
               <QuestionsList
                 questions={questions}
                 highlightedIds={highlightedQuestionIds}
+                defaultOpen={false}
                 onUpdate={updateQuestion}
                 onRemove={(id) => {
                   setQuestions((prev) => prev.filter((q) => q.id !== id));

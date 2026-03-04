@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import type {
   GeneratedQuestion,
-  RubricItem,
   ChatMessage,
 } from "@/hooks/useQuestionGeneration";
 import { QuestionAdjustSheet } from "./QuestionAdjustSheet";
@@ -26,8 +25,6 @@ import { QuestionAdjustSheet } from "./QuestionAdjustSheet";
 interface GeneratedQuestionCardProps {
   question: GeneratedQuestion;
   index: number;
-  rubric: RubricItem[];
-  showRubric?: boolean;
   isRegenerating: boolean;
   isAdjusting: boolean;
   adjustHistory: ChatMessage[];
@@ -41,8 +38,6 @@ interface GeneratedQuestionCardProps {
 export function GeneratedQuestionCard({
   question,
   index,
-  rubric,
-  showRubric = true,
   isRegenerating,
   isAdjusting,
   adjustHistory,
@@ -137,26 +132,6 @@ export function GeneratedQuestionCard({
           </Button>
         )}
 
-        {/* Suggested rubric - P3-4: Only show on first card */}
-        {showRubric && rubric.length > 0 && (
-          <div className="pt-2 border-t">
-            <p className="text-xs font-medium text-muted-foreground mb-1.5">
-              제안된 루브릭
-            </p>
-            <div className="space-y-1">
-              {rubric.map((item, i) => (
-                <div key={i} className="text-xs">
-                  <span className="font-medium">{item.evaluationArea}</span>
-                  <span className="text-muted-foreground">
-                    {" "}
-                    — {item.detailedCriteria}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Footer actions */}
         <div className="flex flex-wrap items-center gap-2 pt-3 border-t">
           <Button
@@ -166,7 +141,7 @@ export function GeneratedQuestionCard({
             className="gap-1.5"
           >
             <Check className="w-3.5 h-3.5" />
-            수락
+            완료
           </Button>
           <Button
             size="sm"
@@ -175,7 +150,7 @@ export function GeneratedQuestionCard({
             className="gap-1.5"
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            수정 대화
+            AI와 수정
           </Button>
           <Button
             size="sm"

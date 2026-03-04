@@ -831,6 +831,7 @@ export default function EditExam({
 
         <QuestionsList
           questions={questions}
+          defaultOpen={true}
           onUpdate={updateQuestion}
           onRemove={(id) => {
             setQuestions((prev) => prev.filter((q) => q.id !== id));

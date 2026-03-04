@@ -58,10 +58,8 @@ export function CaseQuestionGenerator({
   onQuestionsAccepted,
   onRubricSuggested,
 }: CaseQuestionGeneratorProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [difficulty, setDifficulty] = useState<
-    "basic" | "intermediate" | "advanced"
-  >("intermediate");
+  const [isOpen, setIsOpen] = useState(true);
+  const difficulty = "basic" as const;
   const [questionCount, setQuestionCount] = useState(1);
   const [topics, setTopics] = useState("");
   const [customInstructions, setCustomInstructions] = useState("");
@@ -207,31 +205,6 @@ export function CaseQuestionGenerator({
 
         <CollapsibleContent>
           <div className="px-6 pb-6 space-y-4 border-t pt-4">
-            {/* Difficulty */}
-            <div className="space-y-1.5">
-              <Label className="text-sm">난이도</Label>
-              <div className="flex flex-wrap gap-2">
-                {(
-                  [
-                    { value: "basic", label: "기초" },
-                    { value: "intermediate", label: "중급" },
-                    { value: "advanced", label: "심화" },
-                  ] as const
-                ).map((opt) => (
-                  <Button
-                    key={opt.value}
-                    type="button"
-                    size="sm"
-                    variant={difficulty === opt.value ? "default" : "outline"}
-                    onClick={() => setDifficulty(opt.value)}
-                    className="h-8"
-                  >
-                    {opt.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
             {/* Question count */}
             <div className="space-y-1.5">
               <Label className="text-sm">생성할 문제 수</Label>
@@ -411,7 +384,7 @@ export function CaseQuestionGenerator({
                       className="gap-1.5"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      전체 수락 ({generatedQuestions.length}개)
+                      전체 완료 ({generatedQuestions.length}개)
                     </Button>
                   )}
                 </div>
@@ -429,8 +402,6 @@ export function CaseQuestionGenerator({
                       <GeneratedQuestionCard
                         question={q}
                         index={idx}
-                        rubric={suggestedRubric}
-                        showRubric={idx === 0}
                         isRegenerating={regeneratingId === q.id}
                         isAdjusting={adjustingId === q.id}
                         adjustHistory={getAdjustHistory(q.id)}

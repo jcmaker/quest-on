@@ -33,12 +33,14 @@ export async function POST(request: NextRequest) {
 
     const data = validation.data;
 
-    // Forward mock headers in test environment
+    // Forward mock headers when running against mock server (OPENAI_BASE_URL points to localhost)
     const mockHeaders: Record<string, string> = {};
-    if (process.env.NODE_ENV === "test") {
+    const isMockServer = process.env.OPENAI_BASE_URL?.includes("localhost");
+    if (isMockServer) {
       const mockError = request.headers.get("x-mock-error");
       if (mockError) mockHeaders["x-mock-error"] = mockError;
     }
+    const hasMockHeaders = Object.keys(mockHeaders).length > 0;
 
     // Combine materials text with char limit
     let materialsContext: string | undefined;
@@ -72,7 +74,7 @@ export async function POST(request: NextRequest) {
     };
 
     const attemptGeneration = async () => {
-      const completion = await callOpenAI(() =>
+      const apiCall = () =>
         Promise.race([
           openai.chat.completions.create(
             {
@@ -83,7 +85,9 @@ export async function POST(request: NextRequest) {
               ],
               response_format: { type: "json_object" },
             },
-            Object.keys(mockHeaders).length > 0 ? { headers: mockHeaders } : undefined,
+            hasMockHeaders
+              ? { headers: mockHeaders, maxRetries: 0 }
+              : undefined,
           ),
           new Promise<never>((_, reject) =>
             setTimeout(
@@ -91,8 +95,10 @@ export async function POST(request: NextRequest) {
               GENERATION_TIMEOUT_MS
             )
           ),
-        ])
-      );
+        ]);
+
+      // Skip callOpenAI wrapper (which has its own retries) when using mock server
+      const completion = hasMockHeaders ? await apiCall() : await callOpenAI(apiCall);
 
       const content = completion.choices[0]?.message?.content;
       if (!content) {
@@ -102,10 +108,15 @@ export async function POST(request: NextRequest) {
       return JSON.parse(content);
     };
 
-    // Try generation with 1 retry on parse failure
+    // Try generation with 1 retry on parse failure (skip retry for mock errors)
     try {
       parsedResponse = await attemptGeneration();
     } catch (firstError) {
+      if (hasMockHeaders) {
+        const msg =
+          firstError instanceof Error ? firstError.message : "AI 응답 생성 실패";
+        return errorJson("AI_GENERATION_FAILED", msg, 500);
+      }
       try {
         parsedResponse = await attemptGeneration();
       } catch {
