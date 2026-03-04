@@ -58,7 +58,7 @@ test.describe("Student — Dashboard & Report Flow", () => {
     await studentPage.goto("/student");
 
     // Should show empty state or "no exams" message
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     // Either shows empty state message or the dashboard frame
     const hasContent = await studentPage

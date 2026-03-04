@@ -6,6 +6,7 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { generateCaseQuestionsSchema, validateRequest } from "@/lib/validations";
 import { buildCaseQuestionGenerationPrompt } from "@/lib/prompts";
 import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { logError } from "@/lib/logger";
 
 const MATERIALS_CHAR_LIMIT = 8000;
 const GENERATION_TIMEOUT_MS = 60_000;
@@ -31,6 +32,13 @@ export async function POST(request: NextRequest) {
     }
 
     const data = validation.data;
+
+    // Forward mock headers in test environment
+    const mockHeaders: Record<string, string> = {};
+    if (process.env.NODE_ENV === "test") {
+      const mockError = request.headers.get("x-mock-error");
+      if (mockError) mockHeaders["x-mock-error"] = mockError;
+    }
 
     // Combine materials text with char limit
     let materialsContext: string | undefined;
@@ -66,14 +74,17 @@ export async function POST(request: NextRequest) {
     const attemptGeneration = async () => {
       const completion = await callOpenAI(() =>
         Promise.race([
-          openai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [
-              { role: "system", content: system },
-              { role: "user", content: userPrompt },
-            ],
-            response_format: { type: "json_object" },
-          }),
+          openai.chat.completions.create(
+            {
+              model: AI_MODEL,
+              messages: [
+                { role: "system", content: system },
+                { role: "user", content: userPrompt },
+              ],
+              response_format: { type: "json_object" },
+            },
+            Object.keys(mockHeaders).length > 0 ? { headers: mockHeaders } : undefined,
+          ),
           new Promise<never>((_, reject) =>
             setTimeout(
               () => reject(new Error("Generation timeout")),
@@ -128,8 +139,7 @@ export async function POST(request: NextRequest) {
 
     return successJson({ questions, suggestedRubric });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "문제 생성 중 오류가 발생했습니다.";
-    return errorJson("INTERNAL_ERROR", message, 500);
+    logError("Question generation failed", error, { path: "/api/ai/generate-questions" });
+    return errorJson("INTERNAL_ERROR", "문제 생성 중 오류가 발생했습니다.", 500);
   }
 }

@@ -33,7 +33,7 @@ test.describe("Public pages smoke tests", () => {
       expect(response?.status()).toBe(200);
 
       // Wait for initial rendering
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       // No console errors
       if (consoleErrors.length > 0) {

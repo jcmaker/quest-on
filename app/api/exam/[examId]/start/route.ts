@@ -93,9 +93,19 @@ export async function POST(
 
     // close_at이 제공된 경우에만 업데이트
     if (closeAt) {
-      // datetime-local 형식을 ISO 형식으로 변환
-      const closeAtISO = new Date(closeAt).toISOString();
-      updateData.close_at = closeAtISO;
+      const closeAtDate = new Date(closeAt);
+      if (isNaN(closeAtDate.getTime())) {
+        return errorJson("BAD_REQUEST", "Invalid close_at date format", 400);
+      }
+      // close_at must be in the future
+      if (closeAtDate.getTime() <= Date.now()) {
+        return errorJson(
+          "BAD_REQUEST",
+          "close_at must be a future date",
+          400
+        );
+      }
+      updateData.close_at = closeAtDate.toISOString();
     }
 
     // 4-5. 시험 상태 + 세션 전환을 원자적으로 처리
@@ -176,6 +186,7 @@ export async function POST(
       sessionsUpdated: updatedSessionsCount,
     });
   } catch (error) {
+    logError("Failed to start exam", error, { path: "/api/exam/start" });
     return errorJson("INTERNAL_ERROR", "Failed to start exam", 500);
   }
 }

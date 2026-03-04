@@ -209,6 +209,7 @@ export async function POST(request: NextRequest) {
       questionId,
     });
   } catch (error) {
+    logError("Feedback chat failed", error, { path: "/api/feedback-chat" });
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

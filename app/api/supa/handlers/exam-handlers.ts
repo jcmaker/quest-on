@@ -53,6 +53,43 @@ export async function createExam(data: {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403, `User role: ${userRole || "not set"}`);
     }
 
+    // 시험 코드 중복 검증 및 자동 재생성
+    let examCode = data.code;
+    const { data: existingExam } = await supabase
+      .from("exams")
+      .select("code")
+      .eq("code", examCode)
+      .single();
+
+    if (existingExam) {
+      // 중복 시 새 코드 생성 (copyExam 패턴 적용)
+      const generateExamCode = () => {
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let result = "";
+        for (let i = 0; i < 6; i++) {
+          result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+      };
+
+      let newCode = generateExamCode();
+      let codeCheck = await supabase
+        .from("exams")
+        .select("code")
+        .eq("code", newCode)
+        .single();
+
+      while (!codeCheck.error) {
+        newCode = generateExamCode();
+        codeCheck = await supabase
+          .from("exams")
+          .select("code")
+          .eq("code", newCode)
+          .single();
+      }
+      examCode = newCode;
+    }
+
     // Create exam with the correct schema
     // NOTE: core_ability(핵심 역량) 필드는 제거되었으므로 저장 시 항상 제거한다.
     const sanitizedQuestions = (data.questions || []).map((q) => {
@@ -64,7 +101,7 @@ export async function createExam(data: {
 
     const examData = {
       title: data.title,
-      code: data.code,
+      code: examCode,
       description: null, // description 필드는 nullable이므로 null로 설정
       duration: data.duration,
       questions: sanitizedQuestions,
@@ -86,7 +123,8 @@ export async function createExam(data: {
       .single();
 
     if (error) {
-      return errorJson("DATABASE_ERROR", `Database error: ${error.message}`, 500);
+      logError("[createExam] Database error during exam insert", error, { path: "/api/supa/exam-handlers" });
+      return errorJson("DATABASE_ERROR", "Database error", 500);
     }
 
     // Create exam node in exam_nodes table
@@ -202,7 +240,8 @@ export async function createExam(data: {
 
     return successJson({ exam, examNode });
   } catch (error) {
-    return errorJson("CREATE_EXAM_FAILED", `Failed to create exam: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
+    logError("[createExam] Failed to create exam", error, { path: "/api/supa/exam-handlers" });
+    return errorJson("CREATE_EXAM_FAILED", "Failed to create exam", 500);
   }
 }
 
@@ -248,6 +287,7 @@ export async function updateExam(data: {
 
     return successJson({ exam });
   } catch (error) {
+    logError("[updateExam] Failed to update exam", error, { path: "/api/supa/exam-handlers" });
     return errorJson("UPDATE_EXAM_FAILED", "Failed to update exam", 500);
   }
 }
@@ -269,6 +309,7 @@ export async function getExam(data: { code: string }) {
 
     return successJson({ exam });
   } catch (error) {
+    logError("[getExam] Failed to get exam", error, { path: "/api/supa/exam-handlers" });
     return errorJson("GET_EXAM_FAILED", "Failed to get exam", 500);
   }
 }
@@ -289,7 +330,8 @@ export async function getExamById(data: { id: string }) {
     try {
       user = await currentUser();
     } catch (authError) {
-      return errorJson("AUTH_ERROR", "Authentication error", 401, authError instanceof Error ? authError.message : "Unknown auth error");
+      logError("[getExamById] Authentication error", authError, { path: "/api/supa/exam-handlers" });
+      return errorJson("AUTH_ERROR", "Authentication error", 401);
     }
 
     if (!user) {
@@ -345,18 +387,8 @@ export async function getExamById(data: { id: string }) {
 
     return successJson({ exam });
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    const errorDetails =
-      error instanceof Error && error.stack ? error.stack : undefined;
-    return errorJson(
-      "GET_EXAM_FAILED",
-      "Failed to get exam",
-      500,
-      process.env.NODE_ENV === "development"
-        ? { message: errorMessage, stack: errorDetails }
-        : errorMessage
-    );
+    logError("[getExamById] Failed to get exam", error, { path: "/api/supa/exam-handlers" });
+    return errorJson("GET_EXAM_FAILED", "Failed to get exam", 500);
   }
 }
 
@@ -418,6 +450,7 @@ export async function getInstructorExams() {
 
     return successJson({ exams: examsWithCounts });
   } catch (error) {
+    logError("[getInstructorExams] Failed to get exams", error, { path: "/api/supa/exam-handlers" });
     return errorJson("GET_EXAMS_FAILED", "Failed to get exams", 500);
   }
 }
@@ -634,6 +667,7 @@ export async function copyExam(data: { exam_id: string }) {
 
     return successJson({ exam: newExam, examNode });
   } catch (error) {
-    return errorJson("COPY_EXAM_FAILED", `Failed to copy exam: ${error instanceof Error ? error.message : "Unknown error"}`, 500);
+    logError("[copyExam] Failed to copy exam", error, { path: "/api/supa/exam-handlers" });
+    return errorJson("COPY_EXAM_FAILED", "Failed to copy exam", 500);
   }
 }

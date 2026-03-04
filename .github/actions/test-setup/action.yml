@@ -1,0 +1,62 @@
+name: "Test Setup"
+description: "Common setup for API and browser E2E tests"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: npm
+
+    - uses: supabase/setup-cli@v1
+      with:
+        version: latest
+
+    - run: supabase start
+      shell: bash
+
+    - run: npm ci
+      shell: bash
+
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      id: playwright-cache
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ hashFiles('package-lock.json') }}
+
+    - name: Install Playwright browsers
+      if: steps.playwright-cache.outputs.cache-hit != 'true'
+      run: npx playwright install --with-deps chromium
+      shell: bash
+
+    - name: Install Playwright system deps (cached)
+      if: steps.playwright-cache.outputs.cache-hit == 'true'
+      run: npx playwright install-deps chromium
+      shell: bash
+
+    - name: Enable pgvector extension
+      run: psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "CREATE EXTENSION IF NOT EXISTS vector;"
+      shell: bash
+
+    - name: Push Prisma schema to local DB
+      run: npx prisma db push --accept-data-loss
+      shell: bash
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+
+    - name: Create non-Prisma tables
+      run: |
+        psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "
+          CREATE TABLE IF NOT EXISTS error_logs (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            level TEXT NOT NULL DEFAULT 'error',
+            message TEXT NOT NULL,
+            payload JSONB,
+            path TEXT,
+            user_id TEXT,
+            created_at TIMESTAMPTZ DEFAULT now()
+          );
+        "
+      shell: bash

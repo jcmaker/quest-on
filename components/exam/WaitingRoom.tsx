@@ -15,6 +15,8 @@ interface WaitingRoomProps {
   sessionId?: string;
   examId?: string;
   studentId?: string;
+  examDuration?: number;
+  questionCount?: number;
 }
 
 export function WaitingRoom({
@@ -25,7 +27,8 @@ export function WaitingRoom({
   onGateStart,
   sessionId,
   examId,
-  studentId,
+  examDuration,
+  questionCount,
 }: WaitingRoomProps) {
   const [isWaiting, setIsWaiting] = useState(true);
   const onGateStartRef = useRef(onGateStart);
@@ -33,20 +36,20 @@ export function WaitingRoom({
 
   // Lightweight status check (used for fallback polling only)
   const checkExamStatus = useCallback(async () => {
-    if (!examCode || !studentId) return;
+    if (!examId || !sessionId) return;
     try {
       const response = await fetch("/api/supa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "init_exam_session",
-          data: { examCode, studentId },
+          action: "check_exam_gate_status",
+          data: { examId, sessionId },
         }),
       });
 
       if (response.ok) {
         const result = await response.json();
-        if (result.gateStarted && result.sessionStatus === "in_progress") {
+        if (result.gateStarted) {
           setIsWaiting(false);
           onGateStartRef.current?.();
         }
@@ -54,7 +57,7 @@ export function WaitingRoom({
     } catch {
       // Non-critical polling error
     }
-  }, [examCode, studentId]);
+  }, [examId, sessionId]);
 
   // Supabase Realtime subscription for exam status changes
   useEffect(() => {
@@ -89,7 +92,7 @@ export function WaitingRoom({
 
   // Fallback polling: 30-second interval (instead of 3-second)
   useEffect(() => {
-    if (!sessionId || !examCode || !studentId || !isWaiting) return;
+    if (!sessionId || !examId || !isWaiting) return;
 
     // Initial check
     checkExamStatus();
@@ -98,7 +101,7 @@ export function WaitingRoom({
     const interval = setInterval(checkExamStatus, 30000);
 
     return () => clearInterval(interval);
-  }, [sessionId, examCode, studentId, isWaiting, checkExamStatus]);
+  }, [sessionId, examId, isWaiting, checkExamStatus]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
@@ -131,6 +134,21 @@ export function WaitingRoom({
                   {examCode && (
                     <p>
                       <span className="font-medium">시험 코드:</span> {examCode}
+                    </p>
+                  )}
+                  {examDuration != null && examDuration > 0 && (
+                    <p>
+                      <span className="font-medium">시험 시간:</span> {examDuration}분
+                    </p>
+                  )}
+                  {examDuration === 0 && (
+                    <p>
+                      <span className="font-medium">시험 시간:</span> 무제한 (과제형)
+                    </p>
+                  )}
+                  {questionCount != null && questionCount > 0 && (
+                    <p>
+                      <span className="font-medium">문제 수:</span> {questionCount}문제
                     </p>
                   )}
                 </div>

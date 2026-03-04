@@ -206,6 +206,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    logError("Failed to fetch student sessions", error, { path: "/api/student/sessions" });
     return errorJson("FETCH_SESSIONS_FAILED", "Failed to get student sessions", 500);
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClerkClient } from "@clerk/nextjs/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
 
 // Clerk 클라이언트 직접 초기화
 const clerk = createClerkClient({
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    logError("Failed to fetch users", error, { path: "/api/admin/users" });
     return errorJson("INTERNAL_ERROR", "Failed to fetch users", 500);
   }
 }

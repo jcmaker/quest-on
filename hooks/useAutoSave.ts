@@ -29,7 +29,7 @@ function jitter(baseMs: number): number {
 export function useAutoSave({
   sessionId,
   examExists,
-  intervalMs = 60000,
+  intervalMs = 30000,
 }: UseAutoSaveOptions) {
   const [draftAnswers, setDraftAnswers] = useState<DraftAnswer[]>([]);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
@@ -131,6 +131,42 @@ export function useAutoSave({
     []
   );
 
+  // Keep a ref to latest draftAnswers for beforeunload access
+  const draftAnswersRef = useRef(draftAnswers);
+  draftAnswersRef.current = draftAnswers;
+
+  // Save via sendBeacon (for beforeunload)
+  const saveViaBeacon = useCallback(() => {
+    if (!sessionId || !examExists) return;
+    const answers = draftAnswersRef.current;
+    if (!answers.some((a) => a.text && !isHtmlEmpty(a.text))) return;
+
+    const payload = JSON.stringify({
+      action: "save_draft_answers",
+      data: {
+        sessionId,
+        answers: answers.map((a) => ({
+          questionId: a.questionId,
+          text: a.text?.replace(/\u0000/g, "") || "",
+        })),
+      },
+    });
+
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(
+        "/api/supa",
+        new Blob([payload], { type: "application/json" })
+      );
+    } else {
+      fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {});
+    }
+  }, [sessionId, examExists]);
+
   return {
     draftAnswers,
     setDraftAnswers,
@@ -139,5 +175,6 @@ export function useAutoSave({
     saveError,
     manualSave,
     updateAnswer,
+    saveViaBeacon,
   };
 }

@@ -109,10 +109,14 @@ function SaveStatusIndicator({
 
   if (lastSaved) {
     return (
-      <div data-testid="save-status" className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+      <div
+        key={lastSaved}
+        data-testid="save-status"
+        className="flex flex-wrap items-center gap-2 text-xs sm:text-sm text-muted-foreground animate-in fade-in duration-300"
+      >
         <div className="flex items-center gap-1.5">
           <Save
-            className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400"
+            className="w-3 h-3 sm:w-4 sm:h-4 text-green-600 dark:text-green-400 animate-in zoom-in duration-300"
             aria-hidden="true"
           />
           <span className="font-medium text-green-600 dark:text-green-400">

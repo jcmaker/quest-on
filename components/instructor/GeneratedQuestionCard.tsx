@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import {
@@ -27,7 +27,8 @@ interface GeneratedQuestionCardProps {
   question: GeneratedQuestion;
   index: number;
   rubric: RubricItem[];
-  isGenerating: boolean;
+  showRubric?: boolean;
+  isRegenerating: boolean;
   isAdjusting: boolean;
   adjustHistory: ChatMessage[];
   onAccept: () => void;
@@ -41,7 +42,8 @@ export function GeneratedQuestionCard({
   question,
   index,
   rubric,
-  isGenerating,
+  showRubric = true,
+  isRegenerating,
   isAdjusting,
   adjustHistory,
   onAccept,
@@ -52,12 +54,31 @@ export function GeneratedQuestionCard({
 }: GeneratedQuestionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [needsExpand, setNeedsExpand] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const PREVIEW_HEIGHT = 300;
 
+  // P2-1: Measure content height to conditionally show "더 보기"
+  useEffect(() => {
+    if (contentRef.current) {
+      setNeedsExpand(contentRef.current.scrollHeight > PREVIEW_HEIGHT);
+    }
+  }, [question.text]);
+
   return (
     <>
-      <div className="border rounded-lg p-4 space-y-3 bg-card">
+      <div className="border rounded-lg p-4 space-y-3 bg-card relative">
+        {/* P1-1: Regeneration overlay */}
+        {isRegenerating && (
+          <div className="absolute inset-0 bg-card/80 backdrop-blur-[2px] rounded-lg z-10 flex items-center justify-center">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              재생성 중...
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <h4 className="font-medium text-sm">문제 {index + 1}</h4>
@@ -79,42 +100,45 @@ export function GeneratedQuestionCard({
         {/* Question content */}
         <div className="relative">
           <div
+            ref={contentRef}
             className="overflow-hidden transition-all"
             style={{
-              maxHeight: isExpanded ? "none" : `${PREVIEW_HEIGHT}px`,
+              maxHeight: isExpanded || !needsExpand ? "none" : `${PREVIEW_HEIGHT}px`,
             }}
           >
             <RichTextViewer content={question.text} className="prose-sm" />
           </div>
 
           {/* Gradient overlay when collapsed */}
-          {!isExpanded && (
+          {!isExpanded && needsExpand && (
             <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-card to-transparent" />
           )}
         </div>
 
-        {/* Expand/collapse toggle */}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full h-7 text-xs text-muted-foreground"
-        >
-          {isExpanded ? (
-            <>
-              <ChevronUp className="w-3 h-3 mr-1" />
-              접기
-            </>
-          ) : (
-            <>
-              <ChevronDown className="w-3 h-3 mr-1" />
-              더 보기
-            </>
-          )}
-        </Button>
+        {/* Expand/collapse toggle - P2-1: Only show when content overflows */}
+        {needsExpand && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="w-full h-7 text-xs text-muted-foreground"
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp className="w-3 h-3 mr-1" />
+                접기
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3 h-3 mr-1" />
+                더 보기
+              </>
+            )}
+          </Button>
+        )}
 
-        {/* Suggested rubric */}
-        {rubric.length > 0 && (
+        {/* Suggested rubric - P3-4: Only show on first card */}
+        {showRubric && rubric.length > 0 && (
           <div className="pt-2 border-t">
             <p className="text-xs font-medium text-muted-foreground mb-1.5">
               제안된 루브릭
@@ -157,11 +181,11 @@ export function GeneratedQuestionCard({
             size="sm"
             variant="outline"
             onClick={onRegenerate}
-            disabled={isGenerating}
+            disabled={isRegenerating}
             className="gap-1.5"
           >
             <RefreshCw
-              className={`w-3.5 h-3.5 ${isGenerating ? "animate-spin" : ""}`}
+              className={`w-3.5 h-3.5 ${isRegenerating ? "animate-spin" : ""}`}
             />
             재생성
           </Button>

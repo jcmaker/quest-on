@@ -33,7 +33,7 @@ test.describe("Error Scenarios — Edge Cases", () => {
 
     // Should either show an error page, redirect to join with error,
     // or display an error message — but NOT crash
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     // Check: no unhandled errors (page doesn't crash)
     // The page should either show an error message OR redirect
@@ -61,7 +61,7 @@ test.describe("Error Scenarios — Edge Cases", () => {
     studentPage.on("pageerror", (err) => pageErrors.push(err));
 
     await studentPage.goto(`/exam/${exam.code}`);
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     // Wait for the page to load content first — check for actual exam content
     await expect(

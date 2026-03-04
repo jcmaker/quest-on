@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
 
 import {
   createExam,
@@ -16,6 +17,7 @@ import {
   submitExam,
   sessionHeartbeat,
   deactivateSession,
+  checkExamGateStatus,
 } from "./handlers/session-handlers";
 
 import {
@@ -82,6 +84,8 @@ export async function POST(request: NextRequest) {
         return await sessionHeartbeat(data);
       case "deactivate_session":
         return await deactivateSession(data);
+      case "check_exam_gate_status":
+        return await checkExamGateStatus(data);
       case "create_folder":
         return await createFolder(data);
       case "get_folder_contents":
@@ -102,15 +106,11 @@ export async function POST(request: NextRequest) {
         return errorJson("INVALID_ACTION", `Invalid action: ${action}`, 400);
     }
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+    logError("Supa route handler failed", error, { path: "/api/supa" });
     return errorJson(
       "INTERNAL_SERVER_ERROR",
       "Internal server error",
-      500,
-      process.env.NODE_ENV === "development"
-        ? { message: errorMessage, stack: error instanceof Error ? error.stack : undefined }
-        : errorMessage
+      500
     );
   }
 }

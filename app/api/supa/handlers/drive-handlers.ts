@@ -58,6 +58,7 @@ export async function createFolder(data: { name: string; parent_id?: string | nu
 
     return successJson({ folder });
   } catch (error) {
+    logError("[createFolder] Failed to create folder", error, { path: "/api/supa/drive-handlers" });
     return errorJson("CREATE_FOLDER_FAILED", "Failed to create folder", 500);
   }
 }
@@ -161,9 +162,8 @@ export async function getFolderContents(data: { folder_id?: string | null }) {
 
     return successJson({ nodes: nodesWithCounts });
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    return errorJson("GET_FOLDER_CONTENTS_FAILED", "Failed to get folder contents", 500, errorMessage);
+    logError("[getFolderContents] Failed to get folder contents", error, { path: "/api/supa/drive-handlers" });
+    return errorJson("GET_FOLDER_CONTENTS_FAILED", "Failed to get folder contents", 500);
   }
 }
 
@@ -208,6 +208,7 @@ export async function getBreadcrumb(data: { folder_id: string }) {
 
     return successJson({ breadcrumb: rpcData || [] });
   } catch (error) {
+    logError("[getBreadcrumb] Failed to get breadcrumb", error, { path: "/api/supa/drive-handlers" });
     return errorJson("GET_BREADCRUMB_FAILED", "Failed to get breadcrumb", 500);
   }
 }
@@ -248,6 +249,7 @@ export async function moveNode(data: {
 
     return successJson({ node });
   } catch (error) {
+    logError("[moveNode] Failed to move node", error, { path: "/api/supa/drive-handlers" });
     return errorJson("MOVE_NODE_FAILED", "Failed to move node", 500);
   }
 }
@@ -290,6 +292,7 @@ export async function updateNode(data: { node_id: string; name?: string }) {
 
     return successJson({ node });
   } catch (error) {
+    logError("[updateNode] Failed to update node", error, { path: "/api/supa/drive-handlers" });
     return errorJson("UPDATE_NODE_FAILED", "Failed to update node", 500);
   }
 }
@@ -342,6 +345,7 @@ export async function deleteNode(data: { node_id: string }) {
 
     return successJson({});
   } catch (error) {
+    logError("[deleteNode] Failed to delete node", error, { path: "/api/supa/drive-handlers" });
     return errorJson("DELETE_NODE_FAILED", "Failed to delete node", 500);
   }
 }
@@ -361,6 +365,7 @@ export async function getInstructorDrive() {
     // Get root level nodes (parent_id is null)
     return await getFolderContents({ folder_id: null });
   } catch (error) {
+    logError("[getInstructorDrive] Failed to get instructor drive", error, { path: "/api/supa/drive-handlers" });
     return errorJson("GET_DRIVE_FAILED", "Failed to get instructor drive", 500);
   }
 }

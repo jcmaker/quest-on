@@ -1,10 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import {
+  ArrowLeft,
+  Info,
+  FileText,
+  Presentation,
+  FileSpreadsheet,
+  FileImage,
+  File,
+  ClipboardList,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import { useUser } from "@clerk/nextjs";
@@ -31,6 +40,8 @@ import {
   ScrollProgressProvider,
   ScrollProgress,
 } from "@/components/animate-ui/primitives/animate/scroll-progress";
+import { useExamDraftAutoSave } from "@/hooks/useExamDraftAutoSave";
+import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 
 export default function CreateExam() {
   const router = useRouter();
@@ -52,26 +63,92 @@ export default function CreateExam() {
   const [disabledFiles, setDisabledFiles] = useState<Set<number>>(new Set());
   const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [questions, setQuestions] = useState<Question[]>([
-    {
-      id: Date.now().toString(),
-      text: "",
-      type: "essay",
-    },
-  ]);
-  const [rubric, setRubric] = useState<RubricItem[]>([
-    {
-      id: Date.now().toString(),
-      evaluationArea: "",
-      detailedCriteria: "",
-    },
-  ]);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [rubric, setRubric] = useState<RubricItem[]>([]);
   const [isRubricPublic, setIsRubricPublic] = useState(false);
   const [chatWeight, setChatWeight] = useState<number | null>(null);
   // 추출된 텍스트 저장: Map<fileUrl, {text: string, fileName: string}>
   const [extractedTexts, setExtractedTexts] = useState<
     Map<string, { text: string; fileName: string }>
   >(new Map());
+  // 파일별 텍스트 추출 상태: Map<fileName, "extracting" | "done" | "failed">
+  const [extractionStatus, setExtractionStatus] = useState<
+    Map<string, "extracting" | "done" | "failed">
+  >(new Map());
+
+  // 문제 목록 참조 (스크롤용)
+  const questionsListRef = useRef<HTMLDivElement>(null);
+
+  // P1-2: 새로 수락된 문제 하이라이트
+  const [highlightedQuestionIds, setHighlightedQuestionIds] = useState<Set<string>>(new Set());
+
+  // P0-2: adjustHistory ref for localStorage persistence
+  const adjustHistoryRef = useRef<Map<string, ChatMessage[]>>(new Map());
+
+  // P0-1: localStorage 자동 저장
+  const {
+    showRestoreModal,
+    savedDraft,
+    restoreDraft,
+    discardDraft,
+    clearDraft,
+  } = useExamDraftAutoSave({
+    title: examData.title,
+    duration: examData.duration,
+    code: examData.code,
+    questions,
+    rubric,
+    isRubricPublic,
+    chatWeight,
+    adjustHistoryRef,
+  });
+
+  const handleRestoreDraft = useCallback(() => {
+    const draft = restoreDraft();
+    if (draft) {
+      setExamData((prev) => ({
+        ...prev,
+        title: draft.title || prev.title,
+        duration: draft.duration ?? prev.duration,
+        code: draft.code || prev.code,
+      }));
+      if (draft.questions?.length > 0) {
+        setQuestions(draft.questions);
+      }
+      if (draft.rubric?.length > 0) {
+        setRubric(draft.rubric);
+      }
+      setIsRubricPublic(draft.isRubricPublic ?? false);
+      setChatWeight(draft.chatWeight ?? null);
+      // P0-2: Restore adjust history
+      if (draft.adjustHistory) {
+        adjustHistoryRef.current = new Map(Object.entries(draft.adjustHistory));
+      }
+    }
+  }, [restoreDraft]);
+
+  // 폼 변경 감지 (이탈 경고용)
+  const hasFormData = useCallback(() => {
+    return (
+      examData.title.trim() !== "" ||
+      examData.materials.length > 0 ||
+      questions.some((q) => q.text.trim() !== "") ||
+      rubric.some(
+        (r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== ""
+      )
+    );
+  }, [examData.title, examData.materials.length, questions, rubric]);
+
+  // 이탈 경고
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasFormData()) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasFormData]);
 
   const generateExamCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -171,14 +248,14 @@ export default function CreateExam() {
       !allowedTypes.includes(file.type) &&
       !allowedExtensions.includes(extension || "")
     ) {
-      alert(
+      toast.error(
         "지원되지 않는 파일 형식입니다. PPT, PDF, 워드, 엑셀, 한글, 이미지 파일만 업로드 가능합니다."
       );
       return false;
     }
 
     if (file.size > maxSize) {
-      alert("파일 크기가 50MB를 초과합니다.");
+      toast.error("파일 크기가 50MB를 초과합니다.");
       return false;
     }
 
@@ -295,6 +372,13 @@ export default function CreateExam() {
       return; // 텍스트 추출 불가능한 파일은 건너뛰기
     }
 
+    // 추출 상태 업데이트: 진행 중
+    setExtractionStatus((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(file.name, "extracting");
+      return newMap;
+    });
+
     try {
       // 파일을 FormData로 업로드
       const formData = new FormData();
@@ -328,7 +412,6 @@ export default function CreateExam() {
       });
 
       if (!extractResponse.ok) {
-        // 응답이 JSON이 아닐 수 있으므로 텍스트로 먼저 확인
         let text = "";
         try {
           text = await extractResponse.text();
@@ -346,7 +429,6 @@ export default function CreateExam() {
             errorData = { error: "서버에서 에러 응답을 반환하지 않았습니다." };
           }
         } catch {
-          // JSON 파싱 실패 시 원본 텍스트 사용
           errorData = {
             error: `서버 오류 (${extractResponse.status}): ${
               text || "응답 본문이 비어있습니다"
@@ -372,37 +454,51 @@ export default function CreateExam() {
           });
           return newMap;
         });
+        // 추출 상태: 완료
+        setExtractionStatus((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(file.name, "done");
+          return newMap;
+        });
       }
     } catch {
-      // Text extraction failure is non-critical; file upload still succeeds
+      // 추출 상태: 실패
+      setExtractionStatus((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(file.name, "failed");
+        return newMap;
+      });
+      toast.error(`${file.name}: 텍스트 추출에 실패했습니다. AI 문제 생성 품질이 저하될 수 있습니다.`);
     }
   };
 
   const getFileIcon = (fileName: string) => {
     const extension = fileName.split(".").pop()?.toLowerCase();
+    const iconClass = "w-4 h-4 shrink-0";
     switch (extension) {
       case "pdf":
-        return "📄";
+        return <FileText className={`${iconClass} text-red-500`} />;
       case "ppt":
       case "pptx":
-        return "📊";
+        return <Presentation className={`${iconClass} text-orange-500`} />;
       case "doc":
       case "docx":
-        return "📝";
+        return <FileText className={`${iconClass} text-blue-500`} />;
       case "xls":
       case "xlsx":
-        return "📈";
+      case "csv":
+        return <FileSpreadsheet className={`${iconClass} text-green-500`} />;
       case "hwp":
       case "hwpx":
-        return "📋";
+        return <ClipboardList className={`${iconClass} text-sky-500`} />;
       case "jpg":
       case "jpeg":
       case "png":
       case "gif":
       case "webp":
-        return "🖼️";
+        return <FileImage className={`${iconClass} text-purple-500`} />;
       default:
-        return "📎";
+        return <File className={`${iconClass} text-muted-foreground`} />;
     }
   };
 
@@ -414,6 +510,27 @@ export default function CreateExam() {
     setQuestions(
       questions.map((q) => (q.id === id ? { ...q, [field]: value } : q))
     );
+  };
+
+  const addQuestion = () => {
+    setQuestions((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString() + Math.random().toString(36).slice(2),
+        text: "",
+        type: "essay" as const,
+      },
+    ]);
+  };
+
+  const moveQuestion = (index: number, direction: "up" | "down") => {
+    setQuestions((prev) => {
+      const newQuestions = [...prev];
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= newQuestions.length) return prev;
+      [newQuestions[index], newQuestions[targetIndex]] = [newQuestions[targetIndex], newQuestions[index]];
+      return newQuestions;
+    });
   };
 
   const addRubricItem = () => {
@@ -503,8 +620,16 @@ export default function CreateExam() {
       toast.error("시험 코드를 생성해주세요.");
       return;
     }
-    if (!questions[0]?.text || questions[0].text.trim() === "") {
-      toast.error("문제를 입력해주세요.");
+    // 모든 문제에 대해 빈 텍스트 검증
+    const emptyQuestionIndices = questions
+      .map((q, i) => (q.text.trim() === "" ? i + 1 : -1))
+      .filter((i) => i !== -1);
+    if (emptyQuestionIndices.length > 0) {
+      toast.error(
+        emptyQuestionIndices.length === questions.length
+          ? "문제를 입력해주세요."
+          : `${emptyQuestionIndices.join(", ")}번 문제가 비어있습니다.`
+      );
       return;
     }
     if (!canAddMoreFiles) {
@@ -536,6 +661,11 @@ export default function CreateExam() {
       );
 
       if (activeMaterials.length > 0) {
+        const uploadToastId = toast.loading(
+          `파일 업로드 중... (0/${activeMaterials.length})`
+        );
+        let uploadedCount = 0;
+
         const uploadPromises = activeMaterials.map(async (file) => {
           // 원본 파일명은 파일 자체의 name 속성으로 서버에 전달됨
           try {
@@ -631,6 +761,12 @@ export default function CreateExam() {
               .from("exam-materials")
               .getPublicUrl(data.path);
 
+            uploadedCount++;
+            toast.loading(
+              `파일 업로드 중... (${uploadedCount}/${activeMaterials.length})`,
+              { id: uploadToastId }
+            );
+
             return urlData.publicUrl;
           } catch (error) {
             throw error;
@@ -639,71 +775,34 @@ export default function CreateExam() {
 
         try {
           materialUrls = await Promise.all(uploadPromises);
+          toast.success("파일 업로드 완료", { id: uploadToastId });
         } catch (uploadError) {
-          // 에러 메시지 추출 및 표시
+          toast.dismiss(uploadToastId);
           const errorMessage = getErrorMessage(
             uploadError,
             "파일 업로드 중 오류가 발생했습니다"
           );
 
           toast.error(errorMessage, {
-            duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+            duration: 5000,
           });
-          throw uploadError; // Re-throw to prevent exam creation
+          throw uploadError;
         }
 
-        // 파일 업로드 후 텍스트 추출 (업로드된 실제 URL 사용)
-        const textExtractionPromises = activeMaterials.map(
-          async (file, index) => {
-            const url = materialUrls[index];
-            if (!url) return null;
-
-            const extension = file.name.split(".").pop()?.toLowerCase() || "";
-            const textExtractableExtensions = ["pdf", "docx", "pptx", "csv"];
-
-            if (!textExtractableExtensions.includes(extension)) {
-              return null; // 텍스트 추출 불가능한 파일은 건너뛰기
-            }
-
-            try {
-              const extractResponse = await fetch("/api/extract-text", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  fileUrl: url,
-                  fileName: file.name,
-                  mimeType: file.type,
-                }),
-              });
-
-              if (!extractResponse.ok) {
-                return null;
-              }
-
-              const extractResult = await extractResponse.json();
-              if (extractResult.text) {
-                return {
-                  url,
-                  text: extractResult.text,
-                  fileName: file.name,
-                };
-              }
-              return null;
-            } catch {
-              return null;
-            }
+        // 이미 추출된 텍스트를 재활용 (파일 선택 시 추출 완료됨)
+        // 업로드된 URL과 기존 추출 텍스트를 매핑
+        for (const [, { text, fileName }] of extractedTexts) {
+          const matchingIndex = activeMaterials.findIndex(
+            (f) => f.name === fileName
+          );
+          if (matchingIndex !== -1 && materialUrls[matchingIndex]) {
+            materialsText.push({
+              url: materialUrls[matchingIndex],
+              text,
+              fileName,
+            });
           }
-        );
-
-        // 텍스트 추출 결과 수집
-        const extractedTextsArray = await Promise.all(textExtractionPromises);
-        materialsText = extractedTextsArray.filter(
-          (item): item is { url: string; text: string; fileName: string } =>
-            item !== null
-        );
-
+        }
       }
 
       // Prepare exam data for database
@@ -727,11 +826,13 @@ export default function CreateExam() {
       // Save to Supabase using useMutation
       await createExamMutation.mutateAsync(examDataForDB);
 
+      // P0-1: Clear draft on successful submit
+      clearDraft();
       // Show dialog with exam code instead of redirecting
       setCreatedExamCode(examData.code);
       setIsDialogOpen(true);
     } catch {
-      alert("시험 생성 중 오류가 발생했습니다. 다시 시도해주세요.");
+      toast.error("시험 생성 중 오류가 발생했습니다. 다시 시도해주세요.");
     } finally {
       setIsLoading(false);
     }
@@ -778,6 +879,29 @@ export default function CreateExam() {
             </p>
           </div>
 
+          {/* 데모 모드 배너 (P0-1) */}
+          {isDemoMode && isLoaded && (
+            <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 px-4 py-3">
+              <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-medium text-amber-800 dark:text-amber-300">
+                  데모 모드로 체험 중입니다
+                </p>
+                <p className="text-amber-700 dark:text-amber-400 mt-0.5">
+                  AI 문제 생성을 자유롭게 체험할 수 있지만, 실제 시험 출제를 위해서는{" "}
+                  <button
+                    type="button"
+                    onClick={() => router.push("/sign-up")}
+                    className="underline font-medium hover:text-amber-900 dark:hover:text-amber-200"
+                  >
+                    회원가입
+                  </button>
+                  이 필요합니다.
+                </p>
+              </div>
+            </div>
+          )}
+
           <form
             onSubmit={handleSubmit}
             onKeyDown={(e) => {
@@ -821,39 +945,87 @@ export default function CreateExam() {
               onRemoveFile={removeFile}
               getFileIcon={getFileIcon}
             />
+            {/* 텍스트 추출 상태 표시 */}
+            {extractionStatus.size > 0 && (
+              <div className="flex flex-wrap gap-2 -mt-4">
+                {Array.from(extractionStatus.entries()).map(([fileName, status]) => (
+                  <span
+                    key={fileName}
+                    className={`text-xs px-2 py-1 rounded-full ${
+                      status === "extracting"
+                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                        : status === "done"
+                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                    }`}
+                  >
+                    {status === "extracting" ? "⏳" : status === "done" ? "✓" : "✗"}{" "}
+                    {fileName.length > 20 ? fileName.slice(0, 17) + "..." : fileName}
+                    {status === "extracting" && " 분석 중"}
+                  </span>
+                ))}
+              </div>
+            )}
 
             <CaseQuestionGenerator
               examTitle={examData.title}
               extractedTexts={extractedTexts}
+              extractionStatus={extractionStatus}
               onQuestionsAccepted={(newQuestions) => {
-                setQuestions((prev) => [
-                  ...prev,
-                  ...newQuestions.map((q) => ({
-                    id: q.id,
-                    text: q.text,
-                    type: q.type as "essay" | "short-answer" | "multiple-choice",
-                  })),
-                ]);
+                const newIds = newQuestions.map((q) => q.id);
+                setQuestions((prev) => {
+                  // 빈 초기 문제 자동 제거
+                  const nonEmpty = prev.filter((q) => q.text.trim() !== "");
+                  return [
+                    ...nonEmpty,
+                    ...newQuestions.map((q) => ({
+                      id: q.id,
+                      text: q.text,
+                      type: q.type as "essay" | "short-answer" | "multiple-choice",
+                    })),
+                  ];
+                });
+                // P1-2: 새로 수락된 문제 하이라이트
+                setHighlightedQuestionIds(new Set(newIds));
+                setTimeout(() => setHighlightedQuestionIds(new Set()), 3000);
+                // 문제 목록으로 스크롤
+                setTimeout(() => {
+                  questionsListRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
+                }, 100);
               }}
               onRubricSuggested={(newRubric) => {
-                setRubric((prev) => [
-                  ...prev,
-                  ...newRubric.map((r) => ({
-                    id: Date.now().toString() + Math.random().toString(36).slice(2),
-                    evaluationArea: r.evaluationArea,
-                    detailedCriteria: r.detailedCriteria,
-                  })),
-                ]);
+                setRubric((prev) => {
+                  // 빈 초기 루브릭 자동 제거
+                  const nonEmpty = prev.filter(
+                    (r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== ""
+                  );
+                  return [
+                    ...nonEmpty,
+                    ...newRubric.map((r) => ({
+                      id: Date.now().toString() + Math.random().toString(36).slice(2),
+                      evaluationArea: r.evaluationArea,
+                      detailedCriteria: r.detailedCriteria,
+                    })),
+                  ];
+                });
               }}
             />
 
-            <QuestionsList
-              questions={questions}
-              onUpdate={updateQuestion}
-              onRemove={(id) => {
-                setQuestions((prev) => prev.filter((q) => q.id !== id));
-              }}
-            />
+            <div ref={questionsListRef}>
+              <QuestionsList
+                questions={questions}
+                highlightedIds={highlightedQuestionIds}
+                onUpdate={updateQuestion}
+                onRemove={(id) => {
+                  setQuestions((prev) => prev.filter((q) => q.id !== id));
+                }}
+                onAdd={addQuestion}
+                onMove={moveQuestion}
+              />
+            </div>
 
             <RubricTable
               rubric={rubric}
@@ -867,36 +1039,53 @@ export default function CreateExam() {
             />
 
             {/* Submit */}
-            <div className="flex gap-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  // 데모 모드에서는 랜딩 페이지로, 일반 모드에서는 인스터럭터 대시보드로
-                  if (isDemoMode) {
-                    router.push("/");
-                  } else {
-                    router.push("/instructor");
+            <div className="space-y-2">
+              <div className="flex gap-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (isDemoMode) {
+                      router.push("/");
+                    } else {
+                      router.push("/instructor");
+                    }
+                  }}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={
+                    isLoading ||
+                    !examData.title ||
+                    !examData.code ||
+                    questions.length === 0 ||
+                    questions.every((q) => q.text.trim() === "") ||
+                    !canAddMoreFiles
                   }
-                }}
-              >
-                취소
-              </Button>
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className={
-                  !examData.title ||
-                  !examData.code ||
-                  !questions[0]?.text ||
-                  questions[0].text.trim() === "" ||
-                  !canAddMoreFiles
-                    ? "opacity-50 cursor-not-allowed"
-                    : ""
-                }
-              >
-                {isLoading ? "출제 중..." : "출제하기"}
-              </Button>
+                >
+                  {isLoading ? "출제 중..." : "출제하기"}
+                </Button>
+              </div>
+              {/* P1-6: 제출 불가 이유 표시 */}
+              {!isLoading && (
+                !examData.title ||
+                !examData.code ||
+                questions.length === 0 ||
+                questions.every((q) => q.text.trim() === "") ||
+                !canAddMoreFiles
+              ) && (
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  {!examData.title && <p>• 시험 제목을 입력해주세요</p>}
+                  {!examData.code && <p>• 시험 코드를 생성해주세요</p>}
+                  {questions.length === 0 && <p>• 문제를 1개 이상 추가해주세요</p>}
+                  {questions.length > 0 && questions.every((q) => q.text.trim() === "") && (
+                    <p>• 문제 내용을 입력해주세요</p>
+                  )}
+                  {!canAddMoreFiles && <p>• 파일 용량이 50MB를 초과했습니다</p>}
+                </div>
+              )}
             </div>
           </form>
 
@@ -910,29 +1099,36 @@ export default function CreateExam() {
                 </DialogDescription>
               </DialogHeader>
               <div className="py-4">
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">시험 코드</Label>
-                  <div className="flex items-center gap-2">
-                    <code className="px-4 py-2 bg-muted rounded-md exam-code text-lg font-semibold">
-                      {createdExamCode}
-                    </code>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        navigator.clipboard.writeText(createdExamCode);
-                        toast.success("시험 코드가 복사되었습니다.", {
-                          id: "copy-exam-code", // 중복 방지
-                        });
-                      }}
-                    >
-                      복사
-                    </Button>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm font-medium">시험 코드</Label>
+                    <div className="flex items-center gap-2 mt-1">
+                      <code className="px-4 py-2 bg-muted rounded-md exam-code text-lg font-semibold">
+                        {createdExamCode}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(createdExamCode);
+                          toast.success("시험 코드가 복사되었습니다.", {
+                            id: "copy-exam-code",
+                          });
+                        }}
+                      >
+                        복사
+                      </Button>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      이 코드를 학생들에게 공유하세요.
+                    </p>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    이 코드를 학생들에게 공유하세요.
-                  </p>
+                  {/* P2-5: Summary */}
+                  <div className="text-sm text-muted-foreground space-y-1 border-t pt-3">
+                    <p>문제 {questions.length}개{examData.materials.length > 0 && ` · 자료 ${examData.materials.length}개`}{rubric.some(r => r.evaluationArea.trim()) && " · 루브릭 포함"}</p>
+                    <p>시험 시간: {examData.duration === 0 ? "무제한 (과제형)" : `${examData.duration}분`}</p>
+                  </div>
                 </div>
               </div>
               <DialogFooter>
@@ -975,6 +1171,38 @@ export default function CreateExam() {
                 </Button>
                 <Button onClick={() => router.push("/sign-up")}>
                   회원가입하기
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+          {/* P0-1: 드래프트 복원 확인 Dialog */}
+          <Dialog open={showRestoreModal} onOpenChange={(open) => { if (!open) discardDraft(); }}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>이전 작업 복원</DialogTitle>
+                <DialogDescription>
+                  저장되지 않은 이전 작업이 있습니다. 복원하시겠습니까?
+                </DialogDescription>
+              </DialogHeader>
+              <div className="py-4">
+                {savedDraft && (
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    {savedDraft.title && <p>제목: {savedDraft.title}</p>}
+                    {savedDraft.questions?.length > 0 && (
+                      <p>문제 {savedDraft.questions.length}개</p>
+                    )}
+                    <p className="text-xs">
+                      저장 시각: {new Date(savedDraft.savedAt).toLocaleString("ko-KR")}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={discardDraft}>
+                  새로 시작
+                </Button>
+                <Button onClick={handleRestoreDraft}>
+                  복원하기
                 </Button>
               </DialogFooter>
             </DialogContent>

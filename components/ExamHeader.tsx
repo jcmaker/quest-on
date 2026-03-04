@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import toast from "react-hot-toast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
+  AlertDialogAction,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -27,6 +29,7 @@ interface ExamHeaderProps {
   timeRemaining?: number | null; // 남은 시간 (초 단위, 서버에서 계산된 값)
   onTimeExpired?: () => void; // 시간 종료 시 콜백
   onExit?: () => void;
+  disableLogoLink?: boolean; // 시험 중 로고 클릭 비활성화
 }
 
 export function ExamHeader({
@@ -38,10 +41,13 @@ export function ExamHeader({
   timeRemaining: initialTimeRemaining,
   onTimeExpired,
   onExit,
+  disableLogoLink = false,
 }: ExamHeaderProps) {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
   const [hasExpired, setHasExpired] = useState(false);
   const [showExpiredDialog, setShowExpiredDialog] = useState(false);
+  const hasWarned5min = useRef(false);
+  const hasWarned1min = useRef(false);
 
   // Initialize timer - 세션 시작 시간 기반으로 계산
   useEffect(() => {
@@ -108,6 +114,29 @@ export function ExamHeader({
     return () => clearInterval(interval);
   }, [timeRemaining, hasExpired, onTimeExpired, duration]);
 
+  // Time warning toasts (5 min / 1 min)
+  useEffect(() => {
+    if (timeRemaining === null || hasExpired || duration === 0) return;
+
+    if (timeRemaining <= 300 && timeRemaining > 60 && !hasWarned5min.current) {
+      hasWarned5min.current = true;
+      toast("남은 시간 5분", {
+        icon: "⏰",
+        style: { background: "#fef3c7", color: "#92400e", fontWeight: 600 },
+        duration: 5000,
+      });
+    }
+
+    if (timeRemaining <= 60 && !hasWarned1min.current) {
+      hasWarned1min.current = true;
+      toast("남은 시간 1분! 곧 자동 제출됩니다", {
+        icon: "🚨",
+        style: { background: "#fee2e2", color: "#991b1b", fontWeight: 600 },
+        duration: 8000,
+      });
+    }
+  }, [timeRemaining, hasExpired, duration]);
+
   // Format time as MM:SS
   const formatTime = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
@@ -117,16 +146,17 @@ export function ExamHeader({
       .padStart(2, "0")}`;
   };
 
-  // Check if time is critical (15 minutes or less)
+  // Check if time is critical (20% of total duration or less, minimum 5 minutes)
   const isTimeCritical = (seconds: number): boolean => {
-    return seconds <= 15 * 60;
+    const threshold = Math.max(5 * 60, duration * 60 * 0.2);
+    return seconds <= threshold;
   };
 
   return (
     <>
       <div className="bg-background/95 backdrop-blur-sm border-b flex-shrink-0">
         <div className="container mx-auto px-6 py-2">
-          <div className="grid grid-cols-3 items-center">
+          <div className="flex items-center justify-between">
             {/* Left: Logo + Step Badge + Timer */}
             <div className="flex items-center space-x-3 justify-start">
               <Image
@@ -134,7 +164,7 @@ export function ExamHeader({
                 alt="Quest-On"
                 width={120}
                 height={32}
-                className="h-8 w-auto"
+                className={`h-8 w-auto ${disableLogoLink ? "pointer-events-none opacity-70" : ""}`}
               />
               {duration === 0 ? (
                 <div className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
@@ -190,11 +220,6 @@ export function ExamHeader({
               )}
             </div>
 
-            {/* Center: Progress Steps */}
-            <div className="flex justify-center">
-              {/* <ProgressBar currentStep={currentStep} /> */}
-            </div>
-
             {/* Right: Exit Button (only on exam step) + Profile */}
             <div className="flex items-center justify-end space-x-3">
               {currentStep === "exam" && onExit && !hasExpired && (
@@ -224,26 +249,23 @@ export function ExamHeader({
       </div>
 
       {/* ✅ 시간 종료 알림 다이얼로그 */}
-      {showExpiredDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-background rounded-lg shadow-xl border p-6 max-w-md mx-4">
-            <h2 className="text-xl font-bold mb-4 text-destructive">
+      <AlertDialog open={showExpiredDialog} onOpenChange={setShowExpiredDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">
               시험 시간이 종료되었습니다
-            </h2>
-            <p className="text-muted-foreground mb-6">
+            </AlertDialogTitle>
+            <AlertDialogDescription>
               시험 시간이 종료되어 답안이 자동으로 제출되었습니다.
-            </p>
-            <div className="flex justify-end">
-              <Button
-                onClick={() => setShowExpiredDialog(false)}
-                className="min-h-[44px]"
-              >
-                확인
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction className="min-h-[44px]">
+              확인
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

@@ -46,7 +46,7 @@ const COLORS = {
     bg: "#FFFFFF",
     text: "#1F1F1F",
     textSec: "#52525B", // Improved contrast: changed from #6B7280 to #52525B (zinc-600) for better WCAG AA compliance
-    primary: "#3B82F6",
+    primary: "#2563EB",
     card: "#F5F5F5",
     cardBorder: "#E5E5E5",
     editorBg: "#FFFFFF",
@@ -58,7 +58,7 @@ const COLORS = {
     bg: "#0A0A0A",
     text: "#E4E4E4",
     textSec: "#A1A1AA",
-    primary: "#3B82F6",
+    primary: "#2563EB",
     card: "rgba(255, 255, 255, 0.05)",
     cardBorder: "rgba(255, 255, 255, 0.1)",
     editorBg: "#0F0F0F",

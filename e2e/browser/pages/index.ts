@@ -6,3 +6,7 @@ export { OnboardingPage } from "./OnboardingPage";
 export { ProfileSetupPage } from "./ProfileSetupPage";
 export { StudentJoinPage } from "./StudentJoinPage";
 export { AdminLoginPage } from "./AdminLoginPage";
+export { StudentDashboardPage } from "./StudentDashboardPage";
+export { StudentReportPage } from "./StudentReportPage";
+export { InstructorDashboardPage } from "./InstructorDashboardPage";
+export { AdminDashboardPage } from "./AdminDashboardPage";

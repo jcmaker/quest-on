@@ -265,10 +265,12 @@ export async function cleanupTestData() {
     "grades",
     "messages",
     "submissions",
+    "paste_logs",
     "sessions",
     "exam_material_chunks",
     "exam_nodes",
     "exams",
+    "audit_logs",
     "error_logs",
     "student_profiles",
   ];

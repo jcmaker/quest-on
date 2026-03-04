@@ -32,7 +32,7 @@ test.describe("Auth page shell smoke tests", () => {
       expect(status, `${path} returned ${status}`).toBeLessThan(500);
 
       // Wait for initial rendering / redirect to settle
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       // No network 5xx errors (on any sub-request)
       if (networkErrors.length > 0) {

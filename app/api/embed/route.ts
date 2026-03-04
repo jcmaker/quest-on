@@ -7,6 +7,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { createEmbedding } from "@/lib/embedding";
 import { successJson, errorJson } from "@/lib/api-response";
 import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { logError } from "@/lib/logger";
 
 /**
  * POST /api/embed
@@ -49,8 +50,7 @@ export async function POST(request: NextRequest) {
       dimensions: embedding.length,
     });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    return errorJson("INTERNAL_ERROR", "임베딩 생성 실패", 500, errorMessage);
+    logError("Embedding generation failed", error, { path: "/api/embed" });
+    return errorJson("INTERNAL_ERROR", "임베딩 생성 실패", 500);
   }
 }

@@ -1,6 +1,7 @@
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
 
 const supabase = getSupabaseServer();
 
@@ -99,6 +100,7 @@ export async function saveDraft(data: {
       return successJson({ submission: newSubmission });
     }
   } catch (error) {
+    logError("[saveDraft] Failed to save draft", error, { path: "/api/supa/submission-handlers" });
     return errorJson("SAVE_DRAFT_FAILED", "Failed to save draft", 500);
   }
 }
@@ -141,6 +143,7 @@ export async function saveAllDrafts(data: {
 
     return successJson({ submissions: results });
   } catch (error) {
+    logError("[saveAllDrafts] Failed to save all drafts", error, { path: "/api/supa/submission-handlers" });
     return errorJson("SAVE_ALL_DRAFTS_FAILED", "Failed to save all drafts", 500);
   }
 }
@@ -211,6 +214,7 @@ export async function saveDraftAnswers(data: {
 
     return successJson({ submissions: results });
   } catch (error) {
+    logError("[saveDraftAnswers] Failed to save draft answers", error, { path: "/api/supa/submission-handlers" });
     return errorJson("SAVE_DRAFT_ANSWERS_FAILED", "Failed to save draft answers", 500);
   }
 }
@@ -252,6 +256,7 @@ export async function getSessionSubmissions(data: { sessionId: string }) {
 
     return successJson({ submissions: submissions || [] });
   } catch (error) {
+    logError("[getSessionSubmissions] Failed to get session submissions", error, { path: "/api/supa/submission-handlers" });
     return errorJson("GET_SUBMISSIONS_FAILED", "Failed to get session submissions", 500);
   }
 }
@@ -292,6 +297,7 @@ export async function getSessionMessages(data: { sessionId: string }) {
 
     return successJson({ messages: messages || [] });
   } catch (error) {
+    logError("[getSessionMessages] Failed to get session messages", error, { path: "/api/supa/submission-handlers" });
     return errorJson("GET_MESSAGES_FAILED", "Failed to get session messages", 500);
   }
 }

@@ -71,6 +71,7 @@ export async function createOrGetSession(data: { examId: string; studentId: stri
       messages: formattedMessages,
     });
   } catch (error) {
+    logError("[createOrGetSession] Failed to create or get session", error, { path: "/api/supa/session-handlers" });
     return errorJson("SESSION_FAILED", "Failed to create or get session", 500);
   }
 }
@@ -168,10 +169,17 @@ export async function initExamSession(data: {
         qIdx: msg.q_idx || 0,
       }));
 
+      // Fetch submissions for the submitted session
+      const { data: submittedSubmissions } = await supabase
+        .from("submissions")
+        .select("q_idx, answer")
+        .eq("session_id", mostRecentSubmittedSession.id);
+
       return successJson({
         exam,
         session: mostRecentSubmittedSession,
         messages,
+        submissions: submittedSubmissions || [],
         isRetakeBlocked: true, // 재시험 차단 플래그
       });
     }
@@ -263,6 +271,7 @@ export async function initExamSession(data: {
           exam,
           session,
           messages,
+          submissions: existingSubmissions || [],
           autoSubmitted: true, // 자동 제출 플래그
           timeExpired: true,
         });
@@ -375,6 +384,12 @@ export async function initExamSession(data: {
       session = upsertedSession;
     }
 
+    // Fetch existing submissions for this session
+    const { data: sessionSubmissions } = await supabase
+      .from("submissions")
+      .select("q_idx, answer")
+      .eq("session_id", session.id);
+
     // ✅ Gate 방식: 타이머 계산 (attempt_timer_started_at 기준)
     const sessionStatus = session.status || "not_joined";
     const timerStartTime = session.attempt_timer_started_at
@@ -403,6 +418,7 @@ export async function initExamSession(data: {
       exam,
       session,
       messages,
+      submissions: sessionSubmissions || [],
       sessionStartTime,
       timeRemaining:
         exam.duration === 0 || timeRemaining === null
@@ -412,6 +428,7 @@ export async function initExamSession(data: {
       gateStarted: examStatus === "running" && startedAt !== null && nowTime >= startedAt, // 시험 시작 여부
     });
   } catch (error) {
+    logError("[initExamSession] Failed to initialize exam session", error, { path: "/api/supa/session-handlers" });
     return errorJson("INIT_SESSION_FAILED", "Failed to initialize exam session", 500);
   }
 }
@@ -515,6 +532,7 @@ export async function submitExam(data: {
       compressionStats: compressedSessionData.metadata,
     });
   } catch (error) {
+    logError("[submitExam] Failed to submit exam", error, { path: "/api/supa/session-handlers" });
     return errorJson("SUBMIT_EXAM_FAILED", "Failed to submit exam", 500);
   }
 }
@@ -637,7 +655,50 @@ export async function sessionHeartbeat(data: {
       return errorJson("SESSION_INACTIVE", "Session is not active", 400);
     }
   } catch (error) {
+    logError("[sessionHeartbeat] Failed to update heartbeat", error, { path: "/api/supa/session-handlers" });
     return errorJson("HEARTBEAT_FAILED", "Failed to update heartbeat", 500);
+  }
+}
+
+export async function checkExamGateStatus(data: {
+  examId: string;
+  sessionId: string;
+}) {
+  try {
+    const { data: exam, error: examError } = await supabase
+      .from("exams")
+      .select("id, status, started_at")
+      .eq("id", data.examId)
+      .single();
+
+    if (examError || !exam) {
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
+    }
+
+    const isRunning = exam.status === "running";
+
+    // If running, also check the session status
+    if (isRunning && data.sessionId) {
+      const { data: session } = await supabase
+        .from("sessions")
+        .select("id, status")
+        .eq("id", data.sessionId)
+        .single();
+
+      return successJson({
+        gateStarted: true,
+        examStatus: exam.status,
+        sessionStatus: session?.status || "waiting",
+      });
+    }
+
+    return successJson({
+      gateStarted: false,
+      examStatus: exam.status,
+    });
+  } catch (error) {
+    logError("[checkExamGateStatus] Failed", error, { path: "/api/supa/session-handlers" });
+    return errorJson("CHECK_GATE_FAILED", "Failed to check gate status", 500);
   }
 }
 
@@ -671,6 +732,7 @@ export async function deactivateSession(data: {
 
     return successJson({});
   } catch (error) {
+    logError("[deactivateSession] Failed to deactivate session", error, { path: "/api/supa/session-handlers" });
     return errorJson("DEACTIVATE_SESSION_FAILED", "Failed to deactivate session", 500);
   }
 }

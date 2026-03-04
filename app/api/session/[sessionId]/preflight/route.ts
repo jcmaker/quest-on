@@ -3,6 +3,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
+import { logError } from "@/lib/logger";
 
 const supabase = getSupabaseServer();
 
@@ -56,10 +57,12 @@ export async function POST(
       .eq("id", sessionId);
 
     if (updateError) {
-      return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500, {
-        details: updateError.message || String(updateError),
-        code: updateError.code,
+      logError("Failed to update preflight status", updateError, {
+        path: "/api/session/preflight",
+        user_id: user.id,
+        additionalData: { sessionId },
       });
+      return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500);
     }
 
     return successJson({
@@ -68,6 +71,7 @@ export async function POST(
       status: "waiting",
     });
   } catch (error) {
+    logError("Preflight acceptance failed", error, { path: "/api/session/preflight" });
     return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500);
   }
 }

@@ -44,7 +44,8 @@ export interface UseQuestionGenerationReturn {
   generatedQuestions: GeneratedQuestion[];
   suggestedRubric: RubricItem[];
   isGenerating: boolean;
-  isAdjusting: boolean;
+  regeneratingId: string | null;
+  adjustingId: string | null;
   error: string | null;
   generationProgress: GenerationProgress;
 
@@ -76,7 +77,8 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
   >([]);
   const [suggestedRubric, setSuggestedRubric] = useState<RubricItem[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isAdjusting, setIsAdjusting] = useState(false);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generationProgress, setGenerationProgress] =
     useState<GenerationProgress>({
@@ -218,13 +220,15 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
         }
       }
 
-      // After stream ends: surface partial failures
+      // After stream ends: surface partial failures (P1-3)
       if (partialFailures > 0) {
         const succeeded = totalRequested - partialFailures;
         if (succeeded === 0) {
           setError("문제 생성에 실패했습니다. 다시 시도해주세요.");
         } else {
-          setError(`${totalRequested}개 중 ${partialFailures}개 문제 생성에 실패했습니다.`);
+          setError(
+            `${totalRequested}개 중 ${succeeded}개만 생성되었습니다. 부족한 ${partialFailures}개는 "문제 생성하기"로 추가할 수 있습니다.`
+          );
         }
       }
     } catch (err) {
@@ -241,15 +245,21 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
   }, []);
 
   const cancelGeneration = useCallback(() => {
+    const currentProgress = generationProgress.current;
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setIsGenerating(false);
     setGenerationProgress((prev) => ({ ...prev, stage: "complete" }));
-  }, []);
+
+    // P1-4: Inform user about already generated questions
+    if (currentProgress > 0) {
+      setError(`생성이 취소되었습니다. 이미 생성된 ${currentProgress}개 문제는 사용 가능합니다.`);
+    }
+  }, [generationProgress]);
 
   const regenerateOne = useCallback(
     async (questionId: string, params: GenerateParams) => {
-      setIsGenerating(true);
+      setRegeneratingId(questionId);
       setError(null);
 
       try {
@@ -288,7 +298,7 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
             : "문제 재생성 중 오류가 발생했습니다.";
         setError(msg);
       } finally {
-        setIsGenerating(false);
+        setRegeneratingId(null);
       }
     },
     []
@@ -305,7 +315,7 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
       instruction: string,
       examTitle?: string
     ): Promise<AdjustResult | null> => {
-      setIsAdjusting(true);
+      setAdjustingId(questionId);
       setError(null);
 
       try {
@@ -364,7 +374,7 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
         setError(msg);
         return null;
       } finally {
-        setIsAdjusting(false);
+        setAdjustingId(null);
       }
     },
     [generatedQuestions]
@@ -419,7 +429,8 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
     generatedQuestions,
     suggestedRubric,
     isGenerating,
-    isAdjusting,
+    regeneratingId,
+    adjustingId,
     error,
     generationProgress,
     generate,

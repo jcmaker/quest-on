@@ -15,7 +15,7 @@ test.describe("Student — Join Exam Flow", () => {
     });
 
     await studentPage.goto("/join");
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     // Type the exam code into the OTP input
     const otpInput = studentPage.locator("[data-input-otp]");
@@ -45,7 +45,7 @@ test.describe("Student — Join Exam Flow", () => {
     });
 
     await studentPage.goto("/join");
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     // Enter code and submit
     const otpInput = studentPage.locator("[data-input-otp]");
@@ -78,7 +78,7 @@ test.describe("Student — Join Exam Flow", () => {
     studentPage,
   }) => {
     await studentPage.goto("/join");
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     // Type only 3 characters
     const otpInput = studentPage.locator("[data-input-otp]");
@@ -97,7 +97,7 @@ test.describe("Student — Join Exam Flow", () => {
     studentPage,
   }) => {
     await studentPage.goto("/join?error=already_submitted");
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     await expect(
       studentPage.getByText(/이미 제출/i)
@@ -108,7 +108,7 @@ test.describe("Student — Join Exam Flow", () => {
     studentPage,
   }) => {
     await studentPage.goto("/join?error=exam_not_found");
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     await expect(
       studentPage.getByText(/찾을 수 없습니다/i)
@@ -119,7 +119,7 @@ test.describe("Student — Join Exam Flow", () => {
     studentPage,
   }) => {
     await studentPage.goto("/join?error=exam_not_available");
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     await expect(
       studentPage.getByText(/응시할 수 없/i)
@@ -130,7 +130,7 @@ test.describe("Student — Join Exam Flow", () => {
     studentPage,
   }) => {
     await studentPage.goto("/join?error=entry_window_closed");
-    await studentPage.waitForLoadState("networkidle");
+    await studentPage.waitForLoadState("domcontentloaded");
 
     await expect(
       studentPage.getByText(/마감/i)

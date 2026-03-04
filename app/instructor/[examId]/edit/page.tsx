@@ -1,11 +1,19 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useCallback, use } from "react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import { useUser } from "@clerk/nextjs";
+import {
+  FileText,
+  Presentation,
+  FileSpreadsheet,
+  FileImage,
+  File,
+  ClipboardList,
+} from "lucide-react";
 import { ExamInfoForm } from "@/components/instructor/ExamInfoForm";
 import { FileUpload } from "@/components/instructor/FileUpload";
 import {
@@ -40,8 +48,11 @@ export default function EditExam({
   const [rubric, setRubric] = useState<RubricItem[]>([]);
   const [isRubricPublic, setIsRubricPublic] = useState(false);
   const [chatWeight, setChatWeight] = useState<number | null>(null);
-  const [extractedTexts] = useState<
+  const [extractedTexts, setExtractedTexts] = useState<
     Map<string, { text: string; fileName: string }>
+  >(new Map());
+  const [extractionStatus, setExtractionStatus] = useState<
+    Map<string, "extracting" | "done" | "failed">
   >(new Map());
 
   // 기존 시험 데이터 불러오기
@@ -90,6 +101,17 @@ export default function EditExam({
         );
         setIsRubricPublic(exam.rubric_public || false);
         setChatWeight(exam.chat_weight ?? null);
+
+        // 기존 materials_text를 extractedTexts에 로드
+        if (exam.materials_text && Array.isArray(exam.materials_text)) {
+          const textsMap = new Map<string, { text: string; fileName: string }>();
+          for (const item of exam.materials_text) {
+            if (item.url && item.text) {
+              textsMap.set(item.url, { text: item.text, fileName: item.fileName || "파일" });
+            }
+          }
+          setExtractedTexts(textsMap);
+        }
       } catch (error) {
         toast.error("시험 데이터를 불러오는 중 오류가 발생했습니다.");
         router.push(`/instructor/${resolvedParams.examId}`);
@@ -101,6 +123,33 @@ export default function EditExam({
     fetchExam();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedParams.examId, isLoaded, user?.id]);
+
+  // 폼 변경 감지 (이탈 경고용)
+  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
+  const hasFormChanges = useCallback(() => {
+    if (!initialDataLoaded) return false;
+    return true; // 편집 모드에서는 데이터 로드 후 항상 변경 가능성이 있으므로 경고
+  }, [initialDataLoaded]);
+
+  // 이탈 경고
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (hasFormChanges()) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [hasFormChanges]);
+
+  // 초기 데이터 로드 완료 표시
+  useEffect(() => {
+    if (!isLoadingExam) {
+      // 약간의 딜레이로 초기 렌더링 후 활성화
+      const timer = setTimeout(() => setInitialDataLoaded(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoadingExam]);
 
   const generateExamCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -154,6 +203,8 @@ export default function EditExam({
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "application/vnd.ms-excel",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/csv",
+      "application/csv",
       "application/x-hwp",
       "application/haansofthwp",
       "application/vnd.hancom.hwp",
@@ -176,6 +227,7 @@ export default function EditExam({
       "docx",
       "xls",
       "xlsx",
+      "csv",
       "hwp",
       "hwpx",
       "jpg",
@@ -189,18 +241,92 @@ export default function EditExam({
       !allowedTypes.includes(file.type) &&
       !allowedExtensions.includes(extension || "")
     ) {
-      alert(
-        "지원되지 않는 파일 형식입니다. PPT, PDF, 워드, 엑셀, 한글, 이미지 파일만 업로드 가능합니다."
+      toast.error(
+        "지원되지 않는 파일 형식입니다. PPT, PDF, 워드, 엑셀, CSV, 한글, 이미지 파일만 업로드 가능합니다."
       );
       return false;
     }
 
     if (file.size > maxSize) {
-      alert("파일 크기가 50MB를 초과합니다.");
+      toast.error("파일 크기가 50MB를 초과합니다.");
       return false;
     }
 
     return true;
+  };
+
+  // 파일에서 텍스트 추출
+  const extractTextFromFile = async (file: File) => {
+    const extension = file.name.split(".").pop()?.toLowerCase() || "";
+    const textExtractableExtensions = ["pdf", "docx", "pptx", "csv"];
+
+    if (!textExtractableExtensions.includes(extension)) {
+      return;
+    }
+
+    setExtractionStatus((prev) => {
+      const newMap = new Map(prev);
+      newMap.set(file.name, "extracting");
+      return newMap;
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const uploadResponse = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error("파일 업로드 실패");
+      }
+
+      const uploadResult = await uploadResponse.json();
+      if (!uploadResult.ok || !uploadResult.url) {
+        throw new Error("파일 업로드 실패");
+      }
+
+      const extractResponse = await fetch("/api/extract-text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fileUrl: uploadResult.url,
+          fileName: file.name,
+          mimeType: file.type,
+        }),
+      });
+
+      if (!extractResponse.ok) {
+        throw new Error("텍스트 추출 실패");
+      }
+
+      const extractResult = await extractResponse.json();
+
+      if (extractResult.text && uploadResult.url) {
+        setExtractedTexts((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(uploadResult.url, {
+            text: extractResult.text,
+            fileName: file.name,
+          });
+          return newMap;
+        });
+        setExtractionStatus((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(file.name, "done");
+          return newMap;
+        });
+      }
+    } catch {
+      setExtractionStatus((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(file.name, "failed");
+        return newMap;
+      });
+      toast.error(`${file.name}: 텍스트 추출에 실패했습니다. AI 문제 생성 품질이 저하될 수 있습니다.`);
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -225,6 +351,11 @@ export default function EditExam({
       ...prev,
       materials: newMaterials,
     }));
+
+    // 새로 추가된 파일들에 대해 텍스트 추출
+    validFiles.forEach((file) => {
+      extractTextFromFile(file);
+    });
 
     e.target.value = "";
   };
@@ -267,6 +398,11 @@ export default function EditExam({
       ...prev,
       materials: newMaterials,
     }));
+
+    // 새로 추가된 파일들에 대해 텍스트 추출
+    validFiles.forEach((file) => {
+      extractTextFromFile(file);
+    });
   };
 
   const handleDragAreaClick = () => {
@@ -297,29 +433,31 @@ export default function EditExam({
 
   const getFileIcon = (fileName: string) => {
     const extension = fileName.split(".").pop()?.toLowerCase();
+    const iconClass = "w-4 h-4 shrink-0";
     switch (extension) {
       case "pdf":
-        return "📄";
+        return <FileText className={`${iconClass} text-red-500`} />;
       case "ppt":
       case "pptx":
-        return "📊";
+        return <Presentation className={`${iconClass} text-orange-500`} />;
       case "doc":
       case "docx":
-        return "📝";
+        return <FileText className={`${iconClass} text-blue-500`} />;
       case "xls":
       case "xlsx":
-        return "📈";
+      case "csv":
+        return <FileSpreadsheet className={`${iconClass} text-green-500`} />;
       case "hwp":
       case "hwpx":
-        return "📋";
+        return <ClipboardList className={`${iconClass} text-sky-500`} />;
       case "jpg":
       case "jpeg":
       case "png":
       case "gif":
       case "webp":
-        return "🖼️";
+        return <FileImage className={`${iconClass} text-purple-500`} />;
       default:
-        return "📎";
+        return <File className={`${iconClass} text-muted-foreground`} />;
     }
   };
 
@@ -355,6 +493,16 @@ export default function EditExam({
 
   const removeQuestion = (id: string) => {
     setQuestions(questions.filter((q) => q.id !== id));
+  };
+
+  const moveQuestion = (index: number, direction: "up" | "down") => {
+    setQuestions((prev) => {
+      const newQuestions = [...prev];
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= newQuestions.length) return prev;
+      [newQuestions[index], newQuestions[targetIndex]] = [newQuestions[targetIndex], newQuestions[index]];
+      return newQuestions;
+    });
   };
 
   const addRubricItem = () => {
@@ -655,20 +803,10 @@ export default function EditExam({
           onRemoveExistingFile={removeExistingFile}
         />
 
-        <RubricTable
-          rubric={rubric}
-          onAdd={addRubricItem}
-          onUpdate={updateRubricItem}
-          onRemove={removeRubricItem}
-          isPublic={isRubricPublic}
-          onPublicChange={setIsRubricPublic}
-          chatWeight={chatWeight}
-          onChatWeightChange={setChatWeight}
-        />
-
         <CaseQuestionGenerator
           examTitle={examData.title}
           extractedTexts={extractedTexts}
+          extractionStatus={extractionStatus}
           onQuestionsAccepted={(newQuestions) => {
             setQuestions((prev) => [
               ...prev,
@@ -697,6 +835,19 @@ export default function EditExam({
           onRemove={(id) => {
             setQuestions((prev) => prev.filter((q) => q.id !== id));
           }}
+          onAdd={addQuestion}
+          onMove={moveQuestion}
+        />
+
+        <RubricTable
+          rubric={rubric}
+          onAdd={addRubricItem}
+          onUpdate={updateRubricItem}
+          onRemove={removeRubricItem}
+          isPublic={isRubricPublic}
+          onPublicChange={setIsRubricPublic}
+          chatWeight={chatWeight}
+          onChatWeightChange={setChatWeight}
         />
 
         {/* Submit */}
@@ -710,14 +861,12 @@ export default function EditExam({
           </Button>
           <Button
             type="submit"
-            disabled={isLoading}
-            className={
+            disabled={
+              isLoading ||
               !examData.title ||
               !examData.code ||
               questions.length === 0 ||
               !canAddMoreFiles
-                ? "opacity-50 cursor-not-allowed"
-                : ""
             }
           >
             {isLoading ? "수정 중..." : "시험 수정하기"}

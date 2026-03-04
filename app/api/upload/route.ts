@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { randomUUID } from "crypto";
+import { logError } from "@/lib/logger";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabase = getSupabaseServer();
@@ -190,15 +191,16 @@ export async function POST(request: NextRequest) {
         errorCode = "INVALID_TOKEN";
       }
 
+      logError("Supabase storage upload failed", error, {
+        path: "/api/upload",
+        user_id: user.id,
+        additionalData: { storagePath, bucket: "exam-materials", errorCode },
+      });
+
       return errorJson(
         errorCode,
         userMessage,
-        {
-          originalError: error.message,
-          storagePath: storagePath,
-          bucket: "exam-materials",
-          hint: "서버 로그에서 [upload] Supabase storage error details를 확인하세요.",
-        },
+        undefined,
         500
       );
     }
@@ -223,14 +225,15 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    // 구조화된 에러 응답
+    logError("Unexpected upload error", error, {
+      path: "/api/upload",
+      additionalData: { objectKey },
+    });
+
     return errorJson(
       "UPLOAD_FAILED",
       "업로드 중 예상치 못한 오류가 발생했습니다.",
-      {
-        error: error instanceof Error ? error.message : String(error),
-        objectKey,
-      },
+      undefined,
       500
     );
   }

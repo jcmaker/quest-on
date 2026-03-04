@@ -3,6 +3,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
+import { logError } from "@/lib/logger";
 
 const supabase = getSupabaseServer();
 
@@ -134,6 +135,7 @@ export async function POST(
       }),
     });
   } catch (error) {
+    logError("Failed to end exam", error, { path: "/api/exam/end" });
     return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);
   }
 }

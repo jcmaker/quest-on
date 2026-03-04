@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, ChevronDown, X, Check } from "lucide-react";
+import { Sparkles, ChevronDown, X, Check, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   useQuestionGeneration,
@@ -31,6 +31,7 @@ import type { Question } from "./QuestionEditor";
 interface CaseQuestionGeneratorProps {
   examTitle: string;
   extractedTexts: Map<string, { text: string; fileName: string }>;
+  extractionStatus?: Map<string, "extracting" | "done" | "failed">;
   onQuestionsAccepted: (questions: Question[]) => void;
   onRubricSuggested: (rubric: RubricItem[]) => void;
 }
@@ -53,6 +54,7 @@ function getStageMessage(stage: string, current: number, total: number): string 
 export function CaseQuestionGenerator({
   examTitle,
   extractedTexts,
+  extractionStatus,
   onQuestionsAccepted,
   onRubricSuggested,
 }: CaseQuestionGeneratorProps) {
@@ -68,7 +70,8 @@ export function CaseQuestionGenerator({
     generatedQuestions,
     suggestedRubric,
     isGenerating,
-    isAdjusting,
+    regeneratingId,
+    adjustingId,
     error,
     generationProgress,
     generateStream,
@@ -119,6 +122,17 @@ export function CaseQuestionGenerator({
     await generateStream(getGenerateParams());
   };
 
+  // P1-5: Track if rubric has been suggested to avoid duplicate toasts
+  const rubricSuggestedRef = useRef(false);
+
+  const applyRubricIfNeeded = () => {
+    if (suggestedRubric.length > 0 && !rubricSuggestedRef.current) {
+      onRubricSuggested(suggestedRubric);
+      rubricSuggestedRef.current = true;
+      toast.success("루브릭이 자동으로 제안되었습니다.", { icon: "📋" });
+    }
+  };
+
   const handleAcceptOne = (questionId: string) => {
     const q = acceptQuestion(questionId);
     if (q) {
@@ -129,6 +143,7 @@ export function CaseQuestionGenerator({
           type: q.type as Question["type"],
         },
       ]);
+      applyRubricIfNeeded();
       toast.success("문제가 추가되었습니다.");
     }
   };
@@ -143,9 +158,7 @@ export function CaseQuestionGenerator({
           type: q.type as Question["type"],
         }))
       );
-      if (suggestedRubric.length > 0) {
-        onRubricSuggested(suggestedRubric);
-      }
+      applyRubricIfNeeded();
       toast.success(`${all.length}개 문제가 추가되었습니다.`);
     }
   };
@@ -250,7 +263,7 @@ export function CaseQuestionGenerator({
               <Input
                 value={topics}
                 onChange={(e) => setTopics(e.target.value)}
-                placeholder="예: 독점시장, 가격차별, 파레토 최적"
+                placeholder="예: 주요 개념, 특정 주제, 응용 사례"
                 maxLength={500}
               />
             </div>
@@ -272,11 +285,48 @@ export function CaseQuestionGenerator({
               />
             </div>
 
-            {/* Materials info */}
-            {extractedTexts.size > 0 && (
-              <p className="text-xs text-muted-foreground">
-                업로드된 자료 {extractedTexts.size}개가 문제 생성에 활용됩니다.
-              </p>
+            {/* Materials info - P2-2: Show file details */}
+            {(extractedTexts.size > 0 || (extractionStatus && extractionStatus.size > 0)) && (
+              <Collapsible>
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    업로드된 자료 {extractionStatus?.size || extractedTexts.size}개가 문제 생성에 활용됩니다.
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="mt-2 space-y-1 pl-5">
+                    {extractionStatus
+                      ? Array.from(extractionStatus.entries()).map(([fileName, status]) => (
+                          <div key={fileName} className="flex items-center gap-1.5 text-xs">
+                            {status === "done" ? (
+                              <CheckCircle2 className="w-3 h-3 text-green-600 dark:text-green-400" />
+                            ) : status === "failed" ? (
+                              <AlertCircle className="w-3 h-3 text-red-500" />
+                            ) : (
+                              <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                            )}
+                            <span className={status === "failed" ? "text-red-500 line-through" : "text-muted-foreground"}>
+                              {fileName}
+                            </span>
+                            {status === "failed" && (
+                              <span className="text-red-500">(추출 실패)</span>
+                            )}
+                          </div>
+                        ))
+                      : Array.from(extractedTexts.values()).map(({ fileName }) => (
+                          <div key={fileName} className="flex items-center gap-1.5 text-xs">
+                            <CheckCircle2 className="w-3 h-3 text-green-600 dark:text-green-400" />
+                            <span className="text-muted-foreground">{fileName}</span>
+                          </div>
+                        ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             )}
 
             {/* Error */}
@@ -380,8 +430,9 @@ export function CaseQuestionGenerator({
                         question={q}
                         index={idx}
                         rubric={suggestedRubric}
-                        isGenerating={isGenerating}
-                        isAdjusting={isAdjusting}
+                        showRubric={idx === 0}
+                        isRegenerating={regeneratingId === q.id}
+                        isAdjusting={adjustingId === q.id}
                         adjustHistory={getAdjustHistory(q.id)}
                         onAccept={() => handleAcceptOne(q.id)}
                         onRegenerate={() =>

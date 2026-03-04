@@ -1488,6 +1488,7 @@ export default function InstructorHome() {
                                 className={getViewButtonClasses("grid")}
                                 onClick={() => setViewMode("grid")}
                                 aria-pressed={viewMode === "grid"}
+                                aria-label="그리드 보기"
                               >
                                 <LayoutGrid className="w-4 h-4" />
                               </Button>
@@ -1498,6 +1499,7 @@ export default function InstructorHome() {
                                 className={getViewButtonClasses("list")}
                                 onClick={() => setViewMode("list")}
                                 aria-pressed={viewMode === "list"}
+                                aria-label="목록 보기"
                               >
                                 <List className="w-4 h-4" />
                               </Button>

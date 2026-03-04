@@ -7,6 +7,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
 import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
 
 const supabase = getSupabaseServer();
 
@@ -152,9 +153,10 @@ JSON 형식으로 응답해주세요:
 
     return successJson({ summary: result });
   } catch (error: unknown) {
+    logError("Summary generation failed", error, { path: "/api/instructor/generate-summary" });
     return errorJson(
       "SUMMARY_GENERATION_FAILED",
-      (error as Error).message || "Internal server error",
+      "요약 생성 중 오류가 발생했습니다.",
       500
     );
   }

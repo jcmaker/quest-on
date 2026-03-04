@@ -5,6 +5,7 @@ import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, adminAuthSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
+import { logError } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
       return errorJson("UNAUTHORIZED", "Invalid credentials", 401);
     }
   } catch (error) {
+    logError("Admin auth POST failed", error, { path: "/api/admin/auth" });
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }
@@ -71,6 +73,7 @@ export async function DELETE() {
     cookieStore.delete("admin-session");
     return successJson();
   } catch (error) {
+    logError("Admin auth DELETE failed", error, { path: "/api/admin/auth" });
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

@@ -13,7 +13,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, AlertTriangle } from "lucide-react";
 import { useState, useEffect } from "react";
 
 interface ExamInfoFormProps {
@@ -39,6 +39,7 @@ export function ExamInfoForm({
     duration === 0 ? "" : duration.toString()
   );
   const isUnlimited = duration === 0;
+  const showDurationWarning = !isUnlimited && duration > 0 && duration < 15;
 
   const handleUnlimitedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
@@ -269,6 +270,12 @@ export function ExamInfoForm({
                 </Button>
               ))}
             </div>
+            {showDurationWarning && (
+              <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span className="text-sm">시험 시간은 최소 15분 이상이어야 합니다.</span>
+              </div>
+            )}
           </div>
         </div>
       </CardContent>

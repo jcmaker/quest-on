@@ -298,11 +298,13 @@ ${answersText}
             });
         }
       } catch (error) {
+        logError("Failed to store submission in database", error, {
+          path: "/api/feedback",
+        });
         return errorJson(
           "INTERNAL_ERROR",
           "Failed to store submission in database",
-          500,
-          error instanceof Error ? error.message : "Unknown error"
+          500
         );
       }
     }

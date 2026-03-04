@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
+import toast from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
@@ -39,6 +40,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
@@ -174,9 +185,22 @@ function ExamChatSidebar({
                   <h3 className="text-base sm:text-lg font-semibold text-foreground mb-2">
                     AI와 대화를 시작하세요
                   </h3>
-                  <p className="text-sm sm:text-base text-muted-foreground max-w-md leading-relaxed">
-                    AI를 통해 솔루션을 도출하세요!
+                  <p className="text-sm sm:text-base text-muted-foreground max-w-md leading-relaxed mb-4">
+                    AI를 활용하여 문제를 분석하고 풀이 방향을 탐색해보세요.
                   </p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {["이 문제를 분석해줘", "힌트를 줘", "풀이 방향을 제안해줘"].map((prompt) => (
+                      <button
+                        key={prompt}
+                        onClick={() => {
+                          setChatMessage(prompt);
+                        }}
+                        className="px-3 py-1.5 text-xs sm:text-sm rounded-full border border-primary/30 text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <>
@@ -326,7 +350,7 @@ function FloatingChatButton() {
   return (
     <Button
       onClick={toggleSidebar}
-      className="ai-chat-button fixed bottom-6 right-6 h-auto px-4 py-3 rounded-full rounded-br-none shadow-lg hover:shadow-xl transition-all duration-200 z-40 border-2 border-primary flex items-center justify-center"
+      className="ai-chat-button fixed bottom-6 right-6 h-auto px-4 py-3 rounded-2xl rounded-br-sm shadow-lg hover:shadow-xl transition-all duration-200 z-40 border-2 border-primary flex items-center justify-center"
       aria-label="AI 채팅 열기"
     >
       <span className="text-lg font-bold relative inline-block">
@@ -350,6 +374,7 @@ function FloatingChatButton() {
 export default function ExamPage() {
   const params = useParams();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, isLoaded } = useUser();
   const examCode = params.code as string;
 
@@ -371,8 +396,14 @@ export default function ExamPage() {
   const [sessionError, setSessionError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [hasOpenedQuestion, setHasOpenedQuestion] = useState(true);
-  const [isQuestionVisible, setIsQuestionVisible] = useState(true);
+  const [hasOpenedQuestion, setHasOpenedQuestion] = useState(() => {
+    if (typeof window !== "undefined") return window.innerWidth >= 768;
+    return true;
+  });
+  const [isQuestionVisible, setIsQuestionVisible] = useState(() => {
+    if (typeof window !== "undefined") return window.innerWidth >= 768;
+    return true;
+  });
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<string | null>(
     null
@@ -382,6 +413,13 @@ export default function ExamPage() {
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   const [showPreflight, setShowPreflight] = useState(false);
   const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
+  // 자동 제출 실패 상태
+  const [autoSubmitFailed, setAutoSubmitFailed] = useState(false);
+  const [manualSubmitFailed, setManualSubmitFailed] = useState(false);
+  // 그만두기 확인 다이얼로그
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  // 미작성 문제 다이얼로그
+  const [unansweredDialog, setUnansweredDialog] = useState<{ open: boolean; indices: number[] }>({ open: false, indices: [] });
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -394,11 +432,16 @@ export default function ExamPage() {
     saveError,
     manualSave,
     updateAnswer,
+    saveViaBeacon,
   } = useAutoSave({
     sessionId,
     examExists: !!exam,
-    intervalMs: 60000,
+    intervalMs: 30000,
   });
+
+  // Ref for saveViaBeacon to use in beforeunload
+  const saveViaBeaconRef = useRef(saveViaBeacon);
+  saveViaBeaconRef.current = saveViaBeacon;
 
   // Filter chat history by current question
   const currentQuestionChatHistory = chatHistory.filter(
@@ -502,8 +545,15 @@ export default function ExamPage() {
       return;
     }
 
+    // Initialize draft answers with server submissions if available
+    const submissions = initData.submissions || [];
     setDraftAnswers(
-      initData.exam.questions.map((q: Question) => ({ questionId: q.id, text: "" }))
+      initData.exam.questions.map((q: Question, index: number) => {
+        const submission = submissions.find(
+          (sub: { q_idx: number; answer: string }) => sub.q_idx === index
+        );
+        return { questionId: q.id, text: submission?.answer || "" };
+      })
     );
 
     if (initData.session) {
@@ -568,8 +618,9 @@ export default function ExamPage() {
       return response.json();
     },
     enabled: !!sessionId && !!user && !isSubmitted,
-    refetchInterval: 60000,
-    refetchIntervalInBackground: false,
+    // Shorten heartbeat to 30s in last 5 minutes for better timer accuracy
+    refetchInterval: timeRemaining !== null && timeRemaining <= 300 ? 30000 : 60000,
+    refetchIntervalInBackground: true,
     staleTime: 0,
     retry: false,
   });
@@ -588,6 +639,9 @@ export default function ExamPage() {
     if (!sessionId || !user || isSubmitted) return;
 
     const handleBeforeUnload = () => {
+      // Save draft answers before deactivating session
+      saveViaBeaconRef.current();
+
       if (navigator.sendBeacon) {
         navigator.sendBeacon(
           "/api/supa",
@@ -645,6 +699,23 @@ export default function ExamPage() {
       window.removeEventListener("beforeunload", handleUnsavedWarning);
   }, [sessionId, exam, isSubmitted, draftAnswers]);
 
+  // Block browser back button during exam (SPA nav guard)
+  useEffect(() => {
+    if (!sessionId || !exam || isSubmitted) return;
+
+    // Push a dummy state so we can intercept the back button
+    window.history.pushState(null, "", window.location.href);
+
+    const handlePopState = () => {
+      // Re-push state to prevent navigation
+      window.history.pushState(null, "", window.location.href);
+      setShowExitConfirm(true);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [sessionId, exam, isSubmitted]);
+
   // Detect tab switches (visibilitychange) for anti-cheat monitoring
   useEffect(() => {
     if (!sessionId || !user || isSubmitted) return;
@@ -675,38 +746,6 @@ export default function ExamPage() {
     return () =>
       document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [sessionId, user, isSubmitted, examCode, exam, currentQuestion]);
-
-  const { data: savedAnswersData } = useQuery({
-    queryKey: ["session-submissions", sessionId],
-    queryFn: async () => {
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "get_session_submissions",
-          data: { sessionId },
-        }),
-      });
-      if (!response.ok) return null;
-      return response.json();
-    },
-    enabled: !!sessionId && !!exam,
-    staleTime: Infinity,
-  });
-
-  useEffect(() => {
-    if (!savedAnswersData?.submissions || !exam) return;
-    if (savedAnswersData.submissions.length === 0) return;
-
-    const serverAnswers = exam.questions.map((question, index) => {
-      const submission = savedAnswersData.submissions.find(
-        (sub: { q_idx: number; answer: string }) => sub.q_idx === index
-      );
-      return { questionId: question.id, text: submission?.answer || "" };
-    });
-
-    setDraftAnswers(serverAnswers);
-  }, [savedAnswersData, exam]);
 
   // manualSave, updateAnswer, auto-save interval, and Ctrl+S are handled by useAutoSave hook
 
@@ -864,17 +903,17 @@ export default function ExamPage() {
     if (!exam) return;
 
     // Check if all questions have answers
-    const unansweredQuestions = draftAnswers.filter((answer) =>
-      isHtmlEmpty(answer.text)
-    );
-    if (unansweredQuestions.length > 0) {
-      alert("모든 문제에 답안을 작성해주세요.");
+    const unansweredIndices = draftAnswers
+      .map((answer, idx) => (isHtmlEmpty(answer.text) ? idx : -1))
+      .filter((idx) => idx !== -1);
+    if (unansweredIndices.length > 0) {
+      setUnansweredDialog({ open: true, indices: unansweredIndices });
       return;
     }
 
     // Check if sessionId is available
     if (!sessionId) {
-      alert("세션 정보를 찾을 수 없습니다. 페이지를 새로고침해주세요.");
+      toast.error("세션 정보를 찾을 수 없습니다. 페이지를 새로고침해주세요.");
       return;
     }
 
@@ -921,11 +960,12 @@ export default function ExamPage() {
 
       if (response.ok) {
         setIsSubmitted(true);
+        setManualSubmitFailed(false);
       } else {
-        alert("답안 제출에 실패했습니다. 다시 시도해주세요.");
+        setManualSubmitFailed(true);
       }
     } catch {
-      alert("답안 제출 중 오류가 발생했습니다. 다시 시도해주세요.");
+      setManualSubmitFailed(true);
     } finally {
       setIsSubmitting(false);
     }
@@ -1049,10 +1089,10 @@ export default function ExamPage() {
         
         // 사용자에게 에러 알림
         const errorMessage = errorData.details || errorData.message || errorData.error || "알 수 없는 오류";
-        alert(`Preflight 수락에 실패했습니다: ${errorMessage}`);
+        toast.error(`시험 입장 확인에 실패했습니다: ${errorMessage}`);
       }
     } catch {
-      alert("Preflight 수락 중 오류가 발생했습니다. 다시 시도해주세요.");
+      toast.error("시험 입장 확인 중 오류가 발생했습니다. 다시 시도해주세요.");
     }
   };
 
@@ -1060,8 +1100,9 @@ export default function ExamPage() {
   const handleGateStart = () => {
     setIsInWaitingRoom(false);
     setSessionStatus("in_progress");
-    // 페이지 새로고침하여 최신 상태 로드
-    window.location.reload();
+    // SPA 내에서 상태 전환 — React Query 캐시 무효화로 최신 데이터 로드
+    queryClient.invalidateQueries({ queryKey: ["exam-session"] });
+    queryClient.invalidateQueries({ queryKey: ["session-heartbeat"] });
   };
 
   if (isSubmitted) {
@@ -1092,16 +1133,26 @@ export default function ExamPage() {
             <CardContent className="space-y-6">
               <div className="text-center space-y-4">
                 <p className="text-sm sm:text-base text-muted-foreground">
-                  제출이 완료되었습니다. 결과는 강사가 평가 후 확인할 수
-                  있습니다.
+                  제출이 완료되었습니다. AI 채점이 완료되어 리포트를 확인할 수 있습니다.
                 </p>
-                <Button
-                  onClick={() => router.push("/student")}
-                  className="min-h-[52px] px-8 text-base sm:text-lg font-semibold"
-                  size="lg"
-                >
-                  학생 대시보드로 돌아가기
-                </Button>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                  <Link href={`/student/report/${sessionId}`}>
+                    <Button
+                      className="min-h-[52px] px-8 text-base sm:text-lg font-semibold"
+                      size="lg"
+                    >
+                      리포트 확인하기
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push("/student")}
+                    className="min-h-[52px] px-6 text-sm sm:text-base"
+                    size="lg"
+                  >
+                    학생 대시보드로 돌아가기
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1110,33 +1161,7 @@ export default function ExamPage() {
     );
   }
 
-  // ✅ Gate 방식: Waiting Room 표시
-  if (isInWaitingRoom || sessionStatus === "waiting") {
-    return (
-      <>
-        <WaitingRoom
-          examTitle={exam?.title}
-          examCode={examCode}
-          allowDraftInWaiting={exam?.allow_draft_in_waiting || false}
-          allowChatInWaiting={exam?.allow_chat_in_waiting || false}
-          onGateStart={handleGateStart}
-          sessionId={sessionId || undefined}
-          examId={exam?.id}
-          studentId={user?.id}
-        />
-        <PreflightModal
-          open={showPreflight}
-          onAccept={handlePreflightAccept}
-          onCancel={() => router.push("/join")}
-          examTitle={exam?.title}
-          examDuration={exam?.duration}
-          examDescription={exam?.description}
-        />
-      </>
-    );
-  }
-
-  // ✅ Gate 방식: Preflight Modal 표시
+  // ✅ Gate 방식: Preflight 미완료면 Preflight만, 완료 후 대기 중이면 WaitingRoom만
   if (showPreflight) {
     return (
       <PreflightModal
@@ -1146,6 +1171,23 @@ export default function ExamPage() {
         examTitle={exam?.title}
         examDuration={exam?.duration}
         examDescription={exam?.description}
+      />
+    );
+  }
+
+  if (isInWaitingRoom || sessionStatus === "waiting") {
+    return (
+      <WaitingRoom
+        examTitle={exam?.title}
+        examCode={examCode}
+        allowDraftInWaiting={exam?.allow_draft_in_waiting || false}
+        allowChatInWaiting={exam?.allow_chat_in_waiting || false}
+        onGateStart={handleGateStart}
+        sessionId={sessionId || undefined}
+        examId={exam?.id}
+        studentId={user?.id}
+        examDuration={exam?.duration}
+        questionCount={exam?.questions?.length}
       />
     );
   }
@@ -1185,60 +1227,72 @@ export default function ExamPage() {
             duration={exam?.duration ?? 60}
             currentStep="exam"
             user={user}
+            disableLogoLink
             sessionStartTime={sessionStartTime}
             timeRemaining={timeRemaining}
             onTimeExpired={async () => {
-              // ✅ 시간 종료 시 자동 제출
+              // ✅ 시간 종료 시 자동 제출 (최대 3회 재시도)
               if (!sessionId || !exam || isSubmitted) return;
 
               setIsSubmitting(true);
-              try {
-                // 현재 답안 저장 후 제출
-                await manualSave();
+              setAutoSubmitFailed(false);
 
-                const sanitizedAnswers = draftAnswers.map((answer) => ({
-                  ...answer,
-                  text: answer.text?.replace(/\u0000/g, "") || "",
-                }));
+              const MAX_RETRIES = 3;
+              let submitted = false;
 
-                const transformedChatHistory = chatHistory.map((msg) => ({
-                  type: msg.type === "user" ? "student" : "ai",
-                  content: msg.message,
-                  timestamp: msg.timestamp,
-                }));
+              for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                  // 현재 답안 저장 후 제출
+                  if (attempt === 1) await manualSave();
 
-                const response = await fetch("/api/feedback", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    examCode,
-                    answers: sanitizedAnswers,
-                    examId: exam.id,
-                    sessionId: sessionId,
-                    chatHistory: transformedChatHistory,
-                    studentId: user?.id,
-                  }),
-                });
+                  const sanitizedAnswers = draftAnswers.map((answer) => ({
+                    ...answer,
+                    text: answer.text?.replace(/\u0000/g, "") || "",
+                  }));
 
-                if (response.ok) {
-                  setIsSubmitted(true);
-                  // 자동 제출 알림은 ExamHeader에서 표시됨
+                  const transformedChatHistory = chatHistory.map((msg) => ({
+                    type: msg.type === "user" ? "student" : "ai",
+                    content: msg.message,
+                    timestamp: msg.timestamp,
+                  }));
+
+                  const response = await fetch("/api/feedback", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      examCode,
+                      answers: sanitizedAnswers,
+                      examId: exam.id,
+                      sessionId: sessionId,
+                      chatHistory: transformedChatHistory,
+                      studentId: user?.id,
+                    }),
+                  });
+
+                  if (response.ok) {
+                    setIsSubmitted(true);
+                    submitted = true;
+                    break;
+                  }
+                } catch {
+                  // Retry on network errors
                 }
-              } catch {
-                // Auto-submit failure is handled by the UI state
-              } finally {
-                setIsSubmitting(false);
+
+                // Wait before retrying (exponential backoff)
+                if (attempt < MAX_RETRIES) {
+                  await new Promise((r) => setTimeout(r, 1000 * attempt));
+                }
               }
-            }}
-            onExit={() => {
-              if (
-                confirm(
-                  "정말로 시험을 그만두시겠습니까? 진행한 내용은 저장됩니다."
-                )
-              ) {
-                router.push("/");
+
+              if (!submitted) {
+                // Ensure answers are saved even if submission failed
+                try { await manualSave(); } catch {}
+                setAutoSubmitFailed(true);
+                toast.error("자동 제출에 실패했습니다. 수동으로 제출해주세요.");
               }
+              setIsSubmitting(false);
             }}
+            onExit={() => setShowExitConfirm(true)}
           />
 
           {/* Question & Answer Section */}
@@ -1291,37 +1345,59 @@ export default function ExamPage() {
 
                 {/* Navigation and Submit Button */}
                 <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                  <div className="flex items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       onClick={() =>
                         setCurrentQuestion((prev) => Math.max(0, prev - 1))
                       }
                       disabled={currentQuestion === 0}
-                      className="min-h-[44px] px-3 sm:px-4"
+                      className="h-8 w-8 shrink-0"
                       aria-label="이전 문제"
                     >
-                      <span className="hidden sm:inline">← 이전</span>
-                      <span className="sm:hidden">←</span>
+                      ←
                     </Button>
-                    <span className="text-xs sm:text-sm text-muted-foreground font-medium px-2 sm:px-3">
-                      {currentQuestion + 1} / {exam.questions.length}
-                    </span>
+                    <div className="flex items-center gap-1 overflow-x-auto hide-scrollbar">
+                      {exam.questions.map((_, idx) => {
+                        const isCurrent = idx === currentQuestion;
+                        const hasAnswer = !isHtmlEmpty(draftAnswers[idx]?.text || "");
+                        const hasChat = chatHistory.some((msg) => msg.qIdx === idx);
+                        return (
+                          <button
+                            key={idx}
+                            onClick={() => setCurrentQuestion(idx)}
+                            className={cn(
+                              "w-10 h-10 sm:w-8 sm:h-8 rounded-full text-xs font-medium border transition-all shrink-0 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 relative",
+                              isCurrent
+                                ? "ring-2 ring-primary bg-primary text-primary-foreground border-primary"
+                                : hasAnswer
+                                ? "bg-primary/15 border-primary/30 text-primary hover:bg-primary/25"
+                                : "bg-muted border-border text-muted-foreground hover:bg-muted/80"
+                            )}
+                            aria-label={`문제 ${idx + 1}${isCurrent ? " (현재)" : ""}${hasAnswer ? " (작성됨)" : " (미작성)"}${hasChat ? " (채팅 있음)" : ""}`}
+                          >
+                            {idx + 1}
+                            {hasChat && (
+                              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-blue-500 rounded-full border border-background" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="icon"
                       onClick={() =>
                         setCurrentQuestion((prev) =>
                           Math.min(exam.questions.length - 1, prev + 1)
                         )
                       }
                       disabled={currentQuestion === exam.questions.length - 1}
-                      className="min-h-[44px] px-3 sm:px-4"
+                      className="h-8 w-8 shrink-0"
                       aria-label="다음 문제"
                     >
-                      <span className="hidden sm:inline">다음 →</span>
-                      <span className="sm:hidden">→</span>
+                      →
                     </Button>
                   </div>
                   <Button
@@ -1404,6 +1480,120 @@ export default function ExamPage() {
           />
         </div>
       </SidebarInset>
+
+      {/* 그만두기 확인 다이얼로그 */}
+      <AlertDialog open={showExitConfirm} onOpenChange={setShowExitConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>시험을 그만두시겠습니까?</AlertDialogTitle>
+            <AlertDialogDescription>
+              진행한 내용은 저장됩니다. 시험을 종료하고 학생 대시보드로 이동합니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>계속 응시</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                await manualSave();
+                router.push("/student");
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              그만두기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 미작성 문제 안내 다이얼로그 */}
+      <AlertDialog open={unansweredDialog.open} onOpenChange={(open) => setUnansweredDialog((prev) => ({ ...prev, open }))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>미작성 문제가 있습니다</AlertDialogTitle>
+            <AlertDialogDescription>
+              다음 문제에 답안을 작성해주세요:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-wrap gap-2 py-2">
+            {unansweredDialog.indices.map((idx) => (
+              <Button
+                key={idx}
+                variant="outline"
+                size="sm"
+                className="text-destructive border-destructive/50 hover:bg-destructive/10"
+                onClick={() => {
+                  setCurrentQuestion(idx);
+                  setUnansweredDialog({ open: false, indices: [] });
+                }}
+              >
+                문제 {idx + 1}
+              </Button>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogAction>확인</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 자동 제출 실패 알림 */}
+      <AlertDialog open={autoSubmitFailed} onOpenChange={setAutoSubmitFailed}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              자동 제출 실패
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              시간 만료로 인한 자동 제출에 실패했습니다. 아래 버튼을 눌러 수동으로 제출해주세요. 답안은 이미 저장되어 있습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={async () => {
+                await manualSave();
+                router.push("/student");
+              }}
+            >
+              저장 후 나가기
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setAutoSubmitFailed(false);
+                handleSubmit();
+              }}
+            >
+              수동 제출
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 수동 제출 실패 알림 */}
+      <AlertDialog open={manualSubmitFailed} onOpenChange={setManualSubmitFailed}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertCircle className="h-5 w-5" />
+              답안 제출 실패
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              답안 제출에 실패했습니다. 네트워크 연결을 확인하고 다시 시도해주세요.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>닫기</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setManualSubmitFailed(false);
+                handleSubmit();
+              }}
+            >
+              다시 제출
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </SidebarProvider>
   );
 }

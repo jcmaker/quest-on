@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import { Send, Loader2, Check } from "lucide-react";
+import toast from "react-hot-toast";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 
 interface QuestionAdjustSheetProps {
@@ -71,7 +72,7 @@ export function QuestionAdjustSheet({
             <p className="text-sm text-muted-foreground text-center py-8">
               수정 요청을 입력하면 AI가 문제를 조정합니다.
               <br />
-              예: &quot;시장을 독점 시장으로 변경해줘&quot;, &quot;난이도를 올려줘&quot;
+              예: &quot;난이도를 올려줘&quot;, &quot;조건을 변경해줘&quot;, &quot;더 구체적으로 만들어줘&quot;
             </p>
           )}
 
@@ -96,7 +97,11 @@ export function QuestionAdjustSheet({
                     size="sm"
                     variant="default"
                     className="mt-2 gap-1.5"
-                    onClick={() => onApply(msg.questionText!)}
+                    onClick={() => {
+                      onApply(msg.questionText!);
+                      toast.success("수정 사항이 적용되었습니다.");
+                      onOpenChange(false);
+                    }}
                   >
                     <Check className="w-3.5 h-3.5" />
                     적용하기

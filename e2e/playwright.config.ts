@@ -9,7 +9,8 @@ export default defineConfig({
   testDir: ".",
   timeout: 30_000,
   retries: process.env.CI ? 1 : 0,
-  workers: 1, // Sequential for DB consistency
+  workers: 1, // Sequential for browser tests; API tests use per-project override
+  fullyParallel: false,
 
   reporter: process.env.CI
     ? [
@@ -35,6 +36,8 @@ export default defineConfig({
     {
       name: "api-integration",
       testDir: "./api",
+      fullyParallel: true,
+      workers: process.env.CI ? 4 : 2,
       use: {
         baseURL: "http://localhost:3000",
         extraHTTPHeaders: {

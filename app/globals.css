@@ -28,7 +28,7 @@
   --card-foreground: hsl(0 0% 20%);
   --popover: hsl(0 0% 100%);
   --popover-foreground: hsl(0 0% 20%);
-  --primary: hsl(217.2193 91.2195% 59.8039%);
+  --primary: hsl(217.22 91.22% 52.94%);
   --primary-foreground: hsl(0 0% 100%);
   --secondary: hsl(220 14.2857% 95.8824%);
   --secondary-foreground: hsl(215 13.7931% 34.1176%);
@@ -40,20 +40,20 @@
   --destructive-foreground: hsl(0 0% 100%);
   --border: hsl(220 13.0435% 90.9804%);
   --input: hsl(220 13.0435% 90.9804%);
-  --ring: hsl(217.2193 91.2195% 59.8039%);
-  --chart-1: hsl(217.2193 91.2195% 59.8039%);
+  --ring: hsl(217.22 91.22% 52.94%);
+  --chart-1: hsl(217.22 91.22% 52.94%);
   --chart-2: hsl(221.2121 83.1933% 53.3333%);
   --chart-3: hsl(224.2781 76.3265% 48.0392%);
   --chart-4: hsl(225.931 70.7317% 40.1961%);
   --chart-5: hsl(224.4444 64.2857% 32.9412%);
   --sidebar: hsl(210 20% 98.0392%);
   --sidebar-foreground: hsl(0 0% 20%);
-  --sidebar-primary: hsl(217.2193 91.2195% 59.8039%);
+  --sidebar-primary: hsl(217.22 91.22% 52.94%);
   --sidebar-primary-foreground: hsl(0 0% 100%);
   --sidebar-accent: hsl(204 93.75% 93.7255%);
   --sidebar-accent-foreground: hsl(224.4444 64.2857% 32.9412%);
   --sidebar-border: hsl(220 13.0435% 90.9804%);
-  --sidebar-ring: hsl(217.2193 91.2195% 59.8039%);
+  --sidebar-ring: hsl(217.22 91.22% 52.94%);
   --font-sans: Inter, sans-serif;
   --font-serif: Source Serif 4, serif;
   --font-mono: JetBrains Mono, monospace;
@@ -88,7 +88,7 @@
   --card-foreground: hsl(0 0% 89.8039%);
   --popover: hsl(0 0% 14.902%);
   --popover-foreground: hsl(0 0% 89.8039%);
-  --primary: hsl(217.2193 91.2195% 59.8039%);
+  --primary: hsl(217.22 91.22% 52.94%);
   --primary-foreground: hsl(0 0% 100%);
   --secondary: hsl(0 0% 14.902%);
   --secondary-foreground: hsl(0 0% 89.8039%);
@@ -100,20 +100,20 @@
   --destructive-foreground: hsl(0 0% 100%);
   --border: hsl(0 0% 25.098%);
   --input: hsl(0 0% 25.098%);
-  --ring: hsl(217.2193 91.2195% 59.8039%);
+  --ring: hsl(217.22 91.22% 52.94%);
   --chart-1: hsl(213.1169 93.9024% 67.8431%);
-  --chart-2: hsl(217.2193 91.2195% 59.8039%);
+  --chart-2: hsl(217.22 91.22% 52.94%);
   --chart-3: hsl(221.2121 83.1933% 53.3333%);
   --chart-4: hsl(224.2781 76.3265% 48.0392%);
   --chart-5: hsl(225.931 70.7317% 40.1961%);
   --sidebar: hsl(0 0% 9.0196%);
   --sidebar-foreground: hsl(0 0% 89.8039%);
-  --sidebar-primary: hsl(217.2193 91.2195% 59.8039%);
+  --sidebar-primary: hsl(217.22 91.22% 52.94%);
   --sidebar-primary-foreground: hsl(0 0% 100%);
   --sidebar-accent: hsl(224.4444 64.2857% 32.9412%);
   --sidebar-accent-foreground: hsl(213.3333 96.9231% 87.2549%);
   --sidebar-border: hsl(0 0% 25.098%);
-  --sidebar-ring: hsl(217.2193 91.2195% 59.8039%);
+  --sidebar-ring: hsl(217.22 91.22% 52.94%);
   --font-sans: Inter, sans-serif;
   --font-serif: Source Serif 4, serif;
   --font-mono: JetBrains Mono, monospace;
@@ -696,7 +696,7 @@
 .ProseMirror table th {
   font-weight: 600;
   text-align: left;
-  background: hsl(217.2193 91.2195% 59.8039%) !important;
+  background: hsl(217.22 91.22% 52.94%) !important;
   color: white !important;
 }
 .ProseMirror table td {
@@ -743,7 +743,7 @@
   background: hsl(var(--card));
 }
 .dark .ProseMirror table th {
-  background: hsl(217.2193 91.2195% 59.8039%) !important;
+  background: hsl(217.22 91.22% 52.94%) !important;
   color: white !important;
 }
 .dark .ProseMirror table td {
@@ -794,7 +794,7 @@
 .rich-text-content th {
   font-weight: 600;
   text-align: left;
-  background: hsl(217.2193 91.2195% 59.8039%) !important;
+  background: hsl(217.22 91.22% 52.94%) !important;
   color: white !important;
 }
 .rich-text-content td {
@@ -860,7 +860,7 @@
   background: hsl(var(--card));
 }
 .dark .rich-text-content table th {
-  background: hsl(217.2193 91.2195% 59.8039%) !important;
+  background: hsl(217.22 91.22% 52.94%) !important;
   color: white !important;
 }
 .dark .rich-text-content table td {
