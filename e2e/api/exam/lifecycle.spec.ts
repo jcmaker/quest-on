@@ -178,6 +178,33 @@ test.describe("Exam Lifecycle — start / end / sessions", () => {
     expect(body.error).toBe("BAD_REQUEST");
   });
 
+  test("end exam also closes waiting sessions", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({
+      status: "running",
+      started_at: new Date().toISOString(),
+    });
+    // 1 in-progress, 1 waiting (joined but exam started after them joining via a different flow)
+    await seedSession(exam.id, "student-1", { status: "in_progress" });
+    await seedSession(exam.id, "student-2", { status: "waiting" });
+
+    const res = await instructorRequest.post(
+      `/api/exam/${exam.id}/end`,
+      { data: {} }
+    );
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("closed");
+    expect(body.sessionsForceSubmitted).toBe(1); // only in_progress
+
+    // Verify waiting session was closed (not force-submitted)
+    const sessions = await getSessionsByExam(exam.id);
+    const waitingSession = sessions.find((s: any) => s.student_id === "student-2");
+    expect(waitingSession.status).toBe("closed");
+  });
+
   // ── GET /api/exam/[examId]/sessions ──
 
   test("instructor gets session list → 200 with session data", async ({

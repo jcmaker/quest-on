@@ -77,7 +77,23 @@ export async function POST(
       return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);
     }
 
-    // 4. 모든 진행 중 세션 강제 제출 (재시도 로직 포함)
+    // 4. 모든 진행 중 세션 강제 제출 + 대기 중 세션 정리 (재시도 로직 포함)
+    // Also close "waiting" sessions that never started
+    const { error: waitingCloseError } = await supabase
+      .from("sessions")
+      .update({
+        status: "closed",
+        is_active: false,
+      })
+      .eq("exam_id", examId)
+      .eq("status", "waiting");
+
+    if (waitingCloseError) {
+      logError("Failed to close waiting sessions", waitingCloseError, {
+        path: "/api/exam/end",
+      });
+    }
+
     const { data: activeSessions, error: sessionsError } = await supabase
       .from("sessions")
       .select("id, submitted_at")

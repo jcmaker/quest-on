@@ -497,12 +497,21 @@ export async function PUT(
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("instructor_id")
+      .select("instructor_id, rubric")
       .eq("id", session.exam_id)
       .single();
 
     if (examError || !exam || exam.instructor_id !== user.id) {
       return errorJson("FORBIDDEN", "Forbidden", 403);
+    }
+
+    // Validate rubric exists before auto-grading
+    if (!exam.rubric || !Array.isArray(exam.rubric) || exam.rubric.length === 0) {
+      return errorJson(
+        "RUBRIC_REQUIRED",
+        "루브릭이 설정되지 않아 자동 채점을 할 수 없습니다. 시험 편집에서 루브릭을 먼저 추가해주세요.",
+        400
+      );
     }
 
     // Check if already graded (unless force regrade)

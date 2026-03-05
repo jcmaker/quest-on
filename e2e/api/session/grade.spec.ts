@@ -208,4 +208,24 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
 
     expect(res.status()).toBe(403);
   });
+
+  test("auto-grade without rubric → 400 RUBRIC_REQUIRED", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({ rubric: [] }); // empty rubric
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+    });
+    await seedSubmission(session.id, 0, { answer: "Test answer" });
+
+    const res = await instructorRequest.put(
+      `/api/session/${session.id}/grade`,
+      { data: { forceRegrade: true } }
+    );
+
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("RUBRIC_REQUIRED");
+  });
 });

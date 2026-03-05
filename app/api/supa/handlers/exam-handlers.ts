@@ -260,6 +260,23 @@ export async function updateExam(data: {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
+    // If exam code is being changed, verify no sessions exist
+    if (data.update.code !== undefined) {
+      const { data: sessions } = await supabase
+        .from("sessions")
+        .select("id")
+        .eq("exam_id", data.id)
+        .limit(1);
+
+      if (sessions && sessions.length > 0) {
+        return errorJson(
+          "CODE_LOCKED",
+          "학생이 이미 참여한 시험의 코드는 변경할 수 없습니다.",
+          409
+        );
+      }
+    }
+
     const { data: exam, error } = await supabase
       .from("exams")
       .update(data.update)

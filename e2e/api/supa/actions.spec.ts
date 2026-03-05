@@ -339,4 +339,48 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
     const body = await res.json();
     expect(Array.isArray(body.submissions || body)).toBe(true);
   });
+
+  // ── update_exam: code lock ──
+
+  test("cannot change exam code when sessions exist → 409", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({ status: "draft" });
+    // A student has already joined
+    await seedSession(exam.id, "test-student-id", { status: "waiting" });
+
+    const res = await instructorRequest.post("/api/supa", {
+      data: {
+        action: "update_exam",
+        data: {
+          id: exam.id,
+          update: { code: "NEWCODE" },
+        },
+      },
+    });
+
+    expect(res.status()).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe("CODE_LOCKED");
+  });
+
+  test("can change exam code when no sessions exist → 200", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({ status: "draft" });
+
+    const res = await instructorRequest.post("/api/supa", {
+      data: {
+        action: "update_exam",
+        data: {
+          id: exam.id,
+          update: { code: "NEWCODE" },
+        },
+      },
+    });
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.exam.code).toBe("NEWCODE");
+  });
 });

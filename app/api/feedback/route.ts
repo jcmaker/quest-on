@@ -51,14 +51,17 @@ export async function POST(request: NextRequest) {
     if (exam.duration !== 0 && sessionId) {
       const { data: session, error: sessionError } = await supabase
         .from("sessions")
-        .select("created_at")
+        .select("created_at, attempt_timer_started_at, started_at")
         .eq("id", sessionId)
         .single();
 
       if (!sessionError && session) {
-        const sessionStartTime = new Date(session.created_at).getTime();
+        // Use attempt_timer_started_at (set when exam actually starts) > started_at > created_at
+        const timerStart = session.attempt_timer_started_at || session.started_at || session.created_at;
+        const sessionStartTime = new Date(timerStart).getTime();
         const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
-        const sessionEndTime = sessionStartTime + examDurationMs;
+        const gracePeriodMs = 30 * 1000; // 30초 grace period for network latency
+        const sessionEndTime = sessionStartTime + examDurationMs + gracePeriodMs;
         const now = Date.now();
 
         // 시간이 지났으면 에러 반환 (단, duration이 0이 아닐 때만)
