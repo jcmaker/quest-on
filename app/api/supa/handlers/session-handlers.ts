@@ -5,6 +5,9 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
 
+/** 30-second grace period for network latency (shared across heartbeat/initExamSession/feedback) */
+const GRACE_PERIOD_MS = 30_000;
+
 const supabase = getSupabaseServer();
 
 export async function createOrGetSession(data: { examId: string; studentId: string }) {
@@ -41,7 +44,7 @@ export async function createOrGetSession(data: { examId: string; studentId: stri
     if (!session) {
       const { data: existing, error: fetchError } = await supabase
         .from("sessions")
-        .select("*")
+        .select("id, exam_id, student_id, used_clarifications, created_at, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, last_heartbeat_at, compressed_session_data, compression_metadata")
         .eq("exam_id", data.examId)
         .eq("student_id", data.studentId)
         .single();
@@ -52,7 +55,7 @@ export async function createOrGetSession(data: { examId: string; studentId: stri
     // Get existing messages for this session
     const { data: messages, error: messagesError } = await supabase
       .from("messages")
-      .select("*")
+      .select("id, role, content, q_idx, created_at")
       .eq("session_id", session.id)
       .order("created_at", { ascending: true });
 
@@ -95,7 +98,7 @@ export async function initExamSession(data: {
     // 1. Fetch Exam by Code
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("*")
+      .select("id, title, code, description, duration, questions, rubric, rubric_public, chat_weight, status, instructor_id, materials, materials_text, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, student_count")
       .eq("code", data.examCode)
       .single();
 
@@ -141,7 +144,7 @@ export async function initExamSession(data: {
     // 2. Get all existing sessions (most recent first)
     const { data: existingSessions, error: checkError } = await supabase
       .from("sessions")
-      .select("*")
+      .select("id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at")
       .eq("exam_id", exam.id)
       .eq("student_id", data.studentId)
       .order("created_at", { ascending: false });
@@ -158,7 +161,7 @@ export async function initExamSession(data: {
       // Get messages for submitted session (read-only)
       const { data: sessionMessages } = await supabase
         .from("messages")
-        .select("*")
+        .select("id, role, content, q_idx, created_at")
         .eq("session_id", mostRecentSubmittedSession.id)
         .order("created_at", { ascending: true });
 
@@ -233,15 +236,15 @@ export async function initExamSession(data: {
       // ✅ 시험 시간 종료 체크는 in_progress 상태이고 타이머가 시작된 경우에만 수행
       if (sessionStatus === "in_progress" && timerStartTime !== null && exam.duration !== 0) {
         const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
-        const sessionEndTime = timerStartTime + examDurationMs;
+        const sessionEndTime = timerStartTime + examDurationMs + GRACE_PERIOD_MS;
         const timeRemaining = sessionEndTime - nowTime;
 
-        // 시간 종료 체크 및 자동 제출 처리
+        // 시간 종료 체크 및 자동 제출 처리 (grace period 포함)
         if (timeRemaining <= 0) {
         // 기존 답안 가져오기
         const { data: existingSubmissions } = await supabase
           .from("submissions")
-          .select("*")
+          .select("id, q_idx, answer, compressed_answer_data, compression_metadata")
           .eq("session_id", existingSession.id);
 
         // 자동 제출 처리 (빈 답안이라도 제출)
@@ -261,7 +264,7 @@ export async function initExamSession(data: {
         // 메시지 로드
         const { data: sessionMessages } = await supabase
           .from("messages")
-          .select("*")
+          .select("id, role, content, q_idx, created_at")
           .eq("session_id", existingSession.id)
           .order("created_at", { ascending: true });
 
@@ -345,7 +348,7 @@ export async function initExamSession(data: {
       // Get messages for existing session
       const { data: sessionMessages } = await supabase
         .from("messages")
-        .select("*")
+        .select("id, role, content, q_idx, created_at")
         .eq("session_id", existingSession.id)
         .order("created_at", { ascending: true });
 
@@ -387,6 +390,10 @@ export async function initExamSession(data: {
 
       if (upsertError) throw upsertError;
       session = upsertedSession;
+    }
+
+    if (!session) {
+      return errorJson("INIT_SESSION_FAILED", "Failed to initialize session", 500);
     }
 
     // Fetch existing submissions for this session
@@ -590,12 +597,12 @@ export async function sessionHeartbeat(data: {
 
       if (sessionStatus === "in_progress" && timerStartTime !== null && exam.duration !== 0) {
         const examDurationMs = exam.duration * 60 * 1000;
-        const sessionEndTime = timerStartTime + examDurationMs;
+        const sessionEndTime = timerStartTime + examDurationMs + GRACE_PERIOD_MS;
         const now = Date.now();
         const timeRemaining = sessionEndTime - now;
 
         if (timeRemaining <= 0) {
-          // ✅ 시간 종료 - 자동 제출 처리
+          // ✅ 시간 종료 - 자동 제출 처리 (grace period 포함)
           const { error: updateError } = await supabase
             .from("sessions")
             .update({

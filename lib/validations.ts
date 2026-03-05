@@ -153,7 +153,29 @@ export const createExamSchema = z.object({
 
 export const updateExamSchema = z.object({
   id: z.string().uuid("Invalid exam ID"),
-  update: z.record(z.unknown()),
+  update: z.object({
+    title: z.string().min(1).max(500).optional(),
+    description: z.string().max(2000).nullable().optional(),
+    duration: z.number().int().min(0).optional(),
+    questions: z.unknown().optional(),
+    rubric: z.unknown().optional(),
+    rubric_public: z.boolean().optional(),
+    materials: z.array(z.string()).optional(),
+    materials_text: z.array(z.object({
+      url: z.string(),
+      text: z.string(),
+      fileName: z.string(),
+    })).optional(),
+    status: z.string().optional(),
+    code: z.string().min(1).max(20).optional(),
+    chat_weight: z.number().min(0).max(100).nullable().optional(),
+    open_at: z.string().nullable().optional(),
+    close_at: z.string().nullable().optional(),
+    started_at: z.string().nullable().optional(),
+    allow_draft_in_waiting: z.boolean().optional(),
+    allow_chat_in_waiting: z.boolean().optional(),
+    updated_at: z.string().optional(),
+  }).strict(),
 });
 
 // Session operations

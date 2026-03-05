@@ -248,7 +248,7 @@ export async function getSessionSubmissions(data: { sessionId: string }) {
 
     const { data: submissions, error } = await supabase
       .from("submissions")
-      .select("*")
+      .select("id, q_idx, answer, compressed_answer_data, compression_metadata, created_at")
       .eq("session_id", data.sessionId)
       .order("q_idx", { ascending: true });
 
@@ -289,7 +289,7 @@ export async function getSessionMessages(data: { sessionId: string }) {
 
     const { data: messages, error } = await supabase
       .from("messages")
-      .select("*")
+      .select("id, q_idx, role, content, compressed_content, compression_metadata, created_at")
       .eq("session_id", data.sessionId)
       .order("created_at", { ascending: true });
 

@@ -1,6 +1,26 @@
 import { NextRequest } from "next/server";
 import { errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
+import { currentUser } from "@/lib/get-current-user";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import {
+  createExamSchema,
+  updateExamSchema,
+  initExamSessionSchema,
+  createOrGetSessionSchema,
+  sessionHeartbeatSchema,
+  deactivateSessionSchema,
+  saveDraftSchema,
+  saveAllDraftsSchema,
+  saveDraftAnswersSchema,
+  submitExamSchema,
+  createFolderSchema,
+  moveNodeSchema,
+  deleteNodeSchema,
+  copyExamSchema,
+  validateRequest,
+} from "@/lib/validations";
+import type { z } from "zod";
 
 import {
   createExam,
@@ -47,10 +67,58 @@ export async function POST(request: NextRequest) {
       return errorJson("INVALID_JSON", "Invalid JSON in request body", 400);
     }
 
-    const { action, data } = body;
+    const { action, data: rawData } = body;
 
     if (!action) {
       return errorJson("MISSING_ACTION", "Missing 'action' field in request", 400);
+    }
+
+    // Rate limit sensitive actions at handler level
+    const rateLimitedActions: Record<string, { limit: number; windowSec: number }> = {
+      create_exam: RATE_LIMITS.examControl,
+      submit_exam: RATE_LIMITS.examControl,
+      save_draft: RATE_LIMITS.general,
+      save_all_drafts: RATE_LIMITS.general,
+      save_draft_answers: RATE_LIMITS.general,
+    };
+
+    if (action in rateLimitedActions) {
+      const user = await currentUser();
+      if (user) {
+        const rl = await checkRateLimitAsync(`supa:${action}:${user.id}`, rateLimitedActions[action]);
+        if (!rl.allowed) {
+          return errorJson("RATE_LIMITED", "Too many requests", 429);
+        }
+      }
+    }
+
+    // Validate input data against action-specific schemas
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const actionSchemas: Record<string, z.ZodSchema<any>> = {
+      create_exam: createExamSchema,
+      update_exam: updateExamSchema,
+      init_exam_session: initExamSessionSchema,
+      create_or_get_session: createOrGetSessionSchema,
+      session_heartbeat: sessionHeartbeatSchema,
+      deactivate_session: deactivateSessionSchema,
+      save_draft: saveDraftSchema,
+      save_all_drafts: saveAllDraftsSchema,
+      save_draft_answers: saveDraftAnswersSchema,
+      submit_exam: submitExamSchema,
+      create_folder: createFolderSchema,
+      move_node: moveNodeSchema,
+      delete_node: deleteNodeSchema,
+      copy_exam: copyExamSchema,
+    };
+
+    let data = rawData;
+    const schema = actionSchemas[action];
+    if (schema) {
+      const validation = validateRequest(schema, rawData);
+      if (!validation.success) {
+        return errorJson("VALIDATION_ERROR", validation.error, 400);
+      }
+      data = validation.data;
     }
 
     switch (action) {
@@ -103,7 +171,8 @@ export async function POST(request: NextRequest) {
       case "copy_exam":
         return await copyExam(data);
       default:
-        return errorJson("INVALID_ACTION", `Invalid action: ${action}`, 400);
+        logError("Invalid supa action received", new Error("INVALID_ACTION"), { additionalData: { action } });
+        return errorJson("INVALID_ACTION", "Invalid action", 400);
     }
   } catch (error) {
     logError("Supa route handler failed", error, { path: "/api/supa" });

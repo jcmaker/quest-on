@@ -8,6 +8,7 @@ import { auditLog } from "@/lib/audit";
 import { batchGetUserInfo } from "@/lib/clerk-users";
 import { logError } from "@/lib/logger";
 import { validateUUID } from "@/lib/validate-params";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -39,7 +40,7 @@ export async function GET(
     // ai_summary가 없을 수 있으므로 안전하게 처리
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("*")
+      .select("id, exam_id, student_id, submitted_at, used_clarifications, created_at, compressed_session_data, compression_metadata, ai_summary")
       .eq("id", sessionId)
       .single();
 
@@ -442,7 +443,7 @@ export async function POST(
       });
     } catch (auditError) {
       // Log but don't block the response
-      console.error("[grade] Audit log failed:", auditError);
+      logError("[grade] Audit log failed", auditError, { path: `/api/session/${sessionId}/grade` });
     }
 
     return successJson({
@@ -505,6 +506,12 @@ export async function PUT(
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
+    // Rate limit: expensive OpenAI auto-grading
+    const rl = await checkRateLimitAsync(`ai:auto-grade:${user.id}`, RATE_LIMITS.ai);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many grading requests. Please wait.", 429);
+    }
+
     // Validate rubric exists before auto-grading
     if (!exam.rubric || !Array.isArray(exam.rubric) || exam.rubric.length === 0) {
       return errorJson(
@@ -529,13 +536,21 @@ export async function PUT(
     }
 
     // Delegate to centralized grading logic (parallel, retry, timeout)
-    const { grades, summary } = await autoGradeSession(sessionId);
+    const { grades, summary, failedQuestions, timedOut } = await autoGradeSession(sessionId);
 
-    return successJson({
+    const response: Record<string, unknown> = {
       gradesCount: grades.length,
       grades,
       summary,
-    });
+    };
+
+    if (failedQuestions.length > 0 || timedOut) {
+      response.warning = `${grades.length}/${grades.length + failedQuestions.length} 문항 채점 완료, ${failedQuestions.length}문항 수동 채점 필요`;
+      response.failedQuestions = failedQuestions;
+      response.timedOut = timedOut;
+    }
+
+    return successJson(response);
   } catch (error) {
     logError("Grade PUT handler error", error, {
       path: `/api/session/grade`,

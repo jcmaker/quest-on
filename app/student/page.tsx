@@ -56,6 +56,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { usePathname } from "next/navigation";
+import { useDebounce } from "@/hooks/useDebounce";
 import { cn } from "@/lib/utils";
 import { getScoreColor as getScoreColorUtil, getStatusColor as getStatusColorUtil, formatDateKo } from "@/lib/grading-utils";
 import {
@@ -106,6 +107,7 @@ export default function StudentDashboard() {
   const pathname = usePathname();
   const { isSignedIn, isLoaded, user } = useUser();
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [filter, setFilter] = useState<
     "all" | "graded" | "pending" | "in-progress"
   >("all");
@@ -174,7 +176,7 @@ export default function StudentDashboard() {
     }
 
     // profile 정보가 없으면 프로필 설정 페이지로 이동
-    if (!(profileData as any).profile) {
+    if (!("profile" in profileData) || !profileData.profile) {
       router.replace("/student/profile-setup");
       return;
     }
@@ -273,9 +275,9 @@ export default function StudentDashboard() {
       if (session.status !== "in-progress") return false;
     }
 
-    // Apply search query
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
+    // Apply search query (debounced to avoid re-render storms)
+    if (!debouncedSearchQuery.trim()) return true;
+    const query = debouncedSearchQuery.toLowerCase();
     return (
       session.examTitle.toLowerCase().includes(query) ||
       session.examCode.toLowerCase().includes(query)

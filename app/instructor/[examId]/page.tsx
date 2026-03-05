@@ -1,7 +1,6 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import { redirect, useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import React, { useState, useEffect, use, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -11,8 +10,6 @@ import { ExamDetailsCard } from "@/components/instructor/ExamDetailsCard";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
 import { ExamAnalyticsCard } from "@/components/instructor/ExamAnalyticsCard";
 import { ExamControlButtons } from "@/components/instructor/ExamControlButtons";
-import { useQuery } from "@tanstack/react-query";
-import { qk } from "@/lib/query-keys";
 import {
   Collapsible,
   CollapsibleContent,
@@ -26,61 +23,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  FileText,
-  Activity,
-  Search,
-  ChevronDown,
-  ChevronUp,
-} from "lucide-react";
-import { Radio } from "@/components/animate-ui/icons/radio";
-import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
-import { AnimateIcon } from "@/components/animate-ui/icons/icon";
-import { StudentLiveMonitoring } from "../../../components/instructor/StudentLiveMonitoring";
+import { Search, ChevronDown, ChevronUp } from "lucide-react";
+import { StudentLiveMonitoring } from "@/components/instructor/StudentLiveMonitoring";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
-
-interface Exam {
-  id: string;
-  title: string;
-  code: string;
-  description: string;
-  duration: number;
-  status: "draft" | "active" | "completed" | "joinable" | "running" | "closed" | "scheduled" | "entry_closed";
-  createdAt: string;
-  questions: Question[];
-  students: Student[];
-  open_at?: string | null;
-  close_at?: string | null;
-  started_at?: string | null;
-}
-
-interface Question {
-  id: string;
-  text: string;
-  type: string;
-}
-
-interface Student {
-  id: string;
-  name: string;
-  email: string;
-  status: "not-started" | "in-progress" | "completed";
-  score?: number;
-  finalScore?: number; // 교수가 최종 채점한 점수
-  submittedAt?: string;
-  createdAt?: string;
-  student_number?: string;
-  school?: string;
-  questionCount?: number;
-  answerLength?: number;
-  isGraded?: boolean; // 교수가 최종 채점했는지 여부
-}
-
-type SortOption = "score" | "questionCount" | "answerLength" | "submittedAt";
+import { StudentListItem } from "@/components/instructor/StudentListItem";
+import { StudentListItemSkeleton } from "@/components/instructor/StudentListItemSkeleton";
+import { useExamDetail } from "@/hooks/useExamDetail";
+import { useStudentFiltering } from "@/hooks/useStudentFiltering";
+import { buildInstructorExamContext } from "@/lib/instructor-utils";
+import type { InstructorExam, InstructorStudent, SortOption } from "@/lib/types/exam";
 
 export default function ExamDetail({
   params,
@@ -90,247 +43,37 @@ export default function ExamDetail({
   const resolvedParams = use(params);
   const { isSignedIn, isLoaded, user } = useUser();
 
-  // Fetch exam data from database
-  const [exam, setExam] = useState<Exam | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortOption, setSortOption] = useState<SortOption>("score");
-  const [monitoringSessionId, setMonitoringSessionId] = useState<string | null>(
-    null
-  );
-  const [monitoringStudent, setMonitoringStudent] = useState<Student | null>(
-    null
-  );
+  const [monitoringSessionId, setMonitoringSessionId] = useState<string | null>(null);
+  const [monitoringStudent, setMonitoringStudent] = useState<InstructorStudent | null>(null);
   const [examInfoOpen, setExamInfoOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
 
-  const { data: examDetailData, isLoading: examDetailLoading, error: examDetailError } = useQuery({
-    queryKey: qk.instructor.examDetail(resolvedParams.examId),
-    queryFn: async () => {
-      const [examResponse, sessionsResponse] = await Promise.all([
-        fetch("/api/supa", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "get_exam_by_id",
-            data: { id: resolvedParams.examId },
-          }),
-        }),
-        fetch(`/api/exam/${resolvedParams.examId}/sessions`),
-      ]);
-
-      if (!examResponse.ok) {
-        throw new Error(
-          `Failed to fetch exam details: ${examResponse.status} ${examResponse.statusText}`
-        );
-      }
-
-      const examResult = await examResponse.json();
-      const questionsArray = examResult.exam.questions || [];
-      let students: Student[] = [];
-
-      if (sessionsResponse.ok) {
-        const sessionsResult = await sessionsResponse.json();
-        const sessionsByStudent = new Map<string, Array<Record<string, unknown>>>();
-
-        sessionsResult.sessions.forEach((session: Record<string, unknown>) => {
-          const studentId =
-            typeof session.student_id === "string" ? session.student_id : "";
-          if (!sessionsByStudent.has(studentId)) {
-            sessionsByStudent.set(studentId, []);
-          }
-          sessionsByStudent.get(studentId)?.push(session);
-        });
-
-        students = Array.from(sessionsByStudent.entries()).map(
-          ([studentId, sessions]) => {
-            const submittedSessions = sessions
-              .filter((s) => s.submitted_at != null)
-              .sort((a, b) => {
-                const aDate = a.submitted_at
-                  ? new Date(a.submitted_at as string).getTime()
-                  : 0;
-                const bDate = b.submitted_at
-                  ? new Date(b.submitted_at as string).getTime()
-                  : 0;
-                return bDate - aDate;
-              });
-
-            const unsubmittedSessions = sessions
-              .filter((s) => s.submitted_at == null)
-              .sort((a, b) => {
-                const aDate = a.created_at
-                  ? new Date(a.created_at as string).getTime()
-                  : 0;
-                const bDate = b.created_at
-                  ? new Date(b.created_at as string).getTime()
-                  : 0;
-                return bDate - aDate;
-              });
-
-            const selectedSession =
-              submittedSessions.length > 0
-                ? submittedSessions[0]
-                : unsubmittedSessions.length > 0
-                ? unsubmittedSessions[0]
-                : sessions[0];
-
-            const sessionId =
-              typeof selectedSession.id === "string" ? selectedSession.id : "";
-            const submittedAt =
-              selectedSession.submitted_at != null
-                ? typeof selectedSession.submitted_at === "string"
-                  ? selectedSession.submitted_at
-                  : String(selectedSession.submitted_at)
-                : undefined;
-
-            const studentName =
-              typeof selectedSession.student_name === "string"
-                ? selectedSession.student_name
-                : `Student ${studentId.slice(0, 8)}`;
-            const studentEmail =
-              typeof selectedSession.student_email === "string"
-                ? selectedSession.student_email
-                : `${studentId}@example.com`;
-
-            const createdAt =
-              selectedSession.created_at != null
-                ? typeof selectedSession.created_at === "string"
-                  ? selectedSession.created_at
-                  : String(selectedSession.created_at)
-                : undefined;
-
-            return {
-              id: sessionId,
-              name: studentName,
-              email: studentEmail,
-              status: submittedAt ? "completed" : "in-progress",
-              score: undefined,
-              finalScore: undefined,
-              submittedAt: submittedAt as string | undefined,
-              createdAt: createdAt as string | undefined,
-              student_number:
-                typeof selectedSession.student_number === "string"
-                  ? selectedSession.student_number
-                  : undefined,
-              school:
-                typeof selectedSession.student_school === "string"
-                  ? selectedSession.student_school
-                  : undefined,
-              questionCount: undefined,
-              answerLength: undefined,
-              isGraded: false,
-            };
-          }
-        );
-      }
-
-      return {
-        exam: {
-          id: examResult.exam.id,
-          title: examResult.exam.title,
-          code: examResult.exam.code,
-          description: examResult.exam.description,
-          duration: examResult.exam.duration,
-          status: examResult.exam.status,
-          createdAt: examResult.exam.created_at,
-          questions: [],
-          students,
-          open_at: examResult.exam.open_at || null,
-          close_at: examResult.exam.close_at || null,
-          started_at: examResult.exam.started_at || null,
-        } as Exam,
-        questionsCount: questionsArray.length,
-        questionsRaw: questionsArray as Question[],
-      };
-    },
-    enabled: !!resolvedParams.examId,
+  // Data loading
+  const {
+    exam,
+    setExam,
+    examDetailData,
+    examDetailLoading,
+    loading,
+    error,
+    analyticsData,
+    analyticsLoading,
+  } = useExamDetail({
+    examId: resolvedParams.examId,
+    isLoaded,
+    isSignedIn,
+    userId: user?.id,
   });
 
-  const loading = examDetailLoading || (!exam && !examDetailError);
-  const error = examDetailError instanceof Error
-    ? examDetailError.message
-    : examDetailError
-    ? "Failed to load exam data"
-    : null;
-  const questionsCount = examDetailData?.questionsCount ?? null;
-
-  useEffect(() => {
-    setExam(null);
-  }, [resolvedParams.examId]);
-
-  useEffect(() => {
-    if (examDetailData?.exam && !exam) {
-      setExam(examDetailData.exam);
-    }
-  }, [examDetailData]);
-
-  const { data: finalGradesData } = useQuery({
-    queryKey: qk.instructor.finalGrades(resolvedParams.examId),
-    queryFn: async () => {
-      const response = await fetch(
-        `/api/exam/${resolvedParams.examId}/final-grades`
-      ).catch(() => null);
-      if (!response?.ok) return null;
-      return response.json();
-    },
-    enabled: !!exam && exam.students.length > 0,
-    staleTime: Infinity,
-    gcTime: 5 * 60 * 1000,
-  });
-
-  useEffect(() => {
-    if (!finalGradesData?.grades) return;
-
-    const finalGradesMap = new Map<string, number>();
-    finalGradesData.grades.forEach(
-      (g: { session_id: string; score: number; isManual?: boolean }) => {
-        if (g.isManual) {
-          finalGradesMap.set(g.session_id, g.score);
-        }
-      }
-    );
-
-    setExam((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        students: prev.students.map((student) => {
-          const finalScore = finalGradesMap.get(student.id);
-          return {
-            ...student,
-            finalScore:
-              finalScore !== undefined ? finalScore : student.finalScore,
-            isGraded: finalScore !== undefined,
-          };
-        }),
-      };
-    });
-  }, [finalGradesData]);
-
-  // Fetch analytics data (for charts only, student scores are already in exam.students)
-  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
-    queryKey: qk.instructor.examAnalytics(resolvedParams.examId),
-    queryFn: async ({ signal }) => {
-      const response = await fetch(
-        `/api/analytics/exam/${resolvedParams.examId}/overview`,
-        { signal }
-      );
-      if (!response.ok) {
-        throw new Error("Failed to fetch analytics");
-      }
-      return response.json();
-    },
-    enabled:
-      !!resolvedParams.examId &&
-      isLoaded &&
-      isSignedIn &&
-      !!exam &&
-      exam.students.length > 0,
-    staleTime: 30000,
-    gcTime: 5 * 60 * 1000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-  });
+  // Student filtering
+  const {
+    searchQuery,
+    setSearchQuery,
+    sortOption,
+    setSortOption,
+    gradedStudents,
+    nonGradedStudents,
+  } = useStudentFiltering({ students: exam?.students ?? [] });
 
   // Redirect non-instructors
   useEffect(() => {
@@ -342,136 +85,11 @@ export default function ExamDetail({
     }
   }, [isLoaded, isSignedIn, user]);
 
-  // Analytics 데이터가 로드되면 학생 점수 업데이트
-  // analyticsData가 변경될 때마다 재실행하여 최신 데이터 반영
-  useEffect(() => {
-    if (!exam || !analyticsData || exam.students.length === 0) return;
-
-    const analyticsStudentsMap = analyticsData.students
-      ? new Map(analyticsData.students.map((s: any) => [s.sessionId, s]))
-      : new Map();
-
-    // 학생 데이터 업데이트 (analytics 점수만)
-    // analyticsData가 로드될 때마다 항상 업데이트하여 최신 점수 반영
-    setExam((prev) => {
-      if (!prev) return prev;
-
-      const updatedStudents = prev.students.map((student) => {
-        const analyticsStudent = analyticsStudentsMap.get(student.id);
-
-        // analytics에서 점수를 가져올 수 있으면 업데이트
-        // null이 아닌 경우에만 업데이트 (null은 점수가 없다는 의미)
-        return {
-          ...student,
-          score:
-            analyticsStudent?.score !== null && analyticsStudent?.score !== undefined
-              ? analyticsStudent.score
-              : student.score,
-          questionCount:
-            analyticsStudent?.questionCount !== null &&
-            analyticsStudent?.questionCount !== undefined
-              ? analyticsStudent.questionCount
-              : student.questionCount,
-          answerLength:
-            analyticsStudent?.answerLength !== null &&
-            analyticsStudent?.answerLength !== undefined
-              ? analyticsStudent.answerLength
-              : student.answerLength,
-        };
-      });
-
-      return {
-        ...prev,
-        students: updatedStudents,
-      };
-    });
-  }, [analyticsData, exam?.id]); // analyticsData가 변경될 때마다 재실행
-
-  // Questions are already fetched with examDetailData — no separate query needed
+  const questionsCount = examDetailData?.questionsCount ?? null;
   const questionsLoading = examDetailLoading;
   const questions = (questionsOpen ? examDetailData?.questionsRaw : null) ?? [];
 
-  // Filtered and sorted students
-  const filteredAndSortedStudents = useMemo(() => {
-    if (!exam) return [];
-
-    let filtered = exam.students.filter((student) => {
-      const query = searchQuery.toLowerCase();
-      return (
-        student.name.toLowerCase().includes(query) ||
-        student.email.toLowerCase().includes(query) ||
-        student.student_number?.toLowerCase().includes(query) ||
-        student.school?.toLowerCase().includes(query)
-      );
-    });
-
-    // Sort by selected option
-    filtered.sort((a, b) => {
-      switch (sortOption) {
-        case "score":
-          // 가채점 점수 기준
-          if (a.score !== undefined && b.score === undefined) return -1;
-          if (a.score === undefined && b.score !== undefined) return 1;
-          if (a.score !== undefined && b.score !== undefined) {
-            return b.score - a.score;
-          }
-          return 0;
-        case "questionCount":
-          if (a.questionCount !== undefined && b.questionCount === undefined)
-            return -1;
-          if (a.questionCount === undefined && b.questionCount !== undefined)
-            return 1;
-          if (a.questionCount !== undefined && b.questionCount !== undefined) {
-            return b.questionCount - a.questionCount;
-          }
-          return 0;
-        case "answerLength":
-          if (a.answerLength !== undefined && b.answerLength === undefined)
-            return -1;
-          if (a.answerLength === undefined && b.answerLength !== undefined)
-            return 1;
-          if (a.answerLength !== undefined && b.answerLength !== undefined) {
-            return b.answerLength - a.answerLength;
-          }
-          return 0;
-        case "submittedAt":
-          if (a.submittedAt && !b.submittedAt) return -1;
-          if (!a.submittedAt && b.submittedAt) return 1;
-          if (a.submittedAt && b.submittedAt) {
-            return (
-              new Date(b.submittedAt).getTime() -
-              new Date(a.submittedAt).getTime()
-            );
-          }
-          return 0;
-        default:
-          return 0;
-      }
-    });
-
-    return filtered;
-  }, [exam, searchQuery, sortOption]);
-
-  // Separated graded students (교수가 최종 채점한 학생)
-  const gradedStudents = useMemo(() => {
-    return filteredAndSortedStudents
-      .filter((s) => s.isGraded)
-      .sort((a, b) => {
-        if (a.finalScore !== undefined && b.finalScore === undefined) return -1;
-        if (a.finalScore === undefined && b.finalScore !== undefined) return 1;
-        if (a.finalScore !== undefined && b.finalScore !== undefined) {
-          return b.finalScore - a.finalScore;
-        }
-        return 0;
-      });
-  }, [filteredAndSortedStudents]);
-
-  // Non-graded students (가채점만 있는 학생)
-  const nonGradedStudents = useMemo(() => {
-    return filteredAndSortedStudents.filter((s) => !s.isGraded);
-  }, [filteredAndSortedStudents]);
-
-  const handleLiveMonitoring = (student: Student) => {
+  const handleLiveMonitoring = (student: InstructorStudent) => {
     setMonitoringStudent(student);
     setMonitoringSessionId(student.id);
   };
@@ -499,7 +117,8 @@ export default function ExamDetail({
     return buildInstructorExamContext(exam, questions);
   }, [exam, questions]);
 
-  // Show loading while auth is loading
+  // --- Early returns ---
+
   if (!isLoaded) {
     return (
       <div className="container mx-auto p-6">
@@ -510,7 +129,6 @@ export default function ExamDetail({
     );
   }
 
-  // Don't render anything if not authorized (will redirect)
   if (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "instructor") {
     return null;
   }
@@ -541,6 +159,8 @@ export default function ExamDetail({
     );
   }
 
+  // --- Main UI ---
+
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
       <InstructorChatSidebar
@@ -559,10 +179,9 @@ export default function ExamDetail({
             examId={exam.id}
             extraActions={
               <>
-                {/* 디버깅: 실제 값 확인 */}
                 {process.env.NODE_ENV === "development" && (
                   <div className="text-xs text-muted-foreground mr-2">
-                    Status: {exam.status || "undefined"} | 
+                    Status: {exam.status || "undefined"} |
                     Gate: {!!(exam.open_at || exam.close_at) ? "true" : "false"}
                   </div>
                 )}
@@ -571,12 +190,11 @@ export default function ExamDetail({
                   examStatus={exam.status || "draft"}
                   hasGateFields={!!(exam.open_at || exam.close_at)}
                   onStatusChange={(newStatus, startedAt) => {
-                    // 상태만 업데이트 (페이지 새로고침 없이)
                     setExam((prev) => {
                       if (!prev) return prev;
                       return {
                         ...prev,
-                        status: newStatus as Exam["status"],
+                        status: newStatus as InstructorExam["status"],
                         started_at: startedAt || prev.started_at,
                       };
                     });
@@ -586,9 +204,8 @@ export default function ExamDetail({
             }
           />
 
-          {/* 위쪽: 시험 정보와 문제 (Collapsible) */}
+          {/* Collapsible sections */}
           <div className="space-y-3 mt-6 mb-6">
-            {/* 시험 정보 */}
             <div id="exam-info-section">
               <Collapsible open={examInfoOpen} onOpenChange={setExamInfoOpen}>
                 <div className="border rounded-lg">
@@ -596,32 +213,20 @@ export default function ExamDetail({
                     <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
                       <div className="flex items-center gap-3">
                         <h3 className="font-semibold">시험 정보</h3>
-                        <span className="text-sm text-muted-foreground">
-                          {exam.duration}분 • {exam.code}
-                        </span>
+                        <span className="text-sm text-muted-foreground">{exam.duration}분 &bull; {exam.code}</span>
                       </div>
-                      {examInfoOpen ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      )}
+                      {examInfoOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="px-4 pb-4">
-                      <ExamDetailsCard
-                        description={exam.description}
-                        duration={exam.duration}
-                        createdAt={exam.createdAt}
-                        examCode={exam.code}
-                      />
+                      <ExamDetailsCard description={exam.description} duration={exam.duration} createdAt={exam.createdAt} examCode={exam.code} />
                     </div>
                   </CollapsibleContent>
                 </div>
               </Collapsible>
             </div>
 
-            {/* 문제 보기 */}
             <div id="questions-section">
               <Collapsible open={questionsOpen} onOpenChange={setQuestionsOpen}>
                 <div className="border rounded-lg">
@@ -630,16 +235,10 @@ export default function ExamDetail({
                       <div className="flex items-center gap-3">
                         <h3 className="font-semibold">문제 보기</h3>
                         <span className="text-sm text-muted-foreground">
-                          {questionsCount !== null
-                            ? `${questionsCount}개 문제`
-                            : "문제 로딩 중..."}
+                          {questionsCount !== null ? `${questionsCount}개 문제` : "문제 로딩 중..."}
                         </span>
                       </div>
-                      {questionsOpen ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      )}
+                      {questionsOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
@@ -658,9 +257,9 @@ export default function ExamDetail({
             </div>
           </div>
 
-          {/* 아래쪽: 좌우 그리드 (차트 | 학생 목록) */}
+          {/* Grid: Charts | Student List */}
           <div className="grid gap-6 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_500px]">
-            {/* 왼쪽: 차트 */}
+            {/* Charts */}
             <div className="space-y-4">
               {analyticsData && !analyticsLoading && (
                 <ExamAnalyticsCard
@@ -668,18 +267,10 @@ export default function ExamDetail({
                   averageQuestions={analyticsData.averageQuestions || 0}
                   averageAnswerLength={analyticsData.averageAnswerLength || 0}
                   averageExamDuration={analyticsData.averageExamDuration || 0}
-                  scoreDistribution={
-                    analyticsData.statistics?.scoreDistribution || []
-                  }
-                  questionCountDistribution={
-                    analyticsData.statistics?.questionCountDistribution || []
-                  }
-                  answerLengthDistribution={
-                    analyticsData.statistics?.answerLengthDistribution || []
-                  }
-                  examDurationDistribution={
-                    analyticsData.statistics?.examDurationDistribution || []
-                  }
+                  scoreDistribution={analyticsData.statistics?.scoreDistribution || []}
+                  questionCountDistribution={analyticsData.statistics?.questionCountDistribution || []}
+                  answerLengthDistribution={analyticsData.statistics?.answerLengthDistribution || []}
+                  examDurationDistribution={analyticsData.statistics?.examDurationDistribution || []}
                   stageAnalysis={analyticsData.stageAnalysis}
                   rubricAnalysis={analyticsData.rubricAnalysis}
                   questionTypeAnalysis={analyticsData.questionTypeAnalysis}
@@ -692,9 +283,9 @@ export default function ExamDetail({
               )}
             </div>
 
-            {/* 오른쪽: 학생 목록 */}
+            {/* Student List */}
             <div className="space-y-4">
-              {/* 검색 및 필터링 */}
+              {/* Search & Sort */}
               <div className="flex flex-col sm:flex-row gap-4">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -705,10 +296,7 @@ export default function ExamDetail({
                     className="pl-9"
                   />
                 </div>
-                <Select
-                  value={sortOption}
-                  onValueChange={(v) => setSortOption(v as SortOption)}
-                >
+                <Select value={sortOption} onValueChange={(v) => setSortOption(v as SortOption)}>
                   <SelectTrigger className="w-full sm:w-[200px]">
                     <SelectValue placeholder="정렬 기준" />
                   </SelectTrigger>
@@ -721,7 +309,7 @@ export default function ExamDetail({
                 </Select>
               </div>
 
-              {/* 최종 채점 학생 목록 - 교수가 실제로 채점한 경우만 표시 */}
+              {/* Graded students */}
               {loading || analyticsLoading || !exam ? (
                 <div className="border rounded-lg flex flex-col max-h-[300px]">
                   <div className="p-4 border-b bg-muted/50 flex-shrink-0">
@@ -738,12 +326,8 @@ export default function ExamDetail({
                 gradedStudents.length > 0 && (
                   <div className="border rounded-lg flex flex-col max-h-[300px]">
                     <div className="p-4 border-b bg-muted/50 flex-shrink-0">
-                      <h3 className="font-semibold">
-                        최종 채점 완료 ({gradedStudents.length}명)
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        교수가 최종 채점한 학생 (점수 순)
-                      </p>
+                      <h3 className="font-semibold">최종 채점 완료 ({gradedStudents.length}명)</h3>
+                      <p className="text-sm text-muted-foreground">교수가 최종 채점한 학생 (점수 순)</p>
                     </div>
                     <div className="divide-y overflow-y-auto flex-1">
                       {gradedStudents.map((student) => (
@@ -762,7 +346,7 @@ export default function ExamDetail({
                 )
               )}
 
-              {/* 가채점 학생 목록 */}
+              {/* Non-graded students */}
               <div className="border rounded-lg flex flex-col h-[calc(100vh-400px)] min-h-[600px]">
                 <div className="p-4 border-b bg-muted/50 flex-shrink-0">
                   <h3 className="font-semibold">
@@ -817,9 +401,7 @@ export default function ExamDetail({
           {monitoringStudent && monitoringSessionId && (
             <StudentLiveMonitoring
               open={monitoringSessionId !== null}
-              onOpenChange={(open: boolean) => {
-                if (!open) handleCloseMonitoring();
-              }}
+              onOpenChange={(open: boolean) => { if (!open) handleCloseMonitoring(); }}
               sessionId={monitoringSessionId}
               studentName={monitoringStudent.name}
               studentNumber={monitoringStudent.student_number}
@@ -829,219 +411,5 @@ export default function ExamDetail({
         </div>
       </SidebarInset>
     </SidebarProvider>
-  );
-}
-
-function buildInstructorExamContext(exam: Exam, questions: Question[] = []) {
-  const total = exam.students?.length ?? 0;
-  const completed = exam.students?.filter(
-    (s) => s.status === "completed"
-  ).length;
-  const inProgress = exam.students?.filter(
-    (s) => s.status === "in-progress"
-  ).length;
-  const notStarted = exam.students?.filter(
-    (s) => s.status === "not-started"
-  ).length;
-  const graded = exam.students?.filter((s) => s.isGraded).length ?? 0;
-  const hasScores = exam.students?.filter(
-    (s) => typeof s.score === "number"
-  ).length;
-
-  const questionsPreview = questions
-    .slice(0, 12)
-    .map((q, i) => `${i + 1}. (${q.type}) ${q.text}`)
-    .join("\n");
-
-  return [
-    `시험 제목: ${exam.title}`,
-    `시험 코드: ${exam.code}`,
-    `시험 상태: ${exam.status}`,
-    `시험 시간: ${exam.duration}분`,
-    exam.description ? `시험 설명: ${exam.description}` : "",
-    `문항 수: ${questions.length}`,
-    questionsPreview ? `문항(일부):\n${questionsPreview}` : "",
-    `학생 수: ${total} (완료 ${completed}, 진행중 ${inProgress}, 미시작 ${notStarted})`,
-    `최종채점 완료: ${graded}`,
-    `가채점 점수 보유: ${hasScores}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-// Student List Item Skeleton Component
-function StudentListItemSkeleton() {
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4">
-      <div className="flex items-start gap-4 min-w-0 flex-1">
-        <Skeleton className="h-10 w-10 rounded-full flex-shrink-0" />
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex items-center gap-2">
-            <Skeleton className="h-5 w-24" />
-            <Skeleton className="h-5 w-16 rounded-full" />
-          </div>
-          <Skeleton className="h-4 w-32" />
-          <Skeleton className="h-3 w-40" />
-        </div>
-      </div>
-      <div className="flex items-center gap-2 sm:gap-4 self-end sm:self-auto flex-shrink-0">
-        <div className="text-right min-w-[100px] sm:min-w-[120px] space-y-1">
-          <Skeleton className="h-6 w-12 ml-auto" />
-          <Skeleton className="h-3 w-16 ml-auto" />
-        </div>
-        <Skeleton className="h-8 w-16 sm:w-20" />
-      </div>
-    </div>
-  );
-}
-
-// Student List Item Component
-function StudentListItem({
-  student,
-  examId,
-  onLiveMonitoring,
-  getStudentStatusColor,
-  showFinalScore,
-  analyticsData,
-}: {
-  student: Student;
-  examId: string;
-  onLiveMonitoring: (student: Student) => void;
-  getStudentStatusColor: (status: string) => string;
-  showFinalScore: boolean;
-  analyticsData?: {
-    averageScore?: number;
-    averageQuestions?: number;
-    averageAnswerLength?: number;
-    averageExamDuration?: number;
-    standardDeviationScore?: number;
-    standardDeviationQuestions?: number;
-    standardDeviationAnswerLength?: number;
-    standardDeviationExamDuration?: number;
-  } | null;
-}) {
-  const router = useRouter();
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-4 hover:bg-muted/50 transition-colors overflow-hidden">
-      <div className="flex items-start gap-4 min-w-0 flex-1">
-        <Avatar className="h-10 w-10 border flex-shrink-0">
-          <AvatarFallback className="bg-primary/10 text-primary font-medium">
-            {student.name.slice(-2)}
-          </AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h4 className="font-medium leading-none truncate">
-              {student.name}
-            </h4>
-            <Badge
-              variant="secondary"
-              className={`text-xs font-normal flex-shrink-0 ${getStudentStatusColor(
-                student.status
-              )}`}
-            >
-              {student.status === "in-progress" && (
-                <span className="relative flex h-2 w-2 mr-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-600 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-600"></span>
-                </span>
-              )}
-              {student.status === "completed"
-                ? "완료"
-                : student.status === "in-progress"
-                ? "진행 중"
-                : "시작 안함"}
-            </Badge>
-          </div>
-          <div className="text-sm text-muted-foreground mt-1 truncate">
-            {student.email}
-          </div>
-          {(student.student_number || student.school) && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-              {student.student_number && <span>{student.student_number}</span>}
-              {student.student_number && student.school && (
-                <span className="text-muted-foreground/50">•</span>
-              )}
-              {student.school && <span>{student.school}</span>}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 sm:gap-4 self-end sm:self-auto flex-shrink-0">
-        <div className="text-right min-w-[100px] sm:min-w-[120px]">
-          {showFinalScore && student.finalScore !== undefined ? (
-            <div className="flex flex-col items-end">
-              <span className="font-semibold text-lg text-primary">
-                {student.finalScore}점
-              </span>
-              <span className="text-xs text-muted-foreground">최종 점수</span>
-            </div>
-          ) : student.score !== undefined && student.score !== null ? (
-            <div className="flex flex-col items-end">
-              <span className="font-semibold text-lg">{student.score}점</span>
-              <span className="text-xs text-muted-foreground">가채점</span>
-              {student.status === "completed" && student.submittedAt && (
-                <span className="text-xs text-muted-foreground">
-                  {new Date(student.submittedAt).toLocaleDateString("ko-KR")}
-                </span>
-              )}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {student.status === "in-progress" && (
-            <AnimateIcon animateOnHover={true} loop={true} asChild>
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-green-600 border-green-600 hover:bg-green-50 h-8 px-2 sm:px-3 text-xs sm:text-sm whitespace-nowrap"
-                onClick={() => onLiveMonitoring(student)}
-              >
-                <Radio size={14} className="sm:mr-1" />
-                <span className="hidden sm:inline">보기</span>
-              </Button>
-            </AnimateIcon>
-          )}
-          {student.status === "completed" && (
-            <AnimateIcon
-              animateOnHover={true}
-              loop={true}
-              loopDelay={700}
-              asChild
-            >
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-blue-600 border-blue-600 hover:bg-blue-50 h-8 px-2 sm:px-3 text-xs sm:text-sm whitespace-nowrap"
-                onClick={() => {
-                  // 통계 데이터를 URL 쿼리 파라미터로 전달
-                  const params = new URLSearchParams();
-                  if (analyticsData) {
-                    params.set("avgScore", String(analyticsData.averageScore || 0));
-                    params.set("avgQuestions", String(analyticsData.averageQuestions || 0));
-                    params.set("avgAnswerLength", String(analyticsData.averageAnswerLength || 0));
-                    params.set("avgExamDuration", String(analyticsData.averageExamDuration || 0));
-                    // 표준편차 추가
-                    params.set("stdDevScore", String(analyticsData.standardDeviationScore || 0));
-                    params.set("stdDevQuestions", String(analyticsData.standardDeviationQuestions || 0));
-                    params.set("stdDevAnswerLength", String(analyticsData.standardDeviationAnswerLength || 0));
-                    params.set("stdDevExamDuration", String(analyticsData.standardDeviationExamDuration || 0));
-                  }
-                  const queryString = params.toString();
-                  router.push(`/instructor/${examId}/grade/${student.id}${queryString ? `?${queryString}` : ""}`);
-                }}
-              >
-                <ClipboardCheck size={14} className="sm:mr-1" />
-                <span className="hidden sm:inline">
-                  {showFinalScore ? "재채점" : "채점"}
-                </span>
-              </Button>
-            </AnimateIcon>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }

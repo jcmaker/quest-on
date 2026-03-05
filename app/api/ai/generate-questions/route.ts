@@ -7,6 +7,7 @@ import { generateCaseQuestionsSchema, validateRequest } from "@/lib/validations"
 import { buildCaseQuestionGenerationPrompt } from "@/lib/prompts";
 import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
 import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 const MATERIALS_CHAR_LIMIT = 8000;
 const GENERATION_TIMEOUT_MS = 60_000;
@@ -22,6 +23,12 @@ export async function POST(request: NextRequest) {
     const role = (user.unsafeMetadata?.role as string) || "student";
     if (role !== "instructor") {
       return errorJson("FORBIDDEN", "교수자만 문제를 생성할 수 있습니다.", 403);
+    }
+
+    // Rate limit: expensive OpenAI call
+    const rl = await checkRateLimitAsync(`ai:generate-questions:${user.id}`, RATE_LIMITS.ai);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please wait.", 429);
     }
 
     // Validate body

@@ -8,6 +8,7 @@ import { openai, AI_MODEL } from "@/lib/openai";
 import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 const supabase = getSupabaseServer();
 
@@ -21,6 +22,12 @@ export async function POST(request: NextRequest) {
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Forbidden", 403);
+    }
+
+    // Rate limit: expensive OpenAI summary generation
+    const rl = await checkRateLimitAsync(`ai:generate-summary:${user.id}`, RATE_LIMITS.ai);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please wait.", 429);
     }
 
     const body = await request.json();
@@ -59,7 +66,7 @@ export async function POST(request: NextRequest) {
     // Fetch submissions
     const { data: submissions, error: submissionsError } = await supabase
       .from("submissions")
-      .select("*")
+      .select("q_idx, answer, compressed_answer_data")
       .eq("session_id", sessionId);
 
     if (submissionsError) {

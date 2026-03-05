@@ -10,6 +10,7 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
 import { sanitizeUserInput } from "@/lib/sanitize";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -29,10 +30,29 @@ export async function POST(request: NextRequest) {
       return errorJson("BAD_REQUEST", "Missing required fields", 400);
     }
 
+    // Rate limit: submission triggers expensive auto-grading
+    const rl = await checkRateLimitAsync(`submission:${user.id}`, RATE_LIMITS.submission);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many submissions. Please wait.", 429);
+    }
+
+    // Validate answer count and individual answer length
+    const MAX_ANSWERS = 50;
+    const MAX_ANSWER_LENGTH = 100_000;
+    if (answers.length > MAX_ANSWERS) {
+      return errorJson("BAD_REQUEST", "Too many answers", 400);
+    }
+    for (const a of answers) {
+      const text = typeof a === "string" ? a : (a as Record<string, unknown>)?.text || "";
+      if (typeof text === "string" && text.length > MAX_ANSWER_LENGTH) {
+        return errorJson("BAD_REQUEST", "Answer too long", 400);
+      }
+    }
+
     // Validate exam submission from Supabase
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("*")
+      .select("id, code, status, duration")
       .eq("code", examCode)
       .single();
 
@@ -40,8 +60,8 @@ export async function POST(request: NextRequest) {
       return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
-    // Check if exam allows submission (draft, active, or running after instructor started)
-    const allowedStatuses = ["active", "draft", "running"];
+    // Check if exam allows submission (active or running after instructor started)
+    const allowedStatuses = ["active", "running"];
     if (!exam.status || !allowedStatuses.includes(exam.status)) {
       return errorJson("BAD_REQUEST", "Exam is no longer active", 400);
     }

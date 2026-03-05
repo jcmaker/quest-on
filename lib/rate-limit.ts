@@ -189,4 +189,12 @@ export const RATE_LIMITS = {
   upload: { limit: 10, windowSec: 60 } satisfies RateLimitConfig,
   /** AI endpoints (expensive): 20 requests per minute per user */
   ai: { limit: 20, windowSec: 60 } satisfies RateLimitConfig,
+  /** Session/data read endpoints: 30 requests per minute per user */
+  sessionRead: { limit: 30, windowSec: 60 } satisfies RateLimitConfig,
+  /** Exam control (start/end): 10 requests per minute per user */
+  examControl: { limit: 10, windowSec: 60 } satisfies RateLimitConfig,
+  /** Public search endpoints (IP-based): 20 requests per minute */
+  publicSearch: { limit: 20, windowSec: 60 } satisfies RateLimitConfig,
+  /** Submission endpoints (expensive: triggers auto-grading): 5 requests per minute */
+  submission: { limit: 5, windowSec: 60 } satisfies RateLimitConfig,
 } as const;

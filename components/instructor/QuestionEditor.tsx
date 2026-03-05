@@ -1,7 +1,11 @@
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import dynamic from "next/dynamic";
+const RichTextEditor = dynamic(
+  () => import("@/components/ui/rich-text-editor").then(mod => mod.RichTextEditor),
+  { ssr: false, loading: () => <div className="h-[200px] animate-pulse bg-muted rounded-md" /> }
+);
 import {
   Select,
   SelectContent,

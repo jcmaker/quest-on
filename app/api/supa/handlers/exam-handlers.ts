@@ -487,7 +487,7 @@ export async function copyExam(data: { exam_id: string }) {
     // Get the original exam
     const { data: originalExam, error: examError } = await supabase
       .from("exams")
-      .select("*")
+      .select("id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at")
       .eq("id", data.exam_id)
       .eq("instructor_id", user.id)
       .single();
@@ -499,7 +499,7 @@ export async function copyExam(data: { exam_id: string }) {
     // Get the original exam node to preserve parent folder
     const { data: originalNode, error: nodeError } = await supabase
       .from("exam_nodes")
-      .select("*")
+      .select("id, parent_id, sort_order")
       .eq("exam_id", data.exam_id)
       .eq("instructor_id", user.id)
       .single();
