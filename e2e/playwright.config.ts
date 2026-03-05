@@ -5,6 +5,9 @@ import dotenv from "dotenv";
 // Load test environment variables
 dotenv.config({ path: path.resolve(__dirname, "../.env.test") });
 
+const PORT = process.env.E2E_PORT ?? "3000";
+const BASE_URL = `http://localhost:${PORT}`;
+
 export default defineConfig({
   testDir: ".",
   timeout: 30_000,
@@ -39,7 +42,7 @@ export default defineConfig({
       fullyParallel: true,
       workers: process.env.CI ? 4 : 2,
       use: {
-        baseURL: "http://localhost:3000",
+        baseURL: BASE_URL,
         extraHTTPHeaders: {
           Accept: "application/json",
         },
@@ -50,7 +53,7 @@ export default defineConfig({
       testDir: "./browser",
       testIgnore: ["**/flows/**"],
       use: {
-        baseURL: "http://localhost:3000",
+        baseURL: BASE_URL,
         browserName: "chromium",
         screenshot: "only-on-failure",
         trace: "retain-on-failure",
@@ -60,7 +63,7 @@ export default defineConfig({
       name: "browser-flows",
       testDir: "./browser/flows",
       use: {
-        baseURL: "http://localhost:3000",
+        baseURL: BASE_URL,
         browserName: "chromium",
         screenshot: "only-on-failure",
         trace: "retain-on-failure",
@@ -69,8 +72,8 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
+    command: `npm run dev -- -p ${PORT}`,
+    url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,
     env: {
