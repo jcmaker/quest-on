@@ -208,6 +208,7 @@ export async function initExamSession(data: {
       exactDeviceMatch || claimableLegacySession || null;
 
     let session = existingSession;
+    let sessionReactivated = false;
     let messages: Array<{
       type: "user" | "assistant";
       message: string;
@@ -216,6 +217,10 @@ export async function initExamSession(data: {
     }> = [];
 
     if (existingSession && !existingSession.submitted_at) {
+      // Detect reactivation: session existed but was inactive
+      if (!existingSession.is_active) {
+        sessionReactivated = true;
+      }
       // ✅ Gate 방식: 세션 상태 확인 및 타이머 계산
       const sessionStatus = existingSession.status || "not_joined";
 
@@ -426,6 +431,7 @@ export async function initExamSession(data: {
           : Math.floor(timeRemaining / 1000), // 초 단위
       sessionStatus, // 세션 상태 반환 (Waiting Room 표시용)
       gateStarted: examStatus === "running" && startedAt !== null && nowTime >= startedAt, // 시험 시작 여부
+      sessionReactivated, // 세션 복원 여부 (브라우저 닫기 후 재진입 시)
     });
   } catch (error) {
     logError("[initExamSession] Failed to initialize exam session", error, { path: "/api/supa/session-handlers" });
@@ -492,8 +498,6 @@ export async function submitExam(data: {
         const answerObj = answer as Record<string, unknown>;
         const submissionData = {
           answer: answerObj.text || answer,
-          feedback: data.feedback,
-          studentReply: data.feedbackResponses?.[index],
         };
 
         const compressedSubmissionData = compressData(submissionData);
@@ -502,8 +506,6 @@ export async function submitExam(data: {
           session_id: data.sessionId,
           q_idx: index,
           answer: answerObj.text || answer,
-          ai_feedback: data.feedback ? { feedback: data.feedback } : null,
-          student_reply: data.feedbackResponses?.[index],
           compressed_answer_data: compressedSubmissionData.data,
           compression_metadata: compressedSubmissionData.metadata,
         };

@@ -28,7 +28,6 @@ import { CopyProtector } from "@/components/exam/CopyProtector";
 import { Kbd } from "@/components/ui/kbd";
 import {
   SubmissionOverlay,
-  ChatLoadingIndicator,
 } from "@/components/exam/ExamLoading";
 
 interface Question {
@@ -66,27 +65,13 @@ export default function AnswerSubmission() {
   const [startQuestion, setStartQuestion] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [feedback, setFeedback] = useState<string>("");
 
-  // 채팅 관련 상태
-  const [chatMessages, setChatMessages] = useState<
-    Array<{
-      type: "ai" | "student";
-      content: string;
-      timestamp: string;
-    }>
-  >([]);
-  const [chatMessage, setChatMessage] = useState("");
-
-  const [isChatMode] = useState(false);
-  const [conversationEnded, setConversationEnded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loadedChatHistory, setLoadedChatHistory] = useState<
     Array<{ type: "user" | "assistant"; message: string; timestamp: string }>
   >([]);
-  const [isTyping, setIsTyping] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -301,17 +286,6 @@ export default function AnswerSubmission() {
 
         // Store for display in left panel
         setLoadedChatHistory(parsedChatHistory);
-
-        // Convert chat history format to match the expected format
-        const convertedChatHistory = parsedChatHistory.map(
-          (msg: Record<string, unknown>) => ({
-            type: msg.type === "user" ? "student" : "ai",
-            content: msg.message || msg.content,
-            timestamp: msg.timestamp,
-          })
-        );
-
-        setChatMessages(convertedChatHistory);
       } catch {
         // Chat history parse failure is non-critical
       }
@@ -456,62 +430,48 @@ export default function AnswerSubmission() {
     return textContent.length === 0;
   };
 
-  // Helper function to get text content length from HTML
-  const getTextLength = (html: string): number => {
-    if (!html) return 0;
-    return html.replace(/<[^>]*>/g, "").length;
-  };
+  // Handle paste event for logging
+  const handlePaste = useCallback(
+    async (pasteData: {
+      pastedText: string;
+      pasteStart: number;
+      pasteEnd: number;
+      answerLengthBefore: number;
+      answerTextBefore: string;
+      isInternal: boolean;
+    }) => {
+      const {
+        pastedText,
+        pasteStart,
+        pasteEnd,
+        answerLengthBefore,
+        isInternal,
+      } = pasteData;
 
-  // 채팅 메시지 전송
-  const sendChatMessage = async () => {
-    if (isHtmlEmpty(chatMessage)) return;
-
-    const studentMessage = {
-      type: "student" as const,
-      content: chatMessage,
-      timestamp: new Date().toISOString(),
-    };
-
-    setChatMessages((prev) => [...prev, studentMessage]);
-    const replyContent = chatMessage; // 저장하기 전에 메시지 복사
-    setChatMessage("");
-    setIsTyping(true);
-
-    // 학생의 반박 메시지를 데이터베이스에 저장
-    if (sessionId && startQuestion !== undefined) {
+      // Log to server
       try {
-        // Sanitize HTML before sending
-        const sanitizedReply = replyContent.replace(/\u0000/g, "");
-
-        const response = await fetch("/api/submission/reply", {
+        await fetch("/api/log/paste", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            studentReply: sanitizedReply,
+            length: pastedText.length,
+            pasted_text: pastedText,
+            paste_start: pasteStart,
+            paste_end: pasteEnd,
+            answer_length_before: answerLengthBefore,
+            isInternal,
+            ts: Date.now(),
+            examCode,
+            questionId: exam?.questions[currentQuestion]?.id,
             sessionId: sessionId,
-            qIdx: startQuestion,
           }),
         });
-
-        // Response handling: no action needed on success or failure
-        // The reply is sent best-effort; the UI has already updated
       } catch {
-        // Reply save failure is non-critical
+        // Paste logging failure is non-critical
       }
-    }
-
-    // 학생 답변 즉시 "수고하셨습니다" 메시지 표시
-    setTimeout(() => {
-      setIsTyping(false);
-      const completionMessage = {
-        type: "ai" as const,
-        content: "exam_completed", // 특별한 식별자로 사용
-        timestamp: new Date().toISOString(),
-      };
-      setChatMessages((prev) => [...prev, completionMessage]);
-      setConversationEnded(true);
-    }, 500); // 0.5초 후에 메시지 표시
-  };
+    },
+    [examCode, exam, currentQuestion, sessionId]
+  );
 
   const handleSubmit = async () => {
     if (!exam) return;
@@ -547,15 +507,12 @@ export default function AnswerSubmission() {
           examCode,
           answers: sanitizedAnswers,
           examId: exam.id,
-          sessionId: sessionId, // 세션 ID 추가
-          chatHistory: chatMessages,
+          sessionId: sessionId,
           studentId: user?.id,
         }),
       });
 
       if (response.ok) {
-        const data = await response.json();
-        setFeedback(data.feedback);
         setIsSubmitted(true);
       } else if (response.status === 409) {
         // 이미 제출된 경우 성공으로 처리
@@ -604,49 +561,6 @@ export default function AnswerSubmission() {
       setIsSubmitting(false);
     }
   };
-
-  // Handle paste event for logging
-  const handlePaste = useCallback(
-    async (pasteData: {
-      pastedText: string;
-      pasteStart: number;
-      pasteEnd: number;
-      answerLengthBefore: number;
-      answerTextBefore: string;
-      isInternal: boolean;
-    }) => {
-      const {
-        pastedText,
-        pasteStart,
-        pasteEnd,
-        answerLengthBefore,
-        isInternal,
-      } = pasteData;
-
-      // Log to server
-      try {
-        await fetch("/api/log/paste", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            length: pastedText.length,
-            pasted_text: pastedText,
-            paste_start: pasteStart,
-            paste_end: pasteEnd,
-            answer_length_before: answerLengthBefore,
-            isInternal,
-            ts: Date.now(),
-            examCode,
-            questionId: exam?.questions[currentQuestion]?.id,
-            sessionId: sessionId,
-          }),
-        });
-      } catch {
-        // Paste logging failure is non-critical
-      }
-    },
-    [examCode, exam, currentQuestion, sessionId]
-  );
 
   if (isLoading) {
     return (
@@ -713,188 +627,39 @@ export default function AnswerSubmission() {
   }
 
   if (isSubmitted) {
-    // 채팅 모드가 아닐 때는 기존의 성공 메시지 표시
-    if (!isChatMode) {
-      return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
-          {/* Header */}
-          <ExamHeader
-            examCode={examCode}
-            duration={exam?.duration ?? 60}
-            currentStep="answer"
-            user={user}
-          />
-          <div className="container mx-auto px-4 py-16">
-            <Card className="max-w-2xl mx-auto">
-              <CardHeader className="text-center">
-                <CardTitle className="text-2xl text-green-600">
-                  답안이 성공적으로 제출되었습니다!
-                </CardTitle>
-                <CardDescription>
-                  수고하셨습니다. 시험이 종료되었습니다.
-                  {/* 이제 AI 피드백 테스트를 시작할 수 있습니다. */}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="text-center">
-                  <p className="text-muted-foreground mb-4">
-                    제출이 완료되었습니다.
-                    {/* AI가 답안을 분석하여 피드백을 제공합니다.
-                    <br />
-                    질문을 통해 더 깊이 있는 학습을 할 수 있습니다. */}
-                  </p>
-                  <Button
-                    onClick={() => router.push("/student")}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    메인으로 돌아가기
-                  </Button>
-                  {/* <Button
-                    onClick={startChatMode}
-                    className="bg-blue-600 hover:bg-blue-700"
-                  >
-                    Feedback 테스트
-                  </Button> */}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      );
-    }
-
-    // 채팅 모드일 때는 Resizable 레이아웃 표시
     return (
-      <div className="h-screen flex flex-col bg-background">
-        {/* Top Header */}
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col">
+        {/* Header */}
         <ExamHeader
           examCode={examCode}
-          duration={exam?.duration || 60}
+          duration={exam?.duration ?? 60}
           currentStep="answer"
           user={user}
         />
-
-        {/* Main Content - Resizable Layout */}
-        <div className="flex-1 min-h-0">
-          <ResizablePanelGroup direction="horizontal" className="h-full">
-            {/* Left Side - Feedback Content */}
-            <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
-              <div className="bg-background border-r flex flex-col h-full overflow-y-auto">
-                <div className="p-6 space-y-6">
-                  <div>
-                    <div className="mb-4">
-                      <div className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                        AI 피드백
-                      </div>
-                    </div>
-
-                    {/* Feedback Content */}
-                    {feedback ? (
-                      <div className="bg-muted/50 p-6 rounded-lg">
-                        <h3 className="font-semibold mb-4 text-lg">
-                          답안에 대한 피드백
-                        </h3>
-                        <AIMessageRenderer
-                          content={feedback}
-                          timestamp={new Date().toISOString()}
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-center p-12">
-                        <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-                          <MessageCircle className="w-8 h-8 text-primary" />
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          피드백을 불러오는 중입니다...
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+        <div className="container mx-auto px-4 py-16">
+          <Card className="max-w-2xl mx-auto">
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl text-green-600">
+                답안이 성공적으로 제출되었습니다!
+              </CardTitle>
+              <CardDescription>
+                수고하셨습니다. 시험이 종료되었습니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="text-center">
+                <p className="text-muted-foreground mb-4">
+                  제출이 완료되었습니다.
+                </p>
+                <Button
+                  onClick={() => router.push("/student")}
+                  className="bg-blue-600 hover:bg-blue-700"
+                >
+                  메인으로 돌아가기
+                </Button>
               </div>
-            </ResizablePanel>
-
-            {/* Resizable Handle */}
-            <ResizableHandle withHandle />
-
-            {/* Right Side - Reply Input */}
-            <ResizablePanel defaultSize={50} minSize={30} maxSize={70}>
-              <div className="bg-background flex flex-col h-full">
-                {/* Response Area */}
-                <div className="flex-1 overflow-y-auto p-6">
-                  {conversationEnded ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-                      <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                        <svg
-                          className="w-8 h-8 text-green-600"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M5 13l4 4L19 7"
-                          />
-                        </svg>
-                      </div>
-                      <p className="text-xl font-semibold text-green-700 dark:text-green-300">
-                        수고하셨습니다! 🎉
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        시험이 완료되었습니다.
-                      </p>
-                      <Button
-                        onClick={() => (window.location.href = "/student")}
-                        className="bg-green-600 hover:bg-green-700 px-6 py-2"
-                      >
-                        시험 종료하기
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div>
-                        <Label className="text-base font-semibold">
-                          피드백에 대한 답변
-                        </Label>
-                        <p className="text-sm text-muted-foreground mt-1 mb-4">
-                          AI 피드백을 읽고 자유롭게 답변하세요.
-                        </p>
-                      </div>
-
-                      <AnswerTextarea
-                        placeholder="피드백에 대한 답변을 작성하세요..."
-                        value={chatMessage}
-                        onChange={(value) => setChatMessage(value)}
-                      />
-
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-muted-foreground">
-                          {getTextLength(chatMessage)} 글자
-                        </p>
-                        <Button
-                          onClick={sendChatMessage}
-                          disabled={isTyping || isHtmlEmpty(chatMessage)}
-                          size="lg"
-                          className="px-8"
-                        >
-                          {isTyping ? "처리 중..." : "제출하기"}
-                        </Button>
-                      </div>
-
-                      {/* Reply Loading Indicator */}
-                      {isTyping && (
-                        <div className="mt-4 flex justify-start">
-                          <ChatLoadingIndicator isTyping={isTyping} />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </ResizablePanel>
-          </ResizablePanelGroup>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );

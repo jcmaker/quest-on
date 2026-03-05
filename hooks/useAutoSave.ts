@@ -35,7 +35,9 @@ export function useAutoSave({
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const consecutiveFailures = useRef(0);
+  const wasOfflineRef = useRef(false);
 
   const saveDrafts = useCallback(
     async (answers: DraftAnswer[]) => {
@@ -83,6 +85,30 @@ export function useAutoSave({
   // Manual save (wraps current draftAnswers)
   const manualSave = useCallback(async () => {
     await saveDrafts(draftAnswers);
+  }, [saveDrafts, draftAnswers]);
+
+  // Network status detection — trigger immediate save on reconnect
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (wasOfflineRef.current) {
+        wasOfflineRef.current = false;
+        // Immediate save on reconnect
+        saveDrafts(draftAnswers);
+      }
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      wasOfflineRef.current = true;
+    };
+
+    setIsOnline(navigator.onLine);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
   }, [saveDrafts, draftAnswers]);
 
   // Keyboard shortcut (Ctrl+S / Cmd+S)
@@ -173,6 +199,7 @@ export function useAutoSave({
     lastSaved,
     isSaving,
     saveError,
+    isOnline,
     manualSave,
     updateAnswer,
     saveViaBeacon,

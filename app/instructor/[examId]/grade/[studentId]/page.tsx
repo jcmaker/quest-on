@@ -97,11 +97,8 @@ interface Submission {
   id: string;
   q_idx: number;
   answer: string;
-  ai_feedback?: Record<string, unknown>;
-  student_reply?: string;
   decompressed?: {
     answerData?: Record<string, unknown>;
-    feedbackData?: Record<string, unknown>;
   };
 }
 

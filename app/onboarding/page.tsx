@@ -13,12 +13,23 @@ import {
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function OnboardingPage() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
   const [role, setRole] = useState<"instructor" | "student">("student");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   // Get role from localStorage if available
   useEffect(() => {
@@ -47,8 +58,14 @@ export default function OnboardingPage() {
       // Clear localStorage after successful role update
       localStorage.removeItem("selectedRole");
 
-      // Redirect based on role
-      if (role === "instructor") {
+      // Check for redirect URL (deep link preservation)
+      const params = new URLSearchParams(window.location.search);
+      const redirectUrl = params.get("redirect") || localStorage.getItem("onboarding_redirect");
+      localStorage.removeItem("onboarding_redirect");
+
+      if (redirectUrl && redirectUrl.startsWith("/")) {
+        router.push(redirectUrl);
+      } else if (role === "instructor") {
         router.push("/instructor");
       } else {
         router.push("/student");
@@ -108,7 +125,7 @@ export default function OnboardingPage() {
           </RadioGroup>
 
           <Button
-            onClick={handleRoleSubmit}
+            onClick={() => setShowConfirm(true)}
             className="w-full h-12 text-lg"
             disabled={isSubmitting}
           >
@@ -116,6 +133,26 @@ export default function OnboardingPage() {
           </Button>
         </CardContent>
       </Card>
+
+      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>역할을 확인해주세요</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold text-foreground">
+                {role === "instructor" ? "강사 (시험 출제자)" : "학생 (시험 응시자)"}
+              </span>
+              (으)로 시작합니다. 역할 선택 후에도 프로필 설정에서 변경할 수 있습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>다시 선택하기</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRoleSubmit}>
+              확인
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

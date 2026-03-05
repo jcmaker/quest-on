@@ -31,8 +31,18 @@ export function WaitingRoom({
   questionCount,
 }: WaitingRoomProps) {
   const [isWaiting, setIsWaiting] = useState(true);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const onGateStartRef = useRef(onGateStart);
   onGateStartRef.current = onGateStart;
+
+  // Elapsed time counter
+  useEffect(() => {
+    if (!isWaiting) return;
+    const interval = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isWaiting]);
 
   // Lightweight status check (used for fallback polling only)
   const checkExamStatus = useCallback(async () => {
@@ -90,15 +100,15 @@ export function WaitingRoom({
     };
   }, [examId, isWaiting, checkExamStatus]);
 
-  // Fallback polling: 30-second interval (instead of 3-second)
+  // Fallback polling: 10-second interval for faster exam start detection
   useEffect(() => {
     if (!sessionId || !examId || !isWaiting) return;
 
     // Initial check
     checkExamStatus();
 
-    // 30-second fallback polling
-    const interval = setInterval(checkExamStatus, 30000);
+    // 10-second fallback polling
+    const interval = setInterval(checkExamStatus, 10000);
 
     return () => clearInterval(interval);
   }, [sessionId, examId, isWaiting, checkExamStatus]);
@@ -188,9 +198,14 @@ export function WaitingRoom({
           )}
 
           {/* 상태 표시 */}
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>시험 시작 신호 대기 중...</span>
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>시험 시작 신호 대기 중...</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              대기 시간: {Math.floor(elapsedSeconds / 60)}분 {(elapsedSeconds % 60).toString().padStart(2, "0")}초
+            </div>
           </div>
         </CardContent>
       </Card>

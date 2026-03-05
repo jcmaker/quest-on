@@ -152,7 +152,7 @@ export function PreflightModal({
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="text-primary mt-0.5">•</span>
-                    <span>시험 중 페이지를 닫거나 새로고침하면 세션이 비활성화될 수 있습니다.</span>
+                    <span>시험 중 페이지를 닫아도 답안은 자동 저장됩니다. 같은 시험 코드로 다시 입장할 수 있습니다.</span>
                   </li>
                 </ul>
               </div>

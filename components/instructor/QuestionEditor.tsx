@@ -2,6 +2,13 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Hash, HelpCircle, Trash2 } from "lucide-react";
 import {
   Tooltip,
@@ -84,17 +91,21 @@ export function QuestionEditor({
               </TooltipContent>
             </Tooltip>
           </div>
-          <select
+          <Select
             value={question.type}
-            onChange={(e) => onUpdate(question.id, "type", e.target.value)}
-            className="w-full p-2 border rounded-md"
+            onValueChange={(value) => onUpdate(question.id, "type", value)}
           >
-            <option value="essay">Problem Solving Type</option>
-            <option value="short-answer">STEM Problem Type</option>
-            <option value="multiple-choice" disabled>
-              Type C
-            </option>
-          </select>
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="essay">Problem Solving Type</SelectItem>
+              <SelectItem value="short-answer">STEM Problem Type</SelectItem>
+              <SelectItem value="multiple-choice" disabled>
+                Type C
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-2">
           <div className="flex items-center gap-2">

@@ -69,10 +69,7 @@ export async function autoGradeSession(
       id,
       q_idx,
       answer,
-      ai_feedback,
-      student_reply,
       compressed_answer_data,
-      compressed_feedback_data,
       created_at
     `
     )
@@ -117,8 +114,6 @@ export async function autoGradeSession(
     number,
     {
       answer: string;
-      ai_feedback?: string;
-      student_reply?: string;
     }
   > = {};
 
@@ -138,17 +133,10 @@ export async function autoGradeSession(
     submissionsByQIdx.forEach((subs, qIdx) => {
       // 같은 q_idx에 여러 submission이 있으면:
       // 1. answer가 가장 긴 것 (더 완전한 답안)
-      // 2. ai_feedback이 있는 것
-      // 3. 가장 최신 것
+      // 2. 가장 최신 것
       const bestSubmission = subs.reduce((best, current) => {
         const bestAnswer = (best.answer as string) || "";
         const currentAnswer = (current.answer as string) || "";
-        const bestHasFeedback = !!best.ai_feedback;
-        const currentHasFeedback = !!current.ai_feedback;
-
-        // ai_feedback이 있는 것을 우선
-        if (currentHasFeedback && !bestHasFeedback) return current;
-        if (bestHasFeedback && !currentHasFeedback) return best;
 
         // answer가 더 긴 것을 우선
         if (currentAnswer.length > bestAnswer.length) return current;
@@ -180,32 +168,9 @@ export async function autoGradeSession(
         }
       }
 
-      // ai_feedback 처리 (JSON 객체일 수 있음)
-      let aiFeedback: string | undefined = undefined;
-      if (bestSubmission.ai_feedback) {
-        if (typeof bestSubmission.ai_feedback === "string") {
-          aiFeedback = bestSubmission.ai_feedback;
-        } else if (
-          typeof bestSubmission.ai_feedback === "object" &&
-          bestSubmission.ai_feedback !== null
-        ) {
-          // JSON 객체인 경우 feedback 필드 추출
-          const feedbackObj = bestSubmission.ai_feedback as {
-            feedback?: string;
-          };
-          aiFeedback = feedbackObj.feedback;
-        }
-      }
-
       submissionsByQuestion[qIdx] = {
         answer: answer || "",
-        ai_feedback: aiFeedback,
-        student_reply:
-          typeof bestSubmission.student_reply === "string"
-            ? bestSubmission.student_reply
-            : undefined,
       };
-
     });
   }
 

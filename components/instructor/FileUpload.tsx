@@ -8,7 +8,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { HelpCircle, Upload, FolderOpen } from "lucide-react";
+import { HelpCircle, Upload, FolderOpen, X } from "lucide-react";
 
 interface FileUploadProps {
   files: File[];
@@ -97,9 +97,6 @@ export function FileUpload({
                     ? "파일을 여기에 놓으세요"
                     : "파일을 드래그하거나 클릭하여 선택"}
                 </div>
-                <div className="text-xs">
-                  PPT, PDF, 워드, 엑셀, CSV, 한글, 이미지 파일
-                </div>
               </div>
             </div>
           </div>
@@ -134,10 +131,11 @@ export function FileUpload({
                       <Button
                         type="button"
                         variant="outline"
-                        size="sm"
+                        size="icon"
+                        className="size-8"
                         onClick={() => onRemoveExistingFile(file.index)}
                       >
-                        ✕
+                        <X className="w-4 h-4" />
                       </Button>
                     )}
                   </div>
@@ -175,10 +173,11 @@ export function FileUpload({
                       <Button
                         type="button"
                         variant="outline"
-                        size="sm"
+                        size="icon"
+                        className="size-8"
                         onClick={() => onRemoveFile(index)}
                       >
-                        ✕
+                        <X className="w-4 h-4" />
                       </Button>
                     </div>
                   );

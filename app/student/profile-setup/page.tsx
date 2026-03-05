@@ -28,6 +28,13 @@ interface University {
 export default function ProfileSetupPage() {
   const { user, isLoaded } = useUser();
   const router = useRouter();
+  const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+
+  // Read redirect param from URL (avoid useSearchParams Suspense requirement)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setRedirectUrl(params.get("redirect"));
+  }, []);
   const [name, setName] = useState("");
   const [studentNumber, setStudentNumber] = useState("");
   const [school, setSchool] = useState("");
@@ -179,8 +186,8 @@ export default function ProfileSetupPage() {
       const data = await response.json();
 
       if (response.ok) {
-        // 성공 시 학생 대시보드로 리다이렉트
-        router.push("/student");
+        // 성공 시 redirect URL이 있으면 해당 페이지로, 없으면 학생 대시보드로
+        router.push(redirectUrl || "/student");
       } else {
         setError(data.error || "프로필 저장에 실패했습니다.");
       }

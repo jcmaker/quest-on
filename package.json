@@ -78,6 +78,7 @@
     "radix-ui": "^1.4.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-grab": "^0.1.21",
     "react-hook-form": "^7.71.2",
     "react-hot-toast": "^2.6.0",
     "react-intersection-observer": "^10.0.0",

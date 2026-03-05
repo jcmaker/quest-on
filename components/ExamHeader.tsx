@@ -85,6 +85,24 @@ export function ExamHeader({
     }
   }, [sessionStartTime, initialTimeRemaining, duration, onTimeExpired]);
 
+  // Sync timer with server on heartbeat responses
+  useEffect(() => {
+    if (
+      duration === 0 ||
+      initialTimeRemaining === null ||
+      initialTimeRemaining === undefined ||
+      hasExpired
+    )
+      return;
+
+    // Only sync if there's a significant drift (>3 seconds) to avoid jitter
+    setTimeRemaining((prev) => {
+      if (prev === null) return Math.max(0, initialTimeRemaining);
+      const drift = Math.abs(prev - initialTimeRemaining);
+      return drift > 3 ? Math.max(0, initialTimeRemaining) : prev;
+    });
+  }, [initialTimeRemaining, duration, hasExpired]);
+
   // Timer countdown 및 시간 종료 체크
   useEffect(() => {
     // duration이 0(무제한)이면 타이머를 실행하지 않음
@@ -152,6 +170,11 @@ export function ExamHeader({
     return seconds <= threshold;
   };
 
+  // Check if time is in final minute (urgent)
+  const isTimeUrgent = (seconds: number): boolean => {
+    return seconds > 0 && seconds <= 60;
+  };
+
   return (
     <>
       <div className="bg-background/95 backdrop-blur-sm border-b flex-shrink-0">
@@ -191,16 +214,18 @@ export function ExamHeader({
               ) : (
                 timeRemaining !== null && (
                   <div
-                    className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+                    className={`inline-flex items-center rounded-lg font-semibold transition-all ${
                       hasExpired || timeRemaining <= 0
-                        ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                        ? "px-3 py-1.5 text-sm bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                        : isTimeUrgent(timeRemaining)
+                        ? "px-4 py-2 text-base bg-red-200 text-red-900 dark:bg-red-900/50 dark:text-red-200 animate-pulse ring-2 ring-red-400"
                         : isTimeCritical(timeRemaining)
-                        ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-                        : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+                        ? "px-3 py-1.5 text-sm bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 ring-1 ring-red-300"
+                        : "px-3 py-1.5 text-sm bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
                     }`}
                   >
                     <svg
-                      className="w-4 h-4 mr-2"
+                      className={`mr-2 ${isTimeUrgent(timeRemaining) ? "w-5 h-5" : "w-4 h-4"}`}
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"

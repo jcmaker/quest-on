@@ -84,10 +84,7 @@ export async function GET(
           id,
           q_idx,
           answer,
-          ai_feedback,
-          student_reply,
           compressed_answer_data,
-          compressed_feedback_data,
           compression_metadata,
           created_at
         `
@@ -197,7 +194,6 @@ export async function GET(
       submissions.forEach((submission: Record<string, unknown>) => {
         const qIdx = submission.q_idx as number;
         let decompressedAnswerData = null;
-        let decompressedFeedbackData = null;
 
         if (
           submission.compressed_answer_data &&
@@ -214,26 +210,10 @@ export async function GET(
           }
         }
 
-        if (
-          submission.compressed_feedback_data &&
-          typeof submission.compressed_feedback_data === "string"
-        ) {
-          try {
-            decompressedFeedbackData = decompressData(
-              submission.compressed_feedback_data as string
-            );
-          } catch (error) {
-            logError("Error decompressing feedback data", error, {
-              path: `/api/session/${sessionId}/grade`,
-            });
-          }
-        }
-
         submissionsByQuestion[qIdx] = {
           ...submission,
           decompressed: {
             answerData: decompressedAnswerData,
-            feedbackData: decompressedFeedbackData,
           },
         };
       });

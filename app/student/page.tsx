@@ -211,25 +211,12 @@ export default function StudentDashboard() {
     staleTime: 1000 * 60 * 1, // 1 minute stale time
   });
 
-  // Load more when in view
+  // Load more when in view (works with all filter/search states)
   useEffect(() => {
-    if (
-      inView &&
-      hasNextPage &&
-      !isFetchingNextPage &&
-      !searchQuery &&
-      filter === "all"
-    ) {
+    if (inView && hasNextPage && !isFetchingNextPage) {
       fetchNextPage();
     }
-  }, [
-    inView,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-    searchQuery,
-    filter,
-  ]);
+  }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // TanStack Query for Stats
   const { data: overallStats } = useQuery({

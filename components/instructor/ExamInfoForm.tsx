@@ -13,6 +13,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
 import { HelpCircle, AlertTriangle } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -41,8 +43,8 @@ export function ExamInfoForm({
   const isUnlimited = duration === 0;
   const showDurationWarning = !isUnlimited && duration > 0 && duration < 15;
 
-  const handleUnlimitedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.checked) {
+  const handleUnlimitedChange = (checked: boolean | "indeterminate") => {
+    if (checked === true) {
       onDurationChange(0); // 무제한 설정
       setDurationInput("");
     } else {
@@ -198,12 +200,10 @@ export function ExamInfoForm({
           <div className="space-y-3">
             {/* 무제한 체크박스 */}
             <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 id="unlimited"
                 checked={isUnlimited}
-                onChange={handleUnlimitedChange}
-                className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                onCheckedChange={handleUnlimitedChange}
               />
               <Label
                 htmlFor="unlimited"
@@ -230,21 +230,19 @@ export function ExamInfoForm({
                 />
                 <span className="text-sm text-muted-foreground">분</span>
               </div>
-              <input
-                type="range"
-                min="1"
-                max="1440"
-                step="1"
-                value={isUnlimited ? 60 : duration}
-                onChange={(e) => {
+              <Slider
+                min={1}
+                max={1440}
+                step={1}
+                value={[isUnlimited ? 60 : duration]}
+                onValueChange={([value]) => {
                   if (!isUnlimited) {
-                    const value = parseInt(e.target.value);
                     onDurationChange(value);
                     setDurationInput(value.toString());
                   }
                 }}
                 disabled={isUnlimited}
-                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1"
               />
             </div>
             {/* 빠른 선택 버튼 */}

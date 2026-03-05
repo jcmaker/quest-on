@@ -84,8 +84,14 @@ export default function ExamCodeEntry() {
                       pattern={REGEXP_ONLY_DIGITS_AND_CHARS}
                       value={examCode}
                       onChange={(value) => {
-                        setExamCode(value.toUpperCase());
-                        setError(null); // 입력 시 에러 메시지 초기화
+                        const upper = value.toUpperCase();
+                        setExamCode(upper);
+                        setError(null);
+                        // Auto-submit on 6 character completion
+                        if (upper.length === 6 && !isLoading) {
+                          setIsLoading(true);
+                          router.push(`/exam/${upper}`);
+                        }
                       }}
                       className="gap-1"
                     >

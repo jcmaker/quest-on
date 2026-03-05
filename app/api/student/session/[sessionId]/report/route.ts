@@ -82,10 +82,7 @@ export async function GET(
         id,
         q_idx,
         answer,
-        ai_feedback,
-        student_reply,
         compressed_answer_data,
-        compressed_feedback_data,
         compression_metadata,
         created_at
       `
@@ -159,8 +156,6 @@ export async function GET(
         id: string;
         q_idx: number;
         answer: string;
-        ai_feedback: unknown;
-        student_reply: string | null;
         created_at: string;
       }
     > = {};
@@ -168,7 +163,6 @@ export async function GET(
     if (submissions) {
       submissions.forEach((submission) => {
         let answer = submission.answer;
-        let aiFeedback = submission.ai_feedback;
 
         // Decompress if needed
         if (submission.compressed_answer_data) {
@@ -188,20 +182,10 @@ export async function GET(
           }
         }
 
-        if (submission.compressed_feedback_data) {
-          try {
-            aiFeedback = decompressData(submission.compressed_feedback_data);
-          } catch (error) {
-            // Decompression failed, continue with original
-          }
-        }
-
         submissionsByQuestion[submission.q_idx] = {
           id: submission.id,
           q_idx: submission.q_idx,
           answer: typeof answer === "string" ? answer : JSON.stringify(answer),
-          ai_feedback: aiFeedback,
-          student_reply: submission.student_reply,
           created_at: submission.created_at,
         };
       });

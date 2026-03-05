@@ -1,13 +1,11 @@
 export const maxDuration = 120;
 
-import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { compressData } from "@/lib/compression";
-import { openai, AI_MODEL, callOpenAI, enqueueGrading } from "@/lib/openai";
+import { enqueueGrading } from "@/lib/openai";
 import { autoGradeSession } from "@/lib/grading";
-import { buildFeedbackSystemPrompt, type RubricItem } from "@/lib/prompts";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
@@ -70,40 +68,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Prepare the feedback prompt
-    const answersText = answers
-      .map(
-        (answer: { text?: string }, index: number) =>
-          `문제 ${index + 1}: ${answer.text || "답안이 작성되지 않았습니다"}`
-      )
-      .join("\n\n");
-
-    const systemPrompt = buildFeedbackSystemPrompt({
-      rubric: exam?.rubric as RubricItem[] | undefined,
-      examTitle: exam?.title,
-    });
-
-    const userPrompt = `다음 답안에 대해 심사위원 스타일의 피드백을 제공해주세요:
-
-${answersText}
-
-심사위원처럼 2-3개의 핵심 질문을 제기하고, 학생의 답변을 유도하는 Q&A 형식으로 피드백해주세요.`;
-
-    const completion = await callOpenAI(() =>
-      openai.chat.completions.create({
-        model: AI_MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        max_completion_tokens: 1000,
-      })
-    );
-
-    const feedback =
-      completion.choices[0]?.message?.content ||
-      "Unable to generate feedback at this time.";
-
     // Store submission data in database
     if (studentId) {
       try {
@@ -163,8 +127,6 @@ ${answersText}
         const sessionData = {
           chatHistory: chatHistory || [],
           answers: answers,
-          feedback: feedback,
-          feedbackResponses: [],
         };
 
         const compressedSessionData = compressData(sessionData);
@@ -196,12 +158,9 @@ ${answersText}
 
             // Sanitize the answer text to prevent JSON encoding issues
             const answerText = sanitizeUserInput(rawAnswerText);
-            const sanitizedFeedback = sanitizeUserInput(feedback);
 
             const submissionData = {
               answer: answerText,
-              feedback: sanitizedFeedback,
-              studentReply: null,
             };
 
             let compressedSubmissionData;
@@ -231,10 +190,6 @@ ${answersText}
               session_id: actualSessionId,
               q_idx: index,
               answer: answerText,
-              ai_feedback: sanitizedFeedback
-                ? { feedback: sanitizedFeedback }
-                : null,
-              student_reply: null,
               compressed_answer_data: compressedSubmissionData,
               compression_metadata: compressionMetadata,
             };
@@ -320,17 +275,12 @@ ${answersText}
     }
 
     return successJson({
-      feedback,
       timestamp: new Date().toISOString(),
       examCode,
       examId,
       status: "submitted",
     });
   } catch (error) {
-    if (error instanceof OpenAI.APIError) {
-      return errorJson("INTERNAL_ERROR", "OpenAI API error", 500, error.message);
-    }
-
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

@@ -133,8 +133,6 @@ export async function seedSession(
 interface SeedSubmissionOverrides {
   id?: string;
   answer?: string;
-  ai_feedback?: unknown;
-  student_reply?: string | null;
 }
 
 export async function seedSubmission(
@@ -148,8 +146,6 @@ export async function seedSubmission(
     session_id: sessionId,
     q_idx: qIdx,
     answer: overrides.answer ?? `Sample answer for question ${qIdx}`,
-    ai_feedback: overrides.ai_feedback ?? null,
-    student_reply: overrides.student_reply ?? null,
   };
 
   const { error } = await supabase.from("submissions").insert(data);

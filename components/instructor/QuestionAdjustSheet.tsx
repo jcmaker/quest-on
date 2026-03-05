@@ -10,7 +10,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
-import { Send, Loader2, Check } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Send, Loader2, Check, ChevronDown, ChevronUp, Eye } from "lucide-react";
 import toast from "react-hot-toast";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 
@@ -35,6 +40,7 @@ export function QuestionAdjustSheet({
 }: QuestionAdjustSheetProps) {
   const [input, setInput] = useState("");
   const [appliedIdx, setAppliedIdx] = useState<number | null>(null);
+  const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -44,6 +50,7 @@ export function QuestionAdjustSheet({
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       setAppliedIdx(null);
+      setIsPreviewExpanded(false);
     }
     onOpenChange(nextOpen);
   };
@@ -64,12 +71,25 @@ export function QuestionAdjustSheet({
           <SheetTitle>AI와 문제 수정</SheetTitle>
         </SheetHeader>
 
-        {/* Current question preview */}
+        {/* P0-2: Current question preview with expand/collapse toggle */}
         <div className="px-6 py-3 border-b bg-muted/30 shrink-0">
-          <p className="text-xs font-medium text-muted-foreground mb-1">
+          <button
+            type="button"
+            onClick={() => setIsPreviewExpanded(!isPreviewExpanded)}
+            className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors w-full"
+          >
             현재 문제
-          </p>
-          <div className="max-h-32 overflow-y-auto text-sm">
+            {isPreviewExpanded ? (
+              <ChevronUp className="w-3 h-3" />
+            ) : (
+              <ChevronDown className="w-3 h-3" />
+            )}
+          </button>
+          <div
+            className={`overflow-y-auto text-sm mt-1 transition-all ${
+              isPreviewExpanded ? "max-h-96" : "max-h-64"
+            }`}
+          >
             <RichTextViewer content={questionText} className="prose-sm" />
           </div>
         </div>
@@ -100,24 +120,49 @@ export function QuestionAdjustSheet({
               >
                 <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
 
+                {/* P0-1: Show modified question preview in collapsible */}
                 {msg.role === "assistant" && msg.questionText && (
-                  <Button
-                    size="sm"
-                    variant={appliedIdx === idx ? "default" : "default"}
-                    className={`mt-2 gap-1.5 ${appliedIdx === idx ? "bg-green-600 hover:bg-green-600" : ""}`}
-                    disabled={appliedIdx !== null}
-                    onClick={() => {
-                      onApply(msg.questionText!);
-                      setAppliedIdx(idx);
-                      toast.success("수정 사항이 적용되었습니다.");
-                      setTimeout(() => {
-                        handleOpenChange(false);
-                      }, 800);
-                    }}
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    {appliedIdx === idx ? "적용 완료!" : "적용하기"}
-                  </Button>
+                  <div className="mt-2 space-y-2">
+                    <Collapsible>
+                      <CollapsibleTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          <Eye className="w-3 h-3" />
+                          수정된 문제 미리보기
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <div className="mt-1.5 p-3 rounded-md bg-background/80 border text-sm max-h-64 overflow-y-auto">
+                          <RichTextViewer
+                            content={msg.questionText}
+                            className="prose-sm"
+                          />
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
+
+                    {/* P2-4: Fixed variant comparison (was comparing "default" === "default") */}
+                    <Button
+                      size="sm"
+                      variant={appliedIdx === idx ? "secondary" : "default"}
+                      className={`gap-1.5 ${appliedIdx === idx ? "bg-green-600 hover:bg-green-600 text-white" : ""}`}
+                      disabled={appliedIdx !== null}
+                      onClick={() => {
+                        onApply(msg.questionText!);
+                        setAppliedIdx(idx);
+                        toast.success("수정 사항이 적용되었습니다.");
+                        setTimeout(() => {
+                          handleOpenChange(false);
+                        }, 800);
+                      }}
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      {appliedIdx === idx ? "적용 완료!" : "적용하기"}
+                    </Button>
+                  </div>
                 )}
               </div>
             </div>

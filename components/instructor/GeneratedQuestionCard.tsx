@@ -9,7 +9,7 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import {
-  Check,
+  Plus,
   RefreshCw,
   MessageSquare,
   Trash2,
@@ -54,7 +54,6 @@ export function GeneratedQuestionCard({
 
   const PREVIEW_HEIGHT = 300;
 
-  // P2-1: Measure content height to conditionally show "더 보기"
   useEffect(() => {
     if (contentRef.current) {
       setNeedsExpand(contentRef.current.scrollHeight > PREVIEW_HEIGHT);
@@ -64,7 +63,7 @@ export function GeneratedQuestionCard({
   return (
     <>
       <div className="border rounded-lg p-4 space-y-3 bg-card relative">
-        {/* P1-1: Regeneration overlay */}
+        {/* Regeneration overlay */}
         {isRegenerating && (
           <div className="absolute inset-0 bg-card/80 backdrop-blur-[2px] rounded-lg z-10 flex items-center justify-center">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -74,22 +73,9 @@ export function GeneratedQuestionCard({
           </div>
         )}
 
-        {/* Header */}
+        {/* Header — P1-7: Removed delete button from header */}
         <div className="flex items-center justify-between">
           <h4 className="font-medium text-sm">문제 {index + 1}</h4>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={onRemove}
-                className="size-8 text-destructive hover:text-destructive"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>삭제</TooltipContent>
-          </Tooltip>
         </div>
 
         {/* Question content */}
@@ -110,7 +96,7 @@ export function GeneratedQuestionCard({
           )}
         </div>
 
-        {/* Expand/collapse toggle - P2-1: Only show when content overflows */}
+        {/* Expand/collapse toggle */}
         {needsExpand && (
           <Button
             variant="ghost"
@@ -132,7 +118,7 @@ export function GeneratedQuestionCard({
           </Button>
         )}
 
-        {/* Footer actions */}
+        {/* Footer actions — P1-1: "완료"→"추가", Check→Plus; P1-7: Delete button moved here */}
         <div className="flex flex-wrap items-center gap-2 pt-3 border-t">
           <Button
             size="sm"
@@ -140,8 +126,8 @@ export function GeneratedQuestionCard({
             onClick={onAccept}
             className="gap-1.5"
           >
-            <Check className="w-3.5 h-3.5" />
-            완료
+            <Plus className="w-3.5 h-3.5" />
+            추가
           </Button>
           <Button
             size="sm"
@@ -164,6 +150,21 @@ export function GeneratedQuestionCard({
             />
             재생성
           </Button>
+          <div className="ml-auto">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={onRemove}
+                  className="size-8 text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>삭제</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </div>
 

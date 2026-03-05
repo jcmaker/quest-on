@@ -44,7 +44,7 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
           >
             <div className="flex items-center gap-2">
               <Pencil className="w-5 h-5 text-primary" />
-              <span className="font-semibold">직접 수정</span>
+              <span className="font-semibold">문제 목록</span>
               {questions.length > 0 && (
                 <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                   {questions.length}개

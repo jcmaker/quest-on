@@ -110,11 +110,11 @@ export function RubricTable({
         </div>
 
         {rubric.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-gray-300 rounded-lg bg-gray-50/50">
+          <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-lg bg-muted/50">
             <div className="flex flex-col items-center gap-3">
               <div className="text-2xl">📋</div>
               <div>
-                <p className="font-medium text-gray-700">
+                <p className="font-medium text-foreground">
                   아직 추가된 루브릭이 없습니다
                 </p>
                 <p className="text-sm">
@@ -126,9 +126,9 @@ export function RubricTable({
         ) : (
           <div className="border rounded-lg overflow-hidden">
             <Table>
-              <TableHeader className="bg-gray-50">
+              <TableHeader className="bg-muted">
                 <TableRow>
-                  <TableHead className="w-[200px] font-semibold text-gray-700">
+                  <TableHead className="w-[200px] font-semibold text-foreground">
                     <div className="flex items-center gap-2">
                       평가 영역
                       <Tooltip>
@@ -145,7 +145,7 @@ export function RubricTable({
                       </Tooltip>
                     </div>
                   </TableHead>
-                  <TableHead className="font-semibold text-gray-700">
+                  <TableHead className="font-semibold text-foreground">
                     <div className="flex items-center gap-2">
                       세부 사항
                       <Tooltip>
@@ -163,7 +163,7 @@ export function RubricTable({
                       </Tooltip>
                     </div>
                   </TableHead>
-                  <TableHead className="w-[80px] text-center font-semibold text-gray-700">
+                  <TableHead className="w-[80px] text-center font-semibold text-foreground">
                     작업
                   </TableHead>
                 </TableRow>
@@ -172,7 +172,7 @@ export function RubricTable({
                 {rubric.map((item) => (
                   <TableRow
                     key={item.id}
-                    className="align-top hover:bg-gray-50/50"
+                    className="align-top hover:bg-muted/50"
                   >
                     <TableCell className="py-4 align-top">
                       <Textarea
@@ -205,7 +205,7 @@ export function RubricTable({
                             e.preventDefault();
                             onRemove(item.id);
                           }}
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50 h-8 w-8"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8 w-8"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>

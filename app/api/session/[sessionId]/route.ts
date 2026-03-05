@@ -39,7 +39,6 @@ export async function GET(
         submissions (
           *,
           compressed_answer_data,
-          compressed_feedback_data,
           compression_metadata
         ),
         messages (
@@ -89,7 +88,6 @@ export async function GET(
     const decompressedSubmissions =
       session.submissions?.map((submission: Record<string, unknown>) => {
         let decompressedAnswerData = null;
-        let decompressedFeedbackData = null;
 
         if (
           submission.compressed_answer_data &&
@@ -104,24 +102,10 @@ export async function GET(
           }
         }
 
-        if (
-          submission.compressed_feedback_data &&
-          typeof submission.compressed_feedback_data === "string"
-        ) {
-          try {
-            decompressedFeedbackData = decompressData(
-              submission.compressed_feedback_data
-            );
-          } catch (error) {
-            // Decompression failed, continue with null
-          }
-        }
-
         return {
           ...submission,
           decompressed: {
             answerData: decompressedAnswerData,
-            feedbackData: decompressedFeedbackData,
           },
         };
       }) || [];

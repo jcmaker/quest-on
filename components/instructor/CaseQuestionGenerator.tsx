@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, ChevronDown, X, Check, FileText, CheckCircle2, AlertCircle } from "lucide-react";
+import { Sparkles, ChevronDown, X, Plus, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   useQuestionGeneration,
@@ -383,8 +383,8 @@ export function CaseQuestionGenerator({
                       onClick={handleAcceptAll}
                       className="gap-1.5"
                     >
-                      <Check className="w-3.5 h-3.5" />
-                      전체 완료 ({generatedQuestions.length}개)
+                      <Plus className="w-3.5 h-3.5" />
+                      전체 추가 ({generatedQuestions.length}개)
                     </Button>
                   )}
                 </div>

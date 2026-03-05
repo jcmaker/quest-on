@@ -17,6 +17,7 @@ import {
   MessageCircle,
   Award,
   TrendingUp,
+  Loader2,
 } from "lucide-react";
 import { getScoreColor } from "@/lib/grading-utils";
 
@@ -32,8 +33,6 @@ interface Submission {
   id: string;
   q_idx: number;
   answer: string;
-  ai_feedback: unknown;
-  student_reply: string | null;
   created_at: string;
 }
 
@@ -109,14 +108,16 @@ export default function StudentReportPage() {
       }
 
       const data: ReportData = await response.json();
-
-      if (!data.grades || Object.keys(data.grades).length === 0) {
-        throw new Error("아직 평가가 완료되지 않았습니다.");
-      }
-
       return data;
     },
     retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data || !data.grades || Object.keys(data.grades).length === 0) {
+        return 5000; // Poll every 5s while grading is incomplete
+      }
+      return false; // Stop polling once grades are available
+    },
   });
 
   const errorMessage =
@@ -163,16 +164,13 @@ export default function StudentReportPage() {
     );
   }
 
-  const currentQuestion = reportData.exam?.questions?.[selectedQuestionIdx];
-  const currentSubmission = reportData.submissions?.[selectedQuestionIdx];
-  const currentGrade = reportData.grades?.[selectedQuestionIdx];
-  const currentMessages = reportData.messages?.[selectedQuestionIdx] || [];
+  const gradingInProgress =
+    !reportData.grades || Object.keys(reportData.grades).length === 0;
 
-  return (
-    <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center gap-4 mb-4">
+  if (gradingInProgress) {
+    return (
+      <div className="container mx-auto p-6 max-w-4xl">
+        <div className="flex items-center gap-4 mb-8">
           <Button
             variant="outline"
             size="sm"
@@ -182,6 +180,42 @@ export default function StudentReportPage() {
             대시보드로 돌아가기
           </Button>
         </div>
+        <div className="text-center py-16">
+          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Loader2 className="w-10 h-10 text-primary animate-spin" />
+          </div>
+          <h2 className="text-xl font-semibold mb-2">
+            AI 채점이 진행 중입니다
+          </h2>
+          <p className="text-muted-foreground mb-1">
+            채점이 완료되면 자동으로 리포트가 표시됩니다.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            보통 1~2분 내에 완료됩니다.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const currentQuestion = reportData.exam?.questions?.[selectedQuestionIdx];
+  const currentSubmission = reportData.submissions?.[selectedQuestionIdx];
+  const currentGrade = reportData.grades?.[selectedQuestionIdx];
+  const currentMessages = reportData.messages?.[selectedQuestionIdx] || [];
+
+  return (
+    <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
+      {/* Header */}
+      <div className="mb-8">
+        <nav className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4">
+          <Link href="/student" className="hover:text-foreground transition-colors">
+            대시보드
+          </Link>
+          <span>/</span>
+          <span className="truncate max-w-[200px]">{reportData.exam.title}</span>
+          <span>/</span>
+          <span className="text-foreground font-medium">리포트</span>
+        </nav>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold">{reportData.exam.title}</h1>
@@ -199,7 +233,7 @@ export default function StudentReportPage() {
                     reportData.overallScore
                   )}`}
                 >
-                  전체 점수: {reportData.overallScore}점
+                  전체 점수: {reportData.overallScore}/100점
                 </p>
               </div>
             )}
@@ -352,20 +386,6 @@ export default function StudentReportPage() {
             </CardContent>
           </Card>
 
-          {/* Student Reply to Feedback */}
-          {currentSubmission?.student_reply && (
-            <Card>
-              <CardHeader>
-                <CardTitle>피드백에 대한 답변</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <RichTextViewer
-                  content={currentSubmission.student_reply}
-                  className="text-base leading-relaxed whitespace-pre-wrap"
-                />
-              </CardContent>
-            </Card>
-          )}
         </div>
 
         {/* Sidebar */}

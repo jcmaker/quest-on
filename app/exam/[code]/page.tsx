@@ -61,6 +61,7 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
+  WifiOff,
 } from "lucide-react";
 import { Sparkle } from "@/components/animate-ui/icons/sparkle";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
@@ -257,6 +258,20 @@ function ExamChatSidebar({
 
           {/* Chat Input */}
           <div className="border-t border-border p-2 sm:p-3 bg-background">
+            {/* Quick prompts (always accessible) */}
+            {chatHistory.length > 0 && (
+              <div className="flex gap-1.5 mb-2 overflow-x-auto hide-scrollbar">
+                {["분석해줘", "힌트", "풀이 방향"].map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => setChatMessage(prompt)}
+                    className="px-2.5 py-1 text-xs rounded-full border border-primary/20 text-primary bg-primary/5 hover:bg-primary/10 transition-colors whitespace-nowrap shrink-0"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
             <InputGroup className="bg-background shadow-md">
               <InputGroupTextarea
                 placeholder="AI에게 질문하기..."
@@ -396,14 +411,8 @@ export default function ExamPage() {
   const [sessionError, setSessionError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [hasOpenedQuestion, setHasOpenedQuestion] = useState(() => {
-    if (typeof window !== "undefined") return window.innerWidth >= 768;
-    return true;
-  });
-  const [isQuestionVisible, setIsQuestionVisible] = useState(() => {
-    if (typeof window !== "undefined") return window.innerWidth >= 768;
-    return true;
-  });
+  const [hasOpenedQuestion, setHasOpenedQuestion] = useState(true);
+  const [isQuestionVisible, setIsQuestionVisible] = useState(true);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState<string | null>(
     null
@@ -420,6 +429,8 @@ export default function ExamPage() {
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   // 미작성 문제 다이얼로그
   const [unansweredDialog, setUnansweredDialog] = useState<{ open: boolean; indices: number[] }>({ open: false, indices: [] });
+  // Preflight 취소 확인 다이얼로그
+  const [showPreflightCancelConfirm, setShowPreflightCancelConfirm] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -430,6 +441,7 @@ export default function ExamPage() {
     lastSaved,
     isSaving,
     saveError,
+    isOnline,
     manualSave,
     updateAnswer,
     saveViaBeacon,
@@ -470,6 +482,30 @@ export default function ExamPage() {
     </>
   );
 
+  // Profile gate: ensure student has a profile before entering exam
+  const [profileGateChecked, setProfileGateChecked] = useState(false);
+  const { data: profileGateData } = useQuery({
+    queryKey: ["student-profile-gate", user?.id],
+    queryFn: async () => {
+      const response = await fetch("/api/student/profile");
+      if (!response.ok) return { hasProfile: false };
+      const data = await response.json();
+      return { hasProfile: !!data.profile };
+    },
+    enabled: !!user && isLoaded,
+    retry: false,
+    staleTime: Infinity,
+  });
+
+  useEffect(() => {
+    if (!profileGateData || profileGateChecked) return;
+    if (!profileGateData.hasProfile) {
+      router.replace(`/student/profile-setup?redirect=${encodeURIComponent(`/exam/${examCode}`)}`);
+      return;
+    }
+    setProfileGateChecked(true);
+  }, [profileGateData, profileGateChecked, router, examCode]);
+
   const { data: initData, isLoading: initLoading } = useQuery({
     queryKey: ["exam-session-init", examCode, user?.id],
     queryFn: async () => {
@@ -492,7 +528,7 @@ export default function ExamPage() {
         return { ok: false as const, errorData: { error: "NETWORK_ERROR" } };
       }
     },
-    enabled: !!examCode && isLoaded && !!user,
+    enabled: !!examCode && isLoaded && !!user && profileGateChecked,
     retry: false,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
@@ -598,6 +634,14 @@ export default function ExamPage() {
       }
     } else {
       setSessionError(true);
+    }
+
+    // Show session restoration toast if reactivated
+    if (initData.sessionReactivated) {
+      toast.success("이전 세션이 복원되었습니다. 답안이 유지되어 있습니다.", {
+        duration: 4000,
+        icon: "🔄",
+      });
     }
 
     setExamInitialized(true);
@@ -746,6 +790,34 @@ export default function ExamPage() {
     return () =>
       document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [sessionId, user, isSubmitted, examCode, exam, currentQuestion]);
+
+  // Show toast on network reconnect
+  const prevOnlineRef = useRef(isOnline);
+  useEffect(() => {
+    if (isOnline && !prevOnlineRef.current) {
+      toast.success("네트워크 연결이 복원되었습니다. 답안을 저장하는 중...", {
+        duration: 3000,
+      });
+    }
+    prevOnlineRef.current = isOnline;
+  }, [isOnline]);
+
+  // Keyboard shortcuts: Alt+1~9 for question navigation
+  useEffect(() => {
+    if (!exam || isSubmitted) return;
+
+    const handleQuestionShortcut = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      const num = parseInt(e.key, 10);
+      if (num >= 1 && num <= Math.min(9, exam.questions.length)) {
+        e.preventDefault();
+        setCurrentQuestion(num - 1);
+      }
+    };
+
+    document.addEventListener("keydown", handleQuestionShortcut);
+    return () => document.removeEventListener("keydown", handleQuestionShortcut);
+  }, [exam, isSubmitted]);
 
   // manualSave, updateAnswer, auto-save interval, and Ctrl+S are handled by useAutoSave hook
 
@@ -1017,7 +1089,13 @@ export default function ExamPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center">
-            <Link href="/sign-in">
+            <Link
+              href={`/sign-in?redirect_url=${encodeURIComponent(`/exam/${examCode}`)}`}
+              onClick={() => {
+                // Save redirect URL for deep link preservation through onboarding
+                try { localStorage.setItem("onboarding_redirect", `/exam/${examCode}`); } catch {}
+              }}
+            >
               <Button size="lg" className="min-h-[48px] px-8">
                 로그인하기
               </Button>
@@ -1133,7 +1211,7 @@ export default function ExamPage() {
             <CardContent className="space-y-6">
               <div className="text-center space-y-4">
                 <p className="text-sm sm:text-base text-muted-foreground">
-                  제출이 완료되었습니다. AI 채점이 완료되어 리포트를 확인할 수 있습니다.
+                  제출이 완료되었습니다. AI가 답안을 채점하고 있으며, 보통 1~2분 내에 완료됩니다.
                 </p>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                   <Link href={`/student/report/${sessionId}`}>
@@ -1164,14 +1242,35 @@ export default function ExamPage() {
   // ✅ Gate 방식: Preflight 미완료면 Preflight만, 완료 후 대기 중이면 WaitingRoom만
   if (showPreflight) {
     return (
-      <PreflightModal
-        open={showPreflight}
-        onAccept={handlePreflightAccept}
-        onCancel={() => router.push("/join")}
-        examTitle={exam?.title}
-        examDuration={exam?.duration}
-        examDescription={exam?.description}
-      />
+      <>
+        <PreflightModal
+          open={showPreflight && !showPreflightCancelConfirm}
+          onAccept={handlePreflightAccept}
+          onCancel={() => setShowPreflightCancelConfirm(true)}
+          examTitle={exam?.title}
+          examDuration={exam?.duration}
+          examDescription={exam?.description}
+        />
+        <AlertDialog open={showPreflightCancelConfirm} onOpenChange={setShowPreflightCancelConfirm}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>시험을 취소하시겠습니까?</AlertDialogTitle>
+              <AlertDialogDescription>
+                시험 입장을 취소하면 학생 대시보드로 이동합니다. 나중에 다시 시험 코드를 입력하여 입장할 수 있습니다.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>시험에 계속 참여하기</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => router.push("/student")}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                시험 입장 취소
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </>
     );
   }
 
@@ -1221,6 +1320,13 @@ export default function ExamPage() {
       <SidebarInset className="flex-1 min-h-0 overflow-hidden transition-all duration-75 ease-out">
         <div className="h-screen flex flex-col bg-background">
           <SubmissionOverlay isSubmitting={isSubmitting} />
+          {/* Offline Banner */}
+          {!isOnline && (
+            <div className="bg-destructive text-destructive-foreground px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300">
+              <WifiOff className="h-4 w-4 shrink-0" />
+              <span>네트워크 연결이 끊어졌습니다. 연결이 복원되면 답안이 자동 저장됩니다.</span>
+            </div>
+          )}
           {/* Top Header */}
           <ExamHeader
             examCode={examCode}
@@ -1511,7 +1617,7 @@ export default function ExamPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>미작성 문제가 있습니다</AlertDialogTitle>
             <AlertDialogDescription>
-              다음 문제에 답안을 작성해주세요:
+              {unansweredDialog.indices.length}개의 문제에 답안이 작성되지 않았습니다. 해당 문제로 이동하거나, 현재 상태로 제출할 수 있습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-wrap gap-2 py-2">
@@ -1531,7 +1637,16 @@ export default function ExamPage() {
             ))}
           </div>
           <AlertDialogFooter>
-            <AlertDialogAction>확인</AlertDialogAction>
+            <AlertDialogCancel>돌아가기</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setUnansweredDialog({ open: false, indices: [] });
+                setShowSubmitConfirm(true);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              미작성 상태로 제출하기
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
