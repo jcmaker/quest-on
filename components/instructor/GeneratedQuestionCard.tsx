@@ -129,7 +129,7 @@ export function GeneratedQuestionCard({
             className="gap-1.5"
           >
             <Plus className="w-3.5 h-3.5" />
-            추가
+            문제 추가
           </Button>
           <Button
             type="button"

@@ -18,7 +18,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Plus, Trash2, HelpCircle, Settings, ChevronDown } from "lucide-react";
+import { Plus, Trash2, HelpCircle, Settings, ChevronDown, Sparkles, Loader2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -40,6 +40,8 @@ interface RubricTableProps {
   onPublicChange?: (isPublic: boolean) => void;
   chatWeight?: number | null;
   onChatWeightChange?: (weight: number | null) => void;
+  onAIGenerate?: () => void;
+  isAIGenerating?: boolean;
 }
 
 export function RubricTable({
@@ -51,6 +53,8 @@ export function RubricTable({
   onPublicChange,
   chatWeight,
   onChatWeightChange,
+  onAIGenerate,
+  isAIGenerating = false,
 }: RubricTableProps) {
   const [isWeightOpen, setIsWeightOpen] = useState(false);
   const isCustomWeight = chatWeight !== null && chatWeight !== undefined;
@@ -218,7 +222,7 @@ export function RubricTable({
           </div>
         )}
 
-        <div className="flex justify-center pt-4">
+        <div className="flex justify-center gap-2 pt-4">
           <Button
             type="button"
             onClick={(e) => {
@@ -231,6 +235,25 @@ export function RubricTable({
             <Plus className="w-4 h-4" />
             평가 기준 추가
           </Button>
+          {onAIGenerate && (
+            <Button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                onAIGenerate();
+              }}
+              disabled={isAIGenerating}
+              className="flex items-center gap-2 px-4 py-2"
+              variant="outline"
+            >
+              {isAIGenerating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              {isAIGenerating ? "생성 중..." : "AI로 생성"}
+            </Button>
+          )}
         </div>
 
         {onChatWeightChange && (

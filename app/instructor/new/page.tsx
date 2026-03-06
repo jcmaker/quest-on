@@ -82,6 +82,9 @@ export default function CreateExam() {
   // P1-2: 새로 수락된 문제 하이라이트
   const [highlightedQuestionIds, setHighlightedQuestionIds] = useState<Set<string>>(new Set());
 
+  // AI 루브릭 생성 상태
+  const [isAIGeneratingRubric, setIsAIGeneratingRubric] = useState(false);
+
   // P0-2: adjustHistory ref for localStorage persistence
   const adjustHistoryRef = useRef<Map<string, ChatMessage[]>>(new Map());
 
@@ -559,6 +562,59 @@ export default function CreateExam() {
     const newRubric = rubric.filter((item) => item.id !== id);
     setRubric(newRubric);
   };
+
+  const handleAIGenerateRubric = useCallback(async () => {
+    if (questions.length === 0 || questions.every((q) => q.text.trim() === "")) {
+      toast.error("AI 루브릭을 생성하려면 문제를 먼저 작성해주세요.");
+      return;
+    }
+    if (!examData.title.trim()) {
+      toast.error("AI 루브릭을 생성하려면 시험 제목을 먼저 입력해주세요.");
+      return;
+    }
+
+    setIsAIGeneratingRubric(true);
+    try {
+      const response = await fetch("/api/ai/generate-rubric", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          examTitle: examData.title,
+          questions: questions
+            .filter((q) => q.text.trim() !== "")
+            .map((q) => ({ text: q.text, type: q.type })),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "루브릭 생성에 실패했습니다.");
+      }
+
+      const result = await response.json();
+      if (result.rubric && Array.isArray(result.rubric)) {
+        setRubric((prev) => {
+          const nonEmpty = prev.filter(
+            (r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== ""
+          );
+          return [
+            ...nonEmpty,
+            ...result.rubric.map((r: { evaluationArea: string; detailedCriteria: string }) => ({
+              id: Date.now().toString() + Math.random().toString(36).slice(2),
+              evaluationArea: r.evaluationArea,
+              detailedCriteria: r.detailedCriteria,
+            })),
+          ];
+        });
+        toast.success("AI 평가 기준이 생성되었습니다.");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "루브릭 생성 중 오류가 발생했습니다.";
+      toast.error(message);
+    } finally {
+      setIsAIGeneratingRubric(false);
+    }
+  }, [examData.title, questions]);
 
   const createExamMutation = useMutation({
     mutationFn: async (examDataForDB: {
@@ -1066,6 +1122,8 @@ export default function CreateExam() {
               onPublicChange={setIsRubricPublic}
               chatWeight={chatWeight}
               onChatWeightChange={setChatWeight}
+              onAIGenerate={handleAIGenerateRubric}
+              isAIGenerating={isAIGeneratingRubric}
             />
 
             {/* Submit */}

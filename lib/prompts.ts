@@ -519,6 +519,58 @@ ${answer || "답안이 없습니다."}
 }
 
 /**
+ * AI 루브릭(평가 기준) 독립 생성 프롬프트
+ */
+export function buildRubricGenerationPrompt(params: {
+  examTitle: string;
+  questions: Array<{ text: string; type?: string }>;
+  topics?: string;
+}): { system: string; user: string } {
+  const { examTitle, questions, topics } = params;
+
+  const system = `당신은 대학 시험 평가 기준(루브릭) 설계 전문가입니다. 시험 제목과 문제를 분석하여 적절한 평가 기준을 생성합니다.
+
+## 루브릭 생성 규칙
+- 4-6개의 평가 항목을 생성하세요.
+- 각 항목은 시험의 모든 문제를 아우르는 평가 영역이어야 합니다.
+- 반드시 다음 평가 영역을 1개 포함할 것:
+  - "AI 활용 및 자기주도 탐구": 학생이 AI를 정보 탐색 도구로 활용하면서도 독립적인 분석과 판단을 수행했는가. AI에 대한 의존도와 비판적 사고의 균형.
+- 각 항목의 세부 기준은 구체적이고 측정 가능해야 합니다.
+
+## 출력 형식
+반드시 아래 JSON 형식으로 응답하세요. 추가 텍스트 없이 JSON만 출력합니다.
+
+\`\`\`json
+{
+  "rubric": [
+    {
+      "evaluationArea": "평가 영역명",
+      "detailedCriteria": "세부 평가 기준 설명"
+    }
+  ]
+}
+\`\`\`
+
+## 중요 규칙
+- 반드시 한국어로 작성
+- JSON 외 추가 텍스트 금지
+- 4-6개 항목 생성`;
+
+  let userPrompt = `시험 제목: "${examTitle}"
+
+문제 목록:
+${questions.map((q, i) => `${i + 1}. ${q.text.replace(/<[^>]*>/g, "").slice(0, 500)}${q.type ? ` (${q.type})` : ""}`).join("\n")}`;
+
+  if (topics) {
+    userPrompt += `\n\n특정 토픽: ${topics}`;
+  }
+
+  userPrompt += `\n\n위 시험과 문제에 적합한 평가 기준(루브릭)을 JSON 형식으로 생성해주세요.`;
+
+  return { system, user: userPrompt };
+}
+
+/**
  * 사례형 문제(Case Question) 생성 프롬프트
  */
 export function buildCaseQuestionGenerationPrompt(params: {

@@ -267,6 +267,16 @@ export const feedbackChatSchema = z.object({
   studentId: z.string().optional(),
 });
 
+// AI Rubric Generation
+export const generateRubricSchema = z.object({
+  examTitle: z.string().min(1, "Exam title is required").max(500),
+  questions: z.array(z.object({
+    text: z.string(),
+    type: z.string().optional(),
+  })).min(1, "At least one question is required"),
+  topics: z.string().max(500).optional(),
+});
+
 // AI Case Question Generation
 export const generateCaseQuestionsSchema = z.object({
   examTitle: z.string().min(1).max(500),
