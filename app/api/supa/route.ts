@@ -1,13 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { currentUser } from "@/lib/get-current-user";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
-
-// Diagnostic GET handler — remove after debugging
-export async function GET() {
-  return NextResponse.json({ status: "ok", route: "/api/supa", timestamp: new Date().toISOString() });
-}
 import {
   createExamSchema,
   updateExamSchema,
