@@ -6,6 +6,12 @@ import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import { CopyProtector } from "@/components/exam/CopyProtector";
 import { ChevronsDown } from "lucide-react";
 
+interface RubricItem {
+  id?: string;
+  evaluationArea: string;
+  detailedCriteria: string;
+}
+
 interface Question {
   id: string;
   text: string;
@@ -13,12 +19,7 @@ interface Question {
   points: number;
   title?: string;
   ai_context?: string;
-}
-
-interface RubricItem {
-  id?: string;
-  evaluationArea: string;
-  detailedCriteria: string;
+  rubric?: RubricItem[];
 }
 
 interface QuestionPanelProps {
@@ -36,6 +37,11 @@ export function QuestionPanel({
 }: QuestionPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
+
+  // Per-question rubric: use question's own rubric if available, else fall back to exam-level
+  const resolvedRubric = (question.rubric && question.rubric.length > 0)
+    ? question.rubric
+    : rubric;
 
   return (
     <div className="relative h-full flex flex-col border-b border-border bg-muted/20">
@@ -92,14 +98,14 @@ export function QuestionPanel({
             </ul>
           </div>
 
-          {rubricPublic && rubric && rubric.length > 0 && (
+          {rubricPublic && resolvedRubric && resolvedRubric.length > 0 && (
             <div className="bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800 p-4 sm:p-5 rounded-lg mt-4 shadow-sm">
               <h4 className="font-semibold mb-3 sm:mb-4 text-sm sm:text-base text-blue-900 dark:text-blue-100 flex items-center gap-2">
                 <span className="text-lg">📋</span>
                 <span>평가 기준 (루브릭)</span>
               </h4>
               <div className="space-y-2.5 sm:space-y-3">
-                {rubric.map((item, index) => (
+                {resolvedRubric.map((item, index) => (
                   <div
                     key={item.id || index}
                     className="bg-white dark:bg-blue-900/20 p-3 sm:p-4 rounded-md border border-blue-100 dark:border-blue-800/50 shadow-sm"

@@ -434,9 +434,10 @@ export async function initExamSession(data: {
         if (updateError) throw updateError;
         session = updatedSession;
       } else if (
-        examStarted &&
+        (examStarted || exam.duration === 0) &&
         ["waiting", "joined", "not_joined"].includes(currentStatus)
       ) {
+        // 시험이 시작되었거나 무제한(과제형) 시험이면 바로 in_progress로 전환
         session = await promoteSessionToInProgress(existingSession, now, {
           deviceFingerprint: incomingFingerprint,
         });
@@ -482,8 +483,8 @@ export async function initExamSession(data: {
       const examStarted = isExamStarted(examStatus, exam.started_at, nowTime);
 
       // 시작 전: waiting 상태 (Join만 가능, 응시 불가)
-      // 시작 후: in_progress 상태 (실제 응시 가능)
-      const initialStatus = examStarted ? "in_progress" : "waiting";
+      // 시작 후 또는 무제한(과제형): in_progress 상태 (실제 응시 가능)
+      const initialStatus = (examStarted || exam.duration === 0) ? "in_progress" : "waiting";
 
       // Upsert session (race-safe: uses UNIQUE(exam_id, student_id) constraint)
       const { data: upsertedSession, error: upsertError } = await supabase
@@ -498,8 +499,8 @@ export async function initExamSession(data: {
             device_fingerprint: incomingFingerprint,
             created_at: now,
             status: initialStatus,
-            started_at: examStarted ? now : null,
-            attempt_timer_started_at: examStarted ? now : null,
+            started_at: initialStatus === "in_progress" ? now : null,
+            attempt_timer_started_at: initialStatus === "in_progress" ? now : null,
           },
           { onConflict: "exam_id,student_id" }
         )

@@ -1,0 +1,44 @@
+flowchart LR
+  classDef ui fill:#f8fafc,stroke:#94a3b8,color:#0f172a;
+  classDef hotspot fill:#fff1f2,stroke:#e11d48,stroke-width:2px,color:#111827;
+  classDef external fill:#eef2ff,stroke:#6366f1,color:#111827;
+
+  subgraph browser["Browser"]
+    studentUi["Student UI<br/>app/exam, app/student"]:::ui
+    instructorUi["Instructor UI<br/>app/instructor"]:::ui
+    adminUi["Admin UI<br/>app/admin"]:::ui
+  end
+
+  subgraph nextApp["Next.js App"]
+    pages["App Router Pages<br/>Client Hooks"]:::ui
+    resourceApi["Resource APIs<br/>/api/exam/*<br/>/api/session/*<br/>/api/chat<br/>/api/feedback"]:::hotspot
+    actionApi["Action API<br/>/api/supa"]:::hotspot
+    handlers["Domain Handlers<br/>session, exam, submission, drive"]:::hotspot
+    inlineJobs["Inline AI Jobs<br/>grading, summary, embedding"]:::hotspot
+    adminAuth["Admin Cookie Auth"]:::hotspot
+  end
+
+  clerk["Clerk"]:::external
+  supabase["Supabase<br/>DB, Storage, Realtime"]:::external
+  openai["OpenAI"]:::external
+
+  studentUi --> pages
+  instructorUi --> pages
+  adminUi --> pages
+
+  pages --> resourceApi
+  pages --> actionApi
+  pages -. 관리자 인증 .-> adminAuth
+
+  resourceApi --> handlers
+  actionApi --> handlers
+
+  resourceApi --> supabase
+  handlers --> supabase
+
+  resourceApi --> inlineJobs
+  handlers --> inlineJobs
+  inlineJobs --> openai
+
+  pages -. 사용자 인증 .-> clerk
+  resourceApi -. 사용자 인증 .-> clerk

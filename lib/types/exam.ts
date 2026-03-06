@@ -1,5 +1,11 @@
 /** Shared exam-related type definitions */
 
+export interface RubricItem {
+  id?: string;
+  evaluationArea: string;
+  detailedCriteria: string;
+}
+
 export interface ExamQuestion {
   id: string;
   text: string;
@@ -11,6 +17,7 @@ export interface ExamQuestion {
   ai_context?: string | null;
   options?: string[];
   correctAnswer?: string;
+  rubric?: RubricItem[];
 }
 
 export interface Exam {

@@ -9,12 +9,18 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Plus,
   RefreshCw,
   MessageSquare,
   Trash2,
   ChevronDown,
   ChevronUp,
+  ClipboardList,
 } from "lucide-react";
 import type {
   GeneratedQuestion,
@@ -103,7 +109,7 @@ export function GeneratedQuestionCard({
             variant="ghost"
             size="sm"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="w-full h-7 text-xs text-muted-foreground"
+            className="w-full h-7 text-xs text-muted-foreground hover:text-foreground"
           >
             {isExpanded ? (
               <>
@@ -117,6 +123,33 @@ export function GeneratedQuestionCard({
               </>
             )}
           </Button>
+        )}
+
+        {/* Per-question rubric (collapsible) */}
+        {question.rubric && question.rubric.length > 0 && (
+          <Collapsible>
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                평가 기준 ({question.rubric.length}개)
+                <ChevronDown className="w-3 h-3" />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="mt-2 space-y-1.5 pl-5">
+                {question.rubric.map((item, idx) => (
+                  <div key={idx} className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{item.evaluationArea}</span>
+                    <span className="mx-1">—</span>
+                    {item.detailedCriteria}
+                  </div>
+                ))}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
         )}
 
         {/* Footer actions — P1-1: "완료"→"추가", Check→Plus; P1-7: Delete button moved here */}
@@ -134,9 +167,9 @@ export function GeneratedQuestionCard({
           <Button
             type="button"
             size="sm"
-            variant="secondary"
+            variant="outline"
             onClick={() => setIsSheetOpen(true)}
-            className="gap-1.5"
+            className="gap-1.5 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary"
           >
             <MessageSquare className="w-3.5 h-3.5" />
             AI와 수정

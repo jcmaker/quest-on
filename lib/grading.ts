@@ -17,6 +17,7 @@ import {
   analyzeAiDependency,
   formatAiDependencyForPrompt,
   summarizeAiDependencyAssessments,
+  resolveQuestionRubric,
 } from "@/lib/grading-helpers";
 import type {
   StageGrading,
@@ -127,26 +128,18 @@ export async function autoGradeSession(
   // 6. 문제 정규화
   const questions = normalizeQuestions(exam.questions);
 
-  // 7. 루브릭 텍스트 생성
-  const rubricItems =
-    exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
-      ? (exam.rubric as Array<{
-          evaluationArea: string;
-          detailedCriteria: string;
-        }>)
-      : [];
-
-  const rubricText = buildRubricText(exam.rubric);
-
-  // 8. 각 문제별 채점 (병렬 처리로 ~5배 속도 개선)
-  const rubricScoresSchema = rubricItems
-    .map(
-      (item) =>
-        `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
-    )
-    .join(",\n");
-
+  // 7-8. 각 문제별 채점 (병렬 처리로 ~5배 속도 개선)
+  // 루브릭은 문제별로 resolveQuestionRubric을 사용하여 해결
   const gradePromises = questions.map(async (question): Promise<GradeResult | null> => {
+    // Per-question rubric resolution
+    const rubricItems = resolveQuestionRubric(question, exam.rubric);
+    const rubricText = buildRubricText(rubricItems);
+    const rubricScoresSchema = rubricItems
+      .map(
+        (item) =>
+          `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
+      )
+      .join(",\n");
     const qIdx = question.idx;
     let submission = submissionsByQuestion[qIdx];
     if (!submission && questions.indexOf(question) >= 0) {

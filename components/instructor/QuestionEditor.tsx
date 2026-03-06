@@ -26,6 +26,7 @@ export interface Question {
   type: "multiple-choice" | "essay" | "short-answer";
   options?: string[];
   correctAnswer?: string;
+  rubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
 }
 
 interface QuestionEditorProps {

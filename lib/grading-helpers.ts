@@ -124,7 +124,7 @@ export function decompressMessages(
 /** Normalize DB question rows into a standard shape. */
 export function normalizeQuestions(
   questions: unknown
-): Array<{ idx: number; prompt?: string; ai_context?: string }> {
+): Array<{ idx: number; prompt?: string; ai_context?: string; rubric?: Array<{ evaluationArea: string; detailedCriteria: string }> }> {
   if (!questions || !Array.isArray(questions)) return [];
 
   return questions.map((q: Record<string, unknown>, index: number) => ({
@@ -136,7 +136,40 @@ export function normalizeQuestions(
         ? q.text
         : undefined,
     ai_context: typeof q.ai_context === "string" ? q.ai_context : undefined,
+    rubric: Array.isArray(q.rubric) ? (q.rubric as Array<{ evaluationArea: string; detailedCriteria: string }>) : undefined,
   }));
+}
+
+/** Resolve rubric for a specific question: use per-question rubric if available, else fall back to exam-level rubric. */
+export function resolveQuestionRubric(
+  question: { rubric?: Array<{ evaluationArea: string; detailedCriteria: string }> },
+  examRubric: unknown
+): Array<{ evaluationArea: string; detailedCriteria: string }> {
+  if (question.rubric && Array.isArray(question.rubric) && question.rubric.length > 0) {
+    return question.rubric;
+  }
+  if (examRubric && Array.isArray(examRubric) && examRubric.length > 0) {
+    return examRubric as Array<{ evaluationArea: string; detailedCriteria: string }>;
+  }
+  return [];
+}
+
+/** Ensure the mandatory "AI 활용 및 자기주도 탐구" criterion exists in a rubric array. */
+export function ensureAiCriterion(
+  rubric: Array<{ evaluationArea: string; detailedCriteria: string }>
+): Array<{ evaluationArea: string; detailedCriteria: string }> {
+  const hasAiCriterion = rubric.some((item) =>
+    item.evaluationArea.includes("AI 활용")
+  );
+  if (hasAiCriterion) return rubric;
+  return [
+    ...rubric,
+    {
+      evaluationArea: "AI 활용 및 자기주도 탐구",
+      detailedCriteria:
+        "학생이 AI를 정보 탐색 도구로 활용하면서도 독립적인 분석과 판단을 수행했는가. AI에 대한 의존도와 비판적 사고의 균형",
+    },
+  ];
 }
 
 /** Build rubric prompt text from rubric items array. */

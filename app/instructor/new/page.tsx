@@ -1051,6 +1051,7 @@ export default function CreateExam() {
                       id: q.id,
                       text: q.text,
                       type: q.type as "essay" | "short-answer" | "multiple-choice",
+                      rubric: q.rubric,
                     })),
                   ];
                 });

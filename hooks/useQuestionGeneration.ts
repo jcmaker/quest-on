@@ -6,6 +6,7 @@ export interface GeneratedQuestion {
   id: string;
   text: string;
   type: "essay";
+  rubric?: RubricItem[];
 }
 
 export interface RubricItem {
@@ -75,7 +76,6 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
   const [generatedQuestions, setGeneratedQuestions] = useState<
     GeneratedQuestion[]
   >([]);
-  const [suggestedRubric, setSuggestedRubric] = useState<RubricItem[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
@@ -86,6 +86,23 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
       current: 0,
       total: 0,
     });
+
+  // Derive suggestedRubric from all generated questions' rubrics (merged, deduplicated by evaluationArea)
+  const suggestedRubric: RubricItem[] = (() => {
+    const seen = new Set<string>();
+    const merged: RubricItem[] = [];
+    for (const q of generatedQuestions) {
+      if (q.rubric) {
+        for (const item of q.rubric) {
+          if (!seen.has(item.evaluationArea)) {
+            seen.add(item.evaluationArea);
+            merged.push(item);
+          }
+        }
+      }
+    }
+    return merged;
+  })();
 
   // Per-question conversation history
   const adjustHistoryRef = useRef<Map<string, ChatMessage[]>>(new Map());
@@ -111,9 +128,6 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
 
       const data = await res.json();
       setGeneratedQuestions((prev) => [...prev, ...data.questions]);
-      if (data.suggestedRubric?.length > 0) {
-        setSuggestedRubric(data.suggestedRubric);
-      }
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "문제 생성 중 오류가 발생했습니다.";
@@ -184,12 +198,6 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
 
                 case "question":
                   setGeneratedQuestions((prev) => [...prev, data.question]);
-                  break;
-
-                case "rubric":
-                  if (data.suggestedRubric?.length > 0) {
-                    setSuggestedRubric(data.suggestedRubric);
-                  }
                   break;
 
                 case "complete":
@@ -419,7 +427,6 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
 
   const clearAll = useCallback(() => {
     setGeneratedQuestions([]);
-    setSuggestedRubric([]);
     setError(null);
     setGenerationProgress({ stage: "idle", current: 0, total: 0 });
     adjustHistoryRef.current.clear();

@@ -581,7 +581,7 @@ export async function POST(request: NextRequest) {
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, code, title, rubric, materials_text, chat_weight")
+      .select("id, code, title, rubric, questions, materials_text, chat_weight")
       .eq("id", session.exam_id)
       .single();
 
@@ -590,9 +590,14 @@ export async function POST(request: NextRequest) {
     }
 
     const effectiveExamId = examId || exam.id;
-    const rubric = Array.isArray(exam.rubric)
-      ? (exam.rubric as RubricItem[])
-      : undefined;
+
+    // Per-question rubric: look up current question's rubric, fall back to exam-level
+    let rubric: RubricItem[] | undefined;
+    if (Array.isArray(exam.questions) && exam.questions[safeQIdx]?.rubric?.length > 0) {
+      rubric = exam.questions[safeQIdx].rubric as RubricItem[];
+    } else if (Array.isArray(exam.rubric)) {
+      rubric = exam.rubric as RubricItem[];
+    }
     const materialsText = Array.isArray(exam.materials_text)
       ? (exam.materials_text as Array<{
           url: string;

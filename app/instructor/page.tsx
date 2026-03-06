@@ -534,7 +534,7 @@ export default function InstructorHome() {
         <Button
           variant="ghost"
           size="icon"
-          className="opacity-0 group-hover:opacity-100 transition-opacity min-h-[44px] min-w-[44px]"
+          className="opacity-40 group-hover:opacity-100 transition-opacity min-h-[44px] min-w-[44px]"
           onClick={(e) => e.stopPropagation()}
           aria-label="메뉴 열기"
         >

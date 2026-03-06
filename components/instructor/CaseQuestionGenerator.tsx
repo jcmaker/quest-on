@@ -146,6 +146,7 @@ export function CaseQuestionGenerator({
           id: q.id,
           text: q.text,
           type: q.type as Question["type"],
+          rubric: q.rubric,
         },
       ]);
       applyRubricIfNeeded();
@@ -161,6 +162,7 @@ export function CaseQuestionGenerator({
           id: q.id,
           text: q.text,
           type: q.type as Question["type"],
+          rubric: q.rubric,
         }))
       );
       applyRubricIfNeeded();

@@ -64,7 +64,7 @@ export function PreflightModal({
             <ul className="space-y-2 text-sm font-medium">
               <li className="flex items-start gap-2">
                 <Clock className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                <span>시간 종료 시 자동 제출 · 답안은 30초마다 자동 저장</span>
+                <span>{examDuration === 0 ? "시간 제한 없음 (과제형) · 답안은 30초마다 자동 저장" : "시간 종료 시 자동 제출 · 답안은 30초마다 자동 저장"}</span>
               </li>
               <li className="flex items-start gap-2">
                 <Shield className="h-4 w-4 text-primary mt-0.5 shrink-0" />
@@ -88,9 +88,14 @@ export function PreflightModal({
                 <p>
                   <span className="font-medium">시험명:</span> {examTitle}
                 </p>
-                {examDuration && (
+                {examDuration != null && examDuration > 0 && (
                   <p>
                     <span className="font-medium">시험 시간:</span> {examDuration}분
+                  </p>
+                )}
+                {examDuration === 0 && (
+                  <p>
+                    <span className="font-medium">시험 시간:</span> 무제한 (과제형)
                   </p>
                 )}
                 {examDescription && (
@@ -116,18 +121,37 @@ export function PreflightModal({
                   시간 정책
                 </h3>
                 <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li className="flex items-start gap-2">
-                    <span className="text-primary mt-0.5">•</span>
-                    <span>시험 시간은 강사가 &quot;시험 시작&quot; 버튼을 클릭하는 순간부터 시작됩니다.</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-primary mt-0.5">•</span>
-                    <span>시험 시간이 종료되면 자동으로 제출되며, 이후 답안 수정이 불가능합니다.</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-primary mt-0.5">•</span>
-                    <span>답안은 자동으로 저장되며, 수동 저장도 가능합니다 (Ctrl+S / Cmd+S).</span>
-                  </li>
+                  {examDuration === 0 ? (
+                    <>
+                      <li className="flex items-start gap-2">
+                        <span className="text-primary mt-0.5">•</span>
+                        <span>시간 제한이 없는 과제형 시험입니다. 자유롭게 작성하세요.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-primary mt-0.5">•</span>
+                        <span>답안은 자동으로 저장되며, 수동 저장도 가능합니다 (Ctrl+S / Cmd+S).</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-primary mt-0.5">•</span>
+                        <span>작성이 완료되면 &quot;시험 제출하기&quot; 버튼을 클릭해주세요.</span>
+                      </li>
+                    </>
+                  ) : (
+                    <>
+                      <li className="flex items-start gap-2">
+                        <span className="text-primary mt-0.5">•</span>
+                        <span>시험 시간은 강사가 &quot;시험 시작&quot; 버튼을 클릭하는 순간부터 시작됩니다.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-primary mt-0.5">•</span>
+                        <span>시험 시간이 종료되면 자동으로 제출되며, 이후 답안 수정이 불가능합니다.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-primary mt-0.5">•</span>
+                        <span>답안은 자동으로 저장되며, 수동 저장도 가능합니다 (Ctrl+S / Cmd+S).</span>
+                      </li>
+                    </>
+                  )}
                 </ul>
               </div>
 

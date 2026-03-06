@@ -16,10 +16,13 @@ function sseEvent(event: string, data: unknown): string {
 }
 
 interface ParsedQuestionResponse {
-  questions: Array<{ text: string; type: string }>;
-  suggestedRubric?: Array<{
-    evaluationArea: string;
-    detailedCriteria: string;
+  questions: Array<{
+    text: string;
+    type: string;
+    rubric?: Array<{
+      evaluationArea: string;
+      detailedCriteria: string;
+    }>;
   }>;
 }
 
@@ -133,7 +136,6 @@ export async function POST(request: NextRequest) {
 
         let completedCount = 0;
         let successCount = 0;
-        let rubricSent = false;
 
         enqueue("progress", {
           stage: "generating",
@@ -156,17 +158,10 @@ export async function POST(request: NextRequest) {
                     id: crypto.randomUUID(),
                     text: q.text,
                     type: "essay" as const,
+                    rubric: q.rubric || [],
                   },
                   index: i,
                 });
-              }
-
-              // Use rubric from the first successful response
-              if (!rubricSent && parsed.suggestedRubric?.length) {
-                enqueue("rubric", {
-                  suggestedRubric: parsed.suggestedRubric,
-                });
-                rubricSent = true;
               }
 
               enqueue("progress", {

@@ -80,7 +80,8 @@ export async function POST(
 
     let reconciledSession = session;
 
-    if (isExamStarted(exam.status, exam.started_at, nowTime)) {
+    // 시험이 이미 시작되었거나, 무제한(과제형) 시험인 경우 바로 in_progress로 전환
+    if (isExamStarted(exam.status, exam.started_at, nowTime) || exam.duration === 0) {
       reconciledSession = await promoteSessionToInProgress(session, now, {
         preflightAcceptedAt: now,
       });
