@@ -96,6 +96,7 @@ function CustomSidebar({
             alt="Quest-On Logo"
             width={32}
             height={32}
+            sizes="32px"
             className="w-8 h-8 shrink-0"
             loading="lazy"
           />

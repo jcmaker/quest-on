@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@clerk/nextjs/server";
 import dynamic from "next/dynamic";
+import { PublicHeader } from "@/components/PublicHeader";
 import HeroSection from "@/components/landing/HeroSection";
 
 // Lazy load below-the-fold components for better performance
@@ -45,6 +46,7 @@ export default async function LandingPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950/50">
+      <PublicHeader />
       {/* Hero Section - AI 사고 과정 추적 */}
       <section id="hero">
         <HeroSection

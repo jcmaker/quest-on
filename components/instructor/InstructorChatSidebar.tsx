@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { BotMessageSquare } from "@/components/animate-ui/icons/bot-message-square";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
+import { CopyMessageButton } from "@/components/chat/CopyMessageButton";
 import { ArrowUp, X } from "lucide-react";
 
 type InstructorChatMessage = {
@@ -300,8 +301,12 @@ function ChatPanel({
 
             return (
               <div key={`${m.ts}-${idx}`} className="flex justify-end">
-                <div className="max-w-[90%] rounded-2xl rounded-br-none bg-primary text-primary-foreground px-3 py-2 text-sm whitespace-pre-wrap">
+                <div className="group max-w-[90%] rounded-2xl rounded-br-none bg-primary text-primary-foreground px-3 py-2 text-sm whitespace-pre-wrap relative">
                   {m.content}
+                  <CopyMessageButton
+                    text={m.content}
+                    className="absolute -top-1 -left-1 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+                  />
                 </div>
               </div>
             );

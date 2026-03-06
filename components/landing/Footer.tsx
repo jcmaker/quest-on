@@ -81,6 +81,7 @@ export default function Footer({ mode = "light" }: FooterProps) {
                 alt="Quest-On Logo"
                 width={40}
                 height={40}
+                sizes="40px"
                 className="h-10 w-10"
                 loading="lazy"
               />

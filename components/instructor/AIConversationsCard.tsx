@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Card,
   CardContent,
@@ -7,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { MessageSquare } from "lucide-react";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
+import { CopyMessageButton } from "@/components/chat/CopyMessageButton";
 
 interface Conversation {
   id: string;
@@ -42,16 +45,19 @@ export function AIConversationsCard({
                 } animate-in fade-in slide-in-from-bottom-2 duration-300`}
               >
                 {message.role === "user" ? (
-                  <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 sm:px-5 py-3 sm:py-3.5 max-w-[85%] sm:max-w-[70%] shadow-lg shadow-primary/20 relative transition-all duration-200 hover:shadow-xl hover:shadow-primary/30">
+                  <div className="group bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 sm:px-5 py-3 sm:py-3.5 max-w-[85%] sm:max-w-[70%] shadow-lg shadow-primary/20 relative transition-all duration-200 hover:shadow-xl hover:shadow-primary/30">
                     <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
                       {message.content}
                     </p>
-                    <p className="text-xs mt-2 sm:mt-2.5 opacity-80 text-right font-medium">
-                      {new Date(message.created_at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </p>
+                    <div className="flex items-center justify-end gap-1 mt-2 sm:mt-2.5">
+                      <CopyMessageButton text={message.content} className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10" />
+                      <p className="text-xs opacity-80 font-medium">
+                        {new Date(message.created_at).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <AIMessageRenderer

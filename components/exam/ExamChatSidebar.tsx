@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
@@ -20,8 +21,25 @@ import { ErrorAlert } from "@/components/ui/error-alert";
 import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { ChatLoadingIndicator } from "@/components/exam/ExamLoading";
 import { MessageCircle, ArrowUp, X } from "lucide-react";
-import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
+import { CopyMessageButton } from "@/components/chat/CopyMessageButton";
 import { FloatingChatButton } from "./FloatingChatButton";
+
+const AIMessageRenderer = dynamic(
+  () => import("@/components/chat/AIMessageRenderer"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full max-w-[92%] rounded-3xl rounded-tl-md border border-border/60 bg-muted/60 px-4 py-3 sm:max-w-[82%] lg:max-w-[68%] xl:max-w-[55%]">
+        <div className="h-4 w-24 animate-pulse rounded bg-muted-foreground/15" />
+        <div className="mt-3 space-y-2">
+          <div className="h-3 w-full animate-pulse rounded bg-muted-foreground/10" />
+          <div className="h-3 w-5/6 animate-pulse rounded bg-muted-foreground/10" />
+          <div className="h-3 w-2/3 animate-pulse rounded bg-muted-foreground/10" />
+        </div>
+      </div>
+    ),
+  }
+);
 
 interface ExamChatSidebarProps {
   chatHistory: Array<{
@@ -128,16 +146,19 @@ export function ExamChatSidebar({
                       } animate-in fade-in slide-in-from-bottom-2 duration-300`}
                     >
                       {msg.type === "user" ? (
-                        <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 sm:px-5 py-3 sm:py-3.5 max-w-[85%] sm:max-w-[70%] shadow-lg shadow-primary/20 relative transition-all duration-200 hover:shadow-xl hover:shadow-primary/30">
+                        <div className="group bg-primary text-primary-foreground rounded-2xl rounded-tr-md px-4 sm:px-5 py-3 sm:py-3.5 max-w-[85%] sm:max-w-[70%] shadow-lg shadow-primary/20 relative transition-all duration-200 hover:shadow-xl hover:shadow-primary/30">
                           <p className="text-sm sm:text-base leading-relaxed whitespace-pre-wrap break-words">
                             {msg.message}
                           </p>
-                          <p className="text-xs mt-2 sm:mt-2.5 opacity-80 text-right font-medium">
-                            {new Date(msg.timestamp).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </p>
+                          <div className="flex items-center justify-end gap-1 mt-2 sm:mt-2.5">
+                            <CopyMessageButton text={msg.message} className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10" />
+                            <p className="text-xs opacity-80 font-medium">
+                              {new Date(msg.timestamp).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </p>
+                          </div>
                         </div>
                       ) : (
                         <AIMessageRenderer

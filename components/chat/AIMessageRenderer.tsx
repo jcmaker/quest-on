@@ -13,6 +13,7 @@ import {
   containsMathSyntax,
   normalizeMathDelimiters,
 } from "@/lib/math-formatting";
+import { CopyMessageButton } from "@/components/chat/CopyMessageButton";
 
 interface AIMessageRendererProps {
   content: string;
@@ -32,8 +33,8 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
     <div
       className={
         isPlain
-          ? "text-foreground w-full"
-          : "bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[92%] sm:max-w-[82%] lg:max-w-[68%] xl:max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30"
+          ? "text-foreground w-full group relative"
+          : "group bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[92%] sm:max-w-[82%] lg:max-w-[68%] xl:max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30"
       }
     >
       <div
@@ -236,6 +237,13 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
         </ReactMarkdown>
       </div>
 
+      {isPlain && (
+        <CopyMessageButton
+          text={content}
+          className="absolute top-0 right-0"
+        />
+      )}
+
       {!isPlain && (
         <>
           <div className="mt-4 pt-3 border-t border-border/30 flex justify-between items-center">
@@ -244,6 +252,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
               <span className="text-xs font-medium text-muted-foreground">
                 AI 답변
               </span>
+              <CopyMessageButton text={content} />
             </div>
             <p className="text-xs text-muted-foreground font-mono">
               {new Date(timestamp).toLocaleTimeString([], {
