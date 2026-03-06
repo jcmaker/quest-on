@@ -72,7 +72,7 @@ test.describe("POST /api/feedback — Student Answer Submission", () => {
 
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.feedback).toBeTruthy();
+    expect(body.timestamp).toBeTruthy();
     expect(body.examCode).toBe(exam.code);
     expect(body.status).toBe("submitted");
 

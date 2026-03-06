@@ -49,7 +49,7 @@ export async function seedExam(overrides: SeedExamOverrides = {}) {
       {
         id: "q-0",
         idx: 0,
-        type: "open_ended",
+        type: "essay",
         text: "Explain the concept of polymorphism in OOP.",
         prompt: "Explain the concept of polymorphism in OOP.",
         ai_context: "Focus on compile-time vs runtime polymorphism.",
@@ -57,7 +57,7 @@ export async function seedExam(overrides: SeedExamOverrides = {}) {
       {
         id: "q-1",
         idx: 1,
-        type: "open_ended",
+        type: "essay",
         text: "Describe the difference between a stack and a queue.",
         prompt: "Describe the difference between a stack and a queue.",
         ai_context: "Include real-world examples.",
@@ -65,14 +65,12 @@ export async function seedExam(overrides: SeedExamOverrides = {}) {
     ],
     rubric: overrides.rubric ?? [
       {
-        q_idx: 0,
-        criteria: "Understanding of polymorphism",
-        max_score: 100,
+        evaluationArea: "Understanding of polymorphism",
+        detailedCriteria: "Demonstrates clear understanding of compile-time and runtime polymorphism in OOP.",
       },
       {
-        q_idx: 1,
-        criteria: "Understanding of data structures",
-        max_score: 100,
+        evaluationArea: "Understanding of data structures",
+        detailedCriteria: "Accurately describes the differences between stack (LIFO) and queue (FIFO) with examples.",
       },
     ],
     started_at: overrides.started_at ?? null,

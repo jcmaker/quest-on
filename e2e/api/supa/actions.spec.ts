@@ -28,13 +28,12 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
       status: "draft",
       questions: [
         {
-          idx: 0,
-          type: "open_ended",
-          prompt: "What is encapsulation?",
-          ai_context: "OOP concept",
+          id: "q-0",
+          text: "What is encapsulation?",
+          type: "essay",
         },
       ],
-      rubric: [{ q_idx: 0, criteria: "Understanding", max_score: 100 }],
+      rubric: [{ evaluationArea: "Understanding", detailedCriteria: "Demonstrates clear understanding of encapsulation." }],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -63,7 +62,15 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
     const res = await studentRequest.post("/api/supa", {
       data: {
         action: "create_exam",
-        data: { title: "Forbidden", code: "NOPE", duration: 30 },
+        data: {
+          title: "Forbidden",
+          code: "NOPE",
+          duration: 30,
+          status: "draft",
+          questions: [{ id: "q-0", text: "Test", type: "essay" }],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
       },
     });
 
@@ -74,7 +81,15 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
     const res = await anonRequest.post("/api/supa", {
       data: {
         action: "create_exam",
-        data: { title: "Forbidden", code: "NOPE", duration: 30 },
+        data: {
+          title: "Forbidden",
+          code: "NOPE",
+          duration: 30,
+          status: "draft",
+          questions: [{ id: "q-0", text: "Test", type: "essay" }],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
       },
     });
 
@@ -170,7 +185,7 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
         action: "save_draft",
         data: {
           sessionId: session.id,
-          questionId: 0,
+          questionId: "0",
           answer: "My draft answer about polymorphism.",
         },
       },
@@ -203,7 +218,7 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
         action: "save_draft",
         data: {
           sessionId: session.id,
-          questionId: 0,
+          questionId: "0",
           answer: "First draft",
         },
       },
@@ -215,7 +230,7 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
         action: "save_draft",
         data: {
           sessionId: session.id,
-          questionId: 0,
+          questionId: "0",
           answer: "Updated draft",
         },
       },

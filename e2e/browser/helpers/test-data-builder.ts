@@ -115,17 +115,17 @@ export async function seedInstructorGradingScenario(
   const now = new Date().toISOString();
 
   const questions = Array.from({ length: questionCount }, (_, i) => ({
+    id: `q-${i}`,
     idx: i,
-    type: "open_ended" as const,
+    type: "essay" as const,
     text: `Question ${i + 1}: Explain the concept.`,
     prompt: `Question ${i + 1}: Explain the concept.`,
     ai_context: `Context for question ${i + 1}`,
   }));
 
   const rubric = Array.from({ length: questionCount }, (_, i) => ({
-    q_idx: i,
-    criteria: `Criteria for question ${i + 1}`,
-    max_score: 100,
+    evaluationArea: `Criteria for question ${i + 1}`,
+    detailedCriteria: `Detailed evaluation criteria for question ${i + 1}.`,
   }));
 
   const exam = await seedExam({
@@ -179,15 +179,17 @@ export async function seedCompletedExamScenario() {
 
   const questions = [
     {
+      id: "q-0",
       idx: 0,
-      type: "open_ended" as const,
+      type: "essay" as const,
       text: "Explain polymorphism.",
       prompt: "Explain polymorphism.",
       ai_context: "OOP concept",
     },
     {
+      id: "q-1",
       idx: 1,
-      type: "open_ended" as const,
+      type: "essay" as const,
       text: "Describe stack vs queue.",
       prompt: "Describe stack vs queue.",
       ai_context: "Data structures",
@@ -195,8 +197,8 @@ export async function seedCompletedExamScenario() {
   ];
 
   const rubric = [
-    { q_idx: 0, criteria: "Understanding of polymorphism", max_score: 100 },
-    { q_idx: 1, criteria: "Understanding of data structures", max_score: 100 },
+    { evaluationArea: "Understanding of polymorphism", detailedCriteria: "Demonstrates clear understanding of polymorphism in OOP." },
+    { evaluationArea: "Understanding of data structures", detailedCriteria: "Accurately describes the differences between stack and queue." },
   ];
 
   const exam = await seedExam({

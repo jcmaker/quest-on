@@ -28,7 +28,7 @@ test.describe("Concurrency — simultaneous draft saves", () => {
           action: "save_draft",
           data: {
             sessionId: session.id,
-            questionId: 0,
+            questionId: "0",
             answer: "Concurrent answer for Q1",
           },
         },
@@ -38,7 +38,7 @@ test.describe("Concurrency — simultaneous draft saves", () => {
           action: "save_draft",
           data: {
             sessionId: session.id,
-            questionId: 1,
+            questionId: "1",
             answer: "Concurrent answer for Q2",
           },
         },
@@ -76,7 +76,7 @@ test.describe("Concurrency — simultaneous draft saves", () => {
           action: "save_draft",
           data: {
             sessionId: session.id,
-            questionId: 0,
+            questionId: "0",
             answer: "Version A",
           },
         },
@@ -86,7 +86,7 @@ test.describe("Concurrency — simultaneous draft saves", () => {
           action: "save_draft",
           data: {
             sessionId: session.id,
-            questionId: 0,
+            questionId: "0",
             answer: "Version B",
           },
         },

@@ -66,9 +66,9 @@ test.describe("Instructor — Edit Exam Flow", () => {
     // Submit
     await editExam.submitBtn.click();
 
-    // Should show validation error about title
+    // Should show validation error about title (use role="status" to target toast, not form labels)
     await expect(
-      instructorPage.getByText(/제목.*입력|시험 제목/i)
+      instructorPage.locator('[role="status"]').getByText(/제목.*입력|시험 제목/i)
     ).toBeVisible({ timeout: 5_000 });
   });
 

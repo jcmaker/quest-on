@@ -653,8 +653,19 @@ export default function CreateExam() {
       return;
     }
 
-    if (!examData.title || !examData.code || questions.length === 0) {
+    if (!examData.title) {
       isSubmittingRef.current = false;
+      toast.error("시험 제목을 입력해주세요.");
+      return;
+    }
+    if (!examData.code) {
+      isSubmittingRef.current = false;
+      toast.error("시험 코드를 입력해주세요.");
+      return;
+    }
+    if (questions.length === 0) {
+      isSubmittingRef.current = false;
+      toast.error("최소 1개 이상의 문제를 추가해주세요.");
       return;
     }
 

@@ -1,5 +1,6 @@
 import { execSync } from "child_process";
 import { ChildProcess, spawn } from "child_process";
+import net from "net";
 import path from "path";
 import dotenv from "dotenv";
 import {
@@ -11,6 +12,34 @@ import {
 dotenv.config({ path: path.resolve(__dirname, "../.env.test") });
 
 let mockServer: ChildProcess | null = null;
+
+const MOCK_SERVER_PORT = 4010;
+
+/** Check if a port is already in use */
+function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(true));
+    server.once("listening", () => {
+      server.close();
+      resolve(false);
+    });
+    server.listen(port);
+  });
+}
+
+/** Kill any process listening on the given port */
+function killProcessOnPort(port: number): void {
+  try {
+    const pid = execSync(`lsof -ti :${port}`, { encoding: "utf-8" }).trim();
+    if (pid) {
+      console.log(`[global-setup] Killing existing process on port ${port} (PID: ${pid})`);
+      execSync(`kill -9 ${pid}`, { stdio: "pipe" });
+    }
+  } catch {
+    // No process on port — that's fine
+  }
+}
 
 /**
  * Apply pending schema migrations to local Supabase.
@@ -77,6 +106,14 @@ async function globalSetup() {
   await applyMigrations();
 
   console.log("\n[global-setup] Starting mock server...");
+
+  // Kill any existing process on the mock server port
+  if (await isPortInUse(MOCK_SERVER_PORT)) {
+    console.log(`[global-setup] Port ${MOCK_SERVER_PORT} is in use, killing existing process...`);
+    killProcessOnPort(MOCK_SERVER_PORT);
+    // Brief wait for port to free up
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
 
   // Start the OpenAI mock server
   mockServer = spawn("npx", ["tsx", "scripts/start-mock-server.ts"], {

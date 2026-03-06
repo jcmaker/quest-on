@@ -103,7 +103,7 @@ test.describe("Security Tests — IDOR", () => {
         action: "save_draft",
         data: {
           sessionId: otherSession.id,
-          questionId: 0,
+          questionId: "0",
           answer: "Injected answer by another student",
         },
       },
@@ -310,7 +310,7 @@ test.describe("Security Tests — SQL Injection", () => {
         action: "save_draft",
         data: {
           sessionId: session.id,
-          questionId: 0,
+          questionId: "0",
           answer: sqlPayload,
         },
       },
@@ -360,7 +360,7 @@ test.describe("Security Tests — XSS in Submissions", () => {
         action: "save_draft",
         data: {
           sessionId: session.id,
-          questionId: 0,
+          questionId: "0",
           answer: xssPayload,
         },
       },
@@ -399,7 +399,7 @@ test.describe("Security Tests — XSS in Submissions", () => {
         action: "save_draft",
         data: {
           sessionId: session.id,
-          questionId: 0,
+          questionId: "0",
           answer: xssPayload,
         },
       },
@@ -439,7 +439,7 @@ test.describe("Security Tests — XSS in Submissions", () => {
         action: "save_draft",
         data: {
           sessionId: session.id,
-          questionId: 0,
+          questionId: "0",
           answer: xssPayload,
         },
       },

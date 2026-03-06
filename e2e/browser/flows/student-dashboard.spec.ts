@@ -3,6 +3,7 @@ import {
   seedStudentExamScenario,
   cleanupTestData,
 } from "../helpers/test-data-builder";
+import { seedStudentProfile } from "../../helpers/seed";
 
 test.describe("Student — Dashboard & Report Flow", () => {
   test.afterEach(async () => {
@@ -41,9 +42,9 @@ test.describe("Student — Dashboard & Report Flow", () => {
 
     await studentPage.goto(`/student/report/${session.id}`);
 
-    // Should show exam title
+    // Should show exam title (use heading role to avoid strict mode with multiple matches)
     await expect(
-      studentPage.getByText(exam.title),
+      studentPage.getByRole("heading", { name: exam.title }),
     ).toBeVisible({ timeout: 15_000 });
 
     // Should show score or grade info
@@ -55,6 +56,9 @@ test.describe("Student — Dashboard & Report Flow", () => {
   test("dashboard shows empty state when no sessions exist", async ({
     studentPage,
   }) => {
+    // Seed student profile to prevent redirect to profile-setup
+    await seedStudentProfile("test-student-id");
+
     await studentPage.goto("/student");
 
     // Should show empty state or "no exams" message
