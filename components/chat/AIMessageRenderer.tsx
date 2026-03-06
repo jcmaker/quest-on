@@ -9,6 +9,10 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import {
+  containsMathSyntax,
+  normalizeMathDelimiters,
+} from "@/lib/math-formatting";
 
 interface AIMessageRendererProps {
   content: string;
@@ -22,19 +26,21 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
   variant = "bubble",
 }) => {
   const isPlain = variant === "plain";
+  const normalizedContent = normalizeMathDelimiters(content);
+  const hasMathSyntax = containsMathSyntax(content);
   return (
     <div
       className={
         isPlain
           ? "text-foreground w-full"
-          : "bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30"
+          : "bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[92%] sm:max-w-[82%] lg:max-w-[68%] xl:max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30"
       }
     >
       <div
         className={
           isPlain
-            ? "prose prose-sm max-w-none dark:prose-invert break-words [&_*]:break-words [&_*]:leading-[1.5]"
-            : "prose prose-sm max-w-none dark:prose-invert prose-headings:mb-0 prose-p:mb-0 prose-p:last:mb-0 prose-ul:mb-0 prose-ol:mb-0 prose-li:mb-0 break-words [&_*]:break-words [&_*]:leading-[1.3]"
+            ? "prose prose-sm max-w-none dark:prose-invert break-words [&_*]:break-words [&_*]:leading-[1.5] [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden [&_.katex-display]:py-1"
+            : "prose prose-sm max-w-none dark:prose-invert prose-headings:mb-0 prose-p:mb-0 prose-p:last:mb-0 prose-ul:mb-0 prose-ol:mb-0 prose-li:mb-0 break-words [&_*]:break-words [&_*]:leading-[1.3] [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden [&_.katex-display]:py-1 [&_.katex-display]:max-w-full [&_.katex]:text-[0.95em]"
         }
       >
         {/* 항상 마크다운으로 렌더링 */}
@@ -226,7 +232,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
             } as Components
           }
         >
-          {content}
+          {normalizedContent}
         </ReactMarkdown>
       </div>
 
@@ -246,7 +252,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
               })}
             </p>
           </div>
-          {content.includes("$") && (
+          {hasMathSyntax && (
             <div className="mt-1 text-[10px] text-muted-foreground/70 text-right">
               LaTeX 수식 포함됨
             </div>

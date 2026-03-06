@@ -26,12 +26,11 @@ function safeEqual(a: string, b: string): boolean {
 export async function currentUser() {
   const bypassSecret = process.env.TEST_BYPASS_SECRET;
   if (bypassSecret) {
-    // Block test bypass in production
+    // Hard block test bypass in production
     if (process.env.NODE_ENV === "production") {
-      console.error(
-        "[SECURITY] TEST_BYPASS_SECRET is set in production! Ignoring bypass token."
+      throw new Error(
+        "[SECURITY] TEST_BYPASS_SECRET must not be set in production. Remove it from environment variables immediately."
       );
-      return clerkCurrentUser();
     }
     const hdrs = await headers();
     const bypassToken = hdrs.get("x-test-bypass-token");

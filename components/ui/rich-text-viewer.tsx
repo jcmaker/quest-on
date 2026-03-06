@@ -1,6 +1,8 @@
 "use client";
 
 import DOMPurify from "dompurify";
+import "katex/dist/katex.min.css";
+import { renderMathInHtml } from "@/lib/math-formatting";
 
 interface RichTextViewerProps {
   content: string;
@@ -21,11 +23,12 @@ export function RichTextViewer({
     ALLOWED_ATTR: ["href", "src", "alt", "class", "target", "rel"],
     ALLOW_DATA_ATTR: false,
   });
+  const renderedContent = renderMathInHtml(sanitized);
 
   return (
     <div
-      className={`prose max-w-none rich-text-content overflow-x-auto ${className}`}
-      dangerouslySetInnerHTML={{ __html: sanitized }}
+      className={`prose max-w-none rich-text-content overflow-x-auto [&_.qa-math-block]:max-w-full [&_.qa-math-block]:overflow-x-auto [&_.katex-display]:overflow-x-auto ${className}`}
+      dangerouslySetInnerHTML={{ __html: renderedContent }}
     />
   );
 }

@@ -602,21 +602,29 @@ export default function CreateExam() {
     },
   });
 
+  const isSubmittingRef = useRef(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     // 데모 모드에서는 실제 제출을 막고 회원가입 유도
     if (isDemoMode) {
+      isSubmittingRef.current = false;
       setIsSignUpDialogOpen(true);
       return;
     }
 
     // 비활성화된 버튼 클릭 시 이유 안내
     if (!examData.title) {
+      isSubmittingRef.current = false;
       toast.error("시험 제목을 입력해주세요.");
       return;
     }
     if (!examData.code) {
+      isSubmittingRef.current = false;
       toast.error("시험 코드를 생성해주세요.");
       return;
     }
@@ -625,6 +633,7 @@ export default function CreateExam() {
       .map((q, i) => (q.text.trim() === "" ? i + 1 : -1))
       .filter((i) => i !== -1);
     if (emptyQuestionIndices.length > 0) {
+      isSubmittingRef.current = false;
       toast.error(
         emptyQuestionIndices.length === questions.length
           ? "문제를 입력해주세요."
@@ -633,16 +642,21 @@ export default function CreateExam() {
       return;
     }
     if (!canAddMoreFiles) {
+      isSubmittingRef.current = false;
       toast.error("파일 용량이 50MB를 초과했습니다. 일부 파일을 삭제해주세요.");
       return;
     }
     // duration 검증: 0(무제한)이 아니고 15 미만이면 에러
     if (examData.duration !== 0 && examData.duration < 15) {
+      isSubmittingRef.current = false;
       toast.error("시험 시간은 최소 15분 이상이거나 무제한이어야 합니다.");
       return;
     }
 
-    if (!examData.title || !examData.code || questions.length === 0) return;
+    if (!examData.title || !examData.code || questions.length === 0) {
+      isSubmittingRef.current = false;
+      return;
+    }
 
     setIsLoading(true);
 
@@ -835,6 +849,7 @@ export default function CreateExam() {
       toast.error("시험 생성 중 오류가 발생했습니다. 다시 시도해주세요.");
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

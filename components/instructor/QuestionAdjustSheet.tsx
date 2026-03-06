@@ -57,6 +57,7 @@ export function QuestionAdjustSheet({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (!input.trim() || isAdjusting) return;
 
     const instruction = input.trim();
@@ -191,6 +192,7 @@ export function QuestionAdjustSheet({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
+                e.stopPropagation();
                 handleSubmit(e);
               }
             }}

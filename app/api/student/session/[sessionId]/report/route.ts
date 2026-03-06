@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@/lib/get-current-user";
@@ -124,6 +124,7 @@ export async function GET(
         q_idx,
         score,
         comment,
+        stage_grading,
         created_at
       `
       )
@@ -144,7 +145,7 @@ export async function GET(
         decompressedSessionData = decompressData(
           session.compressed_session_data
         );
-      } catch (error) {
+      } catch {
         // Decompression failed, continue with null
       }
     }
@@ -177,7 +178,7 @@ export async function GET(
                   ? decompressedObj.answer
                   : answer) || answer;
             }
-          } catch (error) {
+          } catch {
             // Decompression failed, continue with original
           }
         }
@@ -205,7 +206,7 @@ export async function GET(
         if (message.compressed_content) {
           try {
             content = decompressData(message.compressed_content);
-          } catch (error) {
+          } catch {
             // Decompression failed, continue with original
           }
         }
@@ -227,7 +228,13 @@ export async function GET(
     // Organize grades by question index
     const gradesByQuestion: Record<
       number,
-      { id: string; q_idx: number; score: number; comment?: string }
+      {
+        id: string;
+        q_idx: number;
+        score: number;
+        comment?: string;
+        stage_grading?: unknown;
+      }
     > = {};
 
     if (grades) {
@@ -237,6 +244,7 @@ export async function GET(
           q_idx: grade.q_idx,
           score: grade.score,
           comment: grade.comment || undefined,
+          stage_grading: grade.stage_grading || undefined,
         };
       });
     }
@@ -269,7 +277,7 @@ export async function GET(
       overallScore,
       aiSummary: session.ai_summary || null,
     });
-  } catch (error) {
+  } catch {
     return errorJson("FETCH_REPORT_FAILED", "Failed to get report", 500);
   }
 }

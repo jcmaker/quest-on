@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
+import { AiDependencySummaryCard } from "@/components/grading/AiDependencySummaryCard";
 import {
   ArrowLeft,
   FileText,
@@ -20,6 +21,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { getScoreColor } from "@/lib/grading-utils";
+import type { StageGrading, SummaryData } from "@/lib/types/grading";
 
 interface Question {
   id: string;
@@ -41,14 +43,7 @@ interface Grade {
   q_idx: number;
   score: number;
   comment?: string;
-}
-
-interface AISummary {
-  sentiment?: "positive" | "negative" | "neutral";
-  summary?: string;
-  strengths?: string[];
-  weaknesses?: string[];
-  keyQuotes?: string[];
+  stage_grading?: StageGrading;
 }
 
 interface ReportData {
@@ -74,7 +69,7 @@ interface ReportData {
   >;
   grades: Record<number, Grade>;
   overallScore: number | null;
-  aiSummary?: AISummary;
+  aiSummary?: SummaryData;
 }
 
 export default function StudentReportPage() {
@@ -202,6 +197,8 @@ export default function StudentReportPage() {
   const currentSubmission = reportData.submissions?.[selectedQuestionIdx];
   const currentGrade = reportData.grades?.[selectedQuestionIdx];
   const currentMessages = reportData.messages?.[selectedQuestionIdx] || [];
+  const currentAiDependency = currentGrade?.stage_grading?.chat?.ai_dependency;
+  const overallAiDependency = reportData.aiSummary?.aiDependency || null;
 
   return (
     <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
@@ -455,6 +452,12 @@ export default function StudentReportPage() {
               )}
             </CardContent>
           </Card>
+
+          <AiDependencySummaryCard
+            mode="student"
+            questionAssessment={currentAiDependency}
+            overallSummary={overallAiDependency}
+          />
         </div>
       </div>
 

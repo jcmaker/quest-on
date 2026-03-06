@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, use } from "react";
+import { useState, useEffect, useCallback, use, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -54,6 +54,7 @@ export default function EditExam({
   const [extractionStatus, setExtractionStatus] = useState<
     Map<string, "extracting" | "done" | "failed">
   >(new Map());
+  const isSubmittingRef = useRef(false);
 
   // 기존 시험 데이터 불러오기
   useEffect(() => {
@@ -112,7 +113,7 @@ export default function EditExam({
           }
           setExtractedTexts(textsMap);
         }
-      } catch (error) {
+      } catch {
         toast.error("시험 데이터를 불러오는 중 오류가 발생했습니다.");
         router.push(`/instructor/${resolvedParams.examId}`);
       } finally {
@@ -491,10 +492,6 @@ export default function EditExam({
     );
   };
 
-  const removeQuestion = (id: string) => {
-    setQuestions(questions.filter((q) => q.id !== id));
-  };
-
   const moveQuestion = (index: number, direction: "up" | "down") => {
     setQuestions((prev) => {
       const newQuestions = [...prev];
@@ -532,25 +529,33 @@ export default function EditExam({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
 
     if (!examData.title) {
+      isSubmittingRef.current = false;
       toast.error("시험 제목을 입력해주세요.");
       return;
     }
     if (!examData.code) {
+      isSubmittingRef.current = false;
       toast.error("시험 코드를 생성해주세요.");
       return;
     }
     if (questions.length === 0) {
+      isSubmittingRef.current = false;
       toast.error("최소 1개 이상의 문제를 추가해주세요.");
       return;
     }
     if (!canAddMoreFiles) {
+      isSubmittingRef.current = false;
       toast.error("파일 용량이 50MB를 초과했습니다. 일부 파일을 삭제해주세요.");
       return;
     }
     // duration 검증: 0(무제한)이 아니고 15 미만이면 에러
     if (examData.duration !== 0 && examData.duration < 15) {
+      isSubmittingRef.current = false;
       toast.error("시험 시간은 최소 15분 이상이거나 무제한이어야 합니다.");
       return;
     }
@@ -724,6 +729,7 @@ export default function EditExam({
       });
     } finally {
       setIsLoading(false);
+      isSubmittingRef.current = false;
     }
   };
 

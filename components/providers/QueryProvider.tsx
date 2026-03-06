@@ -26,13 +26,15 @@ export default function QueryProvider({
             staleTime: 60 * 1000,
             // 전역 재시도 전략
             retry: (failureCount, error) => {
-              // 4xx 에러는 재시도하지 않음
-              if (
-                error instanceof Error &&
-                (error.message.includes("4") ||
-                  error.message.includes("Failed to fetch"))
-              ) {
-                return false;
+              // 4xx 에러 및 네트워크 에러는 재시도하지 않음
+              if (error instanceof Error) {
+                // HTTP status code 기반 판별
+                const statusMatch = error.message.match(/\b([4]\d{2})\b/);
+                if (statusMatch) return false;
+                // "status" 프로퍼티가 있는 경우 (fetch wrapper에서 설정)
+                const statusCode = (error as Error & { status?: number }).status;
+                if (statusCode && statusCode >= 400 && statusCode < 500) return false;
+                if (error.message.includes("Failed to fetch")) return false;
               }
               // 최대 2회 재시도
               return failureCount < 2;

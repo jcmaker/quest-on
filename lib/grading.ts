@@ -1,6 +1,5 @@
 import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
-import { decompressData } from "@/lib/compression";
 import {
   buildChatGradingSystemPrompt,
   buildAnswerGradingSystemPrompt,
@@ -9,6 +8,23 @@ import {
   buildSummaryEvaluationSystemPrompt,
 } from "@/lib/prompts";
 import { logError } from "@/lib/logger";
+import {
+  decompressSubmissions,
+  decompressMessages,
+  normalizeQuestions,
+  buildRubricText,
+  calculateWeightedScore,
+  analyzeAiDependency,
+  formatAiDependencyForPrompt,
+  summarizeAiDependencyAssessments,
+} from "@/lib/grading-helpers";
+import type {
+  StageGrading,
+  SummaryData,
+} from "@/lib/types/grading";
+
+/** Maximum time for the entire grading operation (90 seconds) */
+const GRADING_TIMEOUT_MS = 90_000;
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -17,28 +33,24 @@ interface GradeResult {
   q_idx: number;
   score: number; // 0-100
   comment: string;
-  stage_grading?: {
-    chat?: { score: number; comment: string };
-    answer?: { score: number; comment: string };
-    feedback?: { score: number; comment: string };
-  };
+  stage_grading?: StageGrading;
 }
 
-interface SummaryResult {
-  sentiment: "positive" | "negative" | "neutral";
-  summary: string;
-  strengths: string[];
-  weaknesses: string[];
-  keyQuotes: string[];
+interface AutoGradeResult {
+  grades: GradeResult[];
+  summary: SummaryData | null;
+  failedQuestions: number[];
+  timedOut: boolean;
 }
 
 /**
  * 서버 사이드 자동 채점 함수
  * 루브릭 기반으로 각 문제를 0-100점으로 채점
+ * Outer timeout (90s) 적용 — 시간 초과 시 완료된 채점만 저장
  */
 export async function autoGradeSession(
   sessionId: string
-): Promise<{ grades: GradeResult[]; summary: SummaryResult | null }> {
+): Promise<AutoGradeResult> {
   // 1. 세션 정보 가져오기
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
@@ -108,126 +120,12 @@ export async function autoGradeSession(
     });
   }
 
-  // 5. 데이터 압축 해제 및 정리
-  // 같은 q_idx에 여러 submission이 있으면 가장 최신 것(또는 가장 완전한 것)을 선택
-  const submissionsByQuestion: Record<
-    number,
-    {
-      answer: string;
-    }
-  > = {};
-
-  if (submissions) {
-    // q_idx별로 그룹화하고, 각 그룹에서 가장 최신이거나 가장 완전한 것을 선택
-    const submissionsByQIdx = new Map<number, Array<Record<string, unknown>>>();
-
-    submissions.forEach((submission: Record<string, unknown>) => {
-      const qIdx = submission.q_idx as number;
-      if (!submissionsByQIdx.has(qIdx)) {
-        submissionsByQIdx.set(qIdx, []);
-      }
-      submissionsByQIdx.get(qIdx)!.push(submission);
-    });
-
-    // 각 q_idx에 대해 가장 좋은 submission 선택
-    submissionsByQIdx.forEach((subs, qIdx) => {
-      // 같은 q_idx에 여러 submission이 있으면:
-      // 1. answer가 가장 긴 것 (더 완전한 답안)
-      // 2. 가장 최신 것
-      const bestSubmission = subs.reduce((best, current) => {
-        const bestAnswer = (best.answer as string) || "";
-        const currentAnswer = (current.answer as string) || "";
-
-        // answer가 더 긴 것을 우선
-        if (currentAnswer.length > bestAnswer.length) return current;
-        if (bestAnswer.length > currentAnswer.length) return best;
-
-        // 최신 것을 우선 (created_at 비교)
-        const bestCreated = best.created_at
-          ? new Date(best.created_at as string).getTime()
-          : 0;
-        const currentCreated = current.created_at
-          ? new Date(current.created_at as string).getTime()
-          : 0;
-        return currentCreated > bestCreated ? current : best;
-      });
-
-      let answer = (bestSubmission.answer as string) || "";
-
-      if (
-        bestSubmission.compressed_answer_data &&
-        typeof bestSubmission.compressed_answer_data === "string"
-      ) {
-        try {
-          const decompressed = decompressData(
-            bestSubmission.compressed_answer_data as string
-          );
-          answer = (decompressed as { answer?: string })?.answer || answer;
-        } catch {
-          // Decompression failed, fall back to raw answer
-        }
-      }
-
-      submissionsByQuestion[qIdx] = {
-        answer: answer || "",
-      };
-    });
-  }
-
-  const messagesByQuestion: Record<
-    number,
-    Array<{ role: string; content: string }>
-  > = {};
-
-  if (messages) {
-    messages.forEach((message: Record<string, unknown>) => {
-      const qIdx = message.q_idx as number;
-      let content = message.content as string;
-
-      if (
-        message.compressed_content &&
-        typeof message.compressed_content === "string"
-      ) {
-        try {
-          content =
-            (decompressData(message.compressed_content as string) as string) ||
-            content;
-        } catch {
-          // Decompression failed, fall back to raw content
-        }
-      }
-
-      if (!messagesByQuestion[qIdx]) {
-        messagesByQuestion[qIdx] = [];
-      }
-
-      messagesByQuestion[qIdx].push({
-        role: message.role as string,
-        content: content || "",
-      });
-    });
-  }
+  // 5. 데이터 압축 해제 및 정리 (헬퍼 함수 사용)
+  const submissionsByQuestion = decompressSubmissions(submissions || []);
+  const messagesByQuestion = decompressMessages(messages || []);
 
   // 6. 문제 정규화
-  const questions: Array<{
-    idx: number;
-    prompt?: string;
-    ai_context?: string;
-  }> = exam.questions
-    ? Array.isArray(exam.questions)
-      ? exam.questions.map((q: Record<string, unknown>, index: number) => ({
-          idx: q.idx !== undefined ? (q.idx as number) : index,
-          prompt:
-            typeof q.prompt === "string"
-              ? q.prompt
-              : typeof q.text === "string"
-              ? q.text
-              : undefined,
-          ai_context:
-            typeof q.ai_context === "string" ? q.ai_context : undefined,
-        }))
-      : []
-    : [];
+  const questions = normalizeQuestions(exam.questions);
 
   // 7. 루브릭 텍스트 생성
   const rubricItems =
@@ -238,25 +136,7 @@ export async function autoGradeSession(
         }>)
       : [];
 
-  const rubricText =
-    rubricItems.length > 0
-      ? `
-**평가 루브릭 기준:**
-${rubricItems
-  .map(
-    (
-      item: {
-        evaluationArea: string;
-        detailedCriteria: string;
-      },
-      index: number
-    ) =>
-      `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
-  )
-  .join("\n")}
-`
-      : "";
+  const rubricText = buildRubricText(exam.rubric);
 
   // 8. 각 문제별 채점 (병렬 처리로 ~5배 속도 개선)
   const rubricScoresSchema = rubricItems
@@ -274,6 +154,10 @@ ${rubricItems
       submission = submissionsByQuestion[questionIndex];
     }
     const questionMessages = messagesByQuestion[qIdx] || [];
+    const aiDependencyAssessment = analyzeAiDependency({
+      messages: questionMessages,
+      finalAnswer: submission?.answer || "",
+    });
 
     if (!submission) {
       return null;
@@ -293,6 +177,7 @@ ${rubricItems
               questionPrompt: question.prompt || "",
               questionAiContext: question.ai_context,
               messages: questionMessages,
+              aiDependencyAssessment,
             });
 
             const chatCompletion = await callOpenAI(() =>
@@ -320,10 +205,22 @@ ${rubricItems
               });
             }
 
+            const rawScore = Math.max(
+              0,
+              Math.min(100, Math.round(chatParsedResponse.score || 0))
+            );
+            const adjustedScore = Math.max(
+              0,
+              Math.min(100, rawScore - aiDependencyAssessment.penaltyApplied)
+            );
+
             return {
-              score: Math.max(0, Math.min(100, Math.round(chatParsedResponse.score || 0))),
-              comment: chatParsedResponse.comment || "채팅 단계 평가 완료",
+              score: adjustedScore,
+              comment: `${
+                chatParsedResponse.comment || "채팅 단계 평가 완료"
+              }\n\nAI 활용 해석: ${aiDependencyAssessment.summary}`,
               rubric_scores: Object.keys(rubricScores).length > 0 ? rubricScores : undefined,
+              ai_dependency: aiDependencyAssessment,
             };
           })()
         : Promise.resolve(null),
@@ -377,10 +274,7 @@ ${rubricItems
     ]);
 
     // 결과 조합
-    const stageGrading: {
-      chat?: { score: number; comment: string; rubric_scores?: Record<string, number> };
-      answer?: { score: number; comment: string; rubric_scores?: Record<string, number> };
-    } = {};
+    const stageGrading: StageGrading = {};
 
     if (chatResult.status === "fulfilled" && chatResult.value) {
       stageGrading.chat = chatResult.value;
@@ -391,21 +285,7 @@ ${rubricItems
     }
 
     // 8-3. 종합 점수 계산 — 가중 평균 (0-100 범위 보장)
-    const chatWeight = (exam.chat_weight ?? 50) / 100;
-    const answerWeight = 1 - chatWeight;
-
-    let finalScore = 0;
-    if (stageGrading.chat && stageGrading.answer) {
-      finalScore = Math.round(
-        stageGrading.chat.score * chatWeight +
-          stageGrading.answer.score * answerWeight
-      );
-    } else if (stageGrading.chat) {
-      finalScore = stageGrading.chat.score;
-    } else if (stageGrading.answer) {
-      finalScore = stageGrading.answer.score;
-    }
-    finalScore = Math.max(0, Math.min(100, finalScore));
+    const finalScore = calculateWeightedScore(stageGrading, exam.chat_weight ?? 50);
     const overallComment = `채팅 단계: ${
       stageGrading.chat?.score || "N/A"
     }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점`;
@@ -422,8 +302,23 @@ ${rubricItems
     return null;
   });
 
-  // 모든 문제 병렬 채점 실행
-  const gradeResults = await Promise.allSettled(gradePromises);
+  // 모든 문제 병렬 채점 실행 (with outer timeout)
+  const gradingPromise = Promise.allSettled(gradePromises);
+  const timeoutPromise = new Promise<"TIMEOUT">((resolve) =>
+    setTimeout(() => resolve("TIMEOUT"), GRADING_TIMEOUT_MS)
+  );
+
+  const raceResult = await Promise.race([gradingPromise, timeoutPromise]);
+  const timedOut = raceResult === "TIMEOUT";
+
+  // If timed out, still collect whatever results completed so far
+  // Promise.allSettled doesn't reject, so we await it after timeout too
+  const gradeResults = timedOut
+    ? await Promise.allSettled(gradePromises.map((p) =>
+        Promise.race([p, new Promise<null>((resolve) => setTimeout(() => resolve(null), 0))])
+      ))
+    : raceResult;
+
   const grades: GradeResult[] = gradeResults
     .filter(
       (r): r is PromiseFulfilledResult<GradeResult | null> =>
@@ -431,17 +326,33 @@ ${rubricItems
     )
     .map((r) => r.value!);
 
-  // 실패한 문제 로깅
-  gradeResults.forEach((r) => {
+  // Track failed and timed-out questions
+  const failedQuestions: number[] = [];
+  gradeResults.forEach((r, idx) => {
     if (r.status === "rejected") {
+      failedQuestions.push(idx);
       logError("[AUTO_GRADE] Question grading failed", r.reason, {
         path: "lib/grading.ts",
         additionalData: { sessionId },
       });
+    } else if (r.status === "fulfilled" && r.value === null && timedOut) {
+      // Question was null due to timeout (not because it had no submission)
+      const question = questions[idx];
+      const submission = submissionsByQuestion[question?.idx];
+      if (submission) {
+        failedQuestions.push(idx);
+      }
     }
   });
 
-  // 9. 채점 결과 저장
+  if (timedOut) {
+    logError("[AUTO_GRADE] Grading timed out", new Error(`Grading timed out after ${GRADING_TIMEOUT_MS}ms`), {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, completedCount: grades.length, totalQuestions: questions.length },
+    });
+  }
+
+  // 9. 채점 결과 저장 (partial 결과라도 저장)
   if (grades.length > 0) {
     const { error: insertError } = await supabase.from("grades").insert(
       grades.map((grade) => ({
@@ -459,22 +370,27 @@ ${rubricItems
     }
   }
 
-  // 10. 요약 평가 생성
-  let summary: SummaryResult | null = null;
-  try {
-    summary = await generateSummary(
-      sessionId,
-      exam,
-      questions,
-      submissionsByQuestion,
-      messagesByQuestion,
-      grades
-    );
-  } catch {
-    // 요약 생성 실패해도 채점 결과는 반환
+  // 10. 요약 평가 생성 (timeout 시에도 완료된 결과로 시도)
+  let summary: SummaryData | null = null;
+  if (!timedOut) {
+    try {
+      summary = await generateSummary(
+        sessionId,
+        exam,
+        questions,
+        submissionsByQuestion,
+        messagesByQuestion,
+        grades
+      );
+    } catch (err) {
+      logError("[AUTO_GRADE] Summary generation failed", err, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId },
+      });
+    }
   }
 
-  return { grades, summary };
+  return { grades, summary, failedQuestions, timedOut };
 }
 
 /**
@@ -487,7 +403,7 @@ async function generateSummary(
   submissionsByQuestion: Record<number, { answer: string }>,
   messagesByQuestion: Record<number, Array<{ role: string; content: string }>>,
   grades: GradeResult[]
-): Promise<SummaryResult | null> {
+): Promise<SummaryData | null> {
   try {
     const rubricText =
       exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
@@ -544,6 +460,12 @@ ${
     ? `답안 단계 점수: ${grade.stage_grading.answer.score}점`
     : ""
 }
+${
+  grade?.stage_grading?.chat?.ai_dependency
+    ? `AI 활용/의존 신호:
+${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
+    : ""
+}
 `;
       })
       .join("\n---\n\n");
@@ -568,6 +490,7 @@ ${
         4) **개념 역전형**: 핵심 인과관계, 정의, 방향성을 거꾸로 이해하여 질문하거나 답안 작성.
         5) **교정 미반영형**: AI가 오류를 교정했음에도 최종 답안이 동일한 오류를 그대로 포함.
       - 질문의 양이 많더라도, 그 질문들이 문제의 본질(Core Task)에서 벗어난 지엽적인 것이라면 '자기주도적 학습 역량' 점수를 높게 주지 마십시오.
+      - 직접 답변을 받은 사실 자체는 금지 위반이 아닙니다. 그러나 이후 독립 추론이 약하면 엄격히 감점하고, 회복이 확인되면 그 회복 근거를 분명히 적으십시오.
       - 학생이 주어지지 않은 정보를 논리적으로 가정(Assume)하여 논의를 진전시키는 경우에는 이를 '문제 해결을 위한 창의적 접근'으로 보아 긍정적으로 평가하십시오.
         다만, 이러한 가정이 문제에 이미 명시된 조건을 부정하는 용도로 쓰인다면 예외 없이 엄격하게 감점하십시오.
 
@@ -609,12 +532,23 @@ ${
 
     const result = JSON.parse(
       completion.choices[0]?.message?.content || "{}"
-    ) as SummaryResult;
+    ) as SummaryData;
+
+    const aiDependencySummary = summarizeAiDependencyAssessments(
+      grades.map((grade) => ({
+        q_idx: grade.q_idx,
+        assessment: grade.stage_grading?.chat?.ai_dependency,
+      }))
+    );
+    const summaryWithDependency: SummaryData = {
+      ...result,
+      aiDependency: aiDependencySummary,
+    };
 
     // 세션에 요약 저장 (ai_summary 컬럼이 없을 수 있으므로 에러 처리)
     const { error: updateError } = await supabase
       .from("sessions")
-      .update({ ai_summary: result })
+      .update({ ai_summary: summaryWithDependency })
       .eq("id", sessionId);
 
     if (updateError) {
@@ -625,8 +559,12 @@ ${
       });
     }
 
-    return result;
-  } catch {
+    return summaryWithDependency;
+  } catch (err) {
+    logError("[AUTO_GRADE] Summary generation failed in generateSummary", err, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId },
+    });
     return null;
   }
 }

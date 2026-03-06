@@ -4,6 +4,7 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
 import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 const supabase = getSupabaseServer();
 
@@ -28,6 +29,11 @@ export async function POST(
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Instructor access required", 403);
+    }
+
+    const rl = await checkRateLimitAsync(`exam-end:${user.id}`, RATE_LIMITS.examControl);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests", 429);
     }
 
     const resolvedParams = await params;

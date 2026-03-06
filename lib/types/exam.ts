@@ -51,3 +51,30 @@ export interface ExamSession {
   createdAt: string;
   examId: string;
 }
+
+/** Instructor page types */
+export interface InstructorExam extends Exam {
+  createdAt: string;
+  students: InstructorStudent[];
+  open_at?: string | null;
+  close_at?: string | null;
+  started_at?: string | null;
+}
+
+export interface InstructorStudent {
+  id: string;
+  name: string;
+  email: string;
+  status: "not-started" | "in-progress" | "completed";
+  score?: number;
+  finalScore?: number;
+  submittedAt?: string;
+  createdAt?: string;
+  student_number?: string;
+  school?: string;
+  questionCount?: number;
+  answerLength?: number;
+  isGraded?: boolean;
+}
+
+export type SortOption = "score" | "questionCount" | "answerLength" | "submittedAt";

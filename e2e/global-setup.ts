@@ -1,8 +1,11 @@
 import { execSync } from "child_process";
 import { ChildProcess, spawn } from "child_process";
 import path from "path";
-import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import {
+  createTestSupabaseClient,
+  waitForTestSupabaseReady,
+} from "./helpers/supabase-test-client";
 
 // Load test env vars
 dotenv.config({ path: path.resolve(__dirname, "../.env.test") });
@@ -23,8 +26,8 @@ async function applyMigrations() {
   }
 
   console.log("[global-setup] Applying schema migrations...");
-
-  const supabase = createClient(supabaseUrl, serviceRoleKey);
+  await waitForTestSupabaseReady();
+  const supabase = createTestSupabaseClient();
 
   // Migration: add chat_weight column if missing (sql/005_add_chat_weight.sql)
   try {

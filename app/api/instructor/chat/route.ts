@@ -9,7 +9,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { openai, AI_MODEL } from "@/lib/openai";
 import { buildInstructorChatSystemPrompt } from "@/lib/prompts";
 import { handleCorsPreFlight } from "@/lib/cors";
-import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, instructorChatRequestSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
 import { extractResponseText } from "@/lib/parse-openai-response";
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limiting
-    const rl = checkRateLimit(`instructor-chat:${user.id}`, RATE_LIMITS.ai);
+    const rl = await checkRateLimitAsync(`instructor-chat:${user.id}`, RATE_LIMITS.ai);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }

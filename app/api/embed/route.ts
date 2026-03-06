@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { createEmbedding } from "@/lib/embedding";
 import { successJson, errorJson } from "@/lib/api-response";
-import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { logError } from "@/lib/logger";
 
 /**
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limiting
-    const rl = checkRateLimit(`embed:${user.id}`, RATE_LIMITS.ai);
+    const rl = await checkRateLimitAsync(`embed:${user.id}`, RATE_LIMITS.ai);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }

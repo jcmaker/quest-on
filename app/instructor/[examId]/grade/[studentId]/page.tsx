@@ -21,6 +21,7 @@ import {
   AIOverallSummary,
   SummaryData,
 } from "@/components/instructor/AIOverallSummary";
+import { AiDependencySummaryCard } from "@/components/grading/AiDependencySummaryCard";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
 import {
@@ -74,7 +75,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { StageKey } from "@/lib/types/grading";
+import { StageGrading, StageKey } from "@/lib/types/grading";
 import { isAiGraded } from "@/lib/grading-utils";
 
 interface Conversation {
@@ -107,10 +108,7 @@ interface Grade {
   q_idx: number;
   score: number;
   comment?: string;
-  stage_grading?: {
-    chat?: { score: number; comment: string };
-    answer?: { score: number; comment: string };
-  };
+  stage_grading?: StageGrading;
 }
 
 interface PasteLog {
@@ -384,6 +382,9 @@ export default function GradeStudentPage({
   // Mutation for saving grades
   const saveGradeMutation = useMutation({
     mutationFn: async (questionIdx: number) => {
+      const existingStageGrading = (
+        sessionData?.grades?.[questionIdx] as Grade | undefined
+      )?.stage_grading;
       const response = await fetch(
         `/api/session/${resolvedParams.studentId}/grade`,
         {
@@ -398,16 +399,18 @@ export default function GradeStudentPage({
             stageGrading: {
               chat: stageScores[questionIdx]?.chat
                 ? {
+                    ...(existingStageGrading?.chat || {}),
                     score: stageScores[questionIdx]?.chat || 0,
                     comment: stageComments[questionIdx]?.chat || "",
                   }
-                : undefined,
+                : existingStageGrading?.chat,
               answer: stageScores[questionIdx]?.answer
                 ? {
+                    ...(existingStageGrading?.answer || {}),
                     score: stageScores[questionIdx]?.answer || 0,
                     comment: stageComments[questionIdx]?.answer || "",
                   }
-                : undefined,
+                : existingStageGrading?.answer,
             },
           }),
         }
@@ -761,6 +764,11 @@ export default function GradeStudentPage({
   const currentSubmission = sessionData.submissions?.[selectedQuestionIdx] as
     | Submission
     | undefined;
+  const currentGrade = sessionData.grades?.[selectedQuestionIdx] as
+    | Grade
+    | undefined;
+  const currentAiDependency = currentGrade?.stage_grading?.chat?.ai_dependency;
+  const overallAiDependency = overallSummary?.aiDependency || null;
 
   // Try to get messages by both index and question.id (for backward compatibility)
   let currentMessages = (sessionData.messages?.[selectedQuestionIdx] ||
@@ -1700,6 +1708,12 @@ export default function GradeStudentPage({
                 }
                 onAcceptAiScore={handleAcceptAiScore}
                 onSave={() => handleSaveGrade(selectedQuestionIdx)}
+              />
+
+              <AiDependencySummaryCard
+                mode="instructor"
+                questionAssessment={currentAiDependency}
+                overallSummary={overallAiDependency}
               />
 
               {/* PDF 기능 임시 숨김 — 고도화 후 복원 예정

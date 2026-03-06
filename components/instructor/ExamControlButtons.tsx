@@ -52,36 +52,22 @@ export function ExamControlButtons({
     }
     const data = await response.json();
     
-    // waiting 상태이고 활성 세션인 학생만 필터링
-    // 활성 세션: is_active가 true이고, last_heartbeat_at이 최근 5분 이내인 경우
-    const now = Date.now();
-    const FIVE_MINUTES = 5 * 60 * 1000;
-    
-    const waiting = (data.sessions || []).filter((session: any) => {
-      // 상태가 waiting이어야 함
-      const isWaiting = session.status === "waiting" || 
-        (!session.status && !session.submitted_at);
-      
-      if (!isWaiting) return false;
-      
-      // 활성 세션 체크: is_active가 true이고, 최근 하트비트가 있거나 생성된 지 5분 이내
-      const isActive = session.is_active !== false; // null이나 undefined도 활성으로 간주
-      
-      if (session.last_heartbeat_at) {
-        const heartbeatTime = new Date(session.last_heartbeat_at).getTime();
-        return isActive && (now - heartbeatTime) < FIVE_MINUTES;
-      }
-      
-      // 하트비트가 없으면 생성 시간 기준으로 5분 이내면 활성으로 간주
-      if (session.created_at) {
-        const createdTime = new Date(session.created_at).getTime();
-        return isActive && (now - createdTime) < FIVE_MINUTES;
-      }
-      
-      // 기본적으로 활성으로 간주 (하지만 하트비트가 없으면 비활성으로 처리)
-      return false;
+    // Show ALL students with waiting status — dead sessions get cleaned up on exam start
+    // (they transition to in_progress and time out if the student is gone)
+    interface SessionRecord {
+      student_id: string;
+      status?: string;
+      submitted_at?: string | null;
+      student_name?: string;
+      student_email?: string;
+      student_number?: string;
+      student_school?: string;
+    }
+
+    const waiting = (data.sessions || []).filter((session: SessionRecord) => {
+      return session.status === "waiting" || (!session.status && !session.submitted_at);
     });
-    
+
     // 학생 정보 추출 (중복 제거)
     const studentMap = new Map<string, {
       student_id: string;
@@ -89,8 +75,8 @@ export function ExamControlButtons({
       student_number?: string;
       school?: string;
     }>();
-    
-    waiting.forEach((session: any) => {
+
+    waiting.forEach((session: SessionRecord) => {
       if (!studentMap.has(session.student_id)) {
         studentMap.set(session.student_id, {
           student_id: session.student_id,

@@ -603,7 +603,7 @@ export async function sessionHeartbeat(data: {
 
         if (timeRemaining <= 0) {
           // ✅ 시간 종료 - 자동 제출 처리 (grace period 포함)
-          const { error: updateError } = await supabase
+          const { data: autoSubmittedSession, error: updateError } = await supabase
             .from("sessions")
             .update({
               submitted_at: new Date().toISOString(),
@@ -611,7 +611,10 @@ export async function sessionHeartbeat(data: {
               auto_submitted: true,
               is_active: false,
             })
-            .eq("id", data.sessionId);
+            .eq("id", data.sessionId)
+            .is("submitted_at", null)
+            .select("id")
+            .maybeSingle();
 
           if (updateError) {
             logError("Failed to auto-submit session", updateError, { path: "/api/supa", additionalData: { sessionId: data.sessionId } });
@@ -619,7 +622,7 @@ export async function sessionHeartbeat(data: {
 
           return successJson({
             timeExpired: true,
-            autoSubmitted: true,
+            autoSubmitted: !!autoSubmittedSession,
           });
         }
       }

@@ -48,6 +48,9 @@ export function ExamHeader({
   const [showExpiredDialog, setShowExpiredDialog] = useState(false);
   const hasWarned5min = useRef(false);
   const hasWarned1min = useRef(false);
+  const onTimeExpiredRef = useRef(onTimeExpired);
+  onTimeExpiredRef.current = onTimeExpired;
+  const expiredCalledRef = useRef(false);
 
   // Initialize timer - 세션 시작 시간 기반으로 계산
   useEffect(() => {
@@ -68,22 +71,24 @@ export function ExamHeader({
       setTimeRemaining(remaining);
 
       // 이미 시간이 지났으면 즉시 처리
-      if (remaining <= 0 && onTimeExpired) {
+      if (remaining <= 0 && onTimeExpiredRef.current && !expiredCalledRef.current) {
+        expiredCalledRef.current = true;
         setHasExpired(true);
         setShowExpiredDialog(true);
-        onTimeExpired();
+        onTimeExpiredRef.current();
       }
     } else if (initialTimeRemaining !== null && initialTimeRemaining !== undefined) {
       // 서버에서 계산된 남은 시간 사용
       setTimeRemaining(Math.max(0, initialTimeRemaining));
-      
-      if (initialTimeRemaining <= 0 && onTimeExpired) {
+
+      if (initialTimeRemaining <= 0 && onTimeExpiredRef.current && !expiredCalledRef.current) {
+        expiredCalledRef.current = true;
         setHasExpired(true);
         setShowExpiredDialog(true);
-        onTimeExpired();
+        onTimeExpiredRef.current();
       }
     }
-  }, [sessionStartTime, initialTimeRemaining, duration, onTimeExpired]);
+  }, [sessionStartTime, initialTimeRemaining, duration]);
 
   // Sync timer with server on heartbeat responses
   useEffect(() => {
@@ -118,10 +123,11 @@ export function ExamHeader({
       setTimeRemaining((prev) => {
         if (prev === null || prev <= 0) {
           // ✅ 시간 종료 시 자동 제출
-          if (!hasExpired && onTimeExpired) {
+          if (!hasExpired && onTimeExpiredRef.current && !expiredCalledRef.current) {
+            expiredCalledRef.current = true;
             setHasExpired(true);
             setShowExpiredDialog(true);
-            onTimeExpired();
+            onTimeExpiredRef.current();
           }
           return 0;
         }
@@ -130,7 +136,7 @@ export function ExamHeader({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timeRemaining, hasExpired, onTimeExpired, duration]);
+  }, [timeRemaining, hasExpired, duration]);
 
   // Time warning toasts (5 min / 1 min)
   useEffect(() => {

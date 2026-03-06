@@ -1,4 +1,4 @@
-import { getTestSupabase } from "./supabase-test-client";
+import { getTestSupabase, waitForTestSupabaseReady } from "./supabase-test-client";
 import crypto from "crypto";
 
 const supabase = getTestSupabase();
@@ -10,7 +10,10 @@ function uuid(): string {
 }
 
 function examCode(): string {
-  return `TEST-${Date.now().toString(36).toUpperCase()}`;
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from(crypto.randomBytes(6), (byte) =>
+    alphabet[byte % alphabet.length]
+  ).join("");
 }
 
 // --------------- Seed functions ---------------
@@ -32,6 +35,8 @@ interface SeedExamOverrides {
 }
 
 export async function seedExam(overrides: SeedExamOverrides = {}) {
+  await waitForTestSupabaseReady();
+
   const id = overrides.id ?? uuid();
   const data = {
     id,
@@ -42,6 +47,7 @@ export async function seedExam(overrides: SeedExamOverrides = {}) {
     duration: overrides.duration ?? 60,
     questions: overrides.questions ?? [
       {
+        id: "q-0",
         idx: 0,
         type: "open_ended",
         text: "Explain the concept of polymorphism in OOP.",
@@ -49,6 +55,7 @@ export async function seedExam(overrides: SeedExamOverrides = {}) {
         ai_context: "Focus on compile-time vs runtime polymorphism.",
       },
       {
+        id: "q-1",
         idx: 1,
         type: "open_ended",
         text: "Describe the difference between a stack and a queue.",
@@ -256,6 +263,8 @@ export async function seedExamNode(overrides: SeedExamNodeOverrides = {}) {
  * Safe to call multiple times.
  */
 export async function cleanupTestData() {
+  await waitForTestSupabaseReady();
+
   // Delete in FK dependency order
   const tables = [
     "grades",

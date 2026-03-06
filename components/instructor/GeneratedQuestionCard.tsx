@@ -99,6 +99,7 @@ export function GeneratedQuestionCard({
         {/* Expand/collapse toggle */}
         {needsExpand && (
           <Button
+            type="button"
             variant="ghost"
             size="sm"
             onClick={() => setIsExpanded(!isExpanded)}
@@ -121,6 +122,7 @@ export function GeneratedQuestionCard({
         {/* Footer actions — P1-1: "완료"→"추가", Check→Plus; P1-7: Delete button moved here */}
         <div className="flex flex-wrap items-center gap-2 pt-3 border-t">
           <Button
+            type="button"
             size="sm"
             variant="default"
             onClick={onAccept}
@@ -130,6 +132,7 @@ export function GeneratedQuestionCard({
             추가
           </Button>
           <Button
+            type="button"
             size="sm"
             variant="secondary"
             onClick={() => setIsSheetOpen(true)}
@@ -139,6 +142,7 @@ export function GeneratedQuestionCard({
             AI와 수정
           </Button>
           <Button
+            type="button"
             size="sm"
             variant="outline"
             onClick={onRegenerate}
@@ -154,6 +158,7 @@ export function GeneratedQuestionCard({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
+                  type="button"
                   size="icon"
                   variant="ghost"
                   onClick={onRemove}

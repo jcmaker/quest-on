@@ -117,27 +117,20 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
         expect(s.status).toBe("waiting");
       }).toPass({ timeout: 10_000, intervals: [1_000] });
 
-      // ── Step 4: Instructor starts exam (DB update) ──
-      // Mirrors what POST /api/exam/[examId]/start does internally.
-      const now = new Date().toISOString();
-
-      const { error: examErr } = await supabase
-        .from("exams")
-        .update({ status: "running", started_at: now })
-        .eq("id", exam.id);
-      if (examErr) throw new Error(`Start exam failed: ${examErr.message}`);
-
-      const { error: sessErr } = await supabase
-        .from("sessions")
-        .update({
-          status: "in_progress",
-          started_at: now,
-          attempt_timer_started_at: now,
-        })
-        .eq("exam_id", exam.id)
-        .eq("status", "waiting");
-      if (sessErr)
-        throw new Error(`Update sessions failed: ${sessErr.message}`);
+      // ── Step 4: Instructor starts exam (via API for atomic update) ──
+      const startResponse = await iPage.request.post(
+        `${url}/api/exam/${exam.id}/start`,
+        {
+          data: {},
+          headers: {
+            "Content-Type": "application/json",
+            "x-test-user-id": TEST_INSTRUCTOR.id,
+            "x-test-user-role": "instructor",
+            "x-test-bypass-token": BYPASS_SECRET,
+          },
+        }
+      );
+      expect(startResponse.status()).toBe(200);
 
       // ── Step 5: Student exam activates — questions appear ──
       // WaitingRoom polls every 10s; generous timeout to allow detection
@@ -220,7 +213,7 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
         sPage.getByRole("heading", { name: exam.title }),
       ).toBeVisible({ timeout: 15_000 });
       await expect(
-        sPage.getByRole("paragraph").filter({ hasText: "90" }),
+        sPage.getByText(/전체 점수:\s*90\/100점/),
       ).toBeVisible({ timeout: 10_000 });
     } finally {
       await studentCtx.close();

@@ -3,7 +3,7 @@ export const maxDuration = 60;
 import { NextRequest } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
-import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { adjustCaseQuestionSchema, validateRequest } from "@/lib/validations";
 import { buildCaseQuestionAdjustmentPrompt } from "@/lib/prompts";
 import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limiting
-    const rl = checkRateLimit(`adjust-question:${user.id}`, RATE_LIMITS.ai);
+    const rl = await checkRateLimitAsync(`adjust-question:${user.id}`, RATE_LIMITS.ai);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }

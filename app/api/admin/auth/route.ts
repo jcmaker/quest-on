@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createAdminToken } from "@/lib/admin-auth";
-import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, adminAuthSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   try {
     // Rate limiting by IP to prevent brute force (always applied)
     const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-    const rl = checkRateLimit(`admin-login:${ip}`, RATE_LIMITS.adminLogin);
+    const rl = await checkRateLimitAsync(`admin-login:${ip}`, RATE_LIMITS.adminLogin);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many login attempts. Please try again later.", 429);
     }

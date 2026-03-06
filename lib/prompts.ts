@@ -5,6 +5,8 @@
  * 각 프롬프트는 함수 형태로 export되며, 필요시 파라미터를 받아 동적으로 생성됩니다.
  */
 
+import type { AiDependencyAssessment } from "@/lib/types/grading";
+
 // 타입 정의
 export type RubricItem = {
   evaluationArea: string;
@@ -84,10 +86,18 @@ ${rubricSection}
 - 학생이 묻는 질문에는 반드시 너가 가정한 "특정한 가상의 상황"에 기반해서 답변한다.
 - 답변은 실제 교수-학생의 질의응답처럼 자연스럽게 진행한다.
 
+**[응답 스타일]**
+- 학생이 질문하면, 바로 정답을 제시하기보다 먼저 유도 질문이나 힌트로 안내하는 것을 선호한다.
+- 단, 학생이 직접 답을 요청하거나 반복해서 물어보면 직접적인 답변을 제공해도 된다.
+- 학생이 오개념을 가지고 있을 때는, 틀렸다고 단정하기보다 관련 개념을 다시 짚어주며 스스로 교정하도록 유도한다.
+
 규칙(Rules):
 - 항상 **마크다운** 형식으로 답변한다.
+- **수학 식은 반드시 LaTeX 달러 기호 구분자로 감싸서 작성한다:**
+  - 인라인 수식: $수식$ (예: $\\Delta H = 0$, $P = \\frac{nRT}{V}$)
+  - 블록(display) 수식: $$수식$$ (예: $$W = \\int_{V_i}^{V_f} P \\, dV$$)
+  - **절대 달러 기호 없이 \\frac, \\int, \\Delta 등 LaTeX 명령어를 사용하지 마세요.**
 - ~ㅂ니다 체를 사용한다.
-- 학생의 질문에 자연스럽게 답변하되, 답변에는 사실과 정보만 전달한다.
 - 정보를 묻는 질문에는 기본적으로 한 문장으로 답하되, 정확성을 위해 필요하면 2-3문장까지 허용한다.
 - 해설, 판단, 코멘트는 포함하지 않는다.
 - 질문에 직접 대응되지 않는 정보는 제공하지 않는다.
@@ -145,7 +155,7 @@ export function buildFeedbackSystemPrompt(params: {
   rubric?: RubricItem[];
   examTitle?: string;
 }): string {
-  const { rubric, examTitle } = params;
+  const { rubric } = params;
   const hasRubric = !!(rubric && Array.isArray(rubric) && rubric.length > 0);
 
   return `당신은 학문 분야의 전문 심사위원입니다. 학생의 답안을 심사위원 스타일로 피드백합니다.
@@ -287,7 +297,7 @@ ${hasRubric ? "- **평가 루브릭에 명시된 각 평가 영역의 달성도*
 - 학생의 답변을 더 깊이 있게 유도하는 질문
 - 3-5차례 대화 후 자연스럽게 마무리
 - HTML 형식으로 응답 가능 (굵은 글씨, 기울임, 목록 등)
-- 수학 식이 필요한 경우 LaTeX 형식 사용 ($...$ 또는 $$...$$)
+- **수학 식은 반드시 LaTeX 달러 기호 구분자로 감싸서 작성:** 인라인은 $수식$, 블록은 $$수식$$ (달러 기호 없이 LaTeX 명령어를 사용하지 마세요)
 - 반드시 한국어로 응답하세요`;
 }
 
@@ -331,6 +341,7 @@ ${
 ${rubricScoresSchema ? "6" : "5"}. 구체적이고 건설적인 피드백을 제공하세요.
 
 AI 활용 역량 평가 (매우 중요):
+- 학생이 직접 답변을 받은 사실 자체는 정책 위반이 아닙니다. 핵심은 그 이후 학생이 독립적으로 이해하고 재구성했는지입니다.
 - 학생이 AI에게 단순히 답/풀이/접근법을 요청하기만 했는지, 아니면 자신의 가설/분석을 가지고 AI를 검증/보완 도구로 활용했는지 구분하세요.
 - 다음은 높은 AI 활용 역량의 증거입니다:
   (a) 학생이 먼저 자신의 생각/가설을 제시하고, AI에게 확인이나 반론을 요청
@@ -340,6 +351,7 @@ AI 활용 역량 평가 (매우 중요):
   (a) "이거 어떻게 풀어?", "접근 방법 알려줘" 등 자신의 분석 없이 풀이 자체를 위임
   (b) AI 답변을 그대로 수용하고 후속 질문이나 비판적 검토 없이 종료
   (c) AI에게 연속적으로 분석/판단을 요청하여 대화가 사실상 AI의 독백이 된 경우
+- 단, 낮은 활용 신호가 있더라도 이후 학생이 개념 선택, 조건 정리, 중간 추론을 스스로 전개하면 부분 회복으로 인정하세요.
 - AI 활용 역량이 낮으면 채팅 단계 점수를 엄격히 제한하세요 (최대 40점).
 
 응답 형식 (JSON):
@@ -436,8 +448,14 @@ export function buildChatGradingUserPrompt(params: {
   questionPrompt: string;
   questionAiContext?: string;
   messages: Array<{ role: string; content: string }>;
+  aiDependencyAssessment?: AiDependencyAssessment;
 }): string {
-  const { questionPrompt, questionAiContext, messages } = params;
+  const {
+    questionPrompt,
+    questionAiContext,
+    messages,
+    aiDependencyAssessment,
+  } = params;
 
   return `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
 
@@ -450,6 +468,29 @@ ${questionAiContext ? `**문제 컨텍스트:**\n${questionAiContext}\n` : ""}
 ${messages
   .map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`)
   .join("\n\n")}
+
+${
+  aiDependencyAssessment
+    ? `
+**사전 분석된 AI 활용/의존 신호:**
+- 풀이 위임형 요청: ${aiDependencyAssessment.delegationRequestCount}회
+- 출발점 의존 신호: ${aiDependencyAssessment.startingPointDependencyCount}회
+- 직접 답 요구: ${aiDependencyAssessment.directAnswerRequestCount}회
+- 직접 답 의존 신호: ${aiDependencyAssessment.directAnswerRelianceCount}회
+- 최종 답안-응답 유사도 근사치: ${(aiDependencyAssessment.finalAnswerOverlapScore * 100).toFixed(0)}%
+- 회복 관찰 여부: ${aiDependencyAssessment.recoveryObserved ? "예" : "아니오"}
+- 트리거 근거: ${
+        aiDependencyAssessment.triggerEvidence.length > 0
+          ? aiDependencyAssessment.triggerEvidence.join(" / ")
+          : "없음"
+      }
+- 회복 근거: ${
+        aiDependencyAssessment.recoveryEvidence.length > 0
+          ? aiDependencyAssessment.recoveryEvidence.join(" / ")
+          : "없음"
+      }`
+    : ""
+}
 
 위 정보를 바탕으로 루브릭 기준에 따라 채팅 단계의 점수와 피드백을 제공해주세요.`;
 }
@@ -560,6 +601,9 @@ ${difficultyGuide[difficulty]}
 - \`<p>\`로 시나리오 서술 (구체적 데이터, 조건, 배경)
 - 필요시 \`<table>\`로 재무/통계 데이터 표현
 - \`<ol>\`또는 번호가 매겨진 \`<p>\`로 하위 질문 2-4개
+- 수식/기호는 학생이 바로 읽을 수 있는 HTML 표기나 일반 기호를 우선 사용
+  - 예: \`H<sub>2</sub>O\`, \`x<sup>2</sup>\`, \`ΔH = 0\`
+  - raw TeX 명령어(예: \`\\frac\`, \`\\Delta\`)는 question.text에 그대로 노출하지 말 것
 
 ## 루브릭 가이드
 - suggestedRubric은 시험 전체에 대한 평가 기준 (4-6개 항목)
@@ -682,7 +726,8 @@ export function buildCaseQuestionAdjustmentPrompt(params: {
 1. 지시된 부분만 정확히 변경하고, 나머지 구조와 내용은 최대한 유지
 2. 수정 후에도 사례형 문제의 6원칙(구체적 시나리오, 적용·분석 요구, 정독 필수, 점진적 하위 질문, 독립성+연결성, AI 활용이 드러나는 구조)을 유지
 3. HTML 구조를 유지하되, 필요시 개선 가능
-4. 반드시 한국어로 작성
+4. questionText 안의 수식/기호는 학생이 읽기 쉬운 HTML 표기(\`<sup>\`, \`<sub>\`, 일반 기호) 우선. raw TeX 명령어를 그대로 노출하지 말 것
+5. 반드시 한국어로 작성
 
 ## 출력 형식
 반드시 아래 JSON 형식으로 응답하세요. 추가 텍스트 없이 JSON만 출력합니다.

@@ -82,6 +82,11 @@ export default function ExamCodeEntry() {
                     <InputOTP
                       maxLength={6}
                       pattern={REGEXP_ONLY_DIGITS_AND_CHARS}
+                      inputMode="text"
+                      autoCapitalize="characters"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      spellCheck={false}
                       value={examCode}
                       onChange={(value) => {
                         const upper = value.toUpperCase();

@@ -3,6 +3,7 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -16,6 +17,11 @@ export async function GET(request: NextRequest) {
 
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const rl = await checkRateLimitAsync(`student-sessions:${user.id}`, RATE_LIMITS.sessionRead);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests", 429);
     }
 
     // Check if user is student

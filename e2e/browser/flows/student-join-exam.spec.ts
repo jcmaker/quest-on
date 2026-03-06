@@ -6,12 +6,31 @@ test.describe("Student — Join Exam Flow", () => {
     await cleanupTestData();
   });
 
+  test("mobile join input exposes text keyboard hints and uppercases letters", async ({
+    studentPage,
+  }) => {
+    await studentPage.setViewportSize({ width: 390, height: 844 });
+    await studentPage.goto("/join");
+    await studentPage.waitForLoadState("domcontentloaded");
+
+    const otpInput = studentPage.locator("[data-input-otp]");
+    await expect(otpInput).toBeVisible({ timeout: 10_000 });
+    await expect(otpInput).toHaveAttribute("inputmode", "text");
+    await expect(otpInput).toHaveAttribute("autocapitalize", "characters");
+    await expect(otpInput).toHaveAttribute("spellcheck", "false");
+
+    await otpInput.click();
+    await studentPage.keyboard.type("math0");
+
+    await expect(otpInput).toHaveValue("MATH0");
+  });
+
   test("valid 6-char code → shows instructions dialog", async ({
     studentPage,
   }) => {
     const { exam } = await seedStudentExamScenario({
       examStatus: "running",
-      sessionStatus: "in_progress",
+      sessionStatus: "joined",
     });
 
     await studentPage.goto("/join");
@@ -23,16 +42,13 @@ test.describe("Student — Join Exam Flow", () => {
     await otpInput.click();
     await studentPage.keyboard.type(exam.code);
 
-    // Submit the form
-    const submitBtn = studentPage.getByRole("button", {
-      name: /시험 입장|입장/i,
+    await studentPage.waitForURL(new RegExp(`/exam/${exam.code}`), {
+      timeout: 10_000,
     });
-    await expect(submitBtn).toBeEnabled({ timeout: 5_000 });
-    await submitBtn.click();
 
     // Instructions dialog should appear
     await expect(
-      studentPage.getByText(/학생 지침/i)
+      studentPage.getByRole("dialog", { name: /시험 시작 전 안내사항/i })
     ).toBeVisible({ timeout: 10_000 });
   });
 
@@ -41,7 +57,7 @@ test.describe("Student — Join Exam Flow", () => {
   }) => {
     const { exam } = await seedStudentExamScenario({
       examStatus: "running",
-      sessionStatus: "in_progress",
+      sessionStatus: "joined",
     });
 
     await studentPage.goto("/join");
@@ -53,25 +69,27 @@ test.describe("Student — Join Exam Flow", () => {
     await otpInput.click();
     await studentPage.keyboard.type(exam.code);
 
-    const submitBtn = studentPage.getByRole("button", {
-      name: /시험 입장|입장/i,
+    await studentPage.waitForURL(new RegExp(`/exam/${exam.code}`), {
+      timeout: 10_000,
     });
-    await expect(submitBtn).toBeEnabled({ timeout: 5_000 });
-    await submitBtn.click();
 
     // Wait for dialog, then click confirm
     await expect(
-      studentPage.getByText(/학생 지침/i)
+      studentPage.getByRole("dialog", { name: /시험 시작 전 안내사항/i })
     ).toBeVisible({ timeout: 10_000 });
 
-    const confirmBtn = studentPage.getByRole("button", {
-      name: /확인.*시험 시작|시작/i,
-    });
+    await studentPage.getByTestId("preflight-rules-checkbox").click();
+    await studentPage.getByTestId("preflight-ailog-checkbox").click();
+
+    const confirmBtn = studentPage.getByTestId("preflight-accept-btn");
     await confirmBtn.click();
 
-    // Should navigate to exam page
-    await studentPage.waitForURL(/\/exam\//, { timeout: 15_000 });
-    expect(studentPage.url()).toContain("/exam/");
+    await expect(
+      studentPage.getByRole("dialog", { name: /시험 시작 전 안내사항/i })
+    ).toBeHidden({ timeout: 10_000 });
+    await expect(studentPage.getByRole("button", { name: /시험 제출하기/i })).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test("less than 6 chars → submit button disabled", async ({

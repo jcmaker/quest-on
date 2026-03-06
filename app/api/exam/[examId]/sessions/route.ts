@@ -4,6 +4,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { batchGetUserInfo } from "@/lib/clerk-users";
 import { validateUUID } from "@/lib/validate-params";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -27,6 +28,11 @@ export async function GET(
 
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const rl = await checkRateLimitAsync(`exam-sessions:${user.id}`, RATE_LIMITS.sessionRead);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests", 429);
     }
 
     // Check if user is instructor

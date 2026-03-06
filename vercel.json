@@ -5,6 +5,27 @@
     },
     "app/api/chat/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/feedback/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/feedback-chat/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/instructor/chat/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/ai/adjust-question/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/embed/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/extract-text/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/supa/route.ts": {
+      "maxDuration": 30
     }
   },
   "regions": ["iad1"]

@@ -10,7 +10,7 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { searchRelevantMaterials } from "@/lib/material-search";
 import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
 import { handleCorsPreFlight } from "@/lib/cors";
-import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, chatRequestSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
@@ -474,7 +474,7 @@ export async function POST(request: NextRequest) {
 
     // Rate limiting by authenticated user ID (falls back to sessionId for unauthenticated)
     const rateLimitKey = `chat:${user?.id || sessionId}`;
-    const rl = checkRateLimit(rateLimitKey, RATE_LIMITS.chat);
+    const rl = await checkRateLimitAsync(rateLimitKey, RATE_LIMITS.chat);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }

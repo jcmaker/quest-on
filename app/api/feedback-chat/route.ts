@@ -12,7 +12,7 @@ import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { compressData } from "@/lib/compression";
 import { buildFeedbackChatSystemPrompt, type RubricItem } from "@/lib/prompts";
-import { checkRateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { classifyMessageType } from "@/lib/message-classification";
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limiting
-    const rl = checkRateLimit(`feedback-chat:${user.id}`, RATE_LIMITS.chat);
+    const rl = await checkRateLimitAsync(`feedback-chat:${user.id}`, RATE_LIMITS.chat);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }

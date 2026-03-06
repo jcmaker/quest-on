@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 interface ChatMessage {
   type: "user" | "assistant";
@@ -37,6 +37,14 @@ export function useExamChat({
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Cleanup: abort in-flight request on unmount
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   const currentQuestionChatHistory = chatHistory.filter(
     (msg) => msg.qIdx === currentQuestion
@@ -61,10 +69,16 @@ export function useExamChat({
     setIsTyping(true);
     scrollToBottom();
 
+    // Abort any previous in-flight request
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           message: currentMsg,
           sessionId: actualSessionId,
@@ -119,7 +133,11 @@ export function useExamChat({
         ]);
       }
       scrollToBottom();
-    } catch {
+    } catch (err) {
+      // Don't show error for intentional abort (unmount or new request)
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
       setChatHistory((prev) => [
         ...prev,
         {
@@ -132,8 +150,10 @@ export function useExamChat({
       ]);
       scrollToBottom();
     } finally {
-      setIsLoading(false);
-      setIsTyping(false);
+      if (!controller.signal.aborted) {
+        setIsLoading(false);
+        setIsTyping(false);
+      }
     }
   }, [chatMessage, sessionId, currentQuestion, exam, userId, scrollToBottom]);
 
