@@ -9,6 +9,7 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
   "/legal(.*)",
   "/onboarding",
+  "/api/debug(.*)",
 ]);
 
 // Admin routes use separate HMAC-token auth, not Clerk
