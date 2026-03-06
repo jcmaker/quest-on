@@ -357,5 +357,6 @@ export function useExamSession({
     sessionStatus,
     setSessionStatus,
     setTimeRemaining,
+    setSessionStartTime,
   };
 }

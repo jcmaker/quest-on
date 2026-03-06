@@ -24,6 +24,10 @@ import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { CaseQuestionGenerator } from "@/components/instructor/CaseQuestionGenerator";
 
+function isQuestionContentEmpty(text: string): boolean {
+  return text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
+}
+
 export default function EditExam({
   params,
 }: {
@@ -548,6 +552,11 @@ export default function EditExam({
       toast.error("최소 1개 이상의 문제를 추가해주세요.");
       return;
     }
+    if (questions.some((q) => isQuestionContentEmpty(q.text))) {
+      isSubmittingRef.current = false;
+      toast.error("문제 내용을 입력해주세요.");
+      return;
+    }
     if (!canAddMoreFiles) {
       isSubmittingRef.current = false;
       toast.error("파일 용량이 50MB를 초과했습니다. 일부 파일을 삭제해주세요.");
@@ -873,12 +882,34 @@ export default function EditExam({
               !examData.title ||
               !examData.code ||
               questions.length === 0 ||
+              questions.some((q) => isQuestionContentEmpty(q.text)) ||
               !canAddMoreFiles
             }
           >
             {isLoading ? "수정 중..." : "시험 수정하기"}
           </Button>
         </div>
+        {!isLoading && (
+          !examData.title ||
+          !examData.code ||
+          questions.length === 0 ||
+          questions.some((q) => isQuestionContentEmpty(q.text)) ||
+          !canAddMoreFiles
+        ) && (
+          <div
+            className="mt-2 text-xs text-muted-foreground space-y-0.5"
+            data-testid="edit-exam-submit-reasons"
+          >
+            {!examData.title && <p>• 시험 제목을 입력해주세요</p>}
+            {!examData.code && <p>• 시험 코드를 생성해주세요</p>}
+            {questions.length === 0 && <p>• 문제를 1개 이상 추가해주세요</p>}
+            {questions.length > 0 &&
+              questions.some((q) => isQuestionContentEmpty(q.text)) && (
+                <p>• 문제 내용을 입력해주세요</p>
+              )}
+            {!canAddMoreFiles && <p>• 파일 용량이 50MB를 초과했습니다</p>}
+          </div>
+        )}
       </form>
       </div>
     </div>

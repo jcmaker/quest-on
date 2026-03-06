@@ -505,6 +505,42 @@ test.describe("Supa — POST /api/supa (extended actions)", () => {
     expect(res.status()).toBe(403);
   });
 
+  // ── check_exam_gate_status ──
+
+  test("running exam gate check promotes waiting session → 200, returns in_progress", async ({
+    studentRequest,
+  }) => {
+    const now = new Date().toISOString();
+    const exam = await seedExam({
+      status: "running",
+      started_at: now,
+      duration: 60,
+    });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "waiting",
+      preflight_accepted_at: now,
+    });
+
+    const res = await studentRequest.post("/api/supa", {
+      data: {
+        action: "check_exam_gate_status",
+        data: { examId: exam.id, sessionId: session.id },
+      },
+    });
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.gateStarted).toBe(true);
+    expect(body.sessionStatus).toBe("in_progress");
+    expect(body.sessionStartTime).toBeTruthy();
+    expect(typeof body.timeRemaining).toBe("number");
+
+    const updatedSession = await getSession(session.id);
+    expect(updatedSession.status).toBe("in_progress");
+    expect(updatedSession.started_at).toBeTruthy();
+    expect(updatedSession.attempt_timer_started_at).toBeTruthy();
+  });
+
   // ── deactivate_session ──
 
   test("student deactivates own session → 200, session is_active=false in DB", async ({

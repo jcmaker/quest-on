@@ -43,6 +43,10 @@ import {
 import { useExamDraftAutoSave } from "@/hooks/useExamDraftAutoSave";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 
+function isQuestionContentEmpty(text: string): boolean {
+  return text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
+}
+
 export default function CreateExam() {
   const router = useRouter();
   const { user, isLoaded, isSignedIn } = useUser();
@@ -135,7 +139,7 @@ export default function CreateExam() {
     return (
       examData.title.trim() !== "" ||
       examData.materials.length > 0 ||
-      questions.some((q) => q.text.trim() !== "") ||
+      questions.some((q) => !isQuestionContentEmpty(q.text)) ||
       rubric.some(
         (r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== ""
       )
@@ -564,7 +568,7 @@ export default function CreateExam() {
   };
 
   const handleAIGenerateRubric = useCallback(async () => {
-    if (questions.length === 0 || questions.every((q) => q.text.trim() === "")) {
+    if (questions.length === 0 || questions.every((q) => isQuestionContentEmpty(q.text))) {
       toast.error("AI 루브릭을 생성하려면 문제를 먼저 작성해주세요.");
       return;
     }
@@ -581,7 +585,7 @@ export default function CreateExam() {
         body: JSON.stringify({
           examTitle: examData.title,
           questions: questions
-            .filter((q) => q.text.trim() !== "")
+            .filter((q) => !isQuestionContentEmpty(q.text))
             .map((q) => ({ text: q.text, type: q.type })),
         }),
       });
@@ -686,7 +690,7 @@ export default function CreateExam() {
     }
     // 모든 문제에 대해 빈 텍스트 검증
     const emptyQuestionIndices = questions
-      .map((q, i) => (q.text.trim() === "" ? i + 1 : -1))
+      .map((q, i) => (isQuestionContentEmpty(q.text) ? i + 1 : -1))
       .filter((i) => i !== -1);
     if (emptyQuestionIndices.length > 0) {
       isSubmittingRef.current = false;
@@ -1149,7 +1153,7 @@ export default function CreateExam() {
                     !examData.title ||
                     !examData.code ||
                     questions.length === 0 ||
-                    questions.every((q) => q.text.trim() === "") ||
+                    questions.every((q) => isQuestionContentEmpty(q.text)) ||
                     !canAddMoreFiles
                   }
                 >
@@ -1161,14 +1165,17 @@ export default function CreateExam() {
                 !examData.title ||
                 !examData.code ||
                 questions.length === 0 ||
-                questions.every((q) => q.text.trim() === "") ||
+                questions.every((q) => isQuestionContentEmpty(q.text)) ||
                 !canAddMoreFiles
               ) && (
-                <div className="text-xs text-muted-foreground space-y-0.5">
+                <div
+                  className="text-xs text-muted-foreground space-y-0.5"
+                  data-testid="create-exam-submit-reasons"
+                >
                   {!examData.title && <p>• 시험 제목을 입력해주세요</p>}
                   {!examData.code && <p>• 시험 코드를 생성해주세요</p>}
                   {questions.length === 0 && <p>• 문제를 1개 이상 추가해주세요</p>}
-                  {questions.length > 0 && questions.every((q) => q.text.trim() === "") && (
+                  {questions.length > 0 && questions.every((q) => isQuestionContentEmpty(q.text)) && (
                     <p>• 문제 내용을 입력해주세요</p>
                   )}
                   {!canAddMoreFiles && <p>• 파일 용량이 50MB를 초과했습니다</p>}

@@ -9,9 +9,8 @@
  * in real-time after the instructor triggers the start.
  */
 import { test, expect } from "@playwright/test";
-import type { BrowserContext, Page } from "@playwright/test";
 import { TEST_STUDENT, TEST_INSTRUCTOR } from "../fixtures/auth-browser.fixture";
-import { mockExternalRoutes } from "../helpers/mock-routes";
+import { createAuthPage, BYPASS_SECRET } from "../helpers/auth-context";
 import {
   seedExam,
   seedStudentProfile,
@@ -26,51 +25,6 @@ import {
   InstructorGradePage,
   StudentReportPage,
 } from "../pages";
-import dotenv from "dotenv";
-import path from "path";
-
-dotenv.config({ path: path.resolve(__dirname, "../../../.env.test") });
-
-const BYPASS_SECRET =
-  process.env.TEST_BYPASS_SECRET ?? "e2e-test-bypass-token-2024";
-
-/** Create a new page inside `ctx` with auth cookies + API header injection. */
-async function createAuthPage(
-  ctx: BrowserContext,
-  user: typeof TEST_STUDENT | typeof TEST_INSTRUCTOR,
-  baseURL: string,
-): Promise<Page> {
-  const page = await ctx.newPage();
-  await mockExternalRoutes(page);
-
-  await ctx.addCookies([
-    { name: "__test_bypass", value: BYPASS_SECRET, url: baseURL },
-    {
-      name: "__test_user",
-      value: encodeURIComponent(JSON.stringify(user)),
-      url: baseURL,
-    },
-    {
-      name: "__test_user_role",
-      value: user.unsafeMetadata.role,
-      url: baseURL,
-    },
-  ]);
-
-  await page.route("**/api/**", (route) => {
-    const headers = route.request().headers();
-    return route.continue({
-      headers: {
-        ...headers,
-        "x-test-user-id": user.id,
-        "x-test-user-role": user.unsafeMetadata.role,
-        "x-test-bypass-token": BYPASS_SECRET,
-      },
-    });
-  });
-
-  return page;
-}
 
 test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
   test.afterEach(async () => {
@@ -212,9 +166,9 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
       await expect(
         sPage.getByRole("heading", { name: exam.title }),
       ).toBeVisible({ timeout: 15_000 });
-      await expect(
-        sPage.getByText(/전체 점수:\s*90\/100점/),
-      ).toBeVisible({ timeout: 10_000 });
+      await expect(reportPage.overallScore).toContainText("전체 점수: 88/100점", {
+        timeout: 10_000,
+      });
     } finally {
       await studentCtx.close();
       await instructorCtx.close();

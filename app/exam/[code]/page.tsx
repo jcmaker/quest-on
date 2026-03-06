@@ -257,9 +257,26 @@ export default function ExamPage() {
     try {
       const response = await fetch(`/api/session/${sessionId}/preflight`, { method: "POST" });
       if (response.ok) {
+        const body = await response.json();
         session.setShowPreflight(false);
-        session.setSessionStatus("waiting");
-        session.setIsInWaitingRoom(true);
+
+        if (body.status) {
+          session.setSessionStatus(body.status);
+        }
+
+        if (body.sessionStartTime) {
+          session.setSessionStartTime(body.sessionStartTime);
+        }
+
+        if (body.timeRemaining !== undefined) {
+          session.setTimeRemaining(body.timeRemaining);
+        }
+
+        if (body.status === "in_progress") {
+          session.setIsInWaitingRoom(false);
+        } else {
+          session.setIsInWaitingRoom(true);
+        }
       } else {
         let errorData: Record<string, string> = {};
         const contentType = response.headers.get("content-type");
@@ -276,11 +293,30 @@ export default function ExamPage() {
     }
   };
 
-  const handleGateStart = () => {
+  const handleGateStart = (gateState: {
+    sessionStatus?: string;
+    sessionStartTime?: string | null;
+    timeRemaining?: number | null;
+  }) => {
     session.setIsInWaitingRoom(false);
-    session.setSessionStatus("in_progress");
-    queryClient.invalidateQueries({ queryKey: ["exam-session"] });
-    queryClient.invalidateQueries({ queryKey: ["session-heartbeat"] });
+
+    if (gateState.sessionStatus) {
+      session.setSessionStatus(gateState.sessionStatus);
+    } else {
+      session.setSessionStatus("in_progress");
+    }
+
+    if (gateState.sessionStartTime) {
+      session.setSessionStartTime(gateState.sessionStartTime);
+    }
+
+    if (gateState.timeRemaining !== undefined) {
+      session.setTimeRemaining(gateState.timeRemaining);
+    }
+
+    if (sessionId) {
+      queryClient.invalidateQueries({ queryKey: ["session-heartbeat", sessionId] });
+    }
   };
 
   if (session.isSubmitted) {

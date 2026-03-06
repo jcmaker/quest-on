@@ -40,6 +40,7 @@ test.describe("Instructor — Edit Exam Flow", () => {
     await editExam.titleInput.fill("Updated Title via E2E");
 
     // Submit
+    await expect(editExam.submitBtn).toBeEnabled();
     await editExam.submitBtn.click();
 
     // Should show success toast or redirect
@@ -63,13 +64,8 @@ test.describe("Instructor — Edit Exam Flow", () => {
     // Clear title
     await editExam.titleInput.clear();
 
-    // Submit
-    await editExam.submitBtn.click();
-
-    // Should show validation error about title (use role="status" to target toast, not form labels)
-    await expect(
-      instructorPage.locator('[role="status"]').getByText(/제목.*입력|시험 제목/i)
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(editExam.submitBtn).toBeDisabled();
+    await expect(editExam.submitDisabledReasons).toContainText("시험 제목을 입력해주세요");
   });
 
   test("cancel → redirect back to exam detail", async ({

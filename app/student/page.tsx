@@ -1004,7 +1004,10 @@ export default function StudentDashboard() {
                         <SessionCardSkeleton />
                       </div>
                     ) : allSessions.length === 0 ? (
-                      <div className="text-center py-12 sm:py-16 border-2 border-dashed border-muted-foreground/20 rounded-lg bg-muted/30">
+                      <div
+                        className="text-center py-12 sm:py-16 border-2 border-dashed border-muted-foreground/20 rounded-lg bg-muted/30"
+                        data-testid="student-empty-state"
+                      >
                         <BookOpen
                           className="w-12 h-12 sm:w-16 sm:h-16 text-muted-foreground mx-auto mb-4"
                           aria-hidden="true"

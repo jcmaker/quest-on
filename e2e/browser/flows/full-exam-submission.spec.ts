@@ -11,7 +11,7 @@ test.describe("Full Exam Submission Flow", () => {
     await cleanupTestData();
   });
 
-  test("student completes full exam submission: preflight → answer → submit", async ({
+  test("student completes full exam submission from joined session on running exam", async ({
     studentPage,
   }) => {
     // 1. Seed a running exam with a joined (pre-preflight) session
@@ -26,22 +26,32 @@ test.describe("Full Exam Submission Flow", () => {
     // 2. Navigate to exam page
     await examPage.goto(exam.code);
 
-    // 3. Accept preflight modal
-    await expect(examPage.preflightHeading).toBeVisible({ timeout: 15_000 });
-    await examPage.acceptPreflight();
+    // 3. Running exam should reconcile the stale joined session directly into the exam
+    await expect(async () => {
+      const reconciledSession = await getSession(session.id);
+      expect(reconciledSession.status).toBe("in_progress");
+      expect(reconciledSession.started_at).toBeTruthy();
+      expect(reconciledSession.attempt_timer_started_at).toBeTruthy();
+    }).toPass({ timeout: 15_000, intervals: [1_000] });
 
-    // 4. Wait for question content to appear after preflight acceptance
+    // 4. Question content should appear without an intermediate waiting room
     await expect(
       studentPage.getByText(/polymorphism|stack|queue/i),
     ).toBeVisible({ timeout: 15_000 });
 
-    // 5. Type an answer for the first question
+    // 5. Answer all questions
     await expect(examPage.answerArea).toBeVisible({ timeout: 10_000 });
     await examPage.typeAnswer(
       "Polymorphism is a core OOP concept that allows objects to take many forms.",
     );
 
-    // 6. Save the answer via Ctrl+S
+    await examPage.nextBtn.click();
+    await expect(examPage.answerArea).toBeVisible({ timeout: 5_000 });
+    await examPage.typeAnswer(
+      "A stack is LIFO, while a queue is FIFO.",
+    );
+
+    // 6. Save the answers via Ctrl+S
     await examPage.manualSave();
     await expect(examPage.saveIndicator).toBeVisible({ timeout: 5_000 });
 
@@ -56,10 +66,10 @@ test.describe("Full Exam Submission Flow", () => {
     await expect(confirmBtn).toBeVisible({ timeout: 5_000 });
     await confirmBtn.click();
 
-    // 9. Verify session status is "submitted" in DB
+    // 9. Verify submission is persisted in DB
     await expect(async () => {
       const updatedSession = await getSession(session.id);
-      expect(updatedSession.status).toBe("submitted");
+      expect(updatedSession.submitted_at).toBeTruthy();
     }).toPass({ timeout: 15_000, intervals: [1_000] });
   });
 });

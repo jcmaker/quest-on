@@ -36,11 +36,15 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div className="border rounded-lg bg-card">
+      <div
+        className="border rounded-lg bg-card"
+        data-testid="manual-questions-section"
+      >
         <CollapsibleTrigger asChild>
           <button
             type="button"
             className="w-full flex items-center justify-between px-6 py-4 hover:bg-muted/50 transition-colors rounded-lg"
+            data-testid="manual-questions-toggle"
           >
             <div className="flex items-center gap-2">
               <Pencil className="w-5 h-5 text-primary" />
@@ -70,6 +74,7 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
                   size="sm"
                   onClick={onAdd}
                   className="gap-1.5"
+                  data-testid="add-question-btn"
                 >
                   <Plus className="w-4 h-4" />
                   문제 추가
@@ -126,7 +131,13 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
             {questions.length === 0 && onAdd && (
               <div className="text-center py-8">
                 <p className="text-muted-foreground mb-3">아직 문제가 없습니다</p>
-                <Button type="button" variant="outline" onClick={onAdd} className="gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onAdd}
+                  className="gap-1.5"
+                  data-testid="empty-add-question-btn"
+                >
                   <Plus className="w-4 h-4" />
                   첫 문제 추가하기
                 </Button>

@@ -11,7 +11,11 @@ interface WaitingRoomProps {
   examCode?: string;
   allowDraftInWaiting?: boolean;
   allowChatInWaiting?: boolean;
-  onGateStart?: () => void;
+  onGateStart?: (gateState: {
+    sessionStatus?: string;
+    sessionStartTime?: string | null;
+    timeRemaining?: number | null;
+  }) => void;
   sessionId?: string;
   examId?: string;
   studentId?: string;
@@ -59,9 +63,13 @@ export function WaitingRoom({
 
       if (response.ok) {
         const result = await response.json();
-        if (result.gateStarted) {
+        if (result.gateStarted && result.sessionStatus === "in_progress") {
           setIsWaiting(false);
-          onGateStartRef.current?.();
+          onGateStartRef.current?.({
+            sessionStatus: result.sessionStatus,
+            sessionStartTime: result.sessionStartTime ?? null,
+            timeRemaining: result.timeRemaining ?? null,
+          });
         }
       }
     } catch {

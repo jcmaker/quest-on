@@ -45,11 +45,11 @@ test.describe("Instructor — Create Exam Flow", () => {
     await createExam.goto();
     await expect(createExam.pageHeading).toBeVisible({ timeout: 15_000 });
 
-    // Find question textarea or contenteditable (encapsulated in Page Object)
-    await expect(createExam.questionArea).toBeVisible({ timeout: 10_000 });
+    await createExam.addQuestion();
+    await expect(createExam.questionArea()).toBeVisible({ timeout: 10_000 });
     await createExam.fillQuestion("다형성의 개념을 설명하시오.");
 
-    await expect(createExam.questionArea).toContainText("다형성");
+    await expect(createExam.questionArea()).toContainText("다형성");
   });
 
   test("empty title → validation error on submit", async ({
@@ -60,16 +60,12 @@ test.describe("Instructor — Create Exam Flow", () => {
     await expect(createExam.pageHeading).toBeVisible({ timeout: 15_000 });
 
     // Fill question but leave title empty
-    await expect(createExam.questionArea).toBeVisible({ timeout: 10_000 });
+    await createExam.addQuestion();
+    await expect(createExam.questionArea()).toBeVisible({ timeout: 10_000 });
     await createExam.fillQuestion("테스트 문제입니다.");
 
-    // Click submit with empty title
-    await createExam.submitBtn.click();
-
-    // Should show toast error about title (use role="status" to target toast, not form labels)
-    await expect(
-      instructorPage.locator('[role="status"]').getByText(/제목.*입력|시험 제목/i)
-    ).toBeVisible({ timeout: 5_000 });
+    await expect(createExam.submitBtn).toBeDisabled();
+    await expect(createExam.submitDisabledReasons).toContainText("시험 제목을 입력해주세요");
   });
 
   test("empty question → validation error on submit", async ({
@@ -79,24 +75,13 @@ test.describe("Instructor — Create Exam Flow", () => {
     await createExam.goto();
     await expect(createExam.pageHeading).toBeVisible({ timeout: 15_000 });
 
-    // Fill title but leave question empty
+    // Fill title, add a question, but leave the editor empty
     await expect(createExam.titleInput).toBeVisible({ timeout: 5_000 });
     await createExam.titleInput.fill("E2E 테스트 시험");
+    await createExam.addQuestion();
 
-    // Click submit
-    await createExam.submitBtn.click();
-
-    // Should show toast error about question OR stay on the same page
-    const hasToast = await instructorPage
-      .locator('[role="status"]')
-      .getByText(/문제.*입력|문제.*추가/i)
-      .isVisible({ timeout: 5_000 })
-      .catch(() => false);
-
-    if (!hasToast) {
-      // Verify page stays on /instructor/new (didn't navigate away)
-      expect(instructorPage.url()).toContain("/instructor/new");
-    }
+    await expect(createExam.submitBtn).toBeDisabled();
+    await expect(createExam.submitDisabledReasons).toContainText("문제 내용을 입력해주세요");
   });
 
   test("valid submission → shows success dialog", async ({
@@ -112,10 +97,12 @@ test.describe("Instructor — Create Exam Flow", () => {
     await createExam.titleInput.fill(uniqueTitle);
 
     // Fill question
-    await expect(createExam.questionArea).toBeVisible({ timeout: 10_000 });
+    await createExam.addQuestion();
+    await expect(createExam.questionArea()).toBeVisible({ timeout: 10_000 });
     await createExam.fillQuestion("E2E 테스트 문제입니다. 다형성을 설명하세요.");
 
     // Submit
+    await expect(createExam.submitBtn).toBeEnabled();
     await createExam.submitBtn.click();
 
     // Should show success dialog
@@ -142,10 +129,12 @@ test.describe("Instructor — Create Exam Flow", () => {
     await expect(createExam.titleInput).toBeVisible({ timeout: 5_000 });
     await createExam.titleInput.fill(`E2E Nav Test ${Date.now()}`);
 
-    await expect(createExam.questionArea).toBeVisible({ timeout: 10_000 });
+    await createExam.addQuestion();
+    await expect(createExam.questionArea()).toBeVisible({ timeout: 10_000 });
     await createExam.fillQuestion("네비게이션 테스트 문제입니다.");
 
     // Submit
+    await expect(createExam.submitBtn).toBeEnabled();
     await createExam.submitBtn.click();
 
     // Wait for success dialog

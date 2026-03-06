@@ -10,6 +10,135 @@ const GRACE_PERIOD_MS = 30_000;
 
 const supabase = getSupabaseServer();
 
+type GateExamRecord = {
+  id: string;
+  status?: string | null;
+  started_at?: string | null;
+  duration: number;
+};
+
+type GateSessionRecord = {
+  id: string;
+  status?: string | null;
+  started_at?: string | null;
+  attempt_timer_started_at?: string | null;
+  created_at?: string | null;
+  submitted_at?: string | null;
+  is_active?: boolean | null;
+  student_id?: string;
+  exam_id?: string;
+  preflight_accepted_at?: string | null;
+  last_heartbeat_at?: string | null;
+  device_fingerprint?: string | null;
+};
+
+const EXAM_UNAVAILABLE_STATUSES = new Set(["closed", "archived"]);
+
+export function isExamUnavailable(status?: string | null): boolean {
+  return EXAM_UNAVAILABLE_STATUSES.has(status || "");
+}
+
+export function isExamStarted(
+  examStatus?: string | null,
+  startedAt?: string | null,
+  nowTime = Date.now()
+): boolean {
+  if (examStatus !== "running" || !startedAt) {
+    return false;
+  }
+
+  return new Date(startedAt).getTime() <= nowTime;
+}
+
+function getSessionTimerStartIso(session: GateSessionRecord): string | null {
+  return (
+    session.attempt_timer_started_at ||
+    session.started_at ||
+    session.created_at ||
+    null
+  );
+}
+
+export function getSessionTimeRemainingSeconds(
+  session: GateSessionRecord,
+  examDuration: number,
+  nowTime = Date.now()
+): number | null {
+  const timerStartIso = getSessionTimerStartIso(session);
+  if (!timerStartIso || examDuration === 0) {
+    return null;
+  }
+
+  const timerStartTime = new Date(timerStartIso).getTime();
+  const examDurationMs = examDuration * 60 * 1000;
+  const sessionEndTime = timerStartTime + examDurationMs;
+  return Math.max(0, Math.floor((sessionEndTime - nowTime) / 1000));
+}
+
+export function buildGateStatePayload(
+  session: GateSessionRecord,
+  exam: GateExamRecord,
+  nowTime = Date.now()
+) {
+  const gateStarted = isExamStarted(exam.status, exam.started_at, nowTime);
+  const status =
+    session.status || (gateStarted ? "in_progress" : "waiting");
+  const sessionStartTime =
+    status === "in_progress" ? getSessionTimerStartIso(session) : null;
+  const timeRemaining =
+    status === "in_progress"
+      ? getSessionTimeRemainingSeconds(session, exam.duration, nowTime)
+      : null;
+
+  return {
+    status,
+    gateStarted,
+    sessionStartTime,
+    timeRemaining,
+  };
+}
+
+export async function promoteSessionToInProgress(
+  session: GateSessionRecord,
+  now: string,
+  options: {
+    preflightAcceptedAt?: string;
+    deviceFingerprint?: string | null;
+  } = {}
+) {
+  const updateData: Record<string, string | null | boolean> = {
+    status: "in_progress",
+    started_at: session.started_at || now,
+    attempt_timer_started_at: session.attempt_timer_started_at || now,
+    is_active: true,
+    last_heartbeat_at: now,
+  };
+
+  if (options.preflightAcceptedAt) {
+    updateData.preflight_accepted_at = options.preflightAcceptedAt;
+  }
+
+  if (options.deviceFingerprint !== undefined) {
+    updateData.device_fingerprint =
+      options.deviceFingerprint || session.device_fingerprint || null;
+  }
+
+  const { data: updatedSession, error } = await supabase
+    .from("sessions")
+    .update(updateData)
+    .eq("id", session.id)
+    .select(
+      "id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at, preflight_accepted_at"
+    )
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return updatedSession;
+}
+
 export async function createOrGetSession(data: { examId: string; studentId: string }) {
   try {
     // Verify current user matches the studentId
@@ -112,13 +241,11 @@ export async function initExamSession(data: {
     const examStatus = exam.status || "draft";
     const openAt = exam.open_at ? new Date(exam.open_at).getTime() : null;
     const closeAt = exam.close_at ? new Date(exam.close_at).getTime() : null;
-    const startedAt = exam.started_at ? new Date(exam.started_at).getTime() : null;
-
     // ✅ 기본 원칙: 시작 전(draft/joinable/scheduled)에는 Join만 가능, 응시는 불가
     // Running 상태에서만 실제 응시 가능
 
     // Closed 상태는 Join 불가
-    if (examStatus === "closed" || examStatus === "archived") {
+    if (isExamUnavailable(examStatus)) {
       return errorJson("EXAM_NOT_AVAILABLE", "Exam not available for joining", 403, { currentStatus: examStatus, message: "This exam is closed or archived" });
     }
 
@@ -288,7 +415,7 @@ export async function initExamSession(data: {
 
       // ✅ 세션 상태에 따라 처리: 기본적으로 시작 전에는 waiting, 시작 후에는 in_progress
       const currentStatus = existingSession.status || "not_joined";
-      const examStarted = examStatus === "running" && startedAt !== null && nowTime >= startedAt;
+      const examStarted = isExamStarted(examStatus, exam.started_at, nowTime);
 
       // 이미 InProgress인 경우 (시험이 시작된 경우)
       if (currentStatus === "in_progress") {
@@ -306,25 +433,13 @@ export async function initExamSession(data: {
 
         if (updateError) throw updateError;
         session = updatedSession;
-      } else if (examStarted && currentStatus === "waiting") {
-        // 시험이 시작되었고 세션이 waiting 상태인 경우 → in_progress로 전환
-        const { data: updatedSession, error: updateError } = await supabase
-          .from("sessions")
-          .update({
-            is_active: true,
-            last_heartbeat_at: now,
-            device_fingerprint:
-              incomingFingerprint || existingSession.device_fingerprint || null,
-            status: "in_progress",
-            started_at: now,
-            attempt_timer_started_at: now,
-          })
-          .eq("id", existingSession.id)
-          .select()
-          .single();
-
-        if (updateError) throw updateError;
-        session = updatedSession;
+      } else if (
+        examStarted &&
+        ["waiting", "joined", "not_joined"].includes(currentStatus)
+      ) {
+        session = await promoteSessionToInProgress(existingSession, now, {
+          deviceFingerprint: incomingFingerprint,
+        });
       } else {
         // Waiting 상태인 경우 (시험 시작 대기 중)
         const { data: updatedSession, error: updateError } = await supabase
@@ -335,7 +450,10 @@ export async function initExamSession(data: {
             device_fingerprint:
               incomingFingerprint || existingSession.device_fingerprint || null,
             // 상태가 없거나 joined인 경우 waiting으로 설정
-            status: currentStatus === "joined" || !currentStatus ? "waiting" : currentStatus,
+            status:
+              currentStatus === "joined" || currentStatus === "not_joined"
+                ? "waiting"
+                : currentStatus,
           })
           .eq("id", existingSession.id)
           .select()
@@ -361,7 +479,7 @@ export async function initExamSession(data: {
     } else {
       // ✅ 새 세션 생성: 기본적으로 시작 전에는 waiting 상태
       // 시험이 이미 시작되었는지 확인 (started_at이 있고 status가 running)
-      const examStarted = examStatus === "running" && startedAt !== null && nowTime >= startedAt;
+      const examStarted = isExamStarted(examStatus, exam.started_at, nowTime);
 
       // 시작 전: waiting 상태 (Join만 가능, 응시 불가)
       // 시작 후: in_progress 상태 (실제 응시 가능)
@@ -402,42 +520,26 @@ export async function initExamSession(data: {
       .select("q_idx, answer")
       .eq("session_id", session.id);
 
-    // ✅ Gate 방식: 타이머 계산 (attempt_timer_started_at 기준)
-    const sessionStatus = session.status || "not_joined";
-    const timerStartTime = session.attempt_timer_started_at
-      ? new Date(session.attempt_timer_started_at).getTime()
-      : session.started_at
-      ? new Date(session.started_at).getTime()
-      : null;
-
-    // InProgress 상태이고 타이머가 시작된 경우만 시간 계산
-    let timeRemaining = null;
-    let sessionStartTime = session.created_at;
-
-    if (sessionStatus === "in_progress" && timerStartTime !== null) {
-      sessionStartTime = new Date(session.attempt_timer_started_at || session.started_at || session.created_at).toISOString();
-
-      // duration이 0(무제한)이면 만료 시간을 먼 미래로 설정 (100년 후)
-      const examDurationMs =
-        exam.duration === 0
-          ? 100 * 365 * 24 * 60 * 60 * 1000 // 100년을 밀리초로 변환
-          : exam.duration * 60 * 1000; // 분을 밀리초로 변환
-      const sessionEndTime = timerStartTime + examDurationMs;
-      timeRemaining = Math.max(0, sessionEndTime - nowTime);
-    }
+    const gateState = buildGateStatePayload(
+      session,
+      {
+        id: exam.id,
+        status: examStatus,
+        started_at: exam.started_at,
+        duration: exam.duration,
+      },
+      nowTime
+    );
 
     return successJson({
       exam,
       session,
       messages,
       submissions: sessionSubmissions || [],
-      sessionStartTime,
-      timeRemaining:
-        exam.duration === 0 || timeRemaining === null
-          ? null // 무제한이거나 타이머가 시작되지 않은 경우 null 반환
-          : Math.floor(timeRemaining / 1000), // 초 단위
-      sessionStatus, // 세션 상태 반환 (Waiting Room 표시용)
-      gateStarted: examStatus === "running" && startedAt !== null && nowTime >= startedAt, // 시험 시작 여부
+      sessionStartTime: gateState.sessionStartTime || session.created_at || null,
+      timeRemaining: gateState.timeRemaining,
+      sessionStatus: gateState.status,
+      gateStarted: gateState.gateStarted,
       sessionReactivated, // 세션 복원 여부 (브라우저 닫기 후 재진입 시)
     });
   } catch (error) {
@@ -461,8 +563,31 @@ export async function submitExam(data: {
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
-    if (user.id !== data.studentId) {
+    if (data.studentId && user.id !== data.studentId) {
       return errorJson("UNAUTHORIZED", "Student ID mismatch", 403);
+    }
+    const verifiedStudentId = user.id;
+
+    const { data: sessionCheck, error: sessionCheckError } = await supabase
+      .from("sessions")
+      .select("id, student_id, exam_id, submitted_at")
+      .eq("id", data.sessionId)
+      .single();
+
+    if (sessionCheckError || !sessionCheck) {
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
+    }
+
+    if (sessionCheck.student_id !== verifiedStudentId) {
+      return errorJson("UNAUTHORIZED", "Session access denied", 403);
+    }
+
+    if (sessionCheck.exam_id !== data.examId) {
+      return errorJson("BAD_REQUEST", "Session does not belong to this exam", 400);
+    }
+
+    if (sessionCheck.submitted_at) {
+      return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
     }
 
     // Compress the session data
@@ -487,6 +612,8 @@ export async function submitExam(data: {
         is_active: false, // Deactivate session on submission
       })
       .eq("id", data.sessionId)
+      .eq("student_id", verifiedStudentId)
+      .eq("exam_id", data.examId)
       .is("submitted_at", null)
       .select()
       .single();
@@ -530,7 +657,7 @@ export async function submitExam(data: {
     // Audit log: session submit
     auditLog({
       action: "session_submit",
-      userId: data.studentId,
+      userId: verifiedStudentId,
       targetId: data.sessionId,
       details: { examId: data.examId, submissionsCount: submissions.length },
     });
@@ -677,9 +804,34 @@ export async function checkExamGateStatus(data: {
   sessionId: string;
 }) {
   try {
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const { data: session, error: sessionError } = await supabase
+      .from("sessions")
+      .select(
+        "id, exam_id, student_id, status, started_at, attempt_timer_started_at, created_at, preflight_accepted_at, last_heartbeat_at, device_fingerprint"
+      )
+      .eq("id", data.sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
+    }
+
+    if (session.student_id !== user.id) {
+      return errorJson("UNAUTHORIZED", "Session access denied", 403);
+    }
+
+    if (session.exam_id !== data.examId) {
+      return errorJson("BAD_REQUEST", "Session does not belong to this exam", 400);
+    }
+
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, status, started_at")
+      .select("id, status, started_at, duration")
       .eq("id", data.examId)
       .single();
 
@@ -687,26 +839,25 @@ export async function checkExamGateStatus(data: {
       return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
-    const isRunning = exam.status === "running";
+    const now = new Date().toISOString();
+    const nowTime = Date.now();
+    let reconciledSession = session;
 
-    // If running, also check the session status
-    if (isRunning && data.sessionId) {
-      const { data: session } = await supabase
-        .from("sessions")
-        .select("id, status")
-        .eq("id", data.sessionId)
-        .single();
-
-      return successJson({
-        gateStarted: true,
-        examStatus: exam.status,
-        sessionStatus: session?.status || "waiting",
-      });
+    if (
+      isExamStarted(exam.status, exam.started_at, nowTime) &&
+      ["waiting", "joined", "", null].includes(session.status || null)
+    ) {
+      reconciledSession = await promoteSessionToInProgress(session, now);
     }
 
+    const gateState = buildGateStatePayload(reconciledSession, exam, nowTime);
+
     return successJson({
-      gateStarted: false,
+      gateStarted: gateState.gateStarted,
       examStatus: exam.status,
+      sessionStatus: gateState.status,
+      sessionStartTime: gateState.sessionStartTime,
+      timeRemaining: gateState.timeRemaining,
     });
   } catch (error) {
     logError("[checkExamGateStatus] Failed", error, { path: "/api/supa/session-handlers" });

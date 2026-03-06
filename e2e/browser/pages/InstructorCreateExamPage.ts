@@ -15,8 +15,22 @@ export class InstructorCreateExamPage {
     return this.page.locator("#code");
   }
 
-  get questionArea(): Locator {
-    return this.page.locator('textarea, [contenteditable="true"]').first();
+  get manualQuestionsToggle(): Locator {
+    return this.page.getByTestId("manual-questions-toggle");
+  }
+
+  get addQuestionBtn(): Locator {
+    return this.page.locator(
+      '[data-testid="add-question-btn"], [data-testid="empty-add-question-btn"]'
+    );
+  }
+
+  questionArea(index = 0): Locator {
+    return this.page.getByTestId(`question-editor-input-${index}`);
+  }
+
+  get submitDisabledReasons(): Locator {
+    return this.page.getByTestId("create-exam-submit-reasons");
   }
 
   get submitBtn(): Locator {
@@ -31,13 +45,26 @@ export class InstructorCreateExamPage {
     await this.page.goto("/instructor/new");
   }
 
-  async fillQuestion(text: string) {
-    await this.questionArea.click();
-    const tagName = await this.questionArea.evaluate((el) => el.tagName.toLowerCase());
-    if (tagName === "textarea") {
-      await this.questionArea.fill(text);
-    } else {
-      await this.page.keyboard.type(text);
+  async ensureManualQuestionsOpen() {
+    if (
+      !(await this.addQuestionBtn.first().isVisible().catch(() => false)) &&
+      (await this.manualQuestionsToggle.isVisible().catch(() => false))
+    ) {
+      await this.manualQuestionsToggle.click();
     }
+  }
+
+  async addQuestion() {
+    await this.ensureManualQuestionsOpen();
+    await this.addQuestionBtn.first().click();
+  }
+
+  async fillQuestion(text: string, index = 0) {
+    const editor = this.questionArea(index);
+    if (!(await editor.isVisible().catch(() => false))) {
+      await this.addQuestion();
+    }
+    await editor.click();
+    await editor.fill(text);
   }
 }

@@ -1,7 +1,13 @@
 import AxeBuilder from "@axe-core/playwright";
-import { test, expect } from "./fixtures/auth-browser.fixture";
+import { test, expect, TEST_STUDENT } from "./fixtures/auth-browser.fixture";
+import { cleanupTestData } from "./helpers/test-data-builder";
+import { seedStudentProfile } from "../helpers/seed";
 
 test.describe("Accessibility — WCAG 2.1 AA", () => {
+  test.afterEach(async () => {
+    await cleanupTestData();
+  });
+
   test("landing page has no critical a11y violations", async ({
     studentPage,
   }) => {
@@ -27,6 +33,7 @@ test.describe("Accessibility — WCAG 2.1 AA", () => {
   test("student dashboard has no critical a11y violations", async ({
     studentPage,
   }) => {
+    await seedStudentProfile(TEST_STUDENT.id);
     await studentPage.goto("/student");
     await studentPage.waitForLoadState("domcontentloaded");
     // Wait for some content to render

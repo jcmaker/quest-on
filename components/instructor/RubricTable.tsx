@@ -113,6 +113,40 @@ export function RubricTable({
           </p>
         </div>
 
+        {/* 버튼: 테이블 위에 배치 (CaseQuestionGenerator 패턴과 동일) */}
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              onAdd();
+            }}
+            className="gap-2"
+            variant="outline"
+          >
+            <Plus className="w-4 h-4" />
+            평가 기준 추가
+          </Button>
+          {onAIGenerate && (
+            <Button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                onAIGenerate();
+              }}
+              disabled={isAIGenerating}
+              className="gap-2"
+            >
+              {isAIGenerating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              {isAIGenerating ? "생성 중..." : "AI로 생성"}
+            </Button>
+          )}
+        </div>
+
         {rubric.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground border-2 border-dashed border-border rounded-lg bg-muted/50">
             <div className="flex flex-col items-center gap-3">
@@ -122,7 +156,7 @@ export function RubricTable({
                   아직 추가된 루브릭이 없습니다
                 </p>
                 <p className="text-sm">
-                  아래 + 버튼을 클릭하여 평가 기준을 설정하세요!
+                  위 버튼을 클릭하여 평가 기준을 설정하세요!
                 </p>
               </div>
             </div>
@@ -221,40 +255,6 @@ export function RubricTable({
             </Table>
           </div>
         )}
-
-        <div className="flex justify-center gap-2 pt-4">
-          <Button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              onAdd();
-            }}
-            className="flex items-center gap-2 px-4 py-2"
-            variant="outline"
-          >
-            <Plus className="w-4 h-4" />
-            평가 기준 추가
-          </Button>
-          {onAIGenerate && (
-            <Button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                onAIGenerate();
-              }}
-              disabled={isAIGenerating}
-              className="flex items-center gap-2 px-4 py-2"
-              variant="outline"
-            >
-              {isAIGenerating ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Sparkles className="w-4 h-4" />
-              )}
-              {isAIGenerating ? "생성 중..." : "AI로 생성"}
-            </Button>
-          )}
-        </div>
 
         {onChatWeightChange && (
           <Collapsible open={isWeightOpen} onOpenChange={setIsWeightOpen}>

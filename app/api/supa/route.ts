@@ -58,6 +58,32 @@ import {
   getInstructorDrive,
 } from "./handlers/drive-handlers";
 
+const protectedActions = new Set([
+  "create_exam",
+  "update_exam",
+  "submit_exam",
+  "get_exam_by_id",
+  "get_instructor_exams",
+  "copy_exam",
+  "create_or_get_session",
+  "init_exam_session",
+  "save_draft",
+  "save_all_drafts",
+  "save_draft_answers",
+  "get_session_submissions",
+  "get_session_messages",
+  "session_heartbeat",
+  "deactivate_session",
+  "check_exam_gate_status",
+  "create_folder",
+  "get_folder_contents",
+  "get_breadcrumb",
+  "move_node",
+  "update_node",
+  "delete_node",
+  "get_instructor_drive",
+]);
+
 export async function POST(request: NextRequest) {
   try {
     let body;
@@ -73,6 +99,15 @@ export async function POST(request: NextRequest) {
       return errorJson("MISSING_ACTION", "Missing 'action' field in request", 400);
     }
 
+    let authedUser = null;
+
+    if (protectedActions.has(action)) {
+      authedUser = await currentUser();
+      if (!authedUser) {
+        return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+      }
+    }
+
     // Rate limit sensitive actions at handler level
     const rateLimitedActions: Record<string, { limit: number; windowSec: number }> = {
       create_exam: RATE_LIMITS.examControl,
@@ -83,9 +118,9 @@ export async function POST(request: NextRequest) {
     };
 
     if (action in rateLimitedActions) {
-      const user = await currentUser();
-      if (user) {
-        const rl = await checkRateLimitAsync(`supa:${action}:${user.id}`, rateLimitedActions[action]);
+      const rateLimitUser = authedUser || (await currentUser());
+      if (rateLimitUser) {
+        const rl = await checkRateLimitAsync(`supa:${action}:${rateLimitUser.id}`, rateLimitedActions[action]);
         if (!rl.allowed) {
           return errorJson("RATE_LIMITED", "Too many requests", 429);
         }

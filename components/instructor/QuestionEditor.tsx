@@ -46,7 +46,10 @@ export function QuestionEditor({
   onRemove,
 }: QuestionEditorProps) {
   return (
-    <div className="border rounded-lg p-5 bg-card shadow-sm relative overflow-hidden">
+    <div
+      className="border rounded-lg p-5 bg-card shadow-sm relative overflow-hidden"
+      data-testid={`question-editor-${index}`}
+    >
       {/* 문제 번호 인디케이터 */}
       <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary/60"></div>
 
@@ -128,6 +131,7 @@ export function QuestionEditor({
             onChange={(value) => onUpdate(question.id, "text", value)}
             placeholder="여기에 문제를 입력하세요..."
             className="min-h-[300px]"
+            testId={`question-editor-input-${index}`}
           />
         </div>
       </div>

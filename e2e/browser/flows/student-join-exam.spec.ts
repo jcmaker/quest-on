@@ -1,5 +1,6 @@
 import { test, expect } from "../fixtures/auth-browser.fixture";
 import { seedStudentExamScenario, cleanupTestData } from "../helpers/test-data-builder";
+import { StudentExamPage } from "../pages";
 
 test.describe("Student — Join Exam Flow", () => {
   test.afterEach(async () => {
@@ -25,7 +26,7 @@ test.describe("Student — Join Exam Flow", () => {
     await expect(otpInput).toHaveValue("MATH0");
   });
 
-  test("valid 6-char code → shows instructions dialog", async ({
+  test("valid 6-char code → opens the live exam immediately when it is already running", async ({
     studentPage,
   }) => {
     const { exam } = await seedStudentExamScenario({
@@ -46,19 +47,22 @@ test.describe("Student — Join Exam Flow", () => {
       timeout: 10_000,
     });
 
-    // Instructions dialog should appear
+    await expect(
+      studentPage.getByText(/polymorphism|stack|queue/i),
+    ).toBeVisible({ timeout: 10_000 });
     await expect(
       studentPage.getByRole("dialog", { name: /시험 시작 전 안내사항/i })
-    ).toBeVisible({ timeout: 10_000 });
+    ).toHaveCount(0);
   });
 
-  test("confirm dialog → navigates to /exam/{code}", async ({
+  test("not-yet-started exam → shows preflight, then waiting room after confirm", async ({
     studentPage,
   }) => {
     const { exam } = await seedStudentExamScenario({
-      examStatus: "running",
+      examStatus: "draft",
       sessionStatus: "joined",
     });
+    const examPage = new StudentExamPage(studentPage);
 
     await studentPage.goto("/join");
     await studentPage.waitForLoadState("domcontentloaded");
@@ -87,7 +91,7 @@ test.describe("Student — Join Exam Flow", () => {
     await expect(
       studentPage.getByRole("dialog", { name: /시험 시작 전 안내사항/i })
     ).toBeHidden({ timeout: 10_000 });
-    await expect(studentPage.getByRole("button", { name: /시험 제출하기/i })).toBeVisible({
+    await expect(examPage.waitingRoom).toBeVisible({
       timeout: 10_000,
     });
   });

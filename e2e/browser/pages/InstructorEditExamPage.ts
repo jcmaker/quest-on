@@ -11,6 +11,14 @@ export class InstructorEditExamPage {
     return this.page.getByRole("button", { name: /수정하기|저장|수정 완료/i });
   }
 
+  get submitDisabledReasons(): Locator {
+    return this.page.getByTestId("edit-exam-submit-reasons");
+  }
+
+  questionArea(index = 0): Locator {
+    return this.page.getByTestId(`question-editor-input-${index}`);
+  }
+
   get cancelBtn(): Locator {
     return this.page.getByRole("button", { name: /취소|돌아가기/i });
   }
@@ -21,5 +29,11 @@ export class InstructorEditExamPage {
 
   async goto(examId: string) {
     await this.page.goto(`/instructor/${examId}/edit`);
+  }
+
+  async fillQuestion(text: string, index = 0) {
+    const editor = this.questionArea(index);
+    await editor.click();
+    await editor.fill(text);
   }
 }

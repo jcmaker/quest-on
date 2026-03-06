@@ -7,6 +7,7 @@ import {
   seedStudentExamScenario,
   cleanupTestData,
 } from "../helpers/test-data-builder";
+import { getSession } from "../../helpers/seed";
 import { getTestSupabase } from "../../helpers/supabase-test-client";
 import { StudentExamPage } from "../pages";
 
@@ -17,7 +18,7 @@ test.describe("Student — Exam Flow", () => {
     await cleanupTestData();
   });
 
-  test("loads exam page and shows preflight modal for waiting session", async ({
+  test("loads exam page and reconciles a stale joined session into the live exam", async ({
     studentPage,
   }) => {
     const { exam, session } = await seedStudentExamScenario({
@@ -28,8 +29,15 @@ test.describe("Student — Exam Flow", () => {
     const examPage = new StudentExamPage(studentPage);
     await examPage.goto(exam.code);
 
-    // Preflight acceptance is needed for joined sessions
-    await expect(examPage.preflightHeading).toBeVisible({ timeout: 10_000 });
+    await expect(
+      studentPage.getByText(/polymorphism|stack|queue/i),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(examPage.preflightHeading).toHaveCount(0);
+
+    const updatedSession = await getSession(session.id);
+    expect(updatedSession.status).toBe("in_progress");
+    expect(updatedSession.started_at).toBeTruthy();
+    expect(updatedSession.attempt_timer_started_at).toBeTruthy();
   });
 
   test("shows question panel after preflight is accepted (in_progress session)", async ({

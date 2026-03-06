@@ -226,6 +226,7 @@ export default function StudentReportPage() {
               <div className="flex items-center gap-2 mt-3">
                 <Award className="w-5 h-5 text-primary" />
                 <p
+                  data-testid="report-overall-score"
                   className={`text-2xl font-bold ${getScoreColor(
                     reportData.overallScore
                   )}`}

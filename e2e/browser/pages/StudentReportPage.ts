@@ -15,7 +15,7 @@ export class StudentReportPage {
     this.scoreDisplay = page.locator("[data-testid='score-display'], .score-display");
     this.feedbackSection = page.locator("[data-testid='feedback-section'], .feedback-section");
     this.questionCards = page.locator("[data-testid='question-card'], .question-card");
-    this.overallScore = page.getByText(/전체 점수|overall score|총점/i);
+    this.overallScore = page.getByTestId("report-overall-score");
     // PDF download button may be hidden per project MEMORY.md (temporarily hidden feature)
     this.downloadButton = page.getByRole("button", { name: /다운로드|download|PDF/i });
   }

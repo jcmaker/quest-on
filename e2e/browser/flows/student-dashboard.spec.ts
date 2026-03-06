@@ -48,9 +48,9 @@ test.describe("Student — Dashboard & Report Flow", () => {
     ).toBeVisible({ timeout: 15_000 });
 
     // Should show score or grade info
-    await expect(
-      studentPage.getByText(/전체 점수/),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(studentPage.getByTestId("report-overall-score")).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test("dashboard shows empty state when no sessions exist", async ({
@@ -61,15 +61,9 @@ test.describe("Student — Dashboard & Report Flow", () => {
 
     await studentPage.goto("/student");
 
-    // Should show empty state or "no exams" message
-    await studentPage.waitForLoadState("domcontentloaded");
-
-    // Either shows empty state message or the dashboard frame
-    const hasContent = await studentPage
-      .getByText(/시험|exam|대시보드|dashboard|없습니다|no exam/i)
-      .isVisible({ timeout: 10_000 })
-      .catch(() => false);
-
-    expect(hasContent).toBe(true);
+    await expect(studentPage.getByTestId("student-empty-state")).toBeVisible({
+      timeout: 10_000,
+    });
+    await expect(studentPage.getByText("아직 치른 시험이 없습니다")).toBeVisible();
   });
 });

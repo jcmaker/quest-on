@@ -35,6 +35,50 @@ test.describe("Session Preflight — POST /api/session/[sessionId]/preflight", (
     expect(updated.preflight_accepted_at).toBeTruthy();
   });
 
+  test("running exam preflight promotes session immediately → 200, status becomes in_progress", async ({
+    studentRequest,
+  }) => {
+    const now = new Date().toISOString();
+    const exam = await seedExam({ status: "running", started_at: now });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "joined",
+    });
+
+    const res = await studentRequest.post(`/api/session/${session.id}/preflight`);
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.status).toBe("in_progress");
+    expect(body.gateStarted).toBe(true);
+    expect(body.preflightAcceptedAt).toBeTruthy();
+    expect(body.sessionStartTime).toBeTruthy();
+    expect(typeof body.timeRemaining).toBe("number");
+
+    const updated = await getSession(session.id);
+    expect(updated.status).toBe("in_progress");
+    expect(updated.preflight_accepted_at).toBeTruthy();
+    expect(updated.started_at).toBeTruthy();
+    expect(updated.attempt_timer_started_at).toBeTruthy();
+  });
+
+  test("closed exam preflight is rejected → 403", async ({ studentRequest }) => {
+    const exam = await seedExam({ status: "closed" });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "joined",
+    });
+
+    const res = await studentRequest.post(`/api/session/${session.id}/preflight`);
+
+    expect(res.status()).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe("EXAM_NOT_AVAILABLE");
+
+    const updated = await getSession(session.id);
+    expect(updated.status).toBe("joined");
+    expect(updated.preflight_accepted_at).toBeNull();
+  });
+
   test("different student cannot accept another's preflight → 403", async ({
     playwright,
   }) => {
