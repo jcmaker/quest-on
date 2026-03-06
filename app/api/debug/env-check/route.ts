@@ -37,11 +37,20 @@ export async function GET() {
     status[key] = !!process.env[key];
   }
 
+  // DANGER: TEST_BYPASS_SECRET in production causes ALL auth to crash
+  const testBypassSet = !!process.env.TEST_BYPASS_SECRET;
+  const warnings: string[] = [];
+  if (testBypassSet && process.env.NODE_ENV === "production") {
+    warnings.push("CRITICAL: TEST_BYPASS_SECRET is set in production! This crashes ALL authenticated API calls.");
+  }
+
   return NextResponse.json({
-    ok: missing.length === 0,
+    ok: missing.length === 0 && warnings.length === 0,
     environment: process.env.NODE_ENV,
     vercel: !!process.env.VERCEL,
     missing,
+    warnings,
+    TEST_BYPASS_SECRET_SET: testBypassSet,
     status,
   });
 }
