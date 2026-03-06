@@ -816,6 +816,7 @@ export default function EditExam({
             index,
           }))}
           onRemoveExistingFile={removeExistingFile}
+          extractionStatus={extractionStatus}
         />
 
         <CaseQuestionGenerator

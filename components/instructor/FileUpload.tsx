@@ -2,7 +2,13 @@ import type { ReactNode } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
 import {
   Tooltip,
   TooltipContent,
@@ -25,6 +31,7 @@ interface FileUploadProps {
   getFileIcon: (fileName: string) => ReactNode;
   existingFiles?: Array<{ url: string; name: string; index: number }>;
   onRemoveExistingFile?: (index: number) => void;
+  extractionStatus?: Map<string, "extracting" | "done" | "failed">;
 }
 
 export function FileUpload({
@@ -42,13 +49,13 @@ export function FileUpload({
   getFileIcon,
   existingFiles = [],
   onRemoveExistingFile,
+  extractionStatus,
 }: FileUploadProps) {
   return (
-    <>
-      <Separator />
-      <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="materials">수업 자료</Label>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          수업 자료
           <Tooltip>
             <TooltipTrigger asChild>
               <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
@@ -61,10 +68,15 @@ export function FileUpload({
               </p>
             </TooltipContent>
           </Tooltip>
-        </div>
-        <div className="space-y-2">
-          <div className="">
-            <Input
+        </CardTitle>
+        <CardDescription>
+          PPT, PDF, 워드, 엑셀, CSV, 한글, 이미지 파일 (최대 50MB, 자동 압축)
+          {!canAddMoreFiles && " - 용량 초과로 추가 불가"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div>
+          <Input
               id="materials"
               type="file"
               multiple
@@ -100,10 +112,6 @@ export function FileUpload({
               </div>
             </div>
           </div>
-          <span className="text-sm text-muted-foreground">
-            PPT, PDF, 워드, 엑셀, CSV, 한글, 이미지 파일 (최대 50MB, 자동 압축)
-            {!canAddMoreFiles && " - 용량 초과로 추가 불가"}
-          </span>
 
           {(existingFiles.length > 0 || files.length > 0) && (
             <div className="space-y-2">
@@ -185,8 +193,28 @@ export function FileUpload({
               </div>
             </div>
           )}
-        </div>
-      </div>
-    </>
+
+          {extractionStatus && extractionStatus.size > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {Array.from(extractionStatus.entries()).map(([fileName, status]) => (
+                <span
+                  key={fileName}
+                  className={`text-xs px-2 py-1 rounded-full ${
+                    status === "extracting"
+                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                      : status === "done"
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
+                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                  }`}
+                >
+                  {status === "extracting" ? "⏳" : status === "done" ? "✓" : "✗"}{" "}
+                  {fileName.length > 20 ? fileName.slice(0, 17) + "..." : fileName}
+                  {status === "extracting" && " 분석 중"}
+                </span>
+              ))}
+            </div>
+          )}
+      </CardContent>
+    </Card>
   );
 }

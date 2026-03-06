@@ -1030,28 +1030,8 @@ export default function CreateExam() {
               onDragAreaClick={handleDragAreaClick}
               onRemoveFile={removeFile}
               getFileIcon={getFileIcon}
+              extractionStatus={extractionStatus}
             />
-            {/* 텍스트 추출 상태 표시 */}
-            {extractionStatus.size > 0 && (
-              <div className="flex flex-wrap gap-2 -mt-4">
-                {Array.from(extractionStatus.entries()).map(([fileName, status]) => (
-                  <span
-                    key={fileName}
-                    className={`text-xs px-2 py-1 rounded-full ${
-                      status === "extracting"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                        : status === "done"
-                        ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-                        : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-                    }`}
-                  >
-                    {status === "extracting" ? "⏳" : status === "done" ? "✓" : "✗"}{" "}
-                    {fileName.length > 20 ? fileName.slice(0, 17) + "..." : fileName}
-                    {status === "extracting" && " 분석 중"}
-                  </span>
-                ))}
-              </div>
-            )}
 
             <CaseQuestionGenerator
               examTitle={examData.title}

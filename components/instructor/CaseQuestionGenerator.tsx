@@ -18,6 +18,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardAction,
+} from "@/components/ui/card";
 import { Sparkles, ChevronDown, X, Plus, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -180,31 +187,30 @@ export function CaseQuestionGenerator({
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div className="border rounded-lg bg-card">
+      <Card>
         <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="w-full flex items-center justify-between px-6 py-4 hover:bg-muted/50 transition-colors rounded-lg"
-          >
-            <div className="flex items-center gap-2">
+          <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors rounded-t-xl">
+            <CardTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
-              <span className="font-semibold">AI 사례형 문제 생성</span>
+              AI 사례형 문제 생성
               {generatedQuestions.length > 0 && (
-                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                <span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                   {generatedQuestions.length}개 생성됨
                 </span>
               )}
-            </div>
-            <ChevronDown
-              className={`w-4 h-4 text-muted-foreground transition-transform ${
-                isOpen ? "rotate-180" : ""
-              }`}
-            />
-          </button>
+            </CardTitle>
+            <CardAction>
+              <ChevronDown
+                className={`w-4 h-4 text-muted-foreground transition-transform ${
+                  isOpen ? "rotate-180" : ""
+                }`}
+              />
+            </CardAction>
+          </CardHeader>
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <div className="px-6 pb-6 space-y-4 border-t pt-4">
+          <CardContent className="space-y-4">
             {/* Question count */}
             <div className="space-y-1.5">
               <Label className="text-sm">생성할 문제 수</Label>
@@ -438,9 +444,9 @@ export function CaseQuestionGenerator({
                 </AnimatePresence>
               </div>
             )}
-          </div>
+          </CardContent>
         </CollapsibleContent>
-      </div>
+      </Card>
     </Collapsible>
   );
 }

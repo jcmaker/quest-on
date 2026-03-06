@@ -5,6 +5,13 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardAction,
+} from "@/components/ui/card";
 import { Plus, ArrowUp, ArrowDown, ChevronDown, Pencil } from "lucide-react";
 import { QuestionEditor } from "./QuestionEditor";
 import type { Question } from "./QuestionEditor";
@@ -36,35 +43,33 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div
-        className="border rounded-lg bg-card"
-        data-testid="manual-questions-section"
-      >
+      <Card data-testid="manual-questions-section">
         <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="w-full flex items-center justify-between px-6 py-4 hover:bg-muted/50 transition-colors rounded-lg"
+          <CardHeader
+            className="cursor-pointer hover:bg-muted/50 transition-colors rounded-t-xl"
             data-testid="manual-questions-toggle"
           >
-            <div className="flex items-center gap-2">
+            <CardTitle className="flex items-center gap-2">
               <Pencil className="w-5 h-5 text-primary" />
-              <span className="font-semibold">문제 직접 작성</span>
+              문제 직접 작성
               {questions.length > 0 && (
-                <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                <span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                   {questions.length}개
                 </span>
               )}
-            </div>
-            <ChevronDown
-              className={`w-4 h-4 text-muted-foreground transition-transform ${
-                isOpen ? "rotate-180" : ""
-              }`}
-            />
-          </button>
+            </CardTitle>
+            <CardAction>
+              <ChevronDown
+                className={`w-4 h-4 text-muted-foreground transition-transform ${
+                  isOpen ? "rotate-180" : ""
+                }`}
+              />
+            </CardAction>
+          </CardHeader>
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <div className="px-6 pb-6 border-t pt-4">
+          <CardContent>
             <div className="flex items-center justify-between mb-4">
               <p className="text-sm text-muted-foreground">시험 문제를 입력하세요</p>
               {onAdd && (
@@ -143,9 +148,9 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
                 </Button>
               </div>
             )}
-          </div>
+          </CardContent>
         </CollapsibleContent>
-      </div>
+      </Card>
     </Collapsible>
   );
 }
