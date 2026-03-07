@@ -1,10 +1,8 @@
-import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { openai, AI_MODEL_HEAVY } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import {
-  buildChatGradingSystemPrompt,
-  buildAnswerGradingSystemPrompt,
-  buildChatGradingUserPrompt,
-  buildAnswerGradingUserPrompt,
+  buildUnifiedGradingSystemPrompt,
+  buildUnifiedGradingUserPrompt,
   buildSummaryEvaluationSystemPrompt,
 } from "@/lib/prompts";
 import { logError } from "@/lib/logger";
@@ -19,13 +17,17 @@ import {
   summarizeAiDependencyAssessments,
   resolveQuestionRubric,
 } from "@/lib/grading-helpers";
+import {
+  buildAiTextMetadata,
+  callTrackedChatCompletion,
+} from "@/lib/ai-tracking";
 import type {
   StageGrading,
   SummaryData,
 } from "@/lib/types/grading";
 
-/** Maximum time for the entire grading operation (90 seconds) */
-const GRADING_TIMEOUT_MS = 90_000;
+/** Maximum time for the entire grading operation (180 seconds — heavy model needs more headroom) */
+const GRADING_TIMEOUT_MS = 180_000;
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -130,6 +132,8 @@ export async function autoGradeSession(
 
   // 7-8. 각 문제별 채점 (병렬 처리로 ~5배 속도 개선)
   // 루브릭은 문제별로 resolveQuestionRubric을 사용하여 해결
+  const chatWeight = exam.chat_weight ?? 50;
+
   const gradePromises = questions.map(async (question): Promise<GradeResult | null> => {
     // Per-question rubric resolution
     const rubricItems = resolveQuestionRubric(question, exam.rubric);
@@ -156,132 +160,102 @@ export async function autoGradeSession(
       return null;
     }
 
-    // Chat + Answer 채점을 병렬 실행
-    const [chatResult, answerResult] = await Promise.allSettled([
-      // 8-1. Chat stage 채점
-      questionMessages.length > 0
-        ? (async () => {
-            const chatSystemPrompt = buildChatGradingSystemPrompt({
-              rubricText,
-              rubricScoresSchema,
-            });
+    // Unified grading: single call evaluates both chat + answer together
+    const systemPrompt = buildUnifiedGradingSystemPrompt({
+      rubricText,
+      rubricScoresSchema,
+      chatWeightPercent: chatWeight,
+    });
 
-            const chatUserPrompt = buildChatGradingUserPrompt({
-              questionPrompt: question.prompt || "",
-              questionAiContext: question.ai_context,
-              messages: questionMessages,
-              aiDependencyAssessment,
-            });
+    const userPrompt = buildUnifiedGradingUserPrompt({
+      questionPrompt: question.prompt || "",
+      questionAiContext: question.ai_context,
+      messages: questionMessages,
+      answer: submission.answer || "",
+      aiDependencyAssessment,
+    });
 
-            const chatCompletion = await callOpenAI(() =>
-              openai.chat.completions.create({
-                model: AI_MODEL,
-                messages: [
-                  { role: "system", content: chatSystemPrompt },
-                  { role: "user", content: chatUserPrompt },
-                ],
-                response_format: { type: "json_object" },
-              })
-            );
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        openai.chat.completions.create({
+          model: AI_MODEL_HEAVY,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      {
+        feature: "auto_grading_question",
+        route: "lib/grading.ts",
+        model: AI_MODEL_HEAVY,
+        userId: session.student_id,
+        examId: exam.id,
+        sessionId,
+        qIdx,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userPrompt],
+          extra: {
+            chat_weight: chatWeight,
+            rubric_item_count: rubricItems.length,
+            message_count: questionMessages.length,
+          },
+        }),
+      },
+      {
+        timeoutMs: 90_000,
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
+          }),
+      }
+    );
+    const completion = tracked.data;
 
-            const chatParsedResponse = JSON.parse(
-              chatCompletion.choices[0]?.message?.content || ""
-            );
+    const parsed = JSON.parse(
+      completion.choices[0]?.message?.content || "{}"
+    );
 
-            const rubricScores: Record<string, number> = {};
-            if (chatParsedResponse.rubric_scores && rubricItems.length > 0) {
-              rubricItems.forEach((item) => {
-                const score = chatParsedResponse.rubric_scores[item.evaluationArea];
-                if (typeof score === "number") {
-                  rubricScores[item.evaluationArea] = Math.max(0, Math.min(5, Math.round(score)));
-                }
-              });
-            }
+    // Parse rubric_scores
+    const rubricScores: Record<string, number> = {};
+    if (parsed.rubric_scores && rubricItems.length > 0) {
+      rubricItems.forEach((item) => {
+        const score = parsed.rubric_scores[item.evaluationArea];
+        if (typeof score === "number") {
+          rubricScores[item.evaluationArea] = Math.max(0, Math.min(5, Math.round(score)));
+        }
+      });
+    }
+    const rubricScoresOrUndef = Object.keys(rubricScores).length > 0 ? rubricScores : undefined;
 
-            const rawScore = Math.max(
-              0,
-              Math.min(100, Math.round(chatParsedResponse.score || 0))
-            );
-            const adjustedScore = Math.max(
-              0,
-              Math.min(100, rawScore - aiDependencyAssessment.penaltyApplied)
-            );
-
-            return {
-              score: adjustedScore,
-              comment: `${
-                chatParsedResponse.comment || "채팅 단계 평가 완료"
-              }\n\nAI 활용 해석: ${aiDependencyAssessment.summary}`,
-              rubric_scores: Object.keys(rubricScores).length > 0 ? rubricScores : undefined,
-              ai_dependency: aiDependencyAssessment,
-            };
-          })()
-        : Promise.resolve(null),
-
-      // 8-2. Answer stage 채점
-      submission.answer
-        ? (async () => {
-            const answerSystemPrompt = buildAnswerGradingSystemPrompt({
-              rubricText,
-              rubricScoresSchema,
-            });
-
-            const answerUserPrompt = buildAnswerGradingUserPrompt({
-              questionPrompt: question.prompt || "",
-              questionAiContext: question.ai_context,
-              answer: submission.answer || "",
-            });
-
-            const answerCompletion = await callOpenAI(() =>
-              openai.chat.completions.create({
-                model: AI_MODEL,
-                messages: [
-                  { role: "system", content: answerSystemPrompt },
-                  { role: "user", content: answerUserPrompt },
-                ],
-                response_format: { type: "json_object" },
-              })
-            );
-
-            const answerParsedResponse = JSON.parse(
-              answerCompletion.choices[0]?.message?.content || ""
-            );
-
-            const answerRubricScores: Record<string, number> = {};
-            if (answerParsedResponse.rubric_scores && rubricItems.length > 0) {
-              rubricItems.forEach((item) => {
-                const score = answerParsedResponse.rubric_scores[item.evaluationArea];
-                if (typeof score === "number") {
-                  answerRubricScores[item.evaluationArea] = Math.max(0, Math.min(5, Math.round(score)));
-                }
-              });
-            }
-
-            return {
-              score: Math.max(0, Math.min(100, Math.round(answerParsedResponse.score || 0))),
-              comment: answerParsedResponse.comment || "답안 평가 완료",
-              rubric_scores: Object.keys(answerRubricScores).length > 0 ? answerRubricScores : undefined,
-            };
-          })()
-        : Promise.resolve(null),
-    ]);
-
-    // 결과 조합
+    // Build StageGrading — populate both chat and answer for backward compat
     const stageGrading: StageGrading = {};
 
-    if (chatResult.status === "fulfilled" && chatResult.value) {
-      stageGrading.chat = chatResult.value;
+    if (questionMessages.length > 0) {
+      const rawChatScore = Math.max(0, Math.min(100, Math.round(parsed.chat_score || 0)));
+      const adjustedChatScore = Math.max(0, Math.min(100, rawChatScore - aiDependencyAssessment.penaltyApplied));
+      stageGrading.chat = {
+        score: adjustedChatScore,
+        comment: `${parsed.chat_comment || "채팅 단계 평가 완료"}\n\nAI 활용 해석: ${aiDependencyAssessment.summary}`,
+        rubric_scores: rubricScoresOrUndef,
+        ai_dependency: aiDependencyAssessment,
+      };
     }
 
-    if (answerResult.status === "fulfilled" && answerResult.value) {
-      stageGrading.answer = answerResult.value;
+    if (submission.answer) {
+      stageGrading.answer = {
+        score: Math.max(0, Math.min(100, Math.round(parsed.answer_score || 0))),
+        comment: parsed.answer_comment || "답안 평가 완료",
+        rubric_scores: rubricScoresOrUndef,
+      };
     }
 
-    // 8-3. 종합 점수 계산 — 가중 평균 (0-100 범위 보장)
-    const finalScore = calculateWeightedScore(stageGrading, exam.chat_weight ?? 50);
-    const overallComment = `채팅 단계: ${
-      stageGrading.chat?.score || "N/A"
-    }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점`;
+    // 종합 점수 계산 — 가중 평균 (0-100 범위 보장)
+    const finalScore = calculateWeightedScore(stageGrading, chatWeight);
+    const overallComment = parsed.overall_comment
+      || `채팅 단계: ${stageGrading.chat?.score ?? "N/A"}점, 답안 단계: ${stageGrading.answer?.score ?? "N/A"}점`;
 
     if (Object.keys(stageGrading).length > 0) {
       return {
@@ -369,6 +343,7 @@ export async function autoGradeSession(
     try {
       summary = await generateSummary(
         sessionId,
+        session.student_id,
         exam,
         questions,
         submissionsByQuestion,
@@ -391,7 +366,8 @@ export async function autoGradeSession(
  */
 async function generateSummary(
   sessionId: string,
-  exam: { title: string; rubric?: unknown },
+  studentId: string,
+  exam: { id: string; title: string; rubric?: unknown },
   questions: Array<{ idx: number; prompt?: string; ai_context?: string }>,
   submissionsByQuestion: Record<number, { answer: string }>,
   messagesByQuestion: Record<number, Array<{ role: string; content: string }>>,
@@ -512,16 +488,41 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
         "keyQuotes": ["인용구1", "인용구2"]
       }`;
 
-    const completion = await callOpenAI(() =>
-      openai.chat.completions.create({
-        model: AI_MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-      })
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        openai.chat.completions.create({
+          model: AI_MODEL_HEAVY,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      {
+        feature: "auto_grading_summary",
+        route: "lib/grading.ts",
+        model: AI_MODEL_HEAVY,
+        userId: studentId,
+        examId: exam.id,
+        sessionId,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userPrompt],
+          extra: {
+            graded_question_count: grades.length,
+          },
+        }),
+      },
+      {
+        timeoutMs: 120_000,
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
+          }),
+      }
     );
+    const completion = tracked.data;
 
     const result = JSON.parse(
       completion.choices[0]?.message?.content || "{}"

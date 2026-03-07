@@ -6,7 +6,11 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { adjustCaseQuestionSchema, validateRequest } from "@/lib/validations";
 import { buildCaseQuestionAdjustmentPrompt } from "@/lib/prompts";
-import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { openai, AI_MODEL } from "@/lib/openai";
+import {
+  buildAiTextMetadata,
+  callTrackedChatCompletion,
+} from "@/lib/ai-tracking";
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,16 +49,38 @@ export async function POST(request: NextRequest) {
     });
 
     // Call OpenAI
-    const completion = await callOpenAI(() =>
-      openai.chat.completions.create({
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        openai.chat.completions.create({
+          model: AI_MODEL,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      {
+        feature: "adjust_question",
+        route: "/api/ai/adjust-question",
         model: AI_MODEL,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-      })
+        userId: user.id,
+        metadata: buildAiTextMetadata({
+          inputText: [system, userPrompt],
+          extra: {
+            conversation_turns: data.conversationHistory?.length ?? 0,
+          },
+        }),
+      },
+      {
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
+          }),
+      }
     );
+    const completion = tracked.data;
 
     const content = completion.choices[0]?.message?.content;
     if (!content) {

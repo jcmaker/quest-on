@@ -57,6 +57,7 @@ model exams {
   chat_weight            Int?                   @default(50) // 채팅 단계 가중치 (0-100), answer_weight = 100 - chat_weight
   rubric_public          Boolean?               @default(false) // 루브릭 공개 여부
   materials_text         Json?                  @default("[]") // 추출된 텍스트 저장
+  ai_events              ai_events[]
   exam_nodes             exam_nodes[]
   exam_material_chunks   exam_material_chunks[]
   sessions               sessions[]
@@ -83,6 +84,43 @@ model grades {
   @@unique([session_id, q_idx])
   @@index([session_id], map: "idx_grades_session_id")
   @@index([session_id, q_idx], map: "idx_grades_session_qidx")
+}
+
+model ai_events {
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider                  String
+  endpoint                  String
+  feature                   String
+  route                     String
+  model                     String
+  user_id                   String?
+  exam_id                   String?   @db.Uuid
+  session_id                String?   @db.Uuid
+  q_idx                     Int?
+  status                    String
+  attempt_count             Int       @default(1)
+  latency_ms                Int?
+  input_tokens              Int?
+  output_tokens             Int?
+  cached_input_tokens       Int?
+  reasoning_tokens          Int?
+  total_tokens              Int?
+  estimated_cost_usd_micros BigInt    @default(0)
+  pricing_version           String
+  request_id                String?
+  response_id               String?
+  error_code                String?
+  metadata                  Json      @default("{}")
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+  exams                     exams?    @relation(fields: [exam_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sessions                  sessions? @relation(fields: [session_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)], map: "idx_ai_events_created_at")
+  @@index([feature, created_at(sort: Desc)], map: "idx_ai_events_feature_created_at")
+  @@index([model, created_at(sort: Desc)], map: "idx_ai_events_model_created_at")
+  @@index([exam_id, created_at(sort: Desc)], map: "idx_ai_events_exam_created_at")
+  @@index([session_id], map: "idx_ai_events_session_id")
+  @@index([user_id, created_at(sort: Desc)], map: "idx_ai_events_user_created_at")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -139,6 +177,7 @@ model sessions {
   last_heartbeat_at        DateTime?     @db.Timestamptz(6) // 마지막 heartbeat 시간
   device_fingerprint       String? // 디바이스 식별용 핑거프린트
   exams                    exams         @relation(fields: [exam_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ai_events                ai_events[]
   grades                   grades[]
   messages                 messages[]
   submissions              submissions[]

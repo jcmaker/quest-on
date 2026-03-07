@@ -2,7 +2,7 @@
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { createEmbedding } from "@/lib/embedding";
 import { successJson, errorJson } from "@/lib/api-response";
@@ -43,7 +43,13 @@ export async function POST(request: NextRequest) {
       return errorJson("BAD_REQUEST", "텍스트가 비어있습니다", 400);
     }
 
-    const embedding = await createEmbedding(text);
+    const embedding = await createEmbedding(text, {
+      route: "/api/embed",
+      userId: user.id,
+      metadata: {
+        source: "manual_embed",
+      },
+    });
 
     return successJson({
       embedding,

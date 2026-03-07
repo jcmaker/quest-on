@@ -25,6 +25,11 @@ export interface SearchOptions {
   examId?: string; // 시험 ID (선택적, 없으면 전체 검색)
   matchThreshold?: number; // 유사도 임계값 (0-1, 기본값: 0.5)
   matchCount?: number; // 반환할 결과 수 (기본값: 5)
+  route?: string;
+  userId?: string;
+  sessionId?: string;
+  qIdx?: number;
+  metadata?: Record<string, unknown>;
 }
 
 /** Supabase RPC match_exam_materials 함수 반환 타입 */
@@ -53,11 +58,27 @@ export async function searchMaterialChunks(
   options: SearchOptions = {}
 ): Promise<SearchResult[]> {
   // 기본 임계값을 0.2로 낮춤 (실제 유사도가 0.2~0.4 정도이므로)
-  const { examId, matchThreshold = 0.2, matchCount = 5 } = options;
+  const {
+    examId,
+    matchThreshold = 0.2,
+    matchCount = 5,
+    route,
+    userId,
+    sessionId,
+    qIdx,
+    metadata,
+  } = options;
 
   try {
     // 1. 질문을 임베딩 벡터로 변환
-    const queryEmbedding = await createEmbedding(queryText);
+    const queryEmbedding = await createEmbedding(queryText, {
+      route: route ?? "/lib/search-chunks",
+      userId,
+      examId,
+      sessionId,
+      qIdx,
+      metadata,
+    });
 
     // 2. DB에 저장된 청크 수 및 벡터 상태 확인
     if (examId) {

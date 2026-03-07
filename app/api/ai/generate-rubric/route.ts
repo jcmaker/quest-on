@@ -5,9 +5,13 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { generateRubricSchema, validateRequest } from "@/lib/validations";
 import { buildRubricGenerationPrompt } from "@/lib/prompts";
-import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { openai, AI_MODEL } from "@/lib/openai";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import {
+  buildAiTextMetadata,
+  callTrackedChatCompletion,
+} from "@/lib/ai-tracking";
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,16 +44,39 @@ export async function POST(request: NextRequest) {
       topics: data.topics,
     });
 
-    const completion = await callOpenAI(() =>
-      openai.chat.completions.create({
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        openai.chat.completions.create({
+          model: AI_MODEL,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      {
+        feature: "generate_rubric",
+        route: "/api/ai/generate-rubric",
         model: AI_MODEL,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-      })
+        userId: user.id,
+        metadata: buildAiTextMetadata({
+          inputText: [system, userPrompt],
+          extra: {
+            question_count: data.questions.length,
+            topic_count: data.topics?.length ?? 0,
+          },
+        }),
+      },
+      {
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
+          }),
+      }
     );
+    const completion = tracked.data;
 
     const content = completion.choices[0]?.message?.content;
     if (!content) {

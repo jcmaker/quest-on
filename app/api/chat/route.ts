@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { openai, AI_MODEL } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { searchRelevantMaterials } from "@/lib/material-search";
 import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
@@ -17,6 +17,10 @@ import { logError } from "@/lib/logger";
 import { currentUser } from "@/lib/get-current-user";
 import { classifyMessageType, type MessageType } from "@/lib/message-classification";
 import { extractResponseText } from "@/lib/parse-openai-response";
+import {
+  buildAiTextMetadata,
+  callTrackedResponse,
+} from "@/lib/ai-tracking";
 
 export async function OPTIONS(request: NextRequest) {
   return handleCorsPreFlight(request);
@@ -37,19 +41,6 @@ type RagResult = {
   topSimilarity: number | null;
   resultsCount: number;
   method: "vector" | "keyword" | "none";
-};
-
-type ChatRequestBody = {
-  message: string;
-  sessionId: string;
-  questionId?: string;
-  questionIdx?: number | string;
-  examTitle?: string;
-  examCode?: string;
-  examId?: string;
-  studentId?: string;
-  currentQuestionText?: string;
-  currentQuestionAiContext?: string;
 };
 
 // 수업 자료 컨텍스트 정제 (노이즈 제거)
@@ -74,8 +65,11 @@ async function getRagContext(params: {
   message: string;
   examId?: string;
   examMaterialsText?: Array<{ url: string; text: string; fileName: string }>;
+  userId?: string;
+  sessionId?: string;
+  qIdx?: number;
 }): Promise<RagResult> {
-  const { message, examId, examMaterialsText } = params;
+  const { message, examId, examMaterialsText, userId, sessionId, qIdx } = params;
   if (!examId) {
     return {
       relevantMaterialsText: "",
@@ -94,6 +88,13 @@ async function getRagContext(params: {
       examId,
       matchThreshold: 0.2, // 실제 유사도가 0.2~0.4 정도이므로 낮춤
       matchCount: 5,
+      route: "/api/chat",
+      userId,
+      sessionId,
+      qIdx,
+      metadata: {
+        source: "student_chat_rag",
+      },
     });
 
     const topSimilarityRaw = searchResults[0]?.similarity;
@@ -160,19 +161,62 @@ async function getRagContext(params: {
 async function getAIResponse(
   systemPrompt: string,
   userMessage: string,
-  previousResponseId: string | null = null
-): Promise<{ response: string; responseId: string; tokensUsed?: number }> {
+  previousResponseId: string | null = null,
+  tracking?: {
+    userId?: string;
+    examId?: string;
+    sessionId?: string;
+    qIdx?: number;
+  }
+): Promise<{
+  response: string;
+  responseId: string;
+  tokensUsed?: number;
+  usage?: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+    cachedInputTokens: number | null;
+    reasoningTokens: number | null;
+  } | null;
+}> {
   try {
-    // Responses API 사용 (callOpenAI로 동시성 제한 + 429 retry)
-    const response = await callOpenAI(() =>
-      openai.responses.create({
+    const tracked = await callTrackedResponse(
+      () =>
+        openai.responses.create({
+          model: AI_MODEL,
+          instructions: systemPrompt,
+          input: userMessage,
+          previous_response_id: previousResponseId || undefined,
+          store: true,
+        }),
+      {
+        feature: "student_chat",
+        route: "/api/chat",
         model: AI_MODEL,
-        instructions: systemPrompt,
-        input: userMessage,
-        previous_response_id: previousResponseId || undefined,
-        store: true, // 응답을 저장하여 나중에 참조 가능하도록
-      })
+        userId: tracking?.userId,
+        examId: tracking?.examId,
+        sessionId: tracking?.sessionId,
+        qIdx: tracking?.qIdx,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userMessage],
+          extra: previousResponseId
+            ? { previous_response_id: previousResponseId }
+            : undefined,
+        }),
+      },
+      {
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText: extractResponseText(
+              ((result as { output?: unknown[] }).output as
+                | Parameters<typeof extractResponseText>[0]
+                | undefined) ?? []
+            ),
+          }),
+      }
     );
+    const response = tracked.data;
 
     // output 배열에서 텍스트 추출
     const responseText = extractResponseText(response.output);
@@ -182,15 +226,15 @@ async function getAIResponse(
         response:
           "I'm sorry, I couldn't process your question. Please try rephrasing it.",
         responseId: response.id,
+        usage: tracked.usage,
       };
     }
 
-    // Responses API는 토큰 사용량을 직접 반환하지 않으므로 null 반환
-    // 필요시 response_id로 나중에 조회 가능
     return {
       response: responseText,
       responseId: response.id,
-      tokensUsed: undefined, // Responses API는 usage 정보를 제공하지 않음
+      tokensUsed: tracked.usage?.totalTokens ?? undefined,
+      usage: tracked.usage,
     };
   } catch (openaiError) {
     logError("OpenAI Responses API error", openaiError, { path: "/api/chat" });
@@ -327,6 +371,7 @@ async function handleChatLogic(params: {
   currentQuestionAiContext?: string;
   usedClarificationsFallback?: number;
   skipIncrementUsedClarifications?: boolean;
+  userId?: string;
 }): Promise<{
   aiResponse: string;
   responseId: string;
@@ -346,12 +391,20 @@ async function handleChatLogic(params: {
     currentQuestionAiContext,
     usedClarificationsFallback,
     skipIncrementUsedClarifications,
+    userId,
   } = params;
 
   const messageTypePromise = classifyMessageType(message).catch(
     () => "other" as MessageType
   );
-  const ragPromise = getRagContext({ message, examId, examMaterialsText });
+  const ragPromise = getRagContext({
+    message,
+    examId,
+    examMaterialsText,
+    userId,
+    sessionId,
+    qIdx,
+  });
   const previousResponsePromise = fetchPreviousResponseId({ sessionId, qIdx });
 
   // 사용자 메시지 저장은 message_type / rag topSimilarity를 포함 (대기 최소화를 위해 병렬로 진행)
@@ -402,10 +455,16 @@ async function handleChatLogic(params: {
     rubric,
   }) + ragWarning;
 
-  const { response: aiResponse, responseId } = await getAIResponse(
+  const { response: aiResponse, responseId, tokensUsed, usage } = await getAIResponse(
     systemPrompt,
     message,
-    previousResponseId
+    previousResponseId,
+    {
+      userId,
+      examId,
+      sessionId,
+      qIdx,
+    }
   );
 
   // AI 응답/세션 업데이트는 반드시 응답 전에 await (fetch failed 방지)
@@ -416,13 +475,22 @@ async function handleChatLogic(params: {
       role: "ai",
       content: aiResponse,
       response_id: responseId,
-      tokens_used: null,
+      tokens_used: tokensUsed ?? null,
       metadata: {
         rag: {
           topSimilarity: rag.topSimilarity,
           resultsCount: rag.resultsCount,
           method: rag.method,
         },
+        usage: usage
+          ? {
+              input_tokens: usage.inputTokens,
+              output_tokens: usage.outputTokens,
+              total_tokens: usage.totalTokens,
+              cached_input_tokens: usage.cachedInputTokens,
+              reasoning_tokens: usage.reasoningTokens,
+            }
+          : {},
       },
     },
   ]);
@@ -503,7 +571,13 @@ export async function POST(request: NextRequest) {
 
       // temp_로 남아있는 경우(DB 적재 불가): AI 응답은 하되 DB 저장은 생략
       if (!actualSessionId || actualSessionId.startsWith("temp_")) {
-        const rag = await getRagContext({ message, examId });
+        const rag = await getRagContext({
+          message,
+          examId,
+          userId: user?.id,
+          sessionId,
+          qIdx: safeQIdx,
+        });
 
         // RAG 검색 결과에 따라 주의문 추가
         let tempRagWarning = "";
@@ -526,7 +600,13 @@ export async function POST(request: NextRequest) {
         const { response: aiResponse } = await getAIResponse(
           prompt,
           message,
-          previousResponseId
+          previousResponseId,
+          {
+            userId: user?.id,
+            examId,
+            sessionId,
+            qIdx: safeQIdx,
+          }
         );
 
         return successJson({
@@ -549,6 +629,7 @@ export async function POST(request: NextRequest) {
         currentQuestionAiContext,
         usedClarificationsFallback: usedClarifications,
         skipIncrementUsedClarifications,
+        userId: user?.id ?? studentId,
       });
 
       return successJson({
@@ -619,6 +700,7 @@ export async function POST(request: NextRequest) {
       currentQuestionText,
       currentQuestionAiContext,
       usedClarificationsFallback: session.used_clarifications ?? 0,
+      userId: user?.id ?? session.student_id,
     });
 
     return successJson({

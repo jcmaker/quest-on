@@ -130,5 +130,50 @@ export const qk = {
       }
       return key;
     },
+
+    aiUsageSummary: (options?: {
+      range?: "7d" | "30d" | "90d";
+      feature?: string;
+      model?: string;
+      examId?: string;
+      status?: "success" | "error" | "timeout";
+    }) => {
+      const key = ["admin-ai-usage-summary"] as const;
+      if (options) {
+        return [...key, options] as const;
+      }
+      return key;
+    },
+
+    aiUsageBreakdown: (options?: {
+      range?: "7d" | "30d" | "90d";
+      feature?: string;
+      model?: string;
+      examId?: string;
+      status?: "success" | "error" | "timeout";
+    }) => {
+      const key = ["admin-ai-usage-breakdown"] as const;
+      if (options) {
+        return [...key, options] as const;
+      }
+      return key;
+    },
+
+    aiUsageEvents: (options?: {
+      range?: "7d" | "30d" | "90d";
+      page?: number;
+      limit?: number;
+      feature?: string;
+      model?: string;
+      examId?: string;
+      sessionId?: string;
+      status?: "success" | "error" | "timeout";
+    }) => {
+      const key = ["admin-ai-usage-events"] as const;
+      if (options) {
+        return [...key, options] as const;
+      }
+      return key;
+    },
   },
 } as const;

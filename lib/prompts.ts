@@ -809,3 +809,130 @@ export function buildCaseQuestionAdjustmentPrompt(params: {
 
   return { system, user: userPrompt };
 }
+
+/**
+ * 통합 채점 시스템 프롬프트 — 채팅 + 답안을 하나의 호출로 평가
+ */
+export function buildUnifiedGradingSystemPrompt(params: {
+  rubricText: string;
+  rubricScoresSchema?: string;
+  chatWeightPercent: number;
+}): string {
+  const { rubricText, rubricScoresSchema, chatWeightPercent } = params;
+
+  const rubricScoresJson = rubricScoresSchema
+    ? `,
+  "rubric_scores": {
+${rubricScoresSchema}
+  }`
+    : "";
+
+  return `당신은 전문 평가위원입니다. 학생의 **AI 대화 과정**과 **최종 답안**을 하나의 통합된 시각에서 루브릭 기준에 따라 평가하고 점수를 부여합니다.
+
+${rubricText}
+
+이 시험에서 채팅 과정의 비중은 ${chatWeightPercent}%, 최종 답안의 비중은 ${100 - chatWeightPercent}%입니다. 두 영역을 독립적으로 평가하되, 대화에서 드러난 이해도가 최종 답안에 어떻게 반영되었는지를 교차 검증하세요.
+
+[채팅 단계 평가 기준]
+1. 학생이 AI와의 대화에서 보여준 질문의 질, 문제 이해도, 개념 파악 수준을 평가하세요.
+2. AI의 답변을 통해 학생이 얼마나 효과적으로 학습하고 개선했는지 평가하세요.
+
+AI 활용 역량 평가 (매우 중요):
+- 학생이 직접 답변을 받은 사실 자체는 정책 위반이 아닙니다. 핵심은 그 이후 학생이 독립적으로 이해하고 재구성했는지입니다.
+- 학생이 AI에게 단순히 답/풀이/접근법을 요청하기만 했는지, 아니면 자신의 가설/분석을 가지고 AI를 검증/보완 도구로 활용했는지 구분하세요.
+- 높은 AI 활용 역량: (a) 학생이 먼저 자신의 생각/가설을 제시하고 AI에게 확인이나 반론을 요청, (b) AI가 제공한 정보를 자신의 분석에 통합하여 새로운 질문을 이어감, (c) 시나리오의 특수 조건을 파악하고 그에 맞는 구체적 데이터를 AI에게 탐색
+- 낮은 AI 활용 역량: (a) 자신의 분석 없이 풀이 자체를 위임, (b) AI 답변을 그대로 수용하고 후속 질문이나 비판적 검토 없이 종료, (c) AI에게 연속적으로 분석/판단을 요청하여 대화가 사실상 AI의 독백이 된 경우
+- 낮은 활용 신호가 있더라도 이후 학생이 개념 선택, 조건 정리, 중간 추론을 스스로 전개하면 부분 회복으로 인정하세요.
+- AI 활용 역량이 낮으면 chat_score를 엄격히 제한하세요 (최대 40점).
+
+[답안 단계 평가 기준]
+1. 제공된 루브릭의 각 평가 영역과 기준을 정확히 검토하세요.
+2. 학생의 답안이 루브릭의 각 평가 영역을 얼마나 충족하는지 평가하세요.
+3. 답안의 완성도, 논리성, 정확성을 종합적으로 평가하세요.
+
+[교차 검증 — 대화와 답안의 일관성]
+- 대화에서 AI가 교정한 오류가 최종 답안에도 그대로 남아 있으면 answer_score를 엄격히 감점하세요.
+- 대화에서 깊이 있는 이해를 보여주었으나 최종 답안이 빈약하면 answer_score를 낮추세요.
+- 대화가 없거나 빈약하더라도 최종 답안의 질 자체는 독립적으로 평가하세요.
+
+[공통]
+- 각 영역의 점수는 0-100점 사이의 정수로 부여하세요.
+${rubricScoresSchema ? "- 각 루브릭 항목별로 0-5점 척도로 평가하세요 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)." : ""}
+- 구체적이고 건설적인 피드백을 제공하세요.
+
+응답 형식 (JSON):
+{
+  "chat_score": 75,
+  "chat_comment": "대화 과정에서 보여준 학습 태도와 이해도를 평가한 내용을 한국어로 작성하세요.",
+  "answer_score": 85,
+  "answer_comment": "답안의 강점과 개선점을 루브릭 기준에 따라 평가한 내용을 한국어로 작성하세요.",
+  "overall_comment": "채팅과 답안을 교차 검증한 종합 소견을 한국어로 작성하세요."${rubricScoresJson}
+}`;
+}
+
+/**
+ * 통합 채점 유저 프롬프트 — 문제, 대화 기록, 최종 답안, AI 의존 신호를 하나로 전달
+ */
+export function buildUnifiedGradingUserPrompt(params: {
+  questionPrompt: string;
+  questionAiContext?: string;
+  messages: Array<{ role: string; content: string }>;
+  answer: string;
+  aiDependencyAssessment?: AiDependencyAssessment;
+}): string {
+  const {
+    questionPrompt,
+    questionAiContext,
+    messages,
+    answer,
+    aiDependencyAssessment,
+  } = params;
+
+  const chatSection =
+    messages.length > 0
+      ? `**학생과 AI의 대화 기록:**
+${messages
+  .map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`)
+  .join("\n\n")}`
+      : "**대화 기록 없음** — 학생이 AI와 대화하지 않았습니다. chat_score는 0으로 설정하세요.";
+
+  const answerSection = answer
+    ? `**학생의 최종 답안:**
+${answer}`
+    : "**답안 없음** — 학생이 최종 답안을 제출하지 않았습니다. answer_score는 0으로 설정하세요.";
+
+  const dependencySection = aiDependencyAssessment
+    ? `
+**사전 분석된 AI 활용/의존 신호:**
+- 풀이 위임형 요청: ${aiDependencyAssessment.delegationRequestCount}회
+- 출발점 의존 신호: ${aiDependencyAssessment.startingPointDependencyCount}회
+- 직접 답 요구: ${aiDependencyAssessment.directAnswerRequestCount}회
+- 직접 답 의존 신호: ${aiDependencyAssessment.directAnswerRelianceCount}회
+- 최종 답안-응답 유사도 근사치: ${(aiDependencyAssessment.finalAnswerOverlapScore * 100).toFixed(0)}%
+- 회복 관찰 여부: ${aiDependencyAssessment.recoveryObserved ? "예" : "아니오"}
+- 트리거 근거: ${
+        aiDependencyAssessment.triggerEvidence.length > 0
+          ? aiDependencyAssessment.triggerEvidence.join(" / ")
+          : "없음"
+      }
+- 회복 근거: ${
+        aiDependencyAssessment.recoveryEvidence.length > 0
+          ? aiDependencyAssessment.recoveryEvidence.join(" / ")
+          : "없음"
+      }`
+    : "";
+
+  return `다음 정보를 바탕으로 채팅 과정과 최종 답안을 통합 평가해주세요:
+
+**문제:**
+${questionPrompt || ""}
+
+${questionAiContext ? `**문제 컨텍스트:**\n${questionAiContext}\n` : ""}
+
+${chatSection}
+
+${answerSection}
+${dependencySection}
+
+위 정보를 바탕으로 루브릭 기준에 따라 채팅 단계와 답안 단계 각각의 점수와 피드백, 그리고 교차 검증 종합 소견을 제공해주세요.`;
+}

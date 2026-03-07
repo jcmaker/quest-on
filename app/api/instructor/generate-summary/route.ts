@@ -1,14 +1,18 @@
 export const maxDuration = 120;
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@/lib/get-current-user";
-import { openai, AI_MODEL } from "@/lib/openai";
+import { openai, AI_MODEL_HEAVY } from "@/lib/openai";
 import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import {
+  buildAiTextMetadata,
+  callTrackedChatCompletion,
+} from "@/lib/ai-tracking";
 
 const supabase = getSupabaseServer();
 
@@ -80,7 +84,7 @@ export async function POST(request: NextRequest) {
         try {
           const decompressed = decompressData(sub.compressed_answer_data);
           answer = (decompressed as { answer?: string }).answer || answer;
-        } catch (e) {
+        } catch {
           // Use original answer on decompression failure
         }
       }
@@ -137,14 +141,41 @@ JSON 형식으로 응답해주세요:
 }
 `;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-    });
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        openai.chat.completions.create({
+          model: AI_MODEL_HEAVY,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      {
+        feature: "generate_summary",
+        route: "/api/instructor/generate-summary",
+        model: AI_MODEL_HEAVY,
+        userId: user.id,
+        examId: exam.id,
+        sessionId,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userPrompt],
+          extra: {
+            question_count: processedSubmissions.length,
+          },
+        }),
+      },
+      {
+        timeoutMs: 60_000,
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
+          }),
+      }
+    );
+    const completion = tracked.data;
 
     const result = JSON.parse(completion.choices[0].message.content || "{}");
 

@@ -34,7 +34,8 @@ export function getOpenAI(): OpenAI {
 }
 
 // AI 모델 상수 - 여기서 변경하면 전체 코드에 적용됨
-export const AI_MODEL = "gpt-5.3-chat-latest";
+export const AI_MODEL = process.env.AI_MODEL || "gpt-5.3-chat-latest";
+export const AI_MODEL_HEAVY = process.env.AI_MODEL_HEAVY || "gpt-5.4";
 
 // ============================================================
 // Global concurrency limiter for OpenAI API calls
@@ -44,55 +45,99 @@ const openaiLimiter = pLimit(100);
 
 const OPENAI_TIMEOUT_MS = 25_000;
 
-class OpenAITimeoutError extends Error {
-  constructor() {
-    super(`OpenAI call timed out after ${OPENAI_TIMEOUT_MS}ms`);
+export class OpenAITimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`OpenAI call timed out after ${timeoutMs}ms`);
     this.name = "OpenAITimeoutError";
   }
+}
+
+export class OpenAICallTelemetryError extends Error {
+  error: unknown;
+  attemptCount: number;
+  latencyMs: number;
+
+  constructor(params: {
+    error: unknown;
+    attemptCount: number;
+    latencyMs: number;
+  }) {
+    super("OpenAI call failed");
+    this.name = "OpenAICallTelemetryError";
+    this.error = params.error;
+    this.attemptCount = params.attemptCount;
+    this.latencyMs = params.latencyMs;
+  }
+}
+
+export async function callOpenAIWithTelemetry<T>(
+  fn: () => Promise<T>,
+  options?: { timeoutMs?: number; maxAttempts?: number }
+): Promise<{ data: T; attemptCount: number; latencyMs: number }> {
+  const timeout = options?.timeoutMs ?? OPENAI_TIMEOUT_MS;
+  const maxAttempts = Math.max(1, options?.maxAttempts ?? 3);
+
+  return openaiLimiter(async () => {
+    const startedAt = Date.now();
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const data = await Promise.race([
+          fn(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new OpenAITimeoutError(timeout)), timeout)
+          ),
+        ]);
+
+        return {
+          data,
+          attemptCount: attempt + 1,
+          latencyMs: Date.now() - startedAt,
+        };
+      } catch (error) {
+        const isRateLimit =
+          error instanceof OpenAI.APIError && error.status === 429;
+        const isLastAttempt = attempt === maxAttempts - 1;
+
+        if (!isRateLimit || isLastAttempt) {
+          throw new OpenAICallTelemetryError({
+            error,
+            attemptCount: attempt + 1,
+            latencyMs: Date.now() - startedAt,
+          });
+        }
+
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = Math.pow(2, attempt) * 1000;
+        logError(
+          `[callOpenAI] 429 rate limit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`,
+          error
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    throw new OpenAICallTelemetryError({
+      error: new Error("callOpenAI: unexpected retry loop exit"),
+      attemptCount: maxAttempts,
+      latencyMs: Date.now() - startedAt,
+    });
+  });
 }
 
 /**
  * Wraps an OpenAI API call with:
  * 1. Global concurrency limit (max 100 simultaneous calls)
  * 2. Exponential backoff retry on 429 errors (max 3 attempts)
- * 3. 25-second timeout to prevent connection pool exhaustion
+ * 3. Configurable timeout (default 25s) to prevent connection pool exhaustion
  */
-export async function callOpenAI<T>(fn: () => Promise<T>): Promise<T> {
-  return openaiLimiter(async () => {
-    const maxRetries = 3;
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        const result = await Promise.race([
-          fn(),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new OpenAITimeoutError()), OPENAI_TIMEOUT_MS)
-          ),
-        ]);
-        return result;
-      } catch (error) {
-        const isRateLimit =
-          error instanceof OpenAI.APIError && error.status === 429;
-        const isLastAttempt = attempt === maxRetries - 1;
-
-        if (!isRateLimit || isLastAttempt) {
-          throw error;
-        }
-
-        // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, attempt) * 1000;
-        logError(
-          `[callOpenAI] 429 rate limit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries})`,
-          error
-        );
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-    // TypeScript: unreachable, but satisfies return type
-    throw new Error("callOpenAI: unexpected retry loop exit");
-  });
+export async function callOpenAI<T>(
+  fn: () => Promise<T>,
+  options?: { timeoutMs?: number; maxAttempts?: number }
+): Promise<T> {
+  const { data } = await callOpenAIWithTelemetry(fn, options);
+  return data;
 }
-
-export { OpenAITimeoutError };
 
 // ============================================================
 // Grading queue: max 60 concurrent autoGradeSession executions

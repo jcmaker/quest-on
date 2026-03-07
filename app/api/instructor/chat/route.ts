@@ -13,6 +13,10 @@ import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, instructorChatRequestSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
 import { extractResponseText } from "@/lib/parse-openai-response";
+import {
+  buildAiTextMetadata,
+  callTrackedResponse,
+} from "@/lib/ai-tracking";
 
 export async function OPTIONS(request: NextRequest) {
   return handleCorsPreFlight(request);
@@ -25,29 +29,50 @@ export async function GET() {
   );
 }
 
-type InstructorChatRequestBody = {
-  message: string;
-  sessionId: string;
-  context: string;
-  scopeDescription?: string;
-  userId?: string;
-};
-
 // 공통 Completion 함수 - Responses API 사용
 async function getAIResponse(
   systemPrompt: string,
   userMessage: string,
-  previousResponseId: string | null = null
+  previousResponseId: string | null = null,
+  tracking?: {
+    userId?: string;
+    sessionId?: string;
+  }
 ): Promise<{ response: string; responseId: string }> {
   try {
-    // Responses API 사용
-    const response = await openai.responses.create({
-      model: AI_MODEL,
-      instructions: systemPrompt,
-      input: userMessage,
-      previous_response_id: previousResponseId || undefined,
-      store: true,
-    });
+    const { data: response } = await callTrackedResponse(
+      () =>
+        openai.responses.create({
+          model: AI_MODEL,
+          instructions: systemPrompt,
+          input: userMessage,
+          previous_response_id: previousResponseId || undefined,
+          store: true,
+        }),
+      {
+        feature: "instructor_chat",
+        route: "/api/instructor/chat",
+        model: AI_MODEL,
+        userId: tracking?.userId,
+        sessionId: tracking?.sessionId,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userMessage],
+          extra: previousResponseId
+            ? { previous_response_id: previousResponseId }
+            : undefined,
+        }),
+      },
+      {
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText: extractResponseText(
+              ((result as { output?: unknown[] }).output as
+                | Parameters<typeof extractResponseText>[0]
+                | undefined) ?? []
+            ),
+          }),
+      }
+    );
 
     // output 배열에서 텍스트 추출
     const responseText = extractResponseText(response.output);
@@ -98,7 +123,7 @@ export async function POST(request: NextRequest) {
       return errorJson("VALIDATION_ERROR", validation.error!, 400);
     }
 
-    const { message, sessionId, context, scopeDescription, userId } = validation.data;
+    const { message, sessionId, context, scopeDescription } = validation.data;
 
     // 교수용 프롬프트 생성
     const systemPrompt = buildInstructorChatSystemPrompt({
@@ -112,7 +137,11 @@ export async function POST(request: NextRequest) {
     const { response: aiResponse } = await getAIResponse(
       systemPrompt,
       message,
-      previousResponseId
+      previousResponseId,
+      {
+        userId: user.id,
+        sessionId,
+      }
     );
 
     return successJson({

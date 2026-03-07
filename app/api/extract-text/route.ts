@@ -364,7 +364,15 @@ export async function POST(request: NextRequest) {
 
           // 4. 임베딩 생성 (배치)
           const chunkTexts = formattedChunks.map((c) => c.content);
-          const embeddings = await createEmbeddings(chunkTexts);
+          const embeddings = await createEmbeddings(chunkTexts, {
+            route: "/api/extract-text",
+            userId: user.id,
+            examId,
+            metadata: {
+              source: "extract_text_materials",
+              file_url: fileUrlStr,
+            },
+          });
 
           // 5. DB에 저장
           const chunksToSave = formattedChunks.map((chunk, index) => ({

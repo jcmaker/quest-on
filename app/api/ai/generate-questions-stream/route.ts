@@ -5,8 +5,12 @@ import { currentUser } from "@/lib/get-current-user";
 import { errorJson } from "@/lib/api-response";
 import { generateCaseQuestionsSchema, validateRequest } from "@/lib/validations";
 import { buildSingleCaseQuestionPrompt } from "@/lib/prompts";
-import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { openai, AI_MODEL_HEAVY } from "@/lib/openai";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import {
+  buildAiTextMetadata,
+  callTrackedChatCompletion,
+} from "@/lib/ai-tracking";
 
 const MATERIALS_CHAR_LIMIT = 8000;
 const MAX_ATTEMPTS = 2; // 1 retry on parse failure
@@ -29,22 +33,50 @@ interface ParsedQuestionResponse {
 /** Single question generation with 1 retry on parse failure */
 async function generateSingleQuestion(
   system: string,
-  userPrompt: string
+  userPrompt: string,
+  tracking: {
+    userId: string;
+    questionIndex: number;
+    totalQuestions: number;
+  }
 ): Promise<ParsedQuestionResponse> {
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     try {
-      const completion = await callOpenAI(() =>
-        openai.chat.completions.create({
-          model: AI_MODEL,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: userPrompt },
-          ],
-          response_format: { type: "json_object" },
-        })
+      const tracked = await callTrackedChatCompletion(
+        () =>
+          openai.chat.completions.create({
+            model: AI_MODEL_HEAVY,
+            messages: [
+              { role: "system", content: system },
+              { role: "user", content: userPrompt },
+            ],
+            response_format: { type: "json_object" },
+          }),
+        {
+          feature: "generate_questions_stream",
+          route: "/api/ai/generate-questions-stream",
+          model: AI_MODEL_HEAVY,
+          userId: tracking.userId,
+          metadata: buildAiTextMetadata({
+            inputText: [system, userPrompt],
+            extra: {
+              question_index: tracking.questionIndex,
+              total_questions: tracking.totalQuestions,
+            },
+          }),
+        },
+        {
+          metadataBuilder: (result) =>
+            buildAiTextMetadata({
+              outputText:
+                (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                  .choices?.[0]?.message?.content ?? null,
+            }),
+        }
       );
+      const completion = tracked.data;
 
       const content = completion.choices[0]?.message?.content;
       if (!content) throw new Error("Empty response from AI");
@@ -145,7 +177,11 @@ export async function POST(request: NextRequest) {
 
         // Generate all questions in parallel, stream results as they complete
         const settled = prompts.map((prompt, i) =>
-          generateSingleQuestion(prompt.system, prompt.user)
+          generateSingleQuestion(prompt.system, prompt.user, {
+            userId: user.id,
+            questionIndex: i,
+            totalQuestions: questionCount,
+          })
             .then((parsed) => {
               if (isCancelled) return;
               completedCount++;

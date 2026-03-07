@@ -216,7 +216,15 @@ export async function createExam(data: {
 
           // 4. 임베딩 생성 (배치)
           const chunkTexts = formattedChunks.map((c) => c.content);
-          const embeddings = await createEmbeddings(chunkTexts);
+          const embeddings = await createEmbeddings(chunkTexts, {
+            route: "/api/supa",
+            userId: user.id,
+            examId: exam.id,
+            metadata: {
+              source: "create_exam_materials",
+              material_index: idx,
+            },
+          });
 
           // 5. DB에 저장
           const chunksToSave = formattedChunks.map((chunk, index) => ({
@@ -660,7 +668,15 @@ export async function copyExam(data: { exam_id: string }) {
 
           // 4. 임베딩 생성 (배치)
           const chunkTexts = formattedChunks.map((c) => c.content);
-          const embeddings = await createEmbeddings(chunkTexts);
+          const embeddings = await createEmbeddings(chunkTexts, {
+            route: "/api/supa",
+            userId: user.id,
+            examId: newExam.id,
+            metadata: {
+              source: "copy_exam_materials",
+              material_index: idx,
+            },
+          });
 
           // 5. DB에 저장
           const chunksToSave = formattedChunks.map((chunk, index) => ({

@@ -6,9 +6,9 @@
  */
 export const maxDuration = 60;
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
-import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { openai, AI_MODEL } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { compressData } from "@/lib/compression";
 import { buildFeedbackChatSystemPrompt, type RubricItem } from "@/lib/prompts";
@@ -18,6 +18,10 @@ import { logError } from "@/lib/logger";
 import { classifyMessageType } from "@/lib/message-classification";
 import { sanitizeUserInput } from "@/lib/sanitize";
 import { z } from "zod";
+import {
+  buildAiTextMetadata,
+  callTrackedChatCompletion,
+} from "@/lib/ai-tracking";
 
 // Zod schema for this route's specific request shape
 const feedbackChatRouteSchema = z.object({
@@ -54,7 +58,7 @@ export async function POST(request: NextRequest) {
       const firstError = validation.error.errors[0];
       return errorJson("VALIDATION_ERROR", firstError ? `${firstError.path.join(".")}: ${firstError.message}` : "Invalid request body", 400);
     }
-    const { message, examCode, questionId, conversationHistory, studentId } = validation.data;
+    const { message, examCode, questionId, conversationHistory } = validation.data;
 
     // 시험 정보 조회
     const { data: exam, error: examError } = await supabase
@@ -97,32 +101,11 @@ export async function POST(request: NextRequest) {
       message,
     });
 
-    const completion = await callOpenAI(() =>
-      openai.chat.completions.create({
-        model: AI_MODEL,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: message },
-        ],
-        max_completion_tokens: 500,
-      })
-    );
-    const response = completion.choices[0]?.message?.content;
-    const tokensUsed = completion.usage?.total_tokens || null; // 토큰 사용량 추출
-
-    if (!response) {
-      return errorJson("INTERNAL_ERROR", "Failed to generate AI response", 500);
-    }
-
-    // Store feedback chat interaction with compression
-    // Security: use authenticated user's ID, never trust studentId from body
     const verifiedStudentId = user.id;
+    let resolvedSessionId: string | null = null;
+
     if (verifiedStudentId) {
       try {
-        // 메시지 타입 분류
-        const messageType = await classifyMessageType(message);
-
-        // Get or create session for this student and exam
         const { data: session, error: sessionError } = await supabase
           .from("sessions")
           .select("id")
@@ -130,9 +113,7 @@ export async function POST(request: NextRequest) {
           .eq("student_id", verifiedStudentId)
           .single();
 
-        let sessionId;
         if (sessionError || !session) {
-          // Create new session
           const { data: newSession, error: createError } = await supabase
             .from("sessions")
             .insert([
@@ -142,14 +123,74 @@ export async function POST(request: NextRequest) {
                 submitted_at: new Date().toISOString(),
               },
             ])
-            .select()
+            .select("id")
             .single();
 
-          if (createError) throw createError;
-          sessionId = newSession.id;
+          if (createError) {
+            throw createError;
+          }
+
+          resolvedSessionId = newSession.id;
         } else {
-          sessionId = session.id;
+          resolvedSessionId = session.id;
         }
+      } catch (sessionError) {
+        logError("Error preparing feedback chat session", sessionError, {
+          path: "/api/feedback-chat",
+        });
+      }
+    }
+
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        openai.chat.completions.create({
+          model: AI_MODEL,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: message },
+          ],
+          max_completion_tokens: 500,
+        }),
+      {
+        feature: "feedback_chat",
+        route: "/api/feedback-chat",
+        model: AI_MODEL,
+        userId: verifiedStudentId,
+        examId: exam.id,
+        sessionId: resolvedSessionId ?? undefined,
+        qIdx: questionId ? parseInt(questionId, 10) || 0 : 0,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, message],
+          extra: {
+            exam_code: examCode,
+            has_conversation_history: !!conversationHistory?.length,
+          },
+        }),
+      },
+      {
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
+          }),
+      }
+    );
+
+    const completion = tracked.data;
+    const response = completion.choices[0]?.message?.content;
+    const tokensUsed = tracked.usage?.totalTokens ?? null;
+
+    if (!response) {
+      return errorJson("INTERNAL_ERROR", "Failed to generate AI response", 500);
+    }
+
+    // Store feedback chat interaction with compression
+    // Security: use authenticated user's ID, never trust studentId from body
+    if (verifiedStudentId && resolvedSessionId) {
+      try {
+        // 메시지 타입 분류
+        const messageType = await classifyMessageType(message);
 
         // Compress the chat interaction
         const chatInteraction = {
@@ -165,7 +206,7 @@ export async function POST(request: NextRequest) {
         // Store in messages table with compression, message type, and tokens
         const { error: insertError } = await supabase.from("messages").insert([
           {
-            session_id: sessionId,
+            session_id: resolvedSessionId,
             q_idx: questionId ? parseInt(questionId) : 0,
             role: "user",
             content: message,
@@ -175,16 +216,18 @@ export async function POST(request: NextRequest) {
             created_at: new Date().toISOString(),
           },
           {
-            session_id: sessionId,
+            session_id: resolvedSessionId,
             q_idx: questionId ? parseInt(questionId) : 0,
             role: "ai",
             content: response,
             tokens_used: tokensUsed,
             metadata: tokensUsed
               ? {
-                  prompt_tokens: completion.usage?.prompt_tokens || 0,
-                  completion_tokens: completion.usage?.completion_tokens || 0,
+                  prompt_tokens: tracked.usage?.inputTokens || 0,
+                  completion_tokens: tracked.usage?.outputTokens || 0,
                   total_tokens: tokensUsed,
+                  cached_input_tokens: tracked.usage?.cachedInputTokens || 0,
+                  reasoning_tokens: tracked.usage?.reasoningTokens || 0,
                 }
               : {},
             compressed_content: compressedData.data,

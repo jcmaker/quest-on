@@ -5,9 +5,13 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { generateCaseQuestionsSchema, validateRequest } from "@/lib/validations";
 import { buildCaseQuestionGenerationPrompt } from "@/lib/prompts";
-import { openai, AI_MODEL, callOpenAI } from "@/lib/openai";
+import { openai, AI_MODEL_HEAVY } from "@/lib/openai";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import {
+  buildAiTextMetadata,
+  callTrackedChatCompletion,
+} from "@/lib/ai-tracking";
 
 const MATERIALS_CHAR_LIMIT = 8000;
 const GENERATION_TIMEOUT_MS = 60_000;
@@ -81,11 +85,11 @@ export async function POST(request: NextRequest) {
     };
 
     const attemptGeneration = async () => {
-      const apiCall = () =>
-        Promise.race([
+      const tracked = await callTrackedChatCompletion(
+        () =>
           openai.chat.completions.create(
             {
-              model: AI_MODEL,
+              model: AI_MODEL_HEAVY,
               messages: [
                 { role: "system", content: system },
                 { role: "user", content: userPrompt },
@@ -94,18 +98,34 @@ export async function POST(request: NextRequest) {
             },
             hasMockHeaders
               ? { headers: mockHeaders, maxRetries: 0 }
-              : undefined,
+              : undefined
           ),
-          new Promise<never>((_, reject) =>
-            setTimeout(
-              () => reject(new Error("Generation timeout")),
-              GENERATION_TIMEOUT_MS
-            )
-          ),
-        ]);
-
-      // Skip callOpenAI wrapper (which has its own retries) when using mock server
-      const completion = hasMockHeaders ? await apiCall() : await callOpenAI(apiCall);
+        {
+          feature: "generate_questions",
+          route: "/api/ai/generate-questions",
+          model: AI_MODEL_HEAVY,
+          userId: user.id,
+          metadata: buildAiTextMetadata({
+            inputText: [system, userPrompt],
+            extra: {
+              question_count: data.questionCount ?? 2,
+              difficulty: data.difficulty ?? "intermediate",
+              has_materials: !!materialsContext,
+            },
+          }),
+        },
+        {
+          timeoutMs: GENERATION_TIMEOUT_MS,
+          maxAttempts: hasMockHeaders ? 1 : undefined,
+          metadataBuilder: (result) =>
+            buildAiTextMetadata({
+              outputText:
+                (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                  .choices?.[0]?.message?.content ?? null,
+            }),
+        }
+      );
+      const completion = tracked.data;
 
       const content = completion.choices[0]?.message?.content;
       if (!content) {
