@@ -261,7 +261,7 @@ export const feedbackChatSchema = z.object({
   qIdx: z.number().int().min(0),
   chatHistory: z.array(z.object({
     role: z.enum(["user", "assistant"]),
-    content: z.string(),
+    content: sanitizedString(z.string().max(10000)),
   })).optional(),
   examCode: z.string().optional(),
   studentId: z.string().optional(),
