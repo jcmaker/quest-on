@@ -249,9 +249,13 @@ export async function initExamSession(data: {
       return errorJson("EXAM_NOT_AVAILABLE", "Exam not available for joining", 403, { currentStatus: examStatus, message: "This exam is closed or archived" });
     }
 
-    // Gate 필드가 있는 경우: close_at 체크 (입장 마감 시간)
+    // Gate 필드가 있는 경우: open_at / close_at 체크 (입장 시간)
     const hasGateFields = openAt !== null || closeAt !== null;
     if (hasGateFields) {
+      const isEntryNotYetOpen = openAt !== null && nowTime < openAt;
+      if (isEntryNotYetOpen) {
+        return errorJson("ENTRY_WINDOW_NOT_OPEN", "Entry window has not opened yet", 403, { openAt: exam.open_at });
+      }
       const isEntryClosed = closeAt !== null && nowTime >= closeAt;
       if (isEntryClosed) {
         return errorJson("ENTRY_WINDOW_CLOSED", "Entry window closed", 403, { closeAt: exam.close_at, message: "The entry window for this exam has closed" });
@@ -571,7 +575,7 @@ export async function submitExam(data: {
 
     const { data: sessionCheck, error: sessionCheckError } = await supabase
       .from("sessions")
-      .select("id, student_id, exam_id, submitted_at")
+      .select("id, student_id, exam_id, submitted_at, attempt_timer_started_at, status, exams(duration)")
       .eq("id", data.sessionId)
       .single();
 
@@ -591,6 +595,24 @@ export async function submitExam(data: {
       return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
     }
 
+    // Server-side deadline enforcement
+    const GRACE_PERIOD_MS = 30_000;
+    const examsRaw = sessionCheck.exams as { duration: number } | { duration: number }[] | null;
+    const examDuration = Array.isArray(examsRaw) ? examsRaw[0]?.duration : examsRaw?.duration;
+    const timerStartedAt = sessionCheck.attempt_timer_started_at;
+
+    if (
+      examDuration &&
+      examDuration > 0 &&
+      timerStartedAt &&
+      sessionCheck.status === "in_progress"
+    ) {
+      const endTime = new Date(timerStartedAt).getTime() + examDuration * 60_000 + GRACE_PERIOD_MS;
+      if (Date.now() > endTime) {
+        return errorJson("DEADLINE_EXCEEDED", "Exam time has expired", 403);
+      }
+    }
+
     // Compress the session data
     const sessionData = {
       chatHistory: data.chatHistory || [],
@@ -601,44 +623,13 @@ export async function submitExam(data: {
 
     const compressedSessionData = compressData(sessionData);
 
-    // Update session with compressed data and deactivate
-    // Guard: only update if not already submitted (prevents duplicate submissions)
-    const { data: session, error: sessionError } = await supabase
-      .from("sessions")
-      .update({
-        compressed_session_data: compressedSessionData.data,
-        compression_metadata: compressedSessionData.metadata,
-        submitted_at: new Date().toISOString(),
-        status: "submitted",
-        is_active: false, // Deactivate session on submission
-      })
-      .eq("id", data.sessionId)
-      .eq("student_id", verifiedStudentId)
-      .eq("exam_id", data.examId)
-      .is("submitted_at", null)
-      .select()
-      .single();
-
-    if (sessionError) {
-      // If no rows matched, session was already submitted
-      if (sessionError.code === "PGRST116") {
-        return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
-      }
-      throw sessionError;
-    }
-
-    // Store individual submissions with compressed data
-    const submissionInserts = data.answers.map(
+    // Build per-answer compressed payloads
+    const submissionsPayload = data.answers.map(
       (answer: unknown, index: number) => {
         const answerObj = answer as Record<string, unknown>;
-        const submissionData = {
-          answer: answerObj.text || answer,
-        };
-
+        const submissionData = { answer: answerObj.text || answer };
         const compressedSubmissionData = compressData(submissionData);
-
         return {
-          session_id: data.sessionId,
           q_idx: index,
           answer: answerObj.text || answer,
           compressed_answer_data: compressedSubmissionData.data,
@@ -647,25 +638,39 @@ export async function submitExam(data: {
       }
     );
 
-    // Upsert submissions (drafts may already exist from save_draft)
-    const { data: submissions, error: submissionsError } = await supabase
-      .from("submissions")
-      .upsert(submissionInserts, { onConflict: "session_id,q_idx" })
-      .select();
+    const submittedAt = new Date().toISOString();
 
-    if (submissionsError) throw submissionsError;
+    // Atomic RPC: session update + submission inserts in a single transaction
+    const { data: rpcResult, error: rpcError } = await supabase.rpc(
+      "submit_exam_atomic",
+      {
+        p_session_id: data.sessionId,
+        p_student_id: verifiedStudentId,
+        p_exam_id: data.examId,
+        p_submitted_at: submittedAt,
+        p_compressed_data: compressedSessionData.data,
+        p_compression_metadata: compressedSessionData.metadata,
+        p_submissions: submissionsPayload,
+      }
+    );
+
+    if (rpcError) throw rpcError;
+
+    if (rpcResult?.status === "already_submitted") {
+      return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
+    }
 
     // Audit log: session submit
     auditLog({
       action: "session_submit",
       userId: verifiedStudentId,
       targetId: data.sessionId,
-      details: { examId: data.examId, submissionsCount: submissions.length },
+      details: { examId: data.examId, submissionsCount: submissionsPayload.length },
     });
 
     return successJson({
-      session,
-      submissions,
+      session: { id: data.sessionId, submitted_at: submittedAt, status: "submitted" },
+      submissions: submissionsPayload,
       compressionStats: compressedSessionData.metadata,
     });
   } catch (error) {
@@ -679,6 +684,11 @@ export async function sessionHeartbeat(data: {
   studentId: string;
 }) {
   try {
+    // Verify current user matches the studentId
+    const user = await currentUser();
+    if (!user) return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    if (user.id !== data.studentId) return errorJson("UNAUTHORIZED", "Student ID mismatch", 403);
+
     // Verify the session belongs to the student
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
@@ -690,7 +700,7 @@ export async function sessionHeartbeat(data: {
       return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
-    if (session.student_id !== data.studentId) {
+    if (session.student_id !== user.id) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 403);
     }
 
@@ -871,6 +881,11 @@ export async function deactivateSession(data: {
   studentId: string;
 }) {
   try {
+    // Verify current user matches the studentId
+    const user = await currentUser();
+    if (!user) return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    if (user.id !== data.studentId) return errorJson("UNAUTHORIZED", "Student ID mismatch", 403);
+
     // Verify the session belongs to the student
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
@@ -882,7 +897,7 @@ export async function deactivateSession(data: {
       return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
-    if (session.student_id !== data.studentId) {
+    if (session.student_id !== user.id) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 403);
     }
 
