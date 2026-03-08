@@ -58,31 +58,9 @@ import {
   getInstructorDrive,
 } from "./handlers/drive-handlers";
 
-const protectedActions = new Set([
-  "create_exam",
-  "update_exam",
-  "submit_exam",
-  "get_exam_by_id",
-  "get_instructor_exams",
-  "copy_exam",
-  "create_or_get_session",
-  "init_exam_session",
-  "save_draft",
-  "save_all_drafts",
-  "save_draft_answers",
-  "get_session_submissions",
-  "get_session_messages",
-  "session_heartbeat",
-  "deactivate_session",
-  "check_exam_gate_status",
-  "create_folder",
-  "get_folder_contents",
-  "get_breadcrumb",
-  "move_node",
-  "update_node",
-  "delete_node",
-  "get_instructor_drive",
-]);
+// Default-deny: all actions require auth unless explicitly listed as public.
+// Add to this set only for truly unauthenticated use cases.
+const publicActions = new Set<string>([]);
 
 export async function POST(request: NextRequest) {
   try {
@@ -101,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     let authedUser = null;
 
-    if (protectedActions.has(action)) {
+    if (!publicActions.has(action)) {
       authedUser = await currentUser();
       if (!authedUser) {
         return errorJson("UNAUTHORIZED", "Unauthorized", 401);
