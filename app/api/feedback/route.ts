@@ -303,19 +303,10 @@ export async function POST(request: NextRequest) {
         { p_exam_id: exam.id }
       );
       if (rpcError) {
-        // Fallback: non-atomic increment if RPC not available
-        const { data: currentExam } = await supabase
-          .from("exams")
-          .select("student_count")
-          .eq("id", exam.id)
-          .single();
-
-        await supabase
-          .from("exams")
-          .update({
-            student_count: (currentExam?.student_count || 0) + 1,
-          })
-          .eq("id", exam.id);
+        logError("Failed to increment student_count via RPC", rpcError, {
+          path: "/api/feedback",
+          additionalData: { examId: exam.id },
+        });
       }
 
       // 백그라운드에서 자동 채점 시작 (채점 큐로 동시에 최대 3명만 채점)

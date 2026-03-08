@@ -77,15 +77,15 @@ export async function createExam(data: {
         .from("exams")
         .select("code")
         .eq("code", newCode)
-        .single();
+        .maybeSingle();
 
-      while (!codeCheck.error) {
+      while (codeCheck.data !== null) {
         newCode = generateExamCode();
         codeCheck = await supabase
           .from("exams")
           .select("code")
           .eq("code", newCode)
-          .single();
+          .maybeSingle();
       }
       examCode = newCode;
     }
