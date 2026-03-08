@@ -91,9 +91,9 @@ test.describe("Upload API — /api/upload", () => {
 
   // ── Oversized file ──
 
-  test("file exceeding 25MB → 413", async ({ instructorRequest }) => {
-    // Create a buffer slightly over 25MB
-    const oversizedBuffer = Buffer.alloc(26 * 1024 * 1024, "a");
+  test("file exceeding 4MB → 413", async ({ instructorRequest }) => {
+    // Create a buffer slightly over 4MB (Vercel serverless body limit: 4.5MB)
+    const oversizedBuffer = Buffer.alloc(5 * 1024 * 1024, "a");
 
     const res = await instructorRequest.post("/api/upload", {
       multipart: {

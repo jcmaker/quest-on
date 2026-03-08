@@ -31,7 +31,7 @@ interface FileUploadProps {
   getFileIcon: (fileName: string) => ReactNode;
   existingFiles?: Array<{ url: string; name: string; index: number }>;
   onRemoveExistingFile?: (index: number) => void;
-  extractionStatus?: Map<string, "extracting" | "done" | "failed">;
+  extractionStatus?: Map<string, "uploading" | "extracting" | "done" | "failed">;
 }
 
 export function FileUpload({
@@ -200,15 +200,18 @@ export function FileUpload({
                 <span
                   key={fileName}
                   className={`text-xs px-2 py-1 rounded-full ${
-                    status === "extracting"
+                    status === "uploading"
+                      ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
+                      : status === "extracting"
                       ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
                       : status === "done"
                       ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
                       : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
                   }`}
                 >
-                  {status === "extracting" ? "⏳" : status === "done" ? "✓" : "✗"}{" "}
+                  {status === "uploading" ? "⬆" : status === "extracting" ? "⏳" : status === "done" ? "✓" : "✗"}{" "}
                   {fileName.length > 20 ? fileName.slice(0, 17) + "..." : fileName}
+                  {status === "uploading" && " 업로드 중"}
                   {status === "extracting" && " 분석 중"}
                 </span>
               ))}

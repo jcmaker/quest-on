@@ -38,7 +38,7 @@ import type { Question } from "./QuestionEditor";
 interface CaseQuestionGeneratorProps {
   examTitle: string;
   extractedTexts: Map<string, { text: string; fileName: string }>;
-  extractionStatus?: Map<string, "extracting" | "done" | "failed">;
+  extractionStatus?: Map<string, "uploading" | "extracting" | "done" | "failed">;
   onQuestionsAccepted: (questions: Question[]) => void;
   onRubricSuggested: (rubric: RubricItem[]) => void;
 }

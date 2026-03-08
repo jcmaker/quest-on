@@ -1,5 +1,6 @@
-// Node.js Runtime 사용 (4MB → 25MB 업로드 한도 증가)
+// Node.js Runtime 사용 (Vercel serverless body 제한: 4.5MB)
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
@@ -136,12 +137,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (25MB - Node.js Runtime 제한)
-    const maxSize = 25 * 1024 * 1024;
+    // Validate file size (4MB - Vercel serverless body 제한 4.5MB 대응)
+    // 4MB 초과 파일은 signed URL 방식(/api/upload/signed-url)으로 업로드
+    const maxSize = 4 * 1024 * 1024;
     if (file.size > maxSize) {
       return errorJson(
         "FILE_TOO_LARGE",
-        "파일 크기가 25MB를 초과합니다.",
+        "파일 크기가 4MB를 초과합니다. 큰 파일은 자동으로 다른 방식으로 업로드됩니다.",
         { fileSize: file.size, maxSize },
         413
       );

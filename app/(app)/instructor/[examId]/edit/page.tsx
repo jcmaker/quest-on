@@ -23,6 +23,7 @@ import {
 import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { CaseQuestionGenerator } from "@/components/instructor/CaseQuestionGenerator";
+import { useFileUpload } from "@/hooks/useFileUpload";
 
 function isQuestionContentEmpty(text: string): boolean {
   return text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
@@ -52,12 +53,7 @@ export default function EditExam({
   const [rubric, setRubric] = useState<RubricItem[]>([]);
   const [isRubricPublic, setIsRubricPublic] = useState(false);
   const [chatWeight, setChatWeight] = useState<number | null>(null);
-  const [extractedTexts, setExtractedTexts] = useState<
-    Map<string, { text: string; fileName: string }>
-  >(new Map());
-  const [extractionStatus, setExtractionStatus] = useState<
-    Map<string, "extracting" | "done" | "failed">
-  >(new Map());
+  const fileUpload = useFileUpload();
   const isSubmittingRef = useRef(false);
 
   // 기존 시험 데이터 불러오기
@@ -107,16 +103,11 @@ export default function EditExam({
         setIsRubricPublic(exam.rubric_public || false);
         setChatWeight(exam.chat_weight ?? null);
 
-        // 기존 materials_text를 extractedTexts에 로드
-        if (exam.materials_text && Array.isArray(exam.materials_text)) {
-          const textsMap = new Map<string, { text: string; fileName: string }>();
-          for (const item of exam.materials_text) {
-            if (item.url && item.text) {
-              textsMap.set(item.url, { text: item.text, fileName: item.fileName || "파일" });
-            }
-          }
-          setExtractedTexts(textsMap);
-        }
+        // 기존 materials + materials_text를 fileUpload hook에 로드
+        fileUpload.initExistingData(
+          exam.materials || [],
+          exam.materials_text
+        );
       } catch {
         toast.error("시험 데이터를 불러오는 중 오류가 발생했습니다.");
         router.push(`/instructor/${resolvedParams.examId}`);
@@ -260,79 +251,7 @@ export default function EditExam({
     return true;
   };
 
-  // 파일에서 텍스트 추출
-  const extractTextFromFile = async (file: File) => {
-    const extension = file.name.split(".").pop()?.toLowerCase() || "";
-    const textExtractableExtensions = ["pdf", "docx", "pptx", "csv"];
-
-    if (!textExtractableExtensions.includes(extension)) {
-      return;
-    }
-
-    setExtractionStatus((prev) => {
-      const newMap = new Map(prev);
-      newMap.set(file.name, "extracting");
-      return newMap;
-    });
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const uploadResponse = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadResponse.ok) {
-        throw new Error("파일 업로드 실패");
-      }
-
-      const uploadResult = await uploadResponse.json();
-      if (!uploadResult.ok || !uploadResult.url) {
-        throw new Error("파일 업로드 실패");
-      }
-
-      const extractResponse = await fetch("/api/extract-text", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileUrl: uploadResult.url,
-          fileName: file.name,
-          mimeType: file.type,
-        }),
-      });
-
-      if (!extractResponse.ok) {
-        throw new Error("텍스트 추출 실패");
-      }
-
-      const extractResult = await extractResponse.json();
-
-      if (extractResult.text && uploadResult.url) {
-        setExtractedTexts((prev) => {
-          const newMap = new Map(prev);
-          newMap.set(uploadResult.url, {
-            text: extractResult.text,
-            fileName: file.name,
-          });
-          return newMap;
-        });
-        setExtractionStatus((prev) => {
-          const newMap = new Map(prev);
-          newMap.set(file.name, "done");
-          return newMap;
-        });
-      }
-    } catch {
-      setExtractionStatus((prev) => {
-        const newMap = new Map(prev);
-        newMap.set(file.name, "failed");
-        return newMap;
-      });
-      toast.error(`${file.name}: 텍스트 추출에 실패했습니다. AI 문제 생성 품질이 저하될 수 있습니다.`);
-    }
-  };
+  // 파일 업로드 + 텍스트 추출은 useFileUpload hook이 처리
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!canAddMoreFiles) {
@@ -357,9 +276,9 @@ export default function EditExam({
       materials: newMaterials,
     }));
 
-    // 새로 추가된 파일들에 대해 텍스트 추출
+    // 파일 업로드 + 텍스트 추출 (서버 경유, URL 재사용)
     validFiles.forEach((file) => {
-      extractTextFromFile(file);
+      fileUpload.upload(file);
     });
 
     e.target.value = "";
@@ -404,9 +323,9 @@ export default function EditExam({
       materials: newMaterials,
     }));
 
-    // 새로 추가된 파일들에 대해 텍스트 추출
+    // 파일 업로드 + 텍스트 추출 (서버 경유, URL 재사용)
     validFiles.forEach((file) => {
-      extractTextFromFile(file);
+      fileUpload.upload(file);
     });
   };
 
@@ -417,6 +336,7 @@ export default function EditExam({
   };
 
   const removeFile = (index: number) => {
+    const removedFile = examData.materials[index];
     const newMaterials = examData.materials.filter((_, i) => i !== index);
     validateAndManageFileSize(newMaterials);
 
@@ -424,16 +344,15 @@ export default function EditExam({
       ...prev,
       materials: newMaterials,
     }));
+
+    // hook에서도 업로드된 파일 정보 제거
+    if (removedFile) {
+      fileUpload.removeFile(removedFile.name);
+    }
   };
 
   const removeExistingFile = (index: number) => {
-    const newExistingMaterials = examData.existingMaterials.filter(
-      (_, i) => i !== index
-    );
-    setExamData((prev) => ({
-      ...prev,
-      existingMaterials: newExistingMaterials,
-    }));
+    fileUpload.removeExistingUrl(index);
   };
 
   const getFileIcon = (fileName: string) => {
@@ -572,130 +491,21 @@ export default function EditExam({
     setIsLoading(true);
 
     try {
-      let materialUrls: string[] = [...examData.existingMaterials];
-
-      // 새로 추가된 파일 업로드
-      const activeMaterials = examData.materials.filter(
-        (_, index) => !disabledFiles.has(index)
-      );
-
-      if (activeMaterials.length > 0) {
-        let uploadedCount = 0;
-        const totalFiles = activeMaterials.length;
-        const loadingToast = toast.loading(
-          `파일 업로드 중... (0/${totalFiles})`
-        );
-
-        const uploadPromises = activeMaterials.map(async (file) => {
-          try {
-            const { createClient } = await import("@supabase/supabase-js");
-
-            const supabase = createClient(
-              process.env.NEXT_PUBLIC_SUPABASE_URL!,
-              process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-            );
-
-            const timestamp = new Date().toISOString().slice(0, 10);
-            const randomId = crypto.randomUUID();
-            const fileExtension =
-              file.name.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1]?.toLowerCase() ||
-              "bin";
-            const safeFileName = `${timestamp}_${randomId}.${fileExtension}`;
-            const storagePath = `instructor-${user?.id}/${safeFileName}`;
-
-            const { data, error } = await supabase.storage
-              .from("exam-materials")
-              .upload(storagePath, file, {
-                contentType: file.type,
-                upsert: true,
-              });
-
-            if (error) {
-              if (
-                error.message.includes("row-level security") ||
-                error.message.includes("policy")
-              ) {
-                const formData = new FormData();
-                formData.append("file", file);
-
-                const uploadResponse = await fetch("/api/upload", {
-                  method: "POST",
-                  body: formData,
-                });
-
-                if (!uploadResponse.ok) {
-                  throw new Error(
-                    `${file.name}: 서버 업로드 실패 (${uploadResponse.status})`
-                  );
-                }
-
-                const result = await uploadResponse.json();
-                if (!result.ok) {
-                  throw new Error(`${file.name}: ${result.message}`);
-                }
-
-                uploadedCount++;
-                toast.loading(
-                  `파일 업로드 중... (${uploadedCount}/${totalFiles})`,
-                  {
-                    id: loadingToast,
-                  }
-                );
-
-                return result.url;
-              }
-
-              throw new Error(`${file.name}: 업로드 실패 - ${error.message}`);
-            }
-
-            const { data: urlData } = supabase.storage
-              .from("exam-materials")
-              .getPublicUrl(data.path);
-
-            uploadedCount++;
-            toast.loading(
-              `파일 업로드 중... (${uploadedCount}/${totalFiles})`,
-              {
-                id: loadingToast,
-              }
-            );
-
-            return urlData.publicUrl;
-          } catch (error) {
-            throw error;
-          }
-        });
-
-        try {
-          const newUrls = await Promise.all(uploadPromises);
-          materialUrls = [...materialUrls, ...newUrls];
-          toast.dismiss(loadingToast);
-        } catch (uploadError) {
-          toast.dismiss(loadingToast);
-          const errorMessage = getErrorMessage(
-            uploadError,
-            "파일 업로드 중 오류가 발생했습니다"
-          );
-
-          toast.error(errorMessage, {
-            duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
-          });
-          throw uploadError;
-        }
-      }
+      // 파일은 이미 선택 시점에 업로드 완료됨 → URL 재사용
+      const materialUrls = fileUpload.getUploadedUrls();
+      const materialsText = fileUpload.getMaterialsText();
 
       // 시험 데이터 업데이트
       const updateData = {
         title: examData.title,
         code: examData.code,
-        // duration: 0은 무제한(과제형), > 0은 시험형 (분 단위)
-        // 명시적으로 0을 전송하여 fallback 로직이 작동하지 않도록 함
         duration: examData.duration,
         questions: questions,
         rubric: rubric,
         rubric_public: isRubricPublic,
         chat_weight: chatWeight,
         materials: materialUrls,
+        materials_text: materialsText,
         updated_at: new Date().toISOString(),
       };
 
@@ -810,19 +620,19 @@ export default function EditExam({
           onDragAreaClick={handleDragAreaClick}
           onRemoveFile={removeFile}
           getFileIcon={getFileIcon}
-          existingFiles={examData.existingMaterials.map((url, index) => ({
+          existingFiles={fileUpload.existingUrls.map((url, index) => ({
             url,
             name: getFileNameFromUrl(url),
             index,
           }))}
           onRemoveExistingFile={removeExistingFile}
-          extractionStatus={extractionStatus}
+          extractionStatus={fileUpload.fileStatus}
         />
 
         <CaseQuestionGenerator
           examTitle={examData.title}
-          extractedTexts={extractedTexts}
-          extractionStatus={extractionStatus}
+          extractedTexts={fileUpload.extractedTexts}
+          extractionStatus={fileUpload.fileStatus}
           onQuestionsAccepted={(newQuestions) => {
             setQuestions((prev) => [
               ...prev,
