@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import { openai, AI_MODEL } from "@/lib/openai";
+import { getOpenAI, AI_MODEL } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { searchRelevantMaterials } from "@/lib/material-search";
 import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
@@ -183,7 +183,7 @@ async function getAIResponse(
   try {
     const tracked = await callTrackedResponse(
       () =>
-        openai.responses.create({
+        getOpenAI().responses.create({
           model: AI_MODEL,
           instructions: systemPrompt,
           input: userMessage,
@@ -501,12 +501,18 @@ async function handleChatLogic(params: {
     skip: !!skipIncrementUsedClarifications,
   });
 
-  const [aiInsertResult] = await Promise.all([
+  const [aiInsertSettled, incrementSettled] = await Promise.allSettled([
     insertAiPromise,
     incrementPromise,
   ]);
-  if (aiInsertResult.error)
-    logError("Error saving AI message", aiInsertResult.error, { path: "/api/chat" });
+  if (aiInsertSettled.status === "rejected") {
+    logError("Error saving AI message", aiInsertSettled.reason, { path: "/api/chat" });
+  } else if (aiInsertSettled.value?.error) {
+    logError("Error saving AI message", aiInsertSettled.value.error, { path: "/api/chat" });
+  }
+  if (incrementSettled.status === "rejected") {
+    logError("Error incrementing clarifications", incrementSettled.reason, { path: "/api/chat" });
+  }
 
   return { aiResponse, responseId, topSimilarity: rag.topSimilarity };
 }
@@ -534,9 +540,14 @@ export async function POST(request: NextRequest) {
       currentQuestionAiContext,
     } = validation.data;
 
-    // Verify student ownership: studentId from body must match authenticated user
+    // Require authentication unconditionally
     const user = await currentUser();
-    if (studentId && user && user.id !== studentId) {
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Authentication required", 401);
+    }
+
+    // Verify student ownership: studentId from body must match authenticated user
+    if (studentId && user.id !== studentId) {
       return errorJson("FORBIDDEN", "Student ID mismatch", 403);
     }
 
@@ -668,6 +679,11 @@ export async function POST(request: NextRequest) {
 
     if (examError || !exam) {
       return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, examError?.message);
+    }
+
+    const questionCount = Array.isArray(exam.questions) ? exam.questions.length : 0;
+    if (questionCount > 0 && safeQIdx >= questionCount) {
+      return errorJson("INVALID_QUESTION_INDEX", "Question index out of range", 400);
     }
 
     const effectiveExamId = examId || exam.id;
