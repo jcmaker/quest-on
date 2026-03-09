@@ -202,15 +202,22 @@ export async function GET(request: NextRequest) {
       ? offset + limit < filteredTotalCount
       : false;
 
-    return successJson({
-      sessions: sessionsWithDetails,
-      pagination: {
-        page,
-        limit,
-        total: filteredTotalCount,
-        hasMore,
+    return successJson(
+      {
+        sessions: sessionsWithDetails,
+        pagination: {
+          page,
+          limit,
+          total: filteredTotalCount,
+          hasMore,
+        },
       },
-    });
+      {
+        headers: {
+          "Cache-Control": "private, max-age=30, stale-while-revalidate=60",
+        },
+      }
+    );
   } catch (error) {
     logError("Failed to fetch student sessions", error, { path: "/api/student/sessions" });
     return errorJson("FETCH_SESSIONS_FAILED", "Failed to get student sessions", 500);

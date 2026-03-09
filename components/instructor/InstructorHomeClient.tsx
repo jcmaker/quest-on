@@ -647,6 +647,29 @@ export default function InstructorHome() {
     </div>
   );
 
+  // 마우스 오버 시 시험 상세 데이터 프리페칭 (체감 네비게이션 속도 개선)
+  const handleExamNodeHover = useCallback(
+    (node: ExamNode) => {
+      if (node.kind !== "folder" && node.exam_id) {
+        queryClient.prefetchQuery({
+          queryKey: qk.instructor.examDetail(node.exam_id),
+          queryFn: async () => {
+            const [examRes, sessionsRes] = await Promise.all([
+              fetch(`/api/exam/${node.exam_id}`),
+              fetch(`/api/exam/${node.exam_id}/sessions`),
+            ]);
+            if (!examRes.ok) throw new Error("Prefetch failed");
+            const exam = await examRes.json();
+            const sessions = sessionsRes.ok ? await sessionsRes.json() : { sessions: [] };
+            return { exam, sessions };
+          },
+          staleTime: 5 * 60 * 1000,
+        });
+      }
+    },
+    [queryClient]
+  );
+
   // 노드 클릭 핸들러 최적화
   const handleNodeClick = useCallback(
     (node: ExamNode) => {
@@ -924,6 +947,7 @@ export default function InstructorHome() {
             if (isMoving) return;
             handleNodeClick(node);
           }}
+          onMouseEnter={() => handleExamNodeHover(node)}
         >
           <div className="flex flex-1 flex-col text-left">
             <div
@@ -977,6 +1001,7 @@ export default function InstructorHome() {
     [
       formatDate,
       handleNodeClick,
+      handleExamNodeHover,
       renderNodeActions,
       renderNodeStatus,
       renderStudentCount,
@@ -1308,6 +1333,7 @@ export default function InstructorHome() {
             if (isMoving) return;
             handleNodeClick(node);
           }}
+          onMouseEnter={() => handleExamNodeHover(node)}
         >
           <div className="flex items-center gap-4 flex-1">
             <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-border bg-background/80">
@@ -1336,6 +1362,7 @@ export default function InstructorHome() {
     [
       formatDate,
       handleNodeClick,
+      handleExamNodeHover,
       renderNodeActions,
       renderNodeStatus,
       renderStudentCount,

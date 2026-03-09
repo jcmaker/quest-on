@@ -379,7 +379,7 @@ export default function GradeStudentPage({
     }
   }, [generatedSummary]);
 
-  // Mutation for saving grades
+  // Mutation for saving grades (optimistic update)
   const saveGradeMutation = useMutation({
     mutationFn: async (questionIdx: number) => {
       const existingStageGrading = (
@@ -427,20 +427,63 @@ export default function GradeStudentPage({
       }
       return response.json();
     },
-    onSuccess: () => {
-      // Invalidate to refresh overall score
-      queryClient.invalidateQueries({
+    onMutate: async (questionIdx: number) => {
+      // Optimistic update: 서버 확인 전 로컬 캐시에 즉시 반영
+      await queryClient.cancelQueries({
         queryKey: qk.session.grade(resolvedParams.studentId),
       });
+
+      const previousData = queryClient.getQueryData(
+        qk.session.grade(resolvedParams.studentId)
+      );
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      queryClient.setQueryData(qk.session.grade(resolvedParams.studentId), (old: any) => {
+        if (!old) return old;
+        const updatedGrades = { ...old.grades };
+        const existingGrade = updatedGrades[questionIdx] as Grade | undefined;
+        updatedGrades[questionIdx] = {
+          ...(existingGrade || { id: "optimistic", q_idx: questionIdx }),
+          score: scores[questionIdx] || 0,
+          comment: feedbacks[questionIdx] || "",
+          stage_grading: {
+            ...(existingGrade?.stage_grading || {}),
+            ...(stageScores[questionIdx]?.chat ? {
+              chat: { ...(existingGrade?.stage_grading?.chat || {}), score: stageScores[questionIdx]?.chat || 0, comment: stageComments[questionIdx]?.chat || "" },
+            } : {}),
+            ...(stageScores[questionIdx]?.answer ? {
+              answer: { ...(existingGrade?.stage_grading?.answer || {}), score: stageScores[questionIdx]?.answer || 0, comment: stageComments[questionIdx]?.answer || "" },
+            } : {}),
+          },
+        };
+        return { ...old, grades: updatedGrades };
+      });
+
+      return { previousData };
+    },
+    onSuccess: () => {
       toast.success("채점이 저장되었습니다.");
     },
-    onError: (error: Error) => {
+    onError: (error: Error, _questionIdx, context) => {
+      // 실패 시 이전 데이터로 롤백
+      if (context?.previousData) {
+        queryClient.setQueryData(
+          qk.session.grade(resolvedParams.studentId),
+          context.previousData
+        );
+      }
       const errorMessage = getErrorMessage(
         error,
         "채점 저장 중 오류가 발생했습니다"
       );
       toast.error(errorMessage, {
-        duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
+        duration: 5000,
+      });
+    },
+    onSettled: () => {
+      // 성공/실패 모두 서버 데이터로 동기화
+      queryClient.invalidateQueries({
+        queryKey: qk.session.grade(resolvedParams.studentId),
       });
     },
   });

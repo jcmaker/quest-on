@@ -11,6 +11,7 @@ import {
   buildAiTextMetadata,
   callTrackedChatCompletion,
 } from "@/lib/ai-tracking";
+import { getCachedAiResponse, setCachedAiResponse } from "@/lib/ai-cache";
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,6 +40,22 @@ export async function POST(request: NextRequest) {
     }
 
     const data = validation.data;
+
+    // 캐시 확인: 동일 입력에 대한 이전 결과 재사용
+    const cacheInput = {
+      questionText: data.questionText,
+      instruction: data.instruction,
+      examTitle: data.examTitle,
+    };
+    const cached = await getCachedAiResponse("adjust-question", cacheInput);
+    if (cached) {
+      try {
+        const parsedCache = JSON.parse(cached);
+        if (parsedCache.questionText) {
+          return successJson(parsedCache);
+        }
+      } catch { /* corrupted — proceed */ }
+    }
 
     // Build prompt
     const { system, user: userPrompt } = buildCaseQuestionAdjustmentPrompt({
@@ -106,10 +123,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return successJson({
+    const result = {
       questionText: parsed.questionText,
       explanation: parsed.explanation || "",
-    });
+    };
+
+    // 캐시에 저장 (30분 TTL)
+    setCachedAiResponse("adjust-question", cacheInput, JSON.stringify(result)).catch(() => {});
+
+    return successJson(result);
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "문제 수정 중 오류가 발생했습니다.";

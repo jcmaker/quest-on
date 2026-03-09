@@ -45,7 +45,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import { useInView } from "react-intersection-observer";
 import {
@@ -106,6 +106,7 @@ export default function StudentDashboard() {
   const router = useRouter();
   const pathname = usePathname();
   const { isSignedIn, isLoaded, user } = useUser();
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [filter, setFilter] = useState<
@@ -405,6 +406,21 @@ export default function StudentDashboard() {
         return <Circle className="w-4 h-4" />;
       default:
         return <Circle className="w-4 h-4" />;
+    }
+  };
+
+  // 마우스 오버 시 리포트 데이터 프리페칭 (체감 네비게이션 속도 개선)
+  const handleSessionHover = (session: { id: string; status: string; isGraded: boolean }) => {
+    if (session.status === "completed" && session.isGraded) {
+      queryClient.prefetchQuery({
+        queryKey: ["student-report", session.id, user?.id],
+        queryFn: async () => {
+          const response = await fetch(`/api/student/session/${session.id}/report`);
+          if (!response.ok) throw new Error("Prefetch failed");
+          return response.json();
+        },
+        staleTime: 5 * 60 * 1000,
+      });
     }
   };
 
@@ -1055,6 +1071,7 @@ export default function StudentDashboard() {
                           <div
                             key={session.id}
                             className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 sm:p-5 border rounded-lg hover:bg-muted/50 transition-colors duration-200 focus-within:ring-2 focus-within:ring-primary focus-within:ring-offset-2"
+                            onMouseEnter={() => handleSessionHover(session)}
                           >
                             <div className="flex-1 min-w-0 w-full sm:w-auto">
                               <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">

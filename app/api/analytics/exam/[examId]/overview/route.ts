@@ -55,50 +55,56 @@ export async function GET(
       questions.every((q) => q.type === "essay" || !q.type);
     // essay 타입 시험에는 피드백 단계가 없음
 
-    // 2. 모든 세션 가져오기
-    const { data: sessions, error: sessionsError } = await supabase
-      .from("sessions")
-      .select("id, student_id, used_clarifications, created_at, submitted_at")
-      .eq("exam_id", examId)
-      .order("created_at", { ascending: false });
+    // 2. 학생별 최적 세션 가져오기 (DISTINCT ON으로 DB 레벨 중복 제거)
+    // RPC 실패 시 기존 JS 로직으로 폴백
+    let filteredSessions: Array<{
+      id: string;
+      student_id: string;
+      used_clarifications: number;
+      created_at: string;
+      submitted_at: string | null;
+    }>;
 
-    if (sessionsError) {
-      return errorJson("FETCH_SESSIONS_FAILED", "Failed to fetch sessions", 500);
-    }
+    const { data: rpcSessions, error: rpcError } = await supabase
+      .rpc("get_best_sessions_for_exam", { p_exam_id: examId });
 
-    // 2-0. 중복/불완전 세션 필터링: 학생별로 가장 적절한 세션만 선택
-    // 우선순위: 1) 제출된 세션 중 가장 최근, 2) 제출 안된 세션 중 가장 최근
-    const sessionMap = new Map<string, (typeof sessions)[0]>();
-    if (sessions) {
-      // 먼저 제출된 세션들을 처리 (우선순위 높음)
-      const submittedSessions = sessions.filter((s) => s.submitted_at);
-      submittedSessions.forEach((session) => {
-        const existing = sessionMap.get(session.student_id);
-        if (!existing || !existing.submitted_at) {
-          // 기존 세션이 없거나 제출 안된 세션이면 교체
-          sessionMap.set(session.student_id, session);
-        } else if (session.submitted_at && existing.submitted_at) {
-          // 둘 다 제출된 경우 더 최근 것 선택
-          if (
-            new Date(session.submitted_at) > new Date(existing.submitted_at)
-          ) {
+    if (!rpcError && rpcSessions) {
+      filteredSessions = rpcSessions;
+    } else {
+      // Fallback: 기존 JS 로직 (RPC 함수 미배포 시)
+      const { data: sessions, error: sessionsError } = await supabase
+        .from("sessions")
+        .select("id, student_id, used_clarifications, created_at, submitted_at")
+        .eq("exam_id", examId)
+        .order("created_at", { ascending: false });
+
+      if (sessionsError) {
+        return errorJson("FETCH_SESSIONS_FAILED", "Failed to fetch sessions", 500);
+      }
+
+      const sessionMap = new Map<string, (typeof sessions)[0]>();
+      if (sessions) {
+        const submittedSessions = sessions.filter((s) => s.submitted_at);
+        submittedSessions.forEach((session) => {
+          const existing = sessionMap.get(session.student_id);
+          if (!existing || !existing.submitted_at) {
+            sessionMap.set(session.student_id, session);
+          } else if (session.submitted_at && existing.submitted_at) {
+            if (new Date(session.submitted_at) > new Date(existing.submitted_at)) {
+              sessionMap.set(session.student_id, session);
+            }
+          }
+        });
+
+        const unsubmittedSessions = sessions.filter((s) => !s.submitted_at);
+        unsubmittedSessions.forEach((session) => {
+          if (!sessionMap.has(session.student_id)) {
             sessionMap.set(session.student_id, session);
           }
-        }
-      });
-
-      // 제출 안된 세션들 처리 (제출된 세션이 없는 학생만)
-      const unsubmittedSessions = sessions.filter((s) => !s.submitted_at);
-      unsubmittedSessions.forEach((session) => {
-        if (!sessionMap.has(session.student_id)) {
-          // 제출된 세션이 없는 학생만 추가
-          sessionMap.set(session.student_id, session);
-        }
-      });
+        });
+      }
+      filteredSessions = Array.from(sessionMap.values());
     }
-
-    // 필터링된 세션 목록
-    const filteredSessions = Array.from(sessionMap.values());
 
     // 2-1. 학생 프로필 정보 가져오기 (별도 조회)
     const studentIds = filteredSessions
@@ -715,41 +721,46 @@ export async function GET(
           },
         ];
 
-    return successJson({
-      examId,
-      examTitle: exam.title,
-      totalStudents: studentData.length,
-      submittedStudents: submittedStudents.length,
-      averageScore,
-      averageQuestions,
-      averageAnswerLength,
-      averageExamDuration,
-      standardDeviationScore,
-      standardDeviationQuestions,
-      standardDeviationAnswerLength,
-      standardDeviationExamDuration,
-      students: sortedStudents,
-      statistics: {
-        scoreDistribution,
-        questionCountDistribution,
-        answerLengthDistribution,
-        examDurationDistribution,
+    return successJson(
+      {
+        examId,
+        examTitle: exam.title,
+        totalStudents: studentData.length,
+        submittedStudents: submittedStudents.length,
+        averageScore,
+        averageQuestions,
+        averageAnswerLength,
+        averageExamDuration,
+        standardDeviationScore,
+        standardDeviationQuestions,
+        standardDeviationAnswerLength,
+        standardDeviationExamDuration,
+        students: sortedStudents,
+        statistics: {
+          scoreDistribution,
+          questionCountDistribution,
+          answerLengthDistribution,
+          examDurationDistribution,
+        },
+        // 새로운 분석 데이터
+        stageAnalysis: {
+          averageScores: averageStageScores,
+          comparisonData: stageComparisonData,
+          hasFeedback: !isEssayTypeOnly,
+        },
+        rubricAnalysis: {
+          averageScores: rubricAverageScores,
+          radarData: rubricRadarData,
+        },
+        questionTypeAnalysis: {
+          distribution: questionTypeDistribution,
+          pieData: questionTypePieData,
+        },
       },
-      // 새로운 분석 데이터
-      stageAnalysis: {
-        averageScores: averageStageScores,
-        comparisonData: stageComparisonData,
-        hasFeedback: !isEssayTypeOnly,
-      },
-      rubricAnalysis: {
-        averageScores: rubricAverageScores,
-        radarData: rubricRadarData,
-      },
-      questionTypeAnalysis: {
-        distribution: questionTypeDistribution,
-        pieData: questionTypePieData,
-      },
-    });
+      {
+        headers: { "Cache-Control": "private, max-age=120, stale-while-revalidate=300" },
+      }
+    );
   } catch (error) {
     return errorJson("INTERNAL_SERVER_ERROR", "Internal server error", 500);
   }

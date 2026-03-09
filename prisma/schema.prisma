@@ -84,6 +84,7 @@ model grades {
   @@unique([session_id, q_idx])
   @@index([session_id], map: "idx_grades_session_id")
   @@index([session_id, q_idx], map: "idx_grades_session_qidx")
+  @@index([grade_type], map: "idx_grades_grade_type")
 }
 
 model ai_events {
@@ -142,6 +143,7 @@ model messages {
 
   @@index([session_id], map: "idx_messages_session_id")
   @@index([session_id, q_idx], map: "idx_messages_session_qidx")
+  @@index([session_id, q_idx, created_at(sort: Desc)], map: "idx_messages_session_qidx_created")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.

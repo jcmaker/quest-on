@@ -13,9 +13,11 @@ import { NextResponse } from "next/server";
 
 export function successJson(
   data: Record<string, unknown> = {},
-  status = 200
+  statusOrOptions?: number | { status?: number; headers?: Record<string, string> }
 ): NextResponse {
-  return NextResponse.json({ success: true, ...data }, { status });
+  const status = typeof statusOrOptions === "number" ? statusOrOptions : statusOrOptions?.status ?? 200;
+  const headers = typeof statusOrOptions === "object" ? statusOrOptions?.headers : undefined;
+  return NextResponse.json({ success: true, ...data }, { status, headers });
 }
 
 export function errorJson(

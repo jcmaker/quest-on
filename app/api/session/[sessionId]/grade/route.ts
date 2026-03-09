@@ -366,7 +366,9 @@ export async function GET(
       ...(decompressionErrors.length > 0 && { decompressionErrors }),
     };
 
-    return successJson(responseData);
+    return successJson(responseData, {
+      headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=120" },
+    });
   } catch (error) {
     logError("Grade GET handler error", error, {
       path: `/api/session/grade`,

@@ -12,6 +12,7 @@ import {
   buildAiTextMetadata,
   callTrackedChatCompletion,
 } from "@/lib/ai-tracking";
+import { getCachedAiResponse, setCachedAiResponse } from "@/lib/ai-cache";
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,6 +38,18 @@ export async function POST(request: NextRequest) {
     }
 
     const data = validation.data;
+
+    // 캐시 확인: 동일 입력에 대한 이전 결과 재사용
+    const cacheInput = { examTitle: data.examTitle, questions: data.questions, topics: data.topics };
+    const cached = await getCachedAiResponse("generate-rubric", cacheInput);
+    if (cached) {
+      try {
+        const parsedCache = JSON.parse(cached);
+        if (parsedCache.rubric && Array.isArray(parsedCache.rubric)) {
+          return successJson({ rubric: parsedCache.rubric });
+        }
+      } catch { /* corrupted cache — proceed with fresh call */ }
+    }
 
     const { system, user: userPrompt } = buildRubricGenerationPrompt({
       examTitle: data.examTitle,
@@ -98,6 +111,9 @@ export async function POST(request: NextRequest) {
       evaluationArea: item.evaluationArea || "",
       detailedCriteria: item.detailedCriteria || "",
     }));
+
+    // 캐시에 저장 (30분 TTL)
+    setCachedAiResponse("generate-rubric", cacheInput, JSON.stringify({ rubric })).catch(() => {});
 
     return successJson({ rubric });
   } catch (error) {
