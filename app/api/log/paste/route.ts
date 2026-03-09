@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 // Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 export async function POST(request: Request) {
@@ -26,21 +26,6 @@ export async function POST(request: Request) {
     const suspicious = !isInternal;
     const timestamp = new Date(ts);
 
-    // Log to console
-    console.log("[PASTE_LOG]", {
-      timestamp: timestamp.toISOString(),
-      isInternal,
-      length,
-      pasted_text: pasted_text ? `${pasted_text.substring(0, 50)}...` : null,
-      paste_start,
-      paste_end,
-      answer_length_before,
-      examCode,
-      questionId,
-      sessionId,
-      suspicious,
-    });
-
     // Insert into database
     if (sessionId) {
       const { error: insertError } = await supabase.from("paste_logs").insert({
@@ -60,8 +45,6 @@ export async function POST(request: Request) {
       if (insertError) {
         console.error("Error inserting paste log:", insertError);
         // Don't fail the request if logging fails
-      } else {
-        console.log("✅ Paste log saved to database");
       }
     } else {
       console.warn("⚠️ No sessionId provided, skipping database insert");
@@ -72,8 +55,7 @@ export async function POST(request: Request) {
     console.error("Error logging paste event:", error);
     return NextResponse.json(
       { success: false, error: "Failed to log event" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
-

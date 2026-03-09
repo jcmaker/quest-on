@@ -12,7 +12,7 @@ import { buildFeedbackChatSystemPrompt, type RubricItem } from "@/lib/prompts";
 
 // 메시지 타입 분류 함수 (개념/계산/전략/기타)
 async function classifyMessageType(
-  message: string
+  message: string,
 ): Promise<"concept" | "calculation" | "strategy" | "other"> {
   try {
     const lowerMessage = message.toLowerCase();
@@ -26,7 +26,7 @@ async function classifyMessageType(
 
     if (
       /방법|전략|접근|절차|과정|어떻게|how to|way|method|strategy|approach/.test(
-        lowerMessage
+        lowerMessage,
       )
     ) {
       return "strategy";
@@ -34,7 +34,7 @@ async function classifyMessageType(
 
     if (
       /무엇|뭐|의미|정의|개념|이유|왜|what|meaning|definition|concept|why/.test(
-        lowerMessage
+        lowerMessage,
       )
     ) {
       return "concept";
@@ -50,7 +50,7 @@ async function classifyMessageType(
 // Supabase 서버 전용 클라이언트
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 export async function POST(request: NextRequest) {
@@ -59,19 +59,13 @@ export async function POST(request: NextRequest) {
     const { message, examCode, questionId, conversationHistory, studentId } =
       await request.json();
 
-    console.log(
-      `📨 [FEEDBACK_CHAT] Request received | Student: ${
-        studentId || "unknown"
-      } | Exam: ${examCode} | Question: ${questionId}`
-    );
-
     if (!message || !examCode) {
       console.error(
-        `❌ [VALIDATION] Missing required fields | examCode: ${!!examCode} | message: ${!!message}`
+        `❌ [VALIDATION] Missing required fields | examCode: ${!!examCode} | message: ${!!message}`,
       );
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -108,7 +102,7 @@ export async function POST(request: NextRequest) {
         ?.slice(-10) // 최근 10개 메시지만 사용
         .map(
           (msg: MessageData) =>
-            `${msg.type === "ai" ? "AI" : "Student"}: ${msg.content}`
+            `${msg.type === "ai" ? "AI" : "Student"}: ${msg.content}`,
         )
         .join("\n") || "";
 
@@ -131,9 +125,6 @@ export async function POST(request: NextRequest) {
       max_completion_tokens: 500,
     });
     const aiDuration = Date.now() - aiStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Feedback OpenAI response time: ${aiDuration}ms`
-    );
 
     const response = completion.choices[0]?.message?.content;
     const tokensUsed = completion.usage?.total_tokens || null; // 토큰 사용량 추출
@@ -141,7 +132,7 @@ export async function POST(request: NextRequest) {
     if (!response) {
       return NextResponse.json(
         { error: "Failed to generate AI response" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -225,26 +216,12 @@ export async function POST(request: NextRequest) {
         if (insertError) {
           console.error("Failed to store chat interaction:", insertError);
         } else {
-          console.log("Chat interaction compressed and stored:", {
-            sessionId,
-            originalSize: compressedData.metadata.originalSize,
-            compressedSize: compressedData.metadata.compressedSize,
-            compressionRatio: compressedData.metadata.compressionRatio,
-          });
         }
       } catch (error) {
         console.error("Error storing chat interaction:", error);
         // Continue with response even if storage fails
       }
     }
-
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Total feedback chat request time: ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Feedback chat completed | Student: ${studentId} | Question: ${questionId}`
-    );
 
     return NextResponse.json({
       response,
@@ -258,11 +235,11 @@ export async function POST(request: NextRequest) {
     console.error(
       `❌ [ERROR] Feedback chat failed after ${requestDuration}ms | Error: ${
         (error as Error)?.message
-      }`
+      }`,
     );
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -11,17 +11,6 @@ export async function POST(request: NextRequest) {
   const requestStartTime = Date.now();
   try {
     const body = await request.json();
-    console.log("📨 Received request body:", {
-      hasStudentReply: !!body.studentReply,
-      hasSessionId: !!body.sessionId,
-      hasQIdx: body.qIdx !== undefined,
-      studentReplyLength: body.studentReply?.length,
-    });
-
-    console.log(
-      `📝 [SUBMISSION] Student reply attempt | Session: ${body.sessionId} | Question: ${body.qIdx}`
-    );
-
     const { studentReply, sessionId, qIdx } = body;
 
     if (!studentReply || !sessionId || qIdx === undefined) {
@@ -50,18 +39,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("✅ All required fields present. Processing:", {
-      sessionId,
-      qIdx,
-      studentReplyLength: studentReply.length,
-    });
-
     // Sanitize HTML - remove null characters
     const sanitizedReply = studentReply.replace(/\u0000/g, "");
-    console.log("🧹 Sanitized reply length:", sanitizedReply.length);
 
     // Check if submission exists (get the most recent one if multiple exist)
-    console.log("🔍 Checking for existing submission...");
     const { data: existingSubmissions, error: checkError } = await supabase
       .from("submissions")
       .select("id")
@@ -83,20 +64,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(
-      "📋 Existing submission:",
-      existingSubmission ? `Found (id: ${existingSubmission.id})` : "Not found"
-    );
-
     let data;
     let error;
 
     if (existingSubmission) {
       // Update existing submission (by ID to ensure we update only one)
-      console.log(
-        "📝 Updating existing submission with ID:",
-        existingSubmission.id
-      );
       const result = await supabase
         .from("submissions")
         .update({
@@ -108,15 +80,8 @@ export async function POST(request: NextRequest) {
 
       data = result.data;
       error = result.error;
-
-      if (error) {
-        console.error("❌ Update failed:", error);
-      } else {
-        console.log("✅ Update successful");
-      }
     } else {
       // Create new submission with student reply
-      console.log("➕ Creating new submission...");
       const result = await supabase
         .from("submissions")
         .insert({
@@ -130,12 +95,6 @@ export async function POST(request: NextRequest) {
 
       data = result.data;
       error = result.error;
-
-      if (error) {
-        console.error("❌ Insert failed:", error);
-      } else {
-        console.log("✅ Insert successful");
-      }
     }
 
     if (error) {
@@ -163,16 +122,6 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
-
-    console.log("Submission updated successfully:", data);
-
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Submission reply saved in ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Student reply saved | Session: ${sessionId} | Question: ${qIdx} | Length: ${sanitizedReply.length} chars`
-    );
 
     return NextResponse.json({
       success: true,

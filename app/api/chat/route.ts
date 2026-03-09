@@ -14,11 +14,6 @@ import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
 // If we don't handle them, Next can return a non-JSON 405 which breaks clients expecting JSON.
 export async function OPTIONS(request: NextRequest) {
   const origin = request.headers.get("origin") ?? "*";
-  console.log("[chat] OPTIONS /api/chat (preflight)", {
-    origin,
-    contentType: request.headers.get("content-type"),
-    userAgent: request.headers.get("user-agent")?.slice(0, 80),
-  });
   return new NextResponse(null, {
     status: 204,
     headers: {
@@ -32,17 +27,16 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function GET() {
-  console.log("[chat] GET /api/chat (healthcheck)");
   return NextResponse.json(
     { ok: true, route: "/api/chat", methods: ["POST", "OPTIONS"] },
-    { status: 200, headers: { Allow: "POST, OPTIONS" } }
+    { status: 200, headers: { Allow: "POST, OPTIONS" } },
   );
 }
 
 // Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!, // 서버 전용 env 사용 (NEXT_PUBLIC은 브라우저에서도 접근 가능하지만 서버에서는 안전하게 사용)
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 type MessageType = "concept" | "calculation" | "strategy" | "other";
@@ -84,7 +78,7 @@ async function classifyMessageType(message: string): Promise<MessageType> {
     // 전략/방법 관련 키워드
     if (
       /방법|전략|접근|절차|과정|어떻게|how to|way|method|strategy|approach/.test(
-        lowerMessage
+        lowerMessage,
       )
     ) {
       return "strategy";
@@ -93,7 +87,7 @@ async function classifyMessageType(message: string): Promise<MessageType> {
     // 개념 관련 키워드
     if (
       /무엇|뭐|의미|정의|개념|이유|왜|what|meaning|definition|concept|why/.test(
-        lowerMessage
+        lowerMessage,
       )
     ) {
       return "concept";
@@ -141,14 +135,8 @@ async function getRagContext(params: {
   }
 
   try {
-    console.log("🔍 [chat] RAG 벡터 검색 시작:", {
-      examId,
-      questionPreview: message.substring(0, 100),
-    });
-
-    const { searchMaterialChunks, formatSearchResultsAsContext } = await import(
-      "@/lib/search-chunks"
-    );
+    const { searchMaterialChunks, formatSearchResultsAsContext } =
+      await import("@/lib/search-chunks");
 
     const searchResults = await searchMaterialChunks(message, {
       examId,
@@ -160,21 +148,9 @@ async function getRagContext(params: {
     const topSimilarity =
       typeof topSimilarityRaw === "number" ? topSimilarityRaw : null;
 
-    console.log("📊 [chat] 벡터 검색 결과:", {
-      resultsCount: searchResults.length,
-      topSimilarity: topSimilarity?.toFixed(3) ?? "N/A",
-      fileNames: searchResults.map(
-        (r: any) => r.metadata?.fileName || "unknown"
-      ),
-    });
-
     if (searchResults.length > 0) {
       const context = formatSearchResultsAsContext(searchResults);
       const cleaned = cleanContext(context);
-      console.log("✅ [chat] 컨텍스트 생성 완료:", {
-        contextLength: cleaned.length,
-        preview: cleaned.substring(0, 200),
-      });
       return {
         relevantMaterialsText: cleaned,
         topSimilarity,
@@ -182,8 +158,6 @@ async function getRagContext(params: {
         method: "vector",
       };
     }
-
-    console.log("⚠️ [chat] 벡터 검색 결과 없음, 키워드 검색으로 폴백");
 
     let materials = examMaterialsText;
     if (!materials) {
@@ -213,10 +187,6 @@ async function getRagContext(params: {
 
     const keywordContext = searchRelevantMaterials(materials, message, 3, 2000);
     const cleaned = cleanContext(keywordContext);
-    console.log("📝 [chat] 키워드 검색 결과:", {
-      found: cleaned.length > 0,
-      length: cleaned.length,
-    });
     return {
       relevantMaterialsText: cleaned,
       topSimilarity: null,
@@ -224,11 +194,6 @@ async function getRagContext(params: {
       method: "keyword",
     };
   } catch (error) {
-    console.error("❌ [chat] RAG 검색 실패:", error);
-    console.error("상세 에러:", {
-      message: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : undefined,
-    });
     return {
       relevantMaterialsText: "",
       topSimilarity: null,
@@ -242,19 +207,9 @@ async function getRagContext(params: {
 async function getAIResponse(
   systemPrompt: string,
   userMessage: string,
-  previousResponseId: string | null = null
+  previousResponseId: string | null = null,
 ): Promise<{ response: string; responseId: string; tokensUsed?: number }> {
-  const aiStartTime = Date.now();
   try {
-    if (process.env.NODE_ENV === "development") {
-      console.log(
-        "Calling OpenAI Responses API with prompt length:",
-        systemPrompt.length,
-        "| Previous response ID:",
-        previousResponseId || "none (first message)"
-      );
-    }
-
     // Responses API 사용
     const response = await openai.responses.create({
       model: AI_MODEL,
@@ -264,26 +219,13 @@ async function getAIResponse(
       store: true, // 응답을 저장하여 나중에 참조 가능하도록
     });
 
-    const aiDuration = Date.now() - aiStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] OpenAI Responses API response time: ${aiDuration}ms`
-    );
-
-    if (process.env.NODE_ENV === "development") {
-      console.log("OpenAI Responses API response received:", {
-        responseId: response.id,
-        hasOutput: !!response.output,
-        outputLength: response.output?.length || 0,
-      });
-    }
-
     // output 배열에서 메시지 타입 찾기
     let responseText = "";
     const outputArray = response.output as any;
     if (outputArray && Array.isArray(outputArray)) {
       // type이 'message'인 항목 찾기
       const messageOutput = outputArray.find(
-        (item: any) => item.type === "message" && item.content
+        (item: any) => item.type === "message" && item.content,
       );
 
       if (messageOutput && Array.isArray(messageOutput.content)) {
@@ -314,7 +256,7 @@ async function getAIResponse(
   } catch (openaiError) {
     console.error("OpenAI Responses API error:", openaiError);
     throw new Error(
-      `OpenAI Responses API failed: ${(openaiError as Error).message}`
+      `OpenAI Responses API failed: ${(openaiError as Error).message}`,
     );
   }
 }
@@ -471,7 +413,7 @@ async function handleChatLogic(params: {
   } = params;
 
   const messageTypePromise = classifyMessageType(message).catch(
-    () => "other" as MessageType
+    () => "other" as MessageType,
   );
   const ragPromise = getRagContext({ message, examId, examMaterialsText });
   const previousResponsePromise = fetchPreviousResponseId({ sessionId, qIdx });
@@ -506,13 +448,6 @@ async function handleChatLogic(params: {
   const previousResponseId = await previousResponsePromise;
   await insertUserPromise;
 
-  if (process.env.NODE_ENV === "development") {
-    console.log(
-      "📜 Previous response_id:",
-      previousResponseId || "none (first message)"
-    );
-  }
-
   const systemPrompt = buildStudentChatSystemPrompt({
     examTitle,
     examCode,
@@ -526,7 +461,7 @@ async function handleChatLogic(params: {
   const { response: aiResponse, responseId } = await getAIResponse(
     systemPrompt,
     message,
-    previousResponseId
+    previousResponseId,
   );
 
   // AI 응답/세션 업데이트는 반드시 응답 전에 await (fetch failed 방지)
@@ -567,26 +502,9 @@ async function handleChatLogic(params: {
 export async function POST(request: NextRequest) {
   const requestStartTime = Date.now();
   try {
-    console.log("[chat] incoming request", {
-      method: request.method,
-      path: request.nextUrl?.pathname,
-      contentType: request.headers.get("content-type"),
-      origin: request.headers.get("origin"),
-      referer: request.headers.get("referer"),
-      userAgent: request.headers.get("user-agent")?.slice(0, 80),
-    });
-
     const body = (await request.json()) as ChatRequestBody;
 
     // 📊 사용자 활동 로그
-    console.log(
-      `👤 [USER_ACTIVITY] Student ${body.studentId || "unknown"} | Session ${
-        body.sessionId
-      } | Question ${body.questionIdx || body.questionId} | Exam ${
-        body.examCode || body.examId
-      }`
-    );
-
     const {
       message,
       sessionId,
@@ -603,7 +521,7 @@ export async function POST(request: NextRequest) {
     if (!message) {
       return NextResponse.json(
         { error: "Missing message field" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -649,7 +567,7 @@ export async function POST(request: NextRequest) {
         const { response: aiResponse } = await getAIResponse(
           prompt,
           message,
-          previousResponseId
+          previousResponseId,
         );
 
         return NextResponse.json({
@@ -683,11 +601,6 @@ export async function POST(request: NextRequest) {
     }
 
     // ✅ 정규 세션 처리 (컨텍스트 조회)
-    console.log(
-      "🔍 DEBUG: Entering REGULAR session processing for sessionId:",
-      sessionId
-    );
-
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .select("id, exam_id, used_clarifications")
@@ -699,11 +612,11 @@ export async function POST(request: NextRequest) {
         "Error fetching session:",
         sessionError,
         "SessionId:",
-        sessionId
+        sessionId,
       );
       return NextResponse.json(
         { error: "Invalid session", details: sessionError?.message },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -711,7 +624,7 @@ export async function POST(request: NextRequest) {
       console.error("Session has no exam_id:", session);
       return NextResponse.json(
         { error: "Session is missing exam information" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -726,11 +639,11 @@ export async function POST(request: NextRequest) {
         "Error fetching exam:",
         examError,
         "ExamId:",
-        session.exam_id
+        session.exam_id,
       );
       return NextResponse.json(
         { error: "Exam not found", details: examError?.message },
-        { status: 404 }
+        { status: 404 },
       );
     }
 
@@ -762,10 +675,6 @@ export async function POST(request: NextRequest) {
     });
 
     const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Total request time (regular): ${requestDuration}ms`
-    );
-
     return NextResponse.json({
       response: aiResponse,
       timestamp: new Date().toISOString(),
@@ -791,7 +700,7 @@ export async function POST(request: NextRequest) {
         details:
           process.env.NODE_ENV === "development" ? errorMessage : undefined,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

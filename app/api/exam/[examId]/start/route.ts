@@ -13,7 +13,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * POST /api/exam/[examId]/start
- * 
+ *
  * Gate Start 신호: 교수가 "Start Exam" 버튼을 클릭하면
  * - exams.started_at 설정
  * - exams.status를 "running"으로 변경
@@ -22,7 +22,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ examId: string }> }
+  { params }: { params: Promise<{ examId: string }> },
 ) {
   try {
     const user = await currentUser();
@@ -34,7 +34,7 @@ export async function POST(
     if (userRole !== "instructor") {
       return NextResponse.json(
         { error: "Instructor access required" },
-        { status: 403 }
+        { status: 403 },
       );
     }
 
@@ -53,17 +53,11 @@ export async function POST(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json(
-        { error: "Exam not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
     }
 
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json(
-        { error: "Access denied" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     // 2. 상태 검증: Running이 아닌 모든 상태에서 Start 가능 (기본적으로 항상 시작 가능)
@@ -74,11 +68,12 @@ export async function POST(
         {
           error: "Exam cannot be started",
           currentStatus: exam.status,
-          message: exam.status === "running" 
-            ? "Exam is already running" 
-            : "Exam is already closed",
+          message:
+            exam.status === "running"
+              ? "Exam is already running"
+              : "Exam is already closed",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -89,7 +84,7 @@ export async function POST(
           error: "Exam already started",
           startedAt: exam.started_at,
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -123,7 +118,7 @@ export async function POST(
       console.error("[START_EXAM] Failed to update exam:", updateExamError);
       return NextResponse.json(
         { error: "Failed to start exam" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -136,7 +131,10 @@ export async function POST(
       .eq("status", "waiting");
 
     if (sessionsError) {
-      console.error("[START_EXAM] Failed to fetch waiting sessions:", sessionsError);
+      console.error(
+        "[START_EXAM] Failed to fetch waiting sessions:",
+        sessionsError,
+      );
       // 시험은 이미 시작되었으므로, 세션 업데이트 실패해도 계속 진행
     } else if (waitingSessions && waitingSessions.length > 0) {
       const sessionIds = waitingSessions.map((s) => s.id);
@@ -155,17 +153,16 @@ export async function POST(
       if (updateSessionsError) {
         console.error(
           "[START_EXAM] Failed to update sessions:",
-          updateSessionsError
+          updateSessionsError,
         );
         // 시험은 이미 시작되었으므로, 세션 업데이트 실패해도 계속 진행
       } else {
-        console.log(
-          `[START_EXAM] ✅ Updated ${sessionIds.length} sessions to in_progress`
+        console.error(
+          "[START_EXAM] Failed to update sessions:",
+          updateSessionsError,
         );
       }
     }
-
-    console.log(`[START_EXAM] ✅ Exam ${examId} started successfully`);
 
     return NextResponse.json({
       success: true,
@@ -178,7 +175,7 @@ export async function POST(
     console.error("[START_EXAM] ❌ Error:", error);
     return NextResponse.json(
       { error: "Failed to start exam" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

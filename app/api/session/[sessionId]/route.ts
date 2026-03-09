@@ -6,30 +6,25 @@ import { currentUser } from "@clerk/nextjs/server";
 // Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ sessionId: string }> }
+  { params }: { params: Promise<{ sessionId: string }> },
 ) {
   const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
-    console.log(`🔍 [SESSION_GET] Request received | Session: ${sessionId}`);
 
     const user = await currentUser();
 
     if (!user) {
       console.error(
-        `❌ [AUTH] Unauthorized session access attempt | Session: ${sessionId}`
+        `❌ [AUTH] Unauthorized session access attempt | Session: ${sessionId}`,
       );
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    console.log(
-      `✅ [AUTH] User authenticated | User: ${user.id} | Session: ${sessionId}`
-    );
 
     // Get session data with related submissions and messages
     const { data: session, error: sessionError } = await supabase
@@ -54,7 +49,7 @@ export async function GET(
           compressed_content,
           compression_metadata
         )
-      `
+      `,
       )
       .eq("id", sessionId)
       .single();
@@ -85,7 +80,7 @@ export async function GET(
     ) {
       try {
         decompressedSessionData = decompressData(
-          session.compressed_session_data
+          session.compressed_session_data,
         );
       } catch (error) {
         console.error("Error decompressing session data:", error);
@@ -104,7 +99,7 @@ export async function GET(
         ) {
           try {
             decompressedAnswerData = decompressData(
-              submission.compressed_answer_data
+              submission.compressed_answer_data,
             );
           } catch (error) {
             console.error("Error decompressing answer data:", error);
@@ -117,7 +112,7 @@ export async function GET(
         ) {
           try {
             decompressedFeedbackData = decompressData(
-              submission.compressed_feedback_data
+              submission.compressed_feedback_data,
             );
           } catch (error) {
             console.error("Error decompressing feedback data:", error);
@@ -199,14 +194,6 @@ export async function GET(
     compressionStats.totalOriginalSize = compressionStats.totalOriginalSize;
     compressionStats.totalCompressedSize = compressionStats.totalCompressedSize;
 
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Session GET completed in ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Session data retrieved | Session: ${sessionId} | Submissions: ${decompressedSubmissions.length} | Messages: ${decompressedMessages.length}`
-    );
-
     return NextResponse.json({
       session: {
         id: session.id,
@@ -232,11 +219,11 @@ export async function GET(
     console.error(
       `❌ [ERROR] Session GET failed after ${requestDuration}ms | Error: ${
         (error as Error)?.message
-      }`
+      }`,
     );
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

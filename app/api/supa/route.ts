@@ -156,10 +156,8 @@ async function createExam(data: {
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
-    console.log("Create exam - User role:", userRole, "User ID:", user.id);
 
     if (userRole !== "instructor") {
-      console.log("Create exam - Access denied. User role:", userRole);
       return NextResponse.json(
         {
           error: "Instructor access required",
@@ -194,20 +192,6 @@ async function createExam(data: {
       created_at: data.created_at,
       updated_at: data.updated_at,
     };
-
-    console.log("[api] Creating exam with materials_text:", {
-      materialsCount: examData.materials.length,
-      materialsTextCount: examData.materials_text.length,
-      materialsTextPreview: Array.isArray(examData.materials_text)
-        ? examData.materials_text.map((m: unknown) => {
-            const mt = m as { fileName?: string; text?: string };
-            return {
-              fileName: mt?.fileName || "unknown",
-              textLength: mt?.text?.length || 0,
-            };
-          })
-        : "not an array",
-    });
 
     const { data: exam, error } = await supabase
       .from("exams")
@@ -272,20 +256,12 @@ async function createExam(data: {
     }
 
     // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
-    if (
+        if (
       examData.materials_text &&
       Array.isArray(examData.materials_text) &&
       examData.materials_text.length > 0
     ) {
       try {
-        console.log("🚀 [createExam] RAG 처리 시작:", {
-          examId: exam.id,
-          materialsCount: examData.materials_text.length,
-          materialsPreview: examData.materials_text.map((m: any) => ({
-            fileName: m.fileName || "unknown",
-            textLength: m.text?.length || 0,
-          })),
-        });
 
         let totalChunksSaved = 0;
 
@@ -297,26 +273,11 @@ async function createExam(data: {
             fileName: string;
           };
 
-          console.log(
-            `📄 [createExam] 파일 ${idx + 1}/${
-              examData.materials_text.length
-            } 처리:`,
-            {
-              fileName: materialData.fileName,
-              url: materialData.url,
-              textLength: materialData.text?.length || 0,
-            }
-          );
-
           if (!materialData.text || materialData.text.trim().length === 0) {
-            console.log(
-              `⚠️ [createExam] 텍스트가 비어있어 건너뜀: ${materialData.fileName}`
-            );
             continue;
           }
 
           // 1. 텍스트 청킹
-          console.log(`✂️ [createExam] 청킹 시작: ${materialData.fileName}`);
           const chunkStartTime = Date.now();
           const chunks = chunkText(materialData.text, {
             chunkSize: 800,
@@ -325,20 +286,8 @@ async function createExam(data: {
           const chunkDuration = Date.now() - chunkStartTime;
 
           if (chunks.length === 0) {
-            console.log(
-              `⚠️ [createExam] 청크 생성 실패: ${materialData.fileName}`
-            );
             continue;
           }
-
-          console.log(`✅ [createExam] 청킹 완료:`, {
-            fileName: materialData.fileName,
-            chunksCount: chunks.length,
-            duration: `${chunkDuration}ms`,
-            avgChunkSize: Math.round(
-              chunks.reduce((sum, c) => sum + c.text.length, 0) / chunks.length
-            ),
-          });
 
           // 2. 기존 청크 삭제 (파일 재처리 시)
           await deleteChunksByFileUrl(exam.id, materialData.url);
@@ -349,22 +298,10 @@ async function createExam(data: {
           );
 
           // 4. 임베딩 생성 (배치)
-          console.log(
-            `🧮 [createExam] 임베딩 생성 시작: ${materialData.fileName}`
-          );
           const embeddingStartTime = Date.now();
           const chunkTexts = formattedChunks.map((c) => c.content);
           const embeddings = await createEmbeddings(chunkTexts);
           const embeddingDuration = Date.now() - embeddingStartTime;
-
-          console.log(`✅ [createExam] 임베딩 생성 완료:`, {
-            fileName: materialData.fileName,
-            embeddingsCount: embeddings.length,
-            duration: `${embeddingDuration}ms`,
-            avgDurationPerEmbedding: `${Math.round(
-              embeddingDuration / embeddings.length
-            )}ms`,
-          });
 
           // 5. DB에 저장
           const chunksToSave = formattedChunks.map((chunk, index) => ({
@@ -375,19 +312,7 @@ async function createExam(data: {
 
           await saveChunksToDB(exam.id, chunksToSave);
           totalChunksSaved += chunksToSave.length;
-
-          console.log(`💾 [createExam] 파일 처리 완료:`, {
-            fileName: materialData.fileName,
-            chunksSaved: chunksToSave.length,
-            totalChunksSaved,
-          });
         }
-
-        console.log("🎉 [createExam] RAG 처리 완료:", {
-          examId: exam.id,
-          filesProcessed: examData.materials_text.length,
-          totalChunksSaved,
-        });
       } catch (ragError) {
         // RAG 처리 실패해도 시험 생성은 성공으로 처리
         console.error("❌ [createExam] RAG 처리 실패 (시험 생성은 성공):", {
@@ -397,15 +322,6 @@ async function createExam(data: {
           stack: ragError instanceof Error ? ragError.stack : undefined,
         });
       }
-    } else {
-      console.log("ℹ️ [createExam] RAG 처리 건너뜀:", {
-        examId: exam.id,
-        hasMaterialsText: !!examData.materials_text,
-        isArray: Array.isArray(examData.materials_text),
-        length: Array.isArray(examData.materials_text)
-          ? examData.materials_text.length
-          : 0,
-      });
     }
 
     return NextResponse.json({ exam, examNode });
@@ -512,14 +428,6 @@ async function submitExam(data: {
 
     if (submissionsError) throw submissionsError;
 
-    console.log("Exam submission compressed and stored:", {
-      sessionId: data.sessionId,
-      originalSize: compressedSessionData.metadata.originalSize,
-      compressedSize: compressedSessionData.metadata.compressedSize,
-      compressionRatio: compressedSessionData.metadata.compressionRatio,
-      submissionsCount: submissions.length,
-    });
-
     return NextResponse.json({
       session,
       submissions,
@@ -558,8 +466,6 @@ async function getExam(data: { code: string }) {
 
 async function getExamById(data: { id: string }) {
   try {
-    console.log("API: getExamById called with data:", data);
-
     // Validate input
     if (!data || !data.id) {
       console.error("API: Missing exam ID");
@@ -603,11 +509,8 @@ async function getExamById(data: { id: string }) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    console.log("API: User found:", user.id);
-
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
-    console.log("API: User role:", userRole);
 
     if (userRole !== "instructor") {
       console.error("API: User is not instructor");
@@ -616,13 +519,6 @@ async function getExamById(data: { id: string }) {
         { status: 403 }
       );
     }
-
-    console.log(
-      "API: Querying exam with ID:",
-      data.id,
-      "for instructor:",
-      user.id
-    );
 
     // First, check if exam exists at all (without instructor filter)
     const { data: examExists, error: checkError } = await supabase
@@ -690,7 +586,6 @@ async function getExamById(data: { id: string }) {
       );
     }
 
-    console.log("API: Exam found successfully:", exam.id);
     return NextResponse.json({ exam });
   } catch (error) {
     console.error("Get exam by ID error:", error);
@@ -773,10 +668,6 @@ async function getInstructorExams() {
 
 async function createOrGetSession(data: { examId: string; studentId: string }) {
   try {
-    if (process.env.NODE_ENV === "development") {
-      console.log("Creating or getting session for:", data);
-    }
-
     // Check if session already exists
     const { data: existingSessions, error: checkError } = await supabase
       .from("sessions")
@@ -784,8 +675,6 @@ async function createOrGetSession(data: { examId: string; studentId: string }) {
       .eq("exam_id", data.examId)
       .eq("student_id", data.studentId)
       .order("created_at", { ascending: false });
-
-    console.log("Session check result:", { existingSessions, checkError });
 
     if (checkError) {
       console.error("Session check error:", checkError);
@@ -815,12 +704,6 @@ async function createOrGetSession(data: { examId: string; studentId: string }) {
         timestamp: msg.created_at,
         qIdx: msg.q_idx || 0,
       }));
-
-      console.log(
-        "📨 Loading existing messages:",
-        formattedMessages.length,
-        "messages"
-      );
 
       return NextResponse.json({
         session: existingSession,
@@ -864,12 +747,6 @@ async function initExamSession(data: {
   deviceFingerprint?: string;
 }) {
   try {
-    console.log("[INIT_EXAM_SESSION] Starting session init:", {
-      examCode: data.examCode,
-      studentId: data.studentId,
-      hasDeviceFingerprint: !!data.deviceFingerprint,
-    });
-
     // 1. Fetch Exam by Code
     const { data: exam, error: examError } = await supabase
       .from("exams")
@@ -945,11 +822,6 @@ async function initExamSession(data: {
       (existingSessions || []).find((s) => !!s.submitted_at) || null;
 
     if (mostRecentSubmittedSession) {
-      // 제출된 세션이 있으면 재시험 불가 - 제출된 세션만 반환
-      console.log(
-        "[INIT_EXAM_SESSION] Submitted session found - preventing retake:",
-        mostRecentSubmittedSession.id
-      );
 
       // Get messages for submitted session (read-only)
       const { data: sessionMessages } = await supabase
@@ -996,19 +868,6 @@ async function initExamSession(data: {
     let existingSession: (typeof existingSessions)[0] | null =
       exactDeviceMatch || claimableLegacySession || null;
 
-    console.log("[INIT_EXAM_SESSION] Existing session selected:", {
-      selected: !!existingSession,
-      selectedId: existingSession?.id,
-      reason: exactDeviceMatch
-        ? "device_match"
-        : claimableLegacySession
-        ? "legacy_claim"
-        : mostRecentSubmittedSession
-        ? "submitted_fallback"
-        : "none",
-      incomingHasFingerprint: !!incomingFingerprint,
-    });
-
     let session = existingSession;
     let messages: Array<{
       type: "user" | "assistant";
@@ -1035,11 +894,6 @@ async function initExamSession(data: {
 
         // 시간 종료 체크 및 자동 제출 처리
         if (timeRemaining <= 0) {
-        console.log(
-          "[INIT_EXAM_SESSION] Session time expired - auto-submitting:",
-          existingSession.id
-        );
-
         // 기존 답안 가져오기
         const { data: existingSubmissions } = await supabase
           .from("submissions")
@@ -1090,11 +944,6 @@ async function initExamSession(data: {
       
       // 이미 InProgress인 경우 (시험이 시작된 경우)
       if (currentStatus === "in_progress") {
-        console.log(
-          "[INIT_EXAM_SESSION] Session already in progress:",
-          existingSession.id
-        );
-        
         const { data: updatedSession, error: updateError } = await supabase
           .from("sessions")
           .update({
@@ -1111,11 +960,6 @@ async function initExamSession(data: {
         session = updatedSession;
       } else if (examStarted && currentStatus === "waiting") {
         // 시험이 시작되었고 세션이 waiting 상태인 경우 → in_progress로 전환
-        console.log(
-          "[INIT_EXAM_SESSION] Exam started - updating session to in_progress:",
-          existingSession.id
-        );
-        
         const { data: updatedSession, error: updateError } = await supabase
           .from("sessions")
           .update({
@@ -1135,11 +979,6 @@ async function initExamSession(data: {
         session = updatedSession;
       } else {
         // Waiting 상태인 경우 (시험 시작 대기 중)
-        console.log(
-          "[INIT_EXAM_SESSION] Session in waiting state:",
-          existingSession.id
-        );
-        
         const { data: updatedSession, error: updateError } = await supabase
           .from("sessions")
           .update({
@@ -1173,7 +1012,6 @@ async function initExamSession(data: {
       }));
     } else {
       // ✅ 새 세션 생성: 기본적으로 시작 전에는 waiting 상태
-      console.log("[INIT_EXAM_SESSION] Creating new session");
       
       // 시험이 이미 시작되었는지 확인 (started_at이 있고 status가 running)
       const examStarted = examStatus === "running" && startedAt !== null && nowTime >= startedAt;
@@ -1204,9 +1042,6 @@ async function initExamSession(data: {
 
       if (createError) throw createError;
       session = newSession;
-      console.log(
-        `[INIT_EXAM_SESSION] ✅ New session created: ${newSession.id} (status: ${initialStatus}, examStarted: ${examStarted})`
-      );
     }
 
     // ✅ Gate 방식: 타이머 계산 (attempt_timer_started_at 기준)
@@ -1556,10 +1391,6 @@ async function getFolderContents(data: { folder_id?: string | null }) {
     }
 
     const parentId = data.folder_id || null;
-    console.log("[api] getFolderContents called:", {
-      folder_id: parentId,
-      userId: user.id,
-    });
 
     // Build query
     let query = supabase
@@ -1604,11 +1435,6 @@ async function getFolderContents(data: { folder_id?: string | null }) {
       });
       throw error;
     }
-
-    console.log("[api] getFolderContents query successful:", {
-      nodesCount: nodes?.length || 0,
-      folder_id: parentId,
-    });
 
     let nodesWithCounts = nodes || [];
 
@@ -1931,10 +1757,6 @@ async function sessionHeartbeat(data: {
 
         if (timeRemaining <= 0) {
           // ✅ 시간 종료 - 자동 제출 처리
-          console.log(
-            "[SESSION_HEARTBEAT] Time expired - auto-submitting session:",
-            data.sessionId
-          );
 
           const { error: updateError } = await supabase
             .from("sessions")
@@ -1977,12 +1799,12 @@ async function sessionHeartbeat(data: {
         ? new Date((session as any).started_at).getTime()
         : null;
 
-      if (
-        exam &&
-        exam.duration !== 0 &&
-        sessionStatus === "in_progress" &&
-        timerStartTime !== null
-      ) {
+    if (
+      exam &&
+      exam.duration !== 0 &&
+      sessionStatus === "in_progress" &&
+      timerStartTime !== null
+    ) {
         const examDurationMs = exam.duration * 60 * 1000;
         const sessionEndTime = timerStartTime + examDurationMs;
         const now = Date.now();
@@ -2237,10 +2059,6 @@ async function copyExam(data: { exam_id: string }) {
       examData.materials_text.length > 0
     ) {
       try {
-        console.log("🚀 [copyExam] RAG 처리 시작:", {
-          examId: newExam.id,
-          materialsCount: examData.materials_text.length,
-        });
 
         let totalChunksSaved = 0;
 
@@ -2251,11 +2069,8 @@ async function copyExam(data: { exam_id: string }) {
             text: string;
             fileName: string;
           };
-
+ 
           if (!materialData.text || materialData.text.trim().length === 0) {
-            console.log(
-              `⚠️ [copyExam] 텍스트가 비어있어 건너뜀: ${materialData.fileName}`
-            );
             continue;
           }
 
@@ -2266,9 +2081,6 @@ async function copyExam(data: { exam_id: string }) {
           });
 
           if (chunks.length === 0) {
-            console.log(
-              `⚠️ [copyExam] 청크 생성 실패: ${materialData.fileName}`
-            );
             continue;
           }
 
@@ -2294,12 +2106,6 @@ async function copyExam(data: { exam_id: string }) {
           await saveChunksToDB(newExam.id, chunksToSave);
           totalChunksSaved += chunksToSave.length;
         }
-
-        console.log("🎉 [copyExam] RAG 처리 완료:", {
-          examId: newExam.id,
-          filesProcessed: examData.materials_text.length,
-          totalChunksSaved,
-        });
       } catch (ragError) {
         // RAG 처리 실패해도 시험 복사는 성공으로 처리
         console.error("❌ [copyExam] RAG 처리 실패 (시험 복사는 성공):", {

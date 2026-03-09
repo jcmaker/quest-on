@@ -18,17 +18,15 @@ let PDFParser: any = null;
 async function getPDFParser() {
   if (!PDFParser) {
     try {
-      console.log("[extract-text] pdf2json 모듈 로드 시도...");
       // pdf2json은 Node.js 전용이므로 안전하게 사용 가능
       const pdf2jsonModule = await import("pdf2json");
       PDFParser = pdf2jsonModule.default || pdf2jsonModule;
-      console.log("[extract-text] pdf2json 모듈 로드 성공");
     } catch (error) {
       console.error("[extract-text] pdf2json 모듈 로드 실패:", error);
       throw new Error(
         `pdf2json 모듈을 로드할 수 없습니다: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }
@@ -38,7 +36,7 @@ async function getPDFParser() {
 // Supabase 클라이언트
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 /**
@@ -47,7 +45,6 @@ const supabase = createClient(
 async function extractTextFromPDF(buffer: Buffer): Promise<string> {
   try {
     const PDFParserClass = await getPDFParser();
-    console.log("[extract-text] PDF 파싱 시작, buffer 크기:", buffer.length);
 
     return new Promise((resolve, reject) => {
       const pdfParser = new PDFParserClass(null, 1);
@@ -59,8 +56,8 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
         console.error("[extract-text] PDF 파싱 에러:", errData);
         reject(
           new Error(
-            `PDF 파싱 실패: ${errData.parserError || "알 수 없는 오류"}`
-          )
+            `PDF 파싱 실패: ${errData.parserError || "알 수 없는 오류"}`,
+          ),
         );
       });
 
@@ -89,10 +86,6 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
           }
 
           const extractedText = textParts.join("\n\n");
-          console.log(
-            "[extract-text] PDF 파싱 완료, 텍스트 길이:",
-            extractedText.length
-          );
           resolve(extractedText);
         } catch (error) {
           console.error("[extract-text] 텍스트 추출 중 에러:", error);
@@ -100,8 +93,8 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
             new Error(
               `텍스트 추출 실패: ${
                 error instanceof Error ? error.message : String(error)
-              }`
-            )
+              }`,
+            ),
           );
         }
       });
@@ -115,7 +108,7 @@ async function extractTextFromPDF(buffer: Buffer): Promise<string> {
     const errorStack = error instanceof Error ? error.stack : undefined;
     console.error("PDF 추출 에러 상세:", { errorMessage, errorStack });
     throw new Error(
-      `PDF 파일에서 텍스트를 추출할 수 없습니다: ${errorMessage}`
+      `PDF 파일에서 텍스트를 추출할 수 없습니다: ${errorMessage}`,
     );
   }
 }
@@ -148,7 +141,7 @@ async function extractTextFromPPT(buffer: Buffer): Promise<string> {
     const slideFiles = zipEntries.filter(
       (entry) =>
         entry.entryName.startsWith("ppt/slides/slide") &&
-        entry.entryName.endsWith(".xml")
+        entry.entryName.endsWith(".xml"),
     );
 
     // 슬라이드 번호 순서대로 정렬
@@ -217,7 +210,7 @@ async function extractTextFromCSV(buffer: Buffer): Promise<string> {
 async function extractTextFromFile(
   buffer: Buffer,
   fileName: string,
-  mimeType: string
+  mimeType: string,
 ): Promise<string> {
   const extension = fileName.split(".").pop()?.toLowerCase() || "";
 
@@ -238,7 +231,7 @@ async function extractTextFromFile(
   // Word (.doc) - mammoth는 docx만 지원하므로 에러 처리
   if (mimeType === "application/msword" || extension === "doc") {
     throw new Error(
-      ".doc 형식은 지원되지 않습니다. .docx 형식으로 변환해주세요."
+      ".doc 형식은 지원되지 않습니다. .docx 형식으로 변환해주세요.",
     );
   }
 
@@ -254,7 +247,7 @@ async function extractTextFromFile(
   // PPT (.ppt)
   if (mimeType === "application/vnd.ms-powerpoint" || extension === "ppt") {
     throw new Error(
-      ".ppt 형식은 지원되지 않습니다. .pptx 형식으로 변환해주세요."
+      ".ppt 형식은 지원되지 않습니다. .pptx 형식으로 변환해주세요.",
     );
   }
 
@@ -295,7 +288,7 @@ export async function POST(request: NextRequest) {
     if (!fileUrl) {
       return NextResponse.json(
         { error: "fileUrl is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     // TypeScript narrowing helper (Vercel build strict mode)
@@ -308,8 +301,6 @@ export async function POST(request: NextRequest) {
       .slice(urlParts.indexOf("exam-materials") + 1)
       .join("/");
 
-    console.log("[extract-text] Downloading file from storage:", storagePath);
-
     const { data: fileData, error: downloadError } = await supabase.storage
       .from("exam-materials")
       .download(storagePath);
@@ -318,7 +309,7 @@ export async function POST(request: NextRequest) {
       console.error("[extract-text] Download error:", downloadError);
       return NextResponse.json(
         { error: "파일을 다운로드할 수 없습니다." },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -330,30 +321,19 @@ export async function POST(request: NextRequest) {
     const extractedText = await extractTextFromFile(
       buffer,
       fileName || storagePath,
-      mimeType || ""
+      mimeType || "",
     );
 
     // examId가 제공된 경우, 청킹 및 임베딩 생성 후 DB 저장
     let chunksSaved = 0;
 
-    console.log("📋 [extract-text] 처리 상태:", {
-      hasExamId: !!examId,
-      examId: examId || "없음 (시험 생성 전)",
-      textLength: extractedText.length,
-      willProcessChunks: !!(examId && extractedText.trim().length > 0),
-    });
-
     if (examId && extractedText.trim().length > 0) {
       try {
-        console.log("[extract-text] 청킹 및 임베딩 생성 시작");
-
         // 1. 텍스트 청킹
         const chunks = chunkText(extractedText, {
           chunkSize: 800,
           chunkOverlap: 200,
         });
-
-        console.log(`[extract-text] ${chunks.length}개의 청크 생성됨`);
 
         if (chunks.length > 0) {
           // 2. 기존 청크 삭제 (파일 재처리 시)
@@ -361,16 +341,12 @@ export async function POST(request: NextRequest) {
 
           // 3. 청크 포맷팅
           const formattedChunks = chunks.map((chunk) =>
-            formatChunkMetadata(chunk, fileName || "unknown", fileUrlStr)
+            formatChunkMetadata(chunk, fileName || "unknown", fileUrlStr),
           );
 
           // 4. 임베딩 생성 (배치)
           const chunkTexts = formattedChunks.map((c) => c.content);
           const embeddings = await createEmbeddings(chunkTexts);
-
-          console.log(
-            `[extract-text] ${embeddings.length}개의 임베딩 생성 완료`
-          );
 
           // 5. DB에 저장
           const chunksToSave = formattedChunks.map((chunk, index) => ({
@@ -381,14 +357,12 @@ export async function POST(request: NextRequest) {
 
           await saveChunksToDB(examId, chunksToSave);
           chunksSaved = chunksToSave.length;
-
-          console.log(`[extract-text] ${chunksSaved}개의 청크가 DB에 저장됨`);
         }
       } catch (embeddingError) {
         // 임베딩/저장 실패해도 텍스트 추출은 성공으로 처리
         console.error(
           "[extract-text] 임베딩/저장 실패 (텍스트 추출은 성공):",
-          embeddingError
+          embeddingError,
         );
       }
     }
@@ -402,13 +376,6 @@ export async function POST(request: NextRequest) {
         ? undefined
         : "시험 생성 시 자동으로 청킹 및 임베딩이 처리됩니다.",
     };
-
-    console.log("✅ [extract-text] 응답:", {
-      success: response.success,
-      textLength: response.length,
-      chunksSaved: response.chunksSaved,
-      note: response.note,
-    });
 
     return NextResponse.json(response);
   } catch (error) {
@@ -450,7 +417,7 @@ export async function POST(request: NextRequest) {
                 }
               : undefined,
         },
-        { status: 500 }
+        { status: 500 },
       );
     } catch (jsonError) {
       // JSON 응답 생성 실패 시에도 에러 반환
@@ -463,7 +430,7 @@ export async function POST(request: NextRequest) {
         {
           status: 500,
           headers: { "Content-Type": "application/json" },
-        }
+        },
       );
     }
   }

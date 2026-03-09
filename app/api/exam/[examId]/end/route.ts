@@ -13,7 +13,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * POST /api/exam/[examId]/end
- * 
+ *
  * Gate End 신호: 교수가 "End Exam" 버튼을 클릭하면
  * - exams.status를 "closed"로 변경
  * - 비상 강제 종료 (모든 진행 중 시험 종료)
@@ -21,7 +21,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ examId: string }> }
+  { params }: { params: Promise<{ examId: string }> },
 ) {
   try {
     const user = await currentUser();
@@ -33,7 +33,7 @@ export async function POST(
     if (userRole !== "instructor") {
       return NextResponse.json(
         { error: "Instructor access required" },
-        { status: 403 }
+        { status: 403 },
       );
     }
 
@@ -48,17 +48,11 @@ export async function POST(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json(
-        { error: "Exam not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
     }
 
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json(
-        { error: "Access denied" },
-        { status: 403 }
-      );
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     // 2. 상태 검증: Running 또는 EntryClosed 상태에서만 End 가능
@@ -70,7 +64,7 @@ export async function POST(
           currentStatus: exam.status,
           message: "Exam must be in 'running' or 'entry_closed' status to end",
         },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -89,7 +83,7 @@ export async function POST(
       console.error("[END_EXAM] Failed to update exam:", updateExamError);
       return NextResponse.json(
         { error: "Failed to end exam" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
@@ -104,7 +98,10 @@ export async function POST(
       .is("submitted_at", null);
 
     if (sessionsError) {
-      console.error("[END_EXAM] Failed to fetch active sessions:", sessionsError);
+      console.error(
+        "[END_EXAM] Failed to fetch active sessions:",
+        sessionsError,
+      );
     } else if (activeSessions && activeSessions.length > 0) {
       const sessionIds = activeSessions.map((s) => s.id);
 
@@ -121,16 +118,11 @@ export async function POST(
       if (updateSessionsError) {
         console.error(
           "[END_EXAM] Failed to force submit sessions:",
-          updateSessionsError
+          updateSessionsError,
         );
       } else {
-        console.log(
-          `[END_EXAM] ✅ Force submitted ${sessionIds.length} active sessions`
-        );
       }
     }
-
-    console.log(`[END_EXAM] ✅ Exam ${examId} ended successfully`);
 
     return NextResponse.json({
       success: true,
@@ -140,10 +132,6 @@ export async function POST(
       sessionsForceSubmitted: activeSessions?.length || 0,
     });
   } catch (error) {
-    console.error("[END_EXAM] ❌ Error:", error);
-    return NextResponse.json(
-      { error: "Failed to end exam" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to end exam" }, { status: 500 });
   }
 }

@@ -43,7 +43,7 @@ function sanitizeText(text: string): string {
 // Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 export async function POST(request: NextRequest) {
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     if (!examCode || !answers || !Array.isArray(answers)) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     if (!exam.status || !allowedStatuses.includes(exam.status)) {
       return NextResponse.json(
         { error: "Exam is no longer active" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
         if (now > sessionEndTime) {
           return NextResponse.json(
             { error: "시험 시간이 종료되었습니다." },
-            { status: 400 }
+            { status: 400 },
           );
         }
       }
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     const answersText = answers
       .map(
         (answer: { text?: string }, index: number) =>
-          `문제 ${index + 1}: ${answer.text || "답안이 작성되지 않았습니다"}`
+          `문제 ${index + 1}: ${answer.text || "답안이 작성되지 않았습니다"}`,
       )
       .join("\n\n");
 
@@ -142,7 +142,6 @@ ${answersText}
 
         // If sessionId is provided, verify it exists and belongs to this student
         if (sessionId) {
-          console.log("Using provided sessionId:", sessionId);
           const { data: existingSession, error: sessionError } = await supabase
             .from("sessions")
             .select("id, student_id, exam_id")
@@ -165,7 +164,6 @@ ${answersText}
           actualSessionId = existingSession.id;
         } else {
           // Fallback: Create or get session for this exam (legacy behavior)
-          console.log("No sessionId provided, creating/finding session");
           const { data: session, error: sessionError } = await supabase
             .from("sessions")
             .select("id")
@@ -225,12 +223,6 @@ ${answersText}
             const answerText = sanitizeText(rawAnswerText);
             const sanitizedFeedback = sanitizeText(feedback);
 
-            console.log(`Processing answer ${index + 1}:`, {
-              originalLength: rawAnswerText.length,
-              sanitizedLength: answerText.length,
-              hasUnicodeIssues: rawAnswerText !== answerText,
-            });
-
             const submissionData = {
               answer: answerText,
               feedback: sanitizedFeedback,
@@ -250,7 +242,7 @@ ${answersText}
             } catch (compressionError) {
               console.warn(
                 `Compression failed for answer ${index + 1}:`,
-                compressionError
+                compressionError,
               );
               // Fallback: store without compression
               compressedSubmissionData = null;
@@ -275,14 +267,9 @@ ${answersText}
               compressed_answer_data: compressedSubmissionData,
               compression_metadata: compressionMetadata,
             };
-          }
+          },
         );
 
-        console.log(
-          "Inserting submissions:",
-          submissionInserts.length,
-          "items"
-        );
         const { data: insertedSubmissions, error: submissionsError } =
           await supabase.from("submissions").insert(submissionInserts).select();
 
@@ -290,18 +277,12 @@ ${answersText}
           console.error("Submissions insert error:", submissionsError);
           console.error(
             "Failed submission data:",
-            JSON.stringify(submissionInserts, null, 2)
+            JSON.stringify(submissionInserts, null, 2),
           );
           throw new Error(
-            `Database insert failed: ${submissionsError.message} (Code: ${submissionsError.code})`
+            `Database insert failed: ${submissionsError.message} (Code: ${submissionsError.code})`,
           );
         }
-
-        console.log(
-          "Submissions inserted successfully:",
-          insertedSubmissions?.length,
-          "items"
-        );
 
         // Update exam student count
         const { data: currentExam } = await supabase
@@ -317,48 +298,24 @@ ${answersText}
           })
           .eq("id", examId);
 
-        console.log("Exam submission stored successfully:", {
-          sessionId: actualSessionId,
-          examId,
-          studentId,
-          submissionsCount: submissionInserts.length,
-        });
-
         // 백그라운드에서 자동 채점 시작 (비동기로 실행, 응답은 기다리지 않음)
         if (actualSessionId) {
-          console.log(
-            `🚀 [AUTO_GRADE] Starting background grading for session: ${actualSessionId}`
-          );
           autoGradeSession(actualSessionId)
-            .then((result) => {
-              console.log(
-                `✅ [AUTO_GRADE] Background grading completed for session ${actualSessionId}:`,
-                {
-                  gradesCount: result.grades.length,
-                  hasSummary: !!result.summary,
-                }
-              );
-              if (result.grades.length === 0) {
-                console.warn(
-                  `⚠️ [AUTO_GRADE] No grades generated for session ${actualSessionId}. ` +
-                    `This might indicate an issue with submissions, messages, or rubric.`
-                );
-              }
-            })
+            .then((result) => {})
             .catch((error) => {
               console.error(
                 `❌ [AUTO_GRADE] Background grading failed for session ${actualSessionId}:`,
                 {
                   error: error instanceof Error ? error.message : String(error),
                   stack: error instanceof Error ? error.stack : undefined,
-                }
+                },
               );
               // 채점 실패해도 제출은 완료된 것으로 처리
               // TODO: 실패한 채점을 재시도할 수 있는 메커니즘 추가 고려
             });
         } else {
           console.warn(
-            `⚠️ [AUTO_GRADE] Cannot start auto-grading: actualSessionId is missing`
+            `⚠️ [AUTO_GRADE] Cannot start auto-grading: actualSessionId is missing`,
           );
         }
       } catch (error) {
@@ -368,7 +325,7 @@ ${answersText}
             error: "Failed to store submission in database",
             details: error instanceof Error ? error.message : "Unknown error",
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
     }
@@ -386,13 +343,13 @@ ${answersText}
     if (error instanceof OpenAI.APIError) {
       return NextResponse.json(
         { error: "OpenAI API error", details: error.message },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

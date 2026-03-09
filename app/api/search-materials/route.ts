@@ -26,16 +26,9 @@ export async function POST(request: NextRequest) {
     if (!query || typeof query !== "string" || query.trim().length === 0) {
       return NextResponse.json(
         { error: "query 필드가 필요합니다 (문자열)" },
-        { status: 400 }
+        { status: 400 },
       );
     }
-
-    console.log("[search-materials] 검색 요청:", {
-      query: query.substring(0, 100),
-      examId,
-      matchThreshold,
-      matchCount,
-    });
 
     // 벡터 유사도 검색
     const results = await searchMaterialChunks(query, {
@@ -62,7 +55,7 @@ export async function POST(request: NextRequest) {
         error: "검색 실패",
         message: errorMessage,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

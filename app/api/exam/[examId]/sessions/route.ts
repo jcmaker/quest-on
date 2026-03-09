@@ -6,7 +6,7 @@ import { createClerkClient } from "@clerk/nextjs/server";
 // Initialize Supabase client
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
 // Initialize Clerk client
@@ -58,30 +58,26 @@ async function getUserInfo(clerkUserId: string): Promise<{
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ examId: string }> }
+  { params }: { params: Promise<{ examId: string }> },
 ) {
   const requestStartTime = Date.now();
   try {
     const { examId } = await params;
-    console.log(`📊 [EXAM_SESSIONS] Request received | Exam: ${examId}`);
 
     let user;
     try {
       user = await currentUser();
     } catch (clerkError) {
-      console.error(
-        `❌ [AUTH] Clerk API error | Exam: ${examId}`,
-        clerkError
-      );
+      console.error(`❌ [AUTH] Clerk API error | Exam: ${examId}`, clerkError);
       return NextResponse.json(
         { error: "Authentication service error" },
-        { status: 500 }
+        { status: 500 },
       );
     }
 
     if (!user) {
       console.error(
-        `❌ [AUTH] Unauthorized exam sessions access | Exam: ${examId}`
+        `❌ [AUTH] Unauthorized exam sessions access | Exam: ${examId}`,
       );
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -90,14 +86,10 @@ export async function GET(
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
       console.error(
-        `❌ [AUTH] Non-instructor access attempt | User: ${user.id} | Exam: ${examId}`
+        `❌ [AUTH] Non-instructor access attempt | User: ${user.id} | Exam: ${examId}`,
       );
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-
-    console.log(
-      `✅ [AUTH] Instructor authenticated | User: ${user.id} | Exam: ${examId}`
-    );
 
     // Get exam to verify instructor owns it
     const { data: exam, error: examError } = await supabase
@@ -129,7 +121,7 @@ export async function GET(
         status,
         is_active,
         last_heartbeat_at
-      `
+      `,
       )
       .eq("exam_id", examId)
       .order("submitted_at", { ascending: false });
@@ -180,7 +172,7 @@ export async function GET(
             school: profile?.school,
           });
         }
-      })
+      }),
     );
 
     // Optimized: Process sessions without decompression (not needed for list view)
@@ -203,19 +195,13 @@ export async function GET(
         submitted_at: session.submitted_at,
         used_clarifications: session.used_clarifications,
         created_at: session.created_at,
-        status: session.status || (session.submitted_at ? "submitted" : "in_progress"),
+        status:
+          session.status ||
+          (session.submitted_at ? "submitted" : "in_progress"),
         is_active: session.is_active ?? true,
         last_heartbeat_at: session.last_heartbeat_at,
       };
     });
-
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Exam sessions GET completed in ${requestDuration}ms`
-    );
-    console.log(
-      `✅ [SUCCESS] Exam sessions retrieved | Exam: ${exam.id} | Sessions: ${sessions.length}`
-    );
 
     return NextResponse.json({
       exam: {
@@ -230,11 +216,11 @@ export async function GET(
     console.error(
       `❌ [ERROR] Exam sessions GET failed after ${requestDuration}ms | Error: ${
         (error as Error)?.message
-      }`
+      }`,
     );
     return NextResponse.json(
       { error: "Internal server error" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

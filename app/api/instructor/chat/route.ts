@@ -11,11 +11,6 @@ import { buildInstructorChatSystemPrompt } from "@/lib/prompts";
 // Some environments may send OPTIONS (preflight) or GET accidentally.
 export async function OPTIONS(request: NextRequest) {
   const origin = request.headers.get("origin") ?? "*";
-  console.log("[instructor-chat] OPTIONS /api/instructor/chat (preflight)", {
-    origin,
-    contentType: request.headers.get("content-type"),
-    userAgent: request.headers.get("user-agent")?.slice(0, 80),
-  });
   return new NextResponse(null, {
     status: 204,
     headers: {
@@ -29,10 +24,9 @@ export async function OPTIONS(request: NextRequest) {
 }
 
 export async function GET() {
-  console.log("[instructor-chat] GET /api/instructor/chat (healthcheck)");
   return NextResponse.json(
     { ok: true, route: "/api/instructor/chat", methods: ["POST", "OPTIONS"] },
-    { status: 200, headers: { Allow: "POST, OPTIONS" } }
+    { status: 200, headers: { Allow: "POST, OPTIONS" } },
   );
 }
 
@@ -48,17 +42,11 @@ type InstructorChatRequestBody = {
 async function getAIResponse(
   systemPrompt: string,
   userMessage: string,
-  previousResponseId: string | null = null
+  previousResponseId: string | null = null,
 ): Promise<{ response: string; responseId: string }> {
   const aiStartTime = Date.now();
   try {
     if (process.env.NODE_ENV === "development") {
-      console.log(
-        "[instructor-chat] Calling OpenAI Responses API with prompt length:",
-        systemPrompt.length,
-        "| Previous response ID:",
-        previousResponseId || "none (first message)"
-      );
     }
 
     // Responses API 사용
@@ -70,25 +58,12 @@ async function getAIResponse(
       store: true,
     });
 
-    const aiDuration = Date.now() - aiStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] OpenAI Responses API response time: ${aiDuration}ms`
-    );
-
-    if (process.env.NODE_ENV === "development") {
-      console.log("[instructor-chat] OpenAI Responses API response received:", {
-        responseId: response.id,
-        hasOutput: !!response.output,
-        outputLength: response.output?.length || 0,
-      });
-    }
-
     // output 배열에서 메시지 타입 찾기
     let responseText = "";
     const outputArray = response.output as any;
     if (outputArray && Array.isArray(outputArray)) {
       const messageOutput = outputArray.find(
-        (item: any) => item.type === "message" && item.content
+        (item: any) => item.type === "message" && item.content,
       );
 
       if (messageOutput && Array.isArray(messageOutput.content)) {
@@ -115,7 +90,7 @@ async function getAIResponse(
   } catch (openaiError) {
     console.error("[instructor-chat] OpenAI Responses API error:", openaiError);
     throw new Error(
-      `OpenAI Responses API failed: ${(openaiError as Error).message}`
+      `OpenAI Responses API failed: ${(openaiError as Error).message}`,
     );
   }
 }
@@ -123,15 +98,6 @@ async function getAIResponse(
 export async function POST(request: NextRequest) {
   const requestStartTime = Date.now();
   try {
-    console.log("[instructor-chat] incoming request", {
-      method: request.method,
-      path: request.nextUrl?.pathname,
-      contentType: request.headers.get("content-type"),
-      origin: request.headers.get("origin"),
-      referer: request.headers.get("referer"),
-      userAgent: request.headers.get("user-agent")?.slice(0, 80),
-    });
-
     const body = (await request.json()) as InstructorChatRequestBody;
 
     const { message, sessionId, context, scopeDescription, userId } = body;
@@ -139,23 +105,18 @@ export async function POST(request: NextRequest) {
     if (!message) {
       return NextResponse.json(
         { error: "Missing message field" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (!context) {
       return NextResponse.json(
         { error: "Missing context field" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     // 📊 사용자 활동 로그
-    console.log(
-      `👤 [INSTRUCTOR_ACTIVITY] User ${
-        userId || "unknown"
-      } | Session ${sessionId} | Scope: ${scopeDescription || "N/A"}`
-    );
 
     // 교수용 프롬프트 생성
     const systemPrompt = buildInstructorChatSystemPrompt({
@@ -169,12 +130,7 @@ export async function POST(request: NextRequest) {
     const { response: aiResponse } = await getAIResponse(
       systemPrompt,
       message,
-      previousResponseId
-    );
-
-    const requestDuration = Date.now() - requestStartTime;
-    console.log(
-      `⏱️  [PERFORMANCE] Total request time (instructor-chat): ${requestDuration}ms`
+      previousResponseId,
     );
 
     return NextResponse.json({
@@ -200,7 +156,7 @@ export async function POST(request: NextRequest) {
         details:
           process.env.NODE_ENV === "development" ? errorMessage : undefined,
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
