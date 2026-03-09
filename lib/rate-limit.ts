@@ -185,7 +185,7 @@ export async function checkRateLimitAsync(
     return checkRateLimitUpstash(key, config);
   }
 
-  // P1-2: In-memory fallback is ineffective in serverless — warn once and apply conservative limits
+  // Log warning once about in-memory fallback (no conservative reduction — it was blocking valid requests)
   if (!inMemoryFallbackWarned && process.env.NODE_ENV === "production") {
     inMemoryFallbackWarned = true;
     console.warn(
@@ -195,12 +195,7 @@ export async function checkRateLimitAsync(
     );
   }
 
-  // Apply more conservative limits in serverless fallback mode (1/3 of configured limit, min 1)
-  const conservativeConfig: RateLimitConfig = process.env.NODE_ENV === "production"
-    ? { ...config, limit: Math.max(1, Math.floor(config.limit / 3)) }
-    : config;
-
-  return checkRateLimitInMemory(key, conservativeConfig);
+  return checkRateLimitInMemory(key, config);
 }
 
 /**
@@ -232,6 +227,6 @@ export const RATE_LIMITS = {
   examControl: { limit: 10, windowSec: 60 } satisfies RateLimitConfig,
   /** Public search endpoints (IP-based): 20 requests per minute */
   publicSearch: { limit: 20, windowSec: 60 } satisfies RateLimitConfig,
-  /** Submission endpoints (expensive: triggers auto-grading): 5 requests per minute */
-  submission: { limit: 5, windowSec: 60 } satisfies RateLimitConfig,
+  /** Submission endpoints (expensive: triggers auto-grading): 30 requests per minute */
+  submission: { limit: 30, windowSec: 60 } satisfies RateLimitConfig,
 } as const;

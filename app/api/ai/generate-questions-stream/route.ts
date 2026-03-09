@@ -68,6 +68,7 @@ async function generateSingleQuestion(
           }),
         },
         {
+          timeoutMs: 120_000,
           metadataBuilder: (result) =>
             buildAiTextMetadata({
               outputText:

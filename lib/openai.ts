@@ -43,7 +43,7 @@ export const AI_MODEL_HEAVY = process.env.AI_MODEL_HEAVY || "gpt-5.4";
 // ============================================================
 const openaiLimiter = pLimit(100);
 
-const OPENAI_TIMEOUT_MS = 25_000;
+const OPENAI_TIMEOUT_MS = 120_000;
 
 export class OpenAITimeoutError extends Error {
   constructor(timeoutMs: number) {
