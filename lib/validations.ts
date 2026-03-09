@@ -240,12 +240,17 @@ const chatHistoryItemSchema = z.object({
   qIdx: z.union([z.number(), z.string()]).optional(),
 });
 
+// Answer item schema — validates structure and sanitizes text content
+const answerItemSchema = z.object({
+  text: z.string().max(100000, "Answer too long").transform(sanitizeUserInput),
+}).passthrough(); // allow extra fields (e.g. questionId) but ensure text is validated
+
 // Exam submission
 export const submitExamSchema = z.object({
   examId: z.string().uuid("Invalid exam ID"),
   studentId: z.string().min(1),
   sessionId: z.string().uuid("Invalid session ID"),
-  answers: z.array(z.unknown()),
+  answers: z.array(answerItemSchema).max(100),
   chatHistory: z.array(chatHistoryItemSchema).max(500).optional(),
   feedback: z.string().optional(),
   feedbackResponses: z.array(z.unknown()).optional(),

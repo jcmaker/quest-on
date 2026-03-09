@@ -285,6 +285,7 @@ export async function saveAllDrafts(data: {
       results = upsertedData || [];
 
       // P0-2: Post-upsert verification — detect partial write failures
+      // Return HTTP 207 Multi-Status so client can detect and retry
       if (results.length !== upsertPayloads.length) {
         logError("[saveAllDrafts] Upsert count mismatch — possible partial write", null, {
           path: "/api/supa/submission-handlers",
@@ -299,7 +300,7 @@ export async function saveAllDrafts(data: {
           warning: `${results.length}/${upsertPayloads.length} drafts saved — some may need retry`,
           partialFailure: true,
           ...(failedDrafts.length > 0 && { failedDrafts }),
-        });
+        }, 207);
       }
     }
 
@@ -413,6 +414,7 @@ export async function saveDraftAnswers(data: {
       results = upsertedData || [];
 
       // P0-2: Post-upsert verification — detect partial write failures
+      // Return HTTP 207 Multi-Status so client can detect and retry
       if (results.length !== upsertPayloads.length) {
         logError("[saveDraftAnswers] Upsert count mismatch — possible partial write", null, {
           path: "/api/supa/submission-handlers",
@@ -427,7 +429,7 @@ export async function saveDraftAnswers(data: {
           warning: `${results.length}/${upsertPayloads.length} answers saved — some may need retry`,
           partialFailure: true,
           ...(failedDrafts.length > 0 && { failedDrafts }),
-        });
+        }, 207);
       }
     }
 

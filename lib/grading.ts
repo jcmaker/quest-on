@@ -5,7 +5,6 @@ import {
   buildUnifiedGradingSystemPrompt,
   buildUnifiedGradingUserPrompt,
   buildSummaryEvaluationSystemPrompt,
-  sanitizeForPrompt,
 } from "@/lib/prompts";
 import { logError } from "@/lib/logger";
 import {
@@ -52,18 +51,12 @@ interface AutoGradeResult {
   decompressionWarnings?: DecompressionWarning[];
 }
 
-/** P1-6: Sanitize AI-generated comment to strip potential XSS payloads before DB storage */
+import DOMPurify from "isomorphic-dompurify";
+
+/** P0-4: Sanitize AI-generated comment using DOMPurify — strips ALL HTML tags to prevent XSS */
 function sanitizeComment(comment: string): string {
   if (!comment) return "";
-  return comment
-    // Strip script tags
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-    // Strip event handlers
-    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, "")
-    // Strip javascript: protocol
-    .replace(/javascript\s*:/gi, "")
-    // Use sanitizeForPrompt for additional cleanup (prompt injection + length)
-    .slice(0, 10000);
+  return DOMPurify.sanitize(comment, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).slice(0, 10000);
 }
 
 /** Clamp a score to [0, 100] and log if clamping occurred */
@@ -311,9 +304,9 @@ export async function autoGradeSession(
         additionalData: { sessionId, qIdx, rawContent: rawContent.slice(0, 500) },
       });
 
-      // P1-1: Retry once after 2s delay (re-call AI API)
+      // P1-1: Retry once after 2-3s delay with jitter to avoid thundering herd
       try {
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
         const retryTracked = await callTrackedChatCompletion(
           () =>
             getOpenAI().chat.completions.create({
@@ -502,9 +495,11 @@ export async function autoGradeSession(
   gradeResults.forEach((r, idx) => {
     if (r.status === "rejected") {
       failedQuestions.push(idx);
+      const reasonMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      failedGradeResults.push({ q_idx: idx, failureReason: reasonMsg });
       logError("[AUTO_GRADE] Question grading failed", r.reason, {
         path: "lib/grading.ts",
-        additionalData: { sessionId },
+        additionalData: { sessionId, failureReason: reasonMsg },
       });
     } else if (r.status === "fulfilled" && r.value === null && timedOut) {
       // Question was null due to timeout (not because it had no submission)

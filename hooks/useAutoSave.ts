@@ -113,6 +113,21 @@ export function useAutoSave({
         });
 
         if (response.ok) {
+          // P0-2: Check for partial failure even on 2xx responses (HTTP 207)
+          try {
+            const body = await response.json();
+            if (body.partialFailure) {
+              toast.error("일부 답안 저장에 실패했습니다. 자동 재시도합니다.", {
+                id: "partial-save-failure",
+                duration: 5000,
+              });
+              // Trigger retry on next interval
+              consecutiveFailures.current++;
+              return;
+            }
+          } catch {
+            // JSON parse failure on success response — treat as success
+          }
           setLastSaved(new Date().toLocaleTimeString());
           consecutiveFailures.current = 0;
           setSaveError(false);

@@ -1,14 +1,14 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-let _client: SupabaseClient | null = null;
-
 /**
- * Returns a singleton Supabase server client using the service role key.
+ * Creates a fresh Supabase server client using the service role key.
  * For use in API routes and server-side code only.
+ *
+ * P0-3: No singleton — serverless warm starts can retain stale module-level
+ * state across invocations, preventing key rotation from taking effect.
+ * Supabase JS v2 is fetch-based so client creation cost is negligible.
  */
 export function getSupabaseServer(): SupabaseClient {
-  if (_client) return _client;
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -18,6 +18,5 @@ export function getSupabaseServer(): SupabaseClient {
     );
   }
 
-  _client = createClient(supabaseUrl, supabaseServiceRoleKey);
-  return _client;
+  return createClient(supabaseUrl, supabaseServiceRoleKey);
 }

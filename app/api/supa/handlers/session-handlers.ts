@@ -905,10 +905,13 @@ export async function sessionHeartbeat(data: {
 
     // Only update heartbeat if session is active and not submitted
     if (session.is_active && !session.submitted_at) {
+      // P1-4: CAS guard — prevent heartbeat write if session was submitted
+      // between the check at L853 and this write (TOCTOU race)
       const { error: updateError } = await getSupabase()
         .from("sessions")
         .update({ last_heartbeat_at: new Date().toISOString() })
-        .eq("id", data.sessionId);
+        .eq("id", data.sessionId)
+        .is("submitted_at", null);
 
       if (updateError) throw updateError;
 

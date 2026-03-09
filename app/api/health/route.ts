@@ -1,9 +1,22 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
+import { verifyAdminToken } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 
 export async function GET() {
+  // P0-1: Only expose detailed checks to authenticated admin requests
+  const { isAdmin } = await verifyAdminToken();
+
+  if (!isAdmin) {
+    // Unauthenticated: minimal response only
+    return NextResponse.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // Admin-only: full diagnostic checks
   const checks: Record<string, { ok: boolean; latencyMs?: number; error?: string }> = {};
 
   // 1. Database connectivity check

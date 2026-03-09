@@ -7,7 +7,11 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
 
-const supabase = getSupabaseServer();
+// Lazy Supabase client getter — creates a fresh client per invocation
+// to avoid stale connections in serverless environments
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 export interface QuestionData {
   id: string;
@@ -55,7 +59,7 @@ export async function createExam(data: {
 
     // 시험 코드 중복 검증 및 자동 재생성
     let examCode = data.code;
-    const { data: existingExam } = await supabase
+    const { data: existingExam } = await getSupabase()
       .from("exams")
       .select("code")
       .eq("code", examCode)
@@ -73,7 +77,7 @@ export async function createExam(data: {
       };
 
       let newCode = generateExamCode();
-      let codeCheck = await supabase
+      let codeCheck = await getSupabase()
         .from("exams")
         .select("code")
         .eq("code", newCode)
@@ -81,7 +85,7 @@ export async function createExam(data: {
 
       while (codeCheck.data !== null) {
         newCode = generateExamCode();
-        codeCheck = await supabase
+        codeCheck = await getSupabase()
           .from("exams")
           .select("code")
           .eq("code", newCode)
@@ -122,7 +126,7 @@ export async function createExam(data: {
     let lastInsertError = null;
 
     for (let attempt = 0; attempt < MAX_INSERT_RETRIES; attempt++) {
-      const { data: inserted, error: insertErr } = await supabase
+      const { data: inserted, error: insertErr } = await getSupabase()
         .from("exams")
         .insert([examData])
         .select()
@@ -160,7 +164,7 @@ export async function createExam(data: {
     const parentId = data.parent_folder_id || null;
 
     // Get the maximum sort_order for this parent folder
-    let sortQuery = supabase
+    let sortQuery = getSupabase()
       .from("exam_nodes")
       .select("sort_order")
       .eq("instructor_id", user.id);
@@ -182,7 +186,7 @@ export async function createExam(data: {
         : 0;
 
     // Create exam node
-    const { data: examNode, error: nodeError } = await supabase
+    const { data: examNode, error: nodeError } = await getSupabase()
       .from("exam_nodes")
       .insert([
         {
@@ -201,8 +205,8 @@ export async function createExam(data: {
       logError("Failed to create exam node, rolling back exam", nodeError, { path: "/api/supa", user_id: user.id, additionalData: { examId: exam.id } });
       // Rollback: delete the orphaned exam and any material chunks
       await Promise.all([
-        supabase.from("exams").delete().eq("id", exam.id),
-        supabase.from("exam_material_chunks").delete().eq("exam_id", exam.id),
+        getSupabase().from("exams").delete().eq("id", exam.id),
+        getSupabase().from("exam_material_chunks").delete().eq("exam_id", exam.id),
       ]);
       return errorJson("DATABASE_ERROR", "Failed to create exam", 500);
     }
@@ -302,7 +306,7 @@ export async function updateExam(data: {
 
     // If exam code is being changed, verify no sessions exist
     if (data.update.code !== undefined) {
-      const { data: sessions } = await supabase
+      const { data: sessions } = await getSupabase()
         .from("sessions")
         .select("id")
         .eq("exam_id", data.id)
@@ -317,7 +321,7 @@ export async function updateExam(data: {
       }
     }
 
-    const { data: exam, error } = await supabase
+    const { data: exam, error } = await getSupabase()
       .from("exams")
       .update(data.update)
       .eq("id", data.id)
@@ -351,7 +355,7 @@ export async function updateExam(data: {
 
 export async function getExam(data: { code: string }) {
   try {
-    const { data: exam, error } = await supabase
+    const { data: exam, error } = await getSupabase()
       .from("exams")
       .select("id, title, code, description, duration, questions, rubric, rubric_public, chat_weight, status, instructor_id, materials, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting")
       .eq("code", data.code)
@@ -403,7 +407,7 @@ export async function getExamById(data: { id: string }) {
     }
 
     // First, check if exam exists at all (without instructor filter)
-    const { data: examExists, error: checkError } = await supabase
+    const { data: examExists, error: checkError } = await getSupabase()
       .from("exams")
       .select("id, instructor_id")
       .eq("id", data.id)
@@ -422,7 +426,7 @@ export async function getExamById(data: { id: string }) {
     }
 
     // Now fetch the full exam data (Gate 필드 포함)
-    const { data: exam, error } = await supabase
+    const { data: exam, error } = await getSupabase()
       .from("exams")
       .select(
         "id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting"
@@ -463,7 +467,7 @@ export async function getInstructorExams() {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
-    const { data: exams, error } = await supabase
+    const { data: exams, error } = await getSupabase()
       .from("exams")
       .select(
         "id, title, code, description, duration, questions, materials, status, instructor_id, created_at, updated_at"
@@ -478,7 +482,7 @@ export async function getInstructorExams() {
     const studentCountMap = new Map<string, number>();
 
     if (examIds.length > 0) {
-      const { data: allSessions } = await supabase
+      const { data: allSessions } = await getSupabase()
         .from("sessions")
         .select("exam_id, student_id")
         .in("exam_id", examIds)
@@ -525,7 +529,7 @@ export async function copyExam(data: { exam_id: string }) {
     }
 
     // Get the original exam
-    const { data: originalExam, error: examError } = await supabase
+    const { data: originalExam, error: examError } = await getSupabase()
       .from("exams")
       .select("id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at")
       .eq("id", data.exam_id)
@@ -537,7 +541,7 @@ export async function copyExam(data: { exam_id: string }) {
     }
 
     // Get the original exam node to preserve parent folder
-    const { data: originalNode, error: nodeError } = await supabase
+    const { data: originalNode, error: nodeError } = await getSupabase()
       .from("exam_nodes")
       .select("id, parent_id, sort_order")
       .eq("exam_id", data.exam_id)
@@ -560,7 +564,7 @@ export async function copyExam(data: { exam_id: string }) {
 
     let newCode = generateExamCode();
     // Ensure code is unique
-    let codeCheck = await supabase
+    let codeCheck = await getSupabase()
       .from("exams")
       .select("code")
       .eq("code", newCode)
@@ -568,7 +572,7 @@ export async function copyExam(data: { exam_id: string }) {
 
     while (!codeCheck.error) {
       newCode = generateExamCode();
-      codeCheck = await supabase
+      codeCheck = await getSupabase()
         .from("exams")
         .select("code")
         .eq("code", newCode)
@@ -605,7 +609,7 @@ export async function copyExam(data: { exam_id: string }) {
     };
 
     // Create the new exam
-    const { data: newExam, error: createError } = await supabase
+    const { data: newExam, error: createError } = await getSupabase()
       .from("exams")
       .insert([examData])
       .select()
@@ -619,7 +623,7 @@ export async function copyExam(data: { exam_id: string }) {
     const parentId = originalNode?.parent_id || null;
 
     // Get the maximum sort_order for this parent folder
-    let sortQuery = supabase
+    let sortQuery = getSupabase()
       .from("exam_nodes")
       .select("sort_order")
       .eq("instructor_id", user.id);
@@ -639,7 +643,7 @@ export async function copyExam(data: { exam_id: string }) {
         ? existingNodes[0].sort_order + 1
         : 0;
 
-    const { data: examNode, error: nodeCreateError } = await supabase
+    const { data: examNode, error: nodeCreateError } = await getSupabase()
       .from("exam_nodes")
       .insert([
         {

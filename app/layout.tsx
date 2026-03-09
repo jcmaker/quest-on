@@ -57,10 +57,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // suppressHydrationWarning on <html> is required by next-themes (class/style injection)
     <html lang="ko" suppressHydrationWarning={true}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${robotoMono.variable} antialiased`}
-        suppressHydrationWarning={true}
       >
         {children}
       </body>
