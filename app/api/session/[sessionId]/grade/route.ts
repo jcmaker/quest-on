@@ -50,7 +50,7 @@ export async function GET(
 
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, exam_id, student_id, submitted_at, used_clarifications, created_at, compressed_session_data, compression_metadata, ai_summary")
+      .select("id, exam_id, student_id, submitted_at, used_clarifications, created_at, compressed_session_data, compression_metadata, ai_summary, auto_submitted")
       .eq("id", sessionId)
       .single();
 
@@ -154,6 +154,12 @@ export async function GET(
     const { data: messages, error: messagesError } = messagesResult;
     const { data: grades, error: gradesError } = gradesResult;
     const { data: pasteLogs, error: pasteLogsError } = pasteLogsResult;
+
+    const path = `/api/session/${sessionId}/grade`;
+    if (submissionsError) logError("Submissions query failed", submissionsError, { path, additionalData: { sessionId } });
+    if (messagesError) logError("Messages query failed", messagesError, { path, additionalData: { sessionId } });
+    if (gradesError) logError("Grades query failed", gradesError, { path, additionalData: { sessionId } });
+    if (pasteLogsError) logError("PasteLogs query failed", pasteLogsError, { path, additionalData: { sessionId } });
 
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
@@ -354,6 +360,7 @@ export async function GET(
         created_at: session.created_at,
         decompressed: decompressedSessionData,
         ai_summary: session.ai_summary || null, // 서버 사이드 자동 채점 요약 평가
+        auto_submitted: session.auto_submitted || false, // 강제 종료로 자동 제출된 세션
       },
       exam: exam,
       student: studentInfo,
