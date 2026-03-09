@@ -1,10 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { batchGetUserInfo } from "@/lib/clerk-users";
 import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { logError } from "@/lib/logger";
+
+export const maxDuration = 30;
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -57,6 +60,23 @@ export async function GET(
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
+    // Parse pagination params (default: page 1, pageSize 50, max 100)
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(1, Math.min(100, parseInt(url.searchParams.get("pageSize") || "50", 10)));
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    // Get total count for pagination metadata
+    const { count: totalCount, error: countError } = await supabase
+      .from("sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("exam_id", examId);
+
+    if (countError) {
+      throw countError;
+    }
+
     // Optimized: Only fetch minimal session data needed for student list
     // Don't fetch submissions/messages as they're not needed for the list view
     const { data: sessions, error: sessionsError } = await supabase
@@ -74,7 +94,8 @@ export async function GET(
       `
       )
       .eq("exam_id", examId)
-      .order("submitted_at", { ascending: false });
+      .order("submitted_at", { ascending: false })
+      .range(from, to);
 
     if (sessionsError) {
       throw sessionsError;
@@ -157,8 +178,17 @@ export async function GET(
         title: exam.title,
       },
       sessions: processedSessions,
+      pagination: {
+        page,
+        pageSize,
+        totalCount: totalCount ?? 0,
+        totalPages: Math.ceil((totalCount ?? 0) / pageSize),
+      },
     });
   } catch (error) {
+    logError("Sessions GET handler error", error, {
+      path: `/api/exam/sessions`,
+    });
     return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

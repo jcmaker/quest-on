@@ -17,6 +17,7 @@ import {
   formatAiDependencyForPrompt,
   summarizeAiDependencyAssessments,
   resolveQuestionRubric,
+  type DecompressionWarning,
 } from "@/lib/grading-helpers";
 import {
   buildAiTextMetadata,
@@ -45,6 +46,7 @@ interface AutoGradeResult {
   summary: SummaryData | null;
   failedQuestions: number[];
   timedOut: boolean;
+  decompressionWarnings?: DecompressionWarning[];
 }
 
 /**
@@ -131,8 +133,9 @@ export async function autoGradeSession(
   }
 
   // 5. 데이터 압축 해제 및 정리 (헬퍼 함수 사용)
-  const submissionsByQuestion = decompressSubmissions(submissions || []);
-  const messagesByQuestion = decompressMessages(messages || []);
+  const decompressionWarnings: DecompressionWarning[] = [];
+  const submissionsByQuestion = decompressSubmissions(submissions || [], decompressionWarnings);
+  const messagesByQuestion = decompressMessages(messages || [], decompressionWarnings);
 
   // 6. 문제 정규화
   const questions = normalizeQuestions(exam.questions);
@@ -142,8 +145,14 @@ export async function autoGradeSession(
   const chatWeight = Math.max(0, Math.min(100, exam.chat_weight ?? 50));
 
   const gradePromises = questions.map(async (question): Promise<GradeResult | null> => {
-    // Per-question rubric resolution
+    // Per-question rubric resolution (resolveQuestionRubric returns DEFAULT_RUBRIC when empty)
     const rubricItems = resolveQuestionRubric(question, exam.rubric);
+    if (rubricItems.length === 1 && rubricItems[0].evaluationArea === "전반적 답변 품질") {
+      logError("[AUTO_GRADE] Using default rubric — no rubric configured for question or exam", null, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx: question.idx, examId: exam.id },
+      });
+    }
     const rubricText = buildRubricText(rubricItems);
     const rubricScoresSchema = rubricItems
       .map(
@@ -437,7 +446,37 @@ export async function autoGradeSession(
     }
   }
 
-  return { grades, summary, failedQuestions, timedOut };
+  // 11. Persist grading status in ai_summary so instructors can see partial grading
+  const isPartial = timedOut || failedQuestions.length > 0;
+  if (isPartial) {
+    const gradingStatusPayload = {
+      grading_status: "partial" as const,
+      grading_failed_questions: failedQuestions,
+      grading_completed_count: grades.length,
+      grading_total_count: questions.length,
+      grading_timed_out: timedOut,
+    };
+    const mergedSummary = { ...(summary || {}), ...gradingStatusPayload };
+    const { error: statusError } = await supabase
+      .from("sessions")
+      .update({ ai_summary: mergedSummary })
+      .eq("id", sessionId);
+
+    if (statusError) {
+      logError("[AUTO_GRADE] Failed to save partial grading status", statusError, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, failedQuestions },
+      });
+    }
+  }
+
+  return {
+    grades,
+    summary,
+    failedQuestions,
+    timedOut,
+    ...(decompressionWarnings.length > 0 && { decompressionWarnings }),
+  };
 }
 
 /**

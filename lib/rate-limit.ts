@@ -30,6 +30,9 @@ type RateLimitEntry = {
 
 const store = new Map<string, RateLimitEntry>();
 
+/** Maximum number of keys in the in-memory store to prevent unbounded growth in serverless */
+const MAX_STORE_SIZE = 10_000;
+
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 function ensureCleanup() {
@@ -47,6 +50,20 @@ function ensureCleanup() {
   }
 }
 
+/** Evict oldest entries when store exceeds MAX_STORE_SIZE */
+function evictIfNeeded() {
+  if (store.size <= MAX_STORE_SIZE) return;
+
+  // Evict entries with earliest resetAt first (most likely expired or expiring soon)
+  const entries = Array.from(store.entries())
+    .sort((a, b) => a[1].resetAt - b[1].resetAt);
+
+  const toEvict = entries.slice(0, store.size - MAX_STORE_SIZE + Math.floor(MAX_STORE_SIZE * 0.1));
+  for (const [key] of toEvict) {
+    store.delete(key);
+  }
+}
+
 function checkRateLimitInMemory(
   key: string,
   config: RateLimitConfig
@@ -59,6 +76,7 @@ function checkRateLimitInMemory(
   if (!entry || now > entry.resetAt) {
     const resetAt = now + config.windowSec * 1000;
     store.set(key, { count: 1, resetAt });
+    evictIfNeeded();
     return { allowed: true, remaining: config.limit - 1, resetAt };
   }
 

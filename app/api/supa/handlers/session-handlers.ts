@@ -5,8 +5,8 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
 
-/** 30-second grace period for network latency (shared across heartbeat/initExamSession/feedback) */
-const GRACE_PERIOD_MS = 30_000;
+/** 5-second grace period for network latency (shared across heartbeat/initExamSession/feedback) */
+const GRACE_PERIOD_MS = 5_000;
 
 /** 5-minute threshold: sessions with no heartbeat for this long are considered stale (orphaned) */
 const STALE_HEARTBEAT_MS = 5 * 60 * 1000;
@@ -147,17 +147,36 @@ export async function promoteSessionToInProgress(
       options.deviceFingerprint || session.device_fingerprint || null;
   }
 
+  // Compare-and-Set: only update if status hasn't changed (prevents race conditions)
   const { data: updatedSession, error } = await supabase
     .from("sessions")
     .update(updateData)
     .eq("id", session.id)
+    .eq("status", session.status || "waiting")
     .select(
       "id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at, preflight_accepted_at"
     )
-    .single();
+    .maybeSingle();
 
   if (error) {
     throw error;
+  }
+
+  // CAS failed (concurrent request already promoted) — re-read current state
+  if (!updatedSession) {
+    const { data: currentSession, error: readError } = await supabase
+      .from("sessions")
+      .select(
+        "id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at, preflight_accepted_at"
+      )
+      .eq("id", session.id)
+      .single();
+
+    if (readError || !currentSession) {
+      throw readError || new Error(`Session not found after CAS: ${session.id}`);
+    }
+
+    return currentSession;
   }
 
   return updatedSession;
@@ -479,11 +498,22 @@ export async function initExamSession(data: {
               incomingFingerprint || existingSession.device_fingerprint || null,
           })
           .eq("id", existingSession.id)
+          .eq("status", "in_progress")
           .select()
-          .single();
+          .maybeSingle();
 
         if (updateError) throw updateError;
-        session = updatedSession;
+        // CAS miss: re-read current state
+        if (!updatedSession) {
+          const { data: reread } = await supabase
+            .from("sessions")
+            .select("*")
+            .eq("id", existingSession.id)
+            .single();
+          session = reread || existingSession;
+        } else {
+          session = updatedSession;
+        }
       } else if (
         (examStarted || exam.duration === 0) &&
         ["waiting", "joined", "not_joined"].includes(currentStatus)
@@ -494,6 +524,10 @@ export async function initExamSession(data: {
         });
       } else {
         // Waiting 상태인 경우 (시험 시작 대기 중)
+        const targetStatus =
+          currentStatus === "joined" || currentStatus === "not_joined"
+            ? "waiting"
+            : currentStatus;
         const { data: updatedSession, error: updateError } = await supabase
           .from("sessions")
           .update({
@@ -501,18 +535,25 @@ export async function initExamSession(data: {
             last_heartbeat_at: now,
             device_fingerprint:
               incomingFingerprint || existingSession.device_fingerprint || null,
-            // 상태가 없거나 joined인 경우 waiting으로 설정
-            status:
-              currentStatus === "joined" || currentStatus === "not_joined"
-                ? "waiting"
-                : currentStatus,
+            status: targetStatus,
           })
           .eq("id", existingSession.id)
+          .eq("status", currentStatus)
           .select()
-          .single();
+          .maybeSingle();
 
         if (updateError) throw updateError;
-        session = updatedSession;
+        // CAS miss: re-read current state
+        if (!updatedSession) {
+          const { data: reread } = await supabase
+            .from("sessions")
+            .select("*")
+            .eq("id", existingSession.id)
+            .single();
+          session = reread || existingSession;
+        } else {
+          session = updatedSession;
+        }
       }
 
       // Get messages for existing session

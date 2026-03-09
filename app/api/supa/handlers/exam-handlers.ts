@@ -116,14 +116,42 @@ export async function createExam(data: {
       updated_at: data.updated_at,
     };
 
-    const { data: exam, error } = await supabase
-      .from("exams")
-      .insert([examData])
-      .select()
-      .single();
+    // INSERT with UNIQUE violation retry (handles TOCTOU race between code check and insert)
+    const MAX_INSERT_RETRIES = 3;
+    let exam = null;
+    let lastInsertError = null;
 
-    if (error) {
-      logError("[createExam] Database error during exam insert", error, { path: "/api/supa/exam-handlers" });
+    for (let attempt = 0; attempt < MAX_INSERT_RETRIES; attempt++) {
+      const { data: inserted, error: insertErr } = await supabase
+        .from("exams")
+        .insert([examData])
+        .select()
+        .single();
+
+      if (!insertErr) {
+        exam = inserted;
+        lastInsertError = null;
+        break;
+      }
+
+      // Postgres UNIQUE violation = code 23505
+      if (insertErr.code === "23505" && attempt < MAX_INSERT_RETRIES - 1) {
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let retryCode = "";
+        for (let i = 0; i < 6; i++) {
+          retryCode += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        examData.code = retryCode;
+        examCode = retryCode;
+        continue;
+      }
+
+      lastInsertError = insertErr;
+      break;
+    }
+
+    if (lastInsertError || !exam) {
+      logError("[createExam] Database error during exam insert", lastInsertError, { path: "/api/supa/exam-handlers" });
       return errorJson("DATABASE_ERROR", "Database error", 500);
     }
 

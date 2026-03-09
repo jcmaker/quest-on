@@ -11,6 +11,9 @@ import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { singleGradeUpdateSchema, validateRequest } from "@/lib/validations";
 
+// Auto-grading (PUT) calls AI_MODEL_HEAVY multiple times — needs 300s
+export const maxDuration = 300;
+
 // Initialize Supabase client
 const supabase = getSupabaseServer();
 
@@ -575,7 +578,7 @@ export async function PUT(
     }
 
     // Delegate to centralized grading logic (parallel, retry, timeout)
-    const { grades, summary, failedQuestions, timedOut } = await autoGradeSession(sessionId);
+    const { grades, summary, failedQuestions, timedOut, decompressionWarnings } = await autoGradeSession(sessionId);
 
     const response: Record<string, unknown> = {
       gradesCount: grades.length,
@@ -587,6 +590,10 @@ export async function PUT(
       response.warning = `${grades.length}/${grades.length + failedQuestions.length} 문항 채점 완료, ${failedQuestions.length}문항 수동 채점 필요`;
       response.failedQuestions = failedQuestions;
       response.timedOut = timedOut;
+    }
+
+    if (decompressionWarnings && decompressionWarnings.length > 0) {
+      response.decompressionWarnings = decompressionWarnings;
     }
 
     return successJson(response);

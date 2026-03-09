@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import { createAdminToken } from "@/lib/admin-auth";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
@@ -43,21 +43,29 @@ export async function POST(request: NextRequest) {
         path: "/",
       });
 
-      auditLog({
-        action: "admin_login_success",
-        userId: "admin",
-        targetId: "admin-session",
-        details: { ip, username },
-      });
+      try {
+        await auditLog({
+          action: "admin_login_success",
+          userId: "admin",
+          targetId: "admin-session",
+          details: { ip, username },
+        });
+      } catch (auditError) {
+        logError("[admin-auth] Audit log failed for login success", auditError, { path: "/api/admin/auth" });
+      }
 
       return successJson();
     } else {
-      auditLog({
-        action: "admin_login_failure",
-        userId: "anonymous",
-        targetId: "admin-session",
-        details: { ip, username },
-      });
+      try {
+        await auditLog({
+          action: "admin_login_failure",
+          userId: "anonymous",
+          targetId: "admin-session",
+          details: { ip, username },
+        });
+      } catch (auditError) {
+        logError("[admin-auth] Audit log failed for login failure", auditError, { path: "/api/admin/auth" });
+      }
 
       return errorJson("UNAUTHORIZED", "Invalid credentials", 401);
     }

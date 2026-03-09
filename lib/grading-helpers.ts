@@ -1,8 +1,15 @@
 import { decompressData } from "@/lib/compression";
+import { logError } from "@/lib/logger";
 import type {
   AiDependencyAssessment,
   AiDependencyRiskLevel,
 } from "@/lib/types/grading";
+
+/** Decompression warning collected during data extraction */
+export type DecompressionWarning = {
+  target: string;
+  error: string;
+};
 
 /**
  * Pure helper functions extracted from lib/grading.ts for testability.
@@ -41,7 +48,8 @@ export function selectBestSubmission(
 
 /** Group submissions by q_idx, decompress if needed, pick best per question. */
 export function decompressSubmissions(
-  submissions: Array<Record<string, unknown>>
+  submissions: Array<Record<string, unknown>>,
+  warnings?: DecompressionWarning[]
 ): Record<number, { answer: string }> {
   const result: Record<number, { answer: string }> = {};
 
@@ -72,8 +80,13 @@ export function decompressSubmissions(
           bestSubmission.compressed_answer_data as string
         );
         answer = (decompressed as { answer?: string })?.answer || answer;
-      } catch {
-        // Decompression failed, fall back to raw answer
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : "Unknown decompression error";
+        warnings?.push({ target: `submission_q${qIdx}`, error: errMsg });
+        logError("[decompressSubmissions] Decompression failed, using raw answer", error, {
+          path: "lib/grading-helpers.ts",
+          additionalData: { qIdx },
+        });
       }
     }
 
@@ -85,7 +98,8 @@ export function decompressSubmissions(
 
 /** Group messages by q_idx, decompress if needed. */
 export function decompressMessages(
-  messages: Array<Record<string, unknown>>
+  messages: Array<Record<string, unknown>>,
+  warnings?: DecompressionWarning[]
 ): Record<number, Array<{ role: string; content: string }>> {
   const result: Record<number, Array<{ role: string; content: string }>> = {};
 
@@ -103,8 +117,13 @@ export function decompressMessages(
         content =
           (decompressData(message.compressed_content as string) as string) ||
           content;
-      } catch {
-        // Decompression failed, fall back to raw content
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : "Unknown decompression error";
+        warnings?.push({ target: `message_q${qIdx}_${message.id}`, error: errMsg });
+        logError("[decompressMessages] Decompression failed, using raw content", error, {
+          path: "lib/grading-helpers.ts",
+          additionalData: { qIdx, messageId: message.id },
+        });
       }
     }
 
@@ -140,7 +159,16 @@ export function normalizeQuestions(
   }));
 }
 
-/** Resolve rubric for a specific question: use per-question rubric if available, else fall back to exam-level rubric. */
+/** Default rubric used when neither question-level nor exam-level rubric exists. */
+const DEFAULT_RUBRIC: Array<{ evaluationArea: string; detailedCriteria: string }> = [
+  {
+    evaluationArea: "전반적 답변 품질",
+    detailedCriteria:
+      "답변의 정확성, 논리적 구조, 관련 개념의 적절한 활용, 문제 요구사항 충족 정도를 종합적으로 평가",
+  },
+];
+
+/** Resolve rubric for a specific question: use per-question rubric if available, else fall back to exam-level rubric, then default. */
 export function resolveQuestionRubric(
   question: { rubric?: Array<{ evaluationArea: string; detailedCriteria: string }> },
   examRubric: unknown
@@ -151,7 +179,7 @@ export function resolveQuestionRubric(
   if (examRubric && Array.isArray(examRubric) && examRubric.length > 0) {
     return examRubric as Array<{ evaluationArea: string; detailedCriteria: string }>;
   }
-  return [];
+  return DEFAULT_RUBRIC;
 }
 
 /** Ensure the mandatory "AI 활용 및 자기주도 탐구" criterion exists in a rubric array. */
@@ -213,11 +241,11 @@ export function calculateWeightedScore(
         stageGrading.answer.score * answerWeight
     );
   } else if (stageGrading.chat) {
-    // 단일 스테이지에도 weight 적용: chat만 있으면 최대 chatWeight% 반영
-    finalScore = Math.round(stageGrading.chat.score * chatWeight);
+    // 단일 스테이지: weight 적용 없이 원점수 사용 (100점 만점 보장)
+    finalScore = Math.round(stageGrading.chat.score);
   } else if (stageGrading.answer) {
-    // 단일 스테이지에도 weight 적용: answer만 있으면 최대 answerWeight% 반영
-    finalScore = Math.round(stageGrading.answer.score * answerWeight);
+    // 단일 스테이지: weight 적용 없이 원점수 사용 (100점 만점 보장)
+    finalScore = Math.round(stageGrading.answer.score);
   }
 
   return Math.max(0, Math.min(100, finalScore));
