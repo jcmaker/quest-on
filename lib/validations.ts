@@ -136,13 +136,14 @@ export const createExamSchema = z.object({
   title: sanitizedString(z.string().min(1, "Title is required").max(500)),
   code: z.string().min(1).max(20),
   duration: z.number().int().min(0),
+  chat_weight: z.number().min(0).max(100).nullable().optional(),
   questions: z.array(z.object({
     id: z.string(),
     text: z.string(),
     type: z.enum(["multiple-choice", "essay", "short-answer"]),
     options: z.array(z.string()).optional(),
     correctAnswer: z.string().optional(),
-  })),
+  }).passthrough()),
   materials: z.array(z.string()).optional(),
   materials_text: z.array(z.object({
     url: z.string(),
@@ -213,14 +214,14 @@ export const deactivateSessionSchema = z.object({
 export const saveDraftSchema = z.object({
   sessionId: z.string().uuid("Invalid session ID"),
   questionId: z.string().min(1),
-  answer: sanitizedString(z.string().max(100000, "Answer too long")),
+  answer: z.string().max(100000, "Answer too long"),
 });
 
 export const saveAllDraftsSchema = z.object({
   sessionId: z.string().uuid("Invalid session ID"),
   drafts: z.array(z.object({
     questionId: z.string(),
-    text: z.string().max(100000).transform(sanitizeUserInput),
+    text: z.string().max(100000),
   })).max(50),
 });
 
@@ -228,7 +229,7 @@ export const saveDraftAnswersSchema = z.object({
   sessionId: z.string().uuid("Invalid session ID"),
   answers: z.array(z.object({
     questionId: z.string(),
-    text: z.string().max(100000).transform(sanitizeUserInput),
+    text: z.string().max(100000),
   })),
 });
 
@@ -240,9 +241,9 @@ const chatHistoryItemSchema = z.object({
   qIdx: z.union([z.number(), z.string()]).optional(),
 });
 
-// Answer item schema — validates structure and sanitizes text content
+// Answer item schema — validates structure (rich text HTML preserved)
 const answerItemSchema = z.object({
-  text: z.string().max(100000, "Answer too long").transform(sanitizeUserInput),
+  text: z.string().max(100000, "Answer too long"),
 }).passthrough(); // allow extra fields (e.g. questionId) but ensure text is validated
 
 // Exam submission

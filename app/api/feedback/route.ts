@@ -9,11 +9,13 @@ import { autoGradeSession } from "@/lib/grading";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
-import { sanitizeUserInput } from "@/lib/sanitize";
+
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-// Initialize Supabase client
-const supabase = getSupabaseServer();
+// Lazy Supabase getter — avoids stale module-level singleton in serverless
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -63,7 +65,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate exam submission from Supabase
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = await getSupabase()
       .from("exams")
       .select("id, code, status, duration")
       .eq("code", examCode)
@@ -77,8 +79,8 @@ export async function POST(request: NextRequest) {
       return errorJson("BAD_REQUEST", "Exam ID mismatch", 400);
     }
 
-    // Check if exam allows submission (active or running after instructor started)
-    const allowedStatuses = ["active", "running"];
+    // Allow submission for draft exams (assignment type) and running exams
+    const allowedStatuses = ["draft", "running"];
     if (!exam.status || !allowedStatuses.includes(exam.status)) {
       return errorJson("BAD_REQUEST", "Exam is no longer active", 400);
     }
@@ -96,7 +98,7 @@ export async function POST(request: NextRequest) {
       | null = null;
 
     if (sessionId) {
-      const { data: existingSession, error: sessionError } = await supabase
+      const { data: existingSession, error: sessionError } = await getSupabase()
         .from("sessions")
         .select(
           "id, student_id, exam_id, submitted_at, created_at, attempt_timer_started_at, started_at"
@@ -147,7 +149,7 @@ export async function POST(request: NextRequest) {
 
     try {
       if (!actualSessionId) {
-        const { data: activeSession, error: activeSessionError } = await supabase
+        const { data: activeSession, error: activeSessionError } = await getSupabase()
           .from("sessions")
           .select("id")
           .eq("exam_id", exam.id)
@@ -163,7 +165,7 @@ export async function POST(request: NextRequest) {
           actualSessionId = activeSession.id;
         } else {
           const { data: submittedSession, error: submittedSessionError } =
-            await supabase
+            await getSupabase()
               .from("sessions")
               .select("id")
               .eq("exam_id", exam.id)
@@ -184,7 +186,7 @@ export async function POST(request: NextRequest) {
           }
 
           // Race-safe: upsert with ignoreDuplicates prevents duplicate sessions
-          const { data: newSession, error: createError } = await supabase
+          const { data: newSession, error: createError } = await getSupabase()
             .from("sessions")
             .upsert(
               {
@@ -204,7 +206,7 @@ export async function POST(request: NextRequest) {
             actualSessionId = newSession.id;
           } else {
             // ignoreDuplicates skipped — fetch existing
-            const { data: existing, error: fetchError } = await supabase
+            const { data: existing, error: fetchError } = await getSupabase()
               .from("sessions")
               .select("id")
               .eq("exam_id", exam.id)
@@ -223,7 +225,7 @@ export async function POST(request: NextRequest) {
       // Cold-start path: if ownedSession was null (no sessionId provided),
       // perform time check on the resolved session to prevent post-deadline submission
       if (!ownedSession && exam.duration !== 0) {
-        const { data: resolvedSession } = await supabase
+        const { data: resolvedSession } = await getSupabase()
           .from("sessions")
           .select("attempt_timer_started_at, started_at, created_at")
           .eq("id", actualSessionId)
@@ -251,8 +253,8 @@ export async function POST(request: NextRequest) {
           const rawAnswerText =
             typeof answer === "string" ? answer : answer.text || "";
 
-          // Sanitize the answer text to prevent JSON encoding issues
-          const answerText = sanitizeUserInput(rawAnswerText);
+          // Preserve rich text HTML — sanitization happens at render time (DOMPurify)
+          const answerText = rawAnswerText;
 
           const submissionData = {
             answer: answerText,
@@ -291,7 +293,7 @@ export async function POST(request: NextRequest) {
         }
       );
 
-      const { error: submissionsError } = await supabase
+      const { error: submissionsError } = await getSupabase()
         .from("submissions")
         .upsert(submissionInserts, { onConflict: "session_id,q_idx" })
         .select();
@@ -312,7 +314,7 @@ export async function POST(request: NextRequest) {
 
       // ★ 세션 상태 변경은 답안 저장 성공 후에만 수행
       // Guard: only update if not already submitted (prevents duplicate submissions)
-      const { data: updatedSession, error: updateSessionError } = await supabase
+      const { data: updatedSession, error: updateSessionError } = await getSupabase()
         .from("sessions")
         .update({
           compressed_session_data: compressedSessionData.data,
@@ -333,7 +335,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Atomic student_count increment (race-safe via RPC)
-      const { error: rpcError } = await supabase.rpc(
+      const { error: rpcError } = await getSupabase().rpc(
         "increment_student_count",
         { p_exam_id: exam.id }
       );
