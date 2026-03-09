@@ -62,7 +62,6 @@
     "embla-carousel-react": "^8.6.0",
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
-    "isomorphic-dompurify": "^3.0.0",
     "jspdf": "^3.0.4",
     "katex": "^0.16.22",
     "lucide-react": "^0.541.0",

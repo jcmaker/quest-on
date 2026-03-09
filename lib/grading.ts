@@ -51,12 +51,12 @@ interface AutoGradeResult {
   decompressionWarnings?: DecompressionWarning[];
 }
 
-import DOMPurify from "isomorphic-dompurify";
+import { sanitizeUserInput } from "@/lib/sanitize";
 
-/** P0-4: Sanitize AI-generated comment using DOMPurify — strips ALL HTML tags to prevent XSS */
+/** P0-4: Sanitize AI-generated comment — strips ALL HTML tags to prevent XSS */
 function sanitizeComment(comment: string): string {
   if (!comment) return "";
-  return DOMPurify.sanitize(comment, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).slice(0, 10000);
+  return sanitizeUserInput(comment).slice(0, 10000);
 }
 
 /** Clamp a score to [0, 100] and log if clamping occurred */
