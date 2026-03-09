@@ -38,11 +38,19 @@ export function useAutoSave({
   const [isOnline, setIsOnline] = useState(true);
   const consecutiveFailures = useRef(0);
   const wasOfflineRef = useRef(false);
+  const savingRef = useRef(false);
+
+  // Keep a ref to latest draftAnswers — used by event handlers to avoid stale closures
+  const draftAnswersRef = useRef(draftAnswers);
+  draftAnswersRef.current = draftAnswers;
 
   const saveDrafts = useCallback(
     async (answers: DraftAnswer[]) => {
       if (!sessionId || !examExists) return;
+      // 이전 요청이 진행 중이면 스킵 — 동시 요청 방지
+      if (savingRef.current) return;
 
+      savingRef.current = true;
       setIsSaving(true);
       try {
         const response = await fetch("/api/supa", {
@@ -76,6 +84,7 @@ export function useAutoSave({
           setSaveError(true);
         }
       } finally {
+        savingRef.current = false;
         setIsSaving(false);
       }
     },
@@ -93,8 +102,8 @@ export function useAutoSave({
       setIsOnline(true);
       if (wasOfflineRef.current) {
         wasOfflineRef.current = false;
-        // Immediate save on reconnect
-        saveDrafts(draftAnswers);
+        // Immediate save on reconnect — use ref for latest answers
+        saveDrafts(draftAnswersRef.current);
       }
     };
     const handleOffline = () => {
@@ -109,20 +118,20 @@ export function useAutoSave({
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [saveDrafts, draftAnswers]);
+  }, [saveDrafts]);
 
   // Keyboard shortcut (Ctrl+S / Cmd+S)
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "s") {
         event.preventDefault();
-        saveDrafts(draftAnswers);
+        saveDrafts(draftAnswersRef.current);
       }
     };
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [saveDrafts, draftAnswers]);
+  }, [saveDrafts]);
 
   // Auto-save interval with jitter to spread requests across 50 students
   useEffect(() => {
@@ -130,12 +139,13 @@ export function useAutoSave({
 
     function scheduleNext() {
       timeout = setTimeout(() => {
+        const current = draftAnswersRef.current;
         if (
-          draftAnswers.some(
+          current.some(
             (answer) => answer.text && !isHtmlEmpty(answer.text)
           )
         ) {
-          saveDrafts(draftAnswers);
+          saveDrafts(current);
         }
         scheduleNext();
       }, jitter(intervalMs));
@@ -144,7 +154,7 @@ export function useAutoSave({
     scheduleNext();
 
     return () => clearTimeout(timeout);
-  }, [saveDrafts, draftAnswers, intervalMs]);
+  }, [saveDrafts, intervalMs]);
 
   const updateAnswer = useCallback(
     (questionId: string, text: string) => {
@@ -156,10 +166,6 @@ export function useAutoSave({
     },
     []
   );
-
-  // Keep a ref to latest draftAnswers for beforeunload access
-  const draftAnswersRef = useRef(draftAnswers);
-  draftAnswersRef.current = draftAnswers;
 
   // Save via sendBeacon (for beforeunload)
   const saveViaBeacon = useCallback(() => {

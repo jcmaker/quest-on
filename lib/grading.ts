@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { openai, AI_MODEL_HEAVY } from "@/lib/openai";
+import { getOpenAI, AI_MODEL_HEAVY } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import {
   buildUnifiedGradingSystemPrompt,
@@ -27,8 +27,8 @@ import type {
   SummaryData,
 } from "@/lib/types/grading";
 
-/** Maximum time for the entire grading operation (180 seconds — heavy model needs more headroom) */
-const GRADING_TIMEOUT_MS = 180_000;
+/** Maximum time for the entire grading operation (240 seconds — must fit within Vercel maxDuration=300s with room for summary) */
+const GRADING_TIMEOUT_MS = 240_000;
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -53,8 +53,14 @@ interface AutoGradeResult {
  * Outer timeout (90s) 적용 — 시간 초과 시 완료된 채점만 저장
  */
 export async function autoGradeSession(
-  sessionId: string
+  sessionId: string,
+  options?: { signal?: AbortSignal }
 ): Promise<AutoGradeResult> {
+  const abortController = new AbortController();
+  // If caller provides an external signal, forward its abort
+  if (options?.signal) {
+    options.signal.addEventListener("abort", () => abortController.abort(), { once: true });
+  }
   // 1. 세션 정보 가져오기
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
@@ -133,7 +139,7 @@ export async function autoGradeSession(
 
   // 7-8. 각 문제별 채점 (병렬 처리로 ~5배 속도 개선)
   // 루브릭은 문제별로 resolveQuestionRubric을 사용하여 해결
-  const chatWeight = exam.chat_weight ?? 50;
+  const chatWeight = Math.max(0, Math.min(100, exam.chat_weight ?? 50));
 
   const gradePromises = questions.map(async (question): Promise<GradeResult | null> => {
     // Per-question rubric resolution
@@ -178,14 +184,14 @@ export async function autoGradeSession(
 
     const tracked = await callTrackedChatCompletion(
       () =>
-        openai.chat.completions.create({
+        getOpenAI().chat.completions.create({
           model: AI_MODEL_HEAVY,
           messages: [
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
           response_format: { type: "json_object" },
-        }),
+        }, { signal: abortController.signal }),
       {
         feature: "auto_grading_question",
         route: "lib/grading.ts",
@@ -222,7 +228,7 @@ export async function autoGradeSession(
       answer_score: z.number().optional(),
       answer_comment: z.string().optional(),
       overall_comment: z.string().optional(),
-      rubric_scores: z.record(z.string(), z.number()).optional(),
+      rubric_scores: z.record(z.string(), z.number().min(0).max(5)).optional(),
     });
 
     let rawParsed: unknown;
@@ -304,22 +310,30 @@ export async function autoGradeSession(
   // 모든 문제 병렬 채점 실행 (with outer timeout)
   // Track settlement of each promise so we can recover partial results on timeout
   // Pre-fill with default fulfilled(null) to avoid undefined access on timeout
+  let gradingDone = false;
   const settled: Array<PromiseSettledResult<GradeResult | null>> =
     Array.from({ length: gradePromises.length }, () => ({ status: "fulfilled" as const, value: null }));
   gradePromises.forEach((p, i) => {
     p.then(
-      (value) => { settled[i] = { status: "fulfilled", value }; },
-      (reason) => { settled[i] = { status: "rejected", reason }; }
+      (value) => { if (!gradingDone) settled[i] = { status: "fulfilled", value }; },
+      (reason) => { if (!gradingDone) settled[i] = { status: "rejected", reason }; }
     );
   });
 
   const gradingPromise = Promise.allSettled(gradePromises);
-  const timeoutPromise = new Promise<"TIMEOUT">((resolve) =>
-    setTimeout(() => resolve("TIMEOUT"), GRADING_TIMEOUT_MS)
-  );
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<"TIMEOUT">((resolve) => {
+    timeoutId = setTimeout(() => resolve("TIMEOUT"), GRADING_TIMEOUT_MS);
+  });
 
   const raceResult = await Promise.race([gradingPromise, timeoutPromise]);
+  clearTimeout(timeoutId!);
   const timedOut = raceResult === "TIMEOUT";
+
+  if (timedOut) {
+    gradingDone = true;
+    abortController.abort();
+  }
 
   // On timeout, snapshot whatever results have settled so far
   const gradeResults: Array<PromiseSettledResult<GradeResult | null>> = timedOut
@@ -555,7 +569,7 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
 
     const tracked = await callTrackedChatCompletion(
       () =>
-        openai.chat.completions.create({
+        getOpenAI().chat.completions.create({
           model: AI_MODEL_HEAVY,
           messages: [
             { role: "system", content: systemPrompt },
@@ -589,11 +603,19 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
     );
     const completion = tracked.data;
 
-    let result: SummaryData;
+    const summaryResponseSchema = z.object({
+      sentiment: z.enum(["positive", "negative", "neutral"]),
+      summary: z.string(),
+      strengths: z.array(z.string()),
+      weaknesses: z.array(z.string()),
+      keyQuotes: z.array(z.string()).optional(),
+    });
+
+    let rawSummary: unknown;
     try {
-      result = JSON.parse(
+      rawSummary = JSON.parse(
         completion.choices[0]?.message?.content || "{}"
-      ) as SummaryData;
+      );
     } catch (parseErr) {
       const rawContent = completion.choices[0]?.message?.content ?? "(empty)";
       logError("[AUTO_GRADE] Failed to parse summary JSON response", parseErr, {
@@ -602,6 +624,16 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
       });
       return null;
     }
+
+    const summaryValidation = summaryResponseSchema.safeParse(rawSummary);
+    if (!summaryValidation.success) {
+      logError("[AUTO_GRADE] Summary response schema validation failed", summaryValidation.error, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, rawContent: JSON.stringify(rawSummary).slice(0, 500) },
+      });
+      return null;
+    }
+    const result: SummaryData = summaryValidation.data;
 
     const aiDependencySummary = summarizeAiDependencyAssessments(
       grades.map((grade) => ({

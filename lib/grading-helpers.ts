@@ -213,9 +213,11 @@ export function calculateWeightedScore(
         stageGrading.answer.score * answerWeight
     );
   } else if (stageGrading.chat) {
-    finalScore = stageGrading.chat.score;
+    // 단일 스테이지에도 weight 적용: chat만 있으면 최대 chatWeight% 반영
+    finalScore = Math.round(stageGrading.chat.score * chatWeight);
   } else if (stageGrading.answer) {
-    finalScore = stageGrading.answer.score;
+    // 단일 스테이지에도 weight 적용: answer만 있으면 최대 answerWeight% 반영
+    finalScore = Math.round(stageGrading.answer.score * answerWeight);
   }
 
   return Math.max(0, Math.min(100, finalScore));

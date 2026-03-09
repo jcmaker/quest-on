@@ -232,35 +232,25 @@ export async function saveDraftAnswers(data: {
   answers: Array<{ questionId: string; text: string }>;
 }) {
   try {
-    // Verify session ownership
+    // 1. Auth + session ownership (1 query)
     const user = await currentUser();
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
     const { data: sessionCheck } = await supabase
       .from("sessions")
-      .select("student_id")
+      .select("student_id, exam_id")
       .eq("id", data.sessionId)
       .single();
     if (!sessionCheck || sessionCheck.student_id !== user.id) {
       return errorJson("UNAUTHORIZED", "Session access denied", 403);
     }
 
-    // Fetch session and exam once outside the loop (avoid N+1 queries)
-    const { data: session } = await supabase
-      .from("sessions")
-      .select("exam_id")
-      .eq("id", data.sessionId)
-      .single();
-
-    if (!session) {
-      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
-    }
-
+    // 2. Fetch exam questions for questionId→qIdx mapping (1 query)
     const { data: exam } = await supabase
       .from("exams")
       .select("questions")
-      .eq("id", session.exam_id)
+      .eq("id", sessionCheck.exam_id)
       .single();
 
     if (!exam || !exam.questions) {
@@ -268,35 +258,73 @@ export async function saveDraftAnswers(data: {
     }
 
     const questions = exam.questions as Array<{ id: string }>;
-    const results = [];
+    const questionCount = questions.length;
+
+    // 3. Fetch all existing submissions for this session (1 query)
+    const { data: existingSubmissions } = await supabase
+      .from("submissions")
+      .select("id, q_idx, answer, answer_history, edit_count, updated_at, created_at")
+      .eq("session_id", data.sessionId);
+
+    const existingByQIdx = new Map(
+      (existingSubmissions || []).map((s) => [s.q_idx as number, s])
+    );
+
+    // 4. Build batch upsert payloads
+    const now = new Date().toISOString();
+    const upsertPayloads: Array<Record<string, unknown>> = [];
     const failedDrafts: Array<{ questionId: string; error: string }> = [];
 
     for (const answer of data.answers) {
-      if (answer.text.trim()) {
-        const questionIndex = questions.findIndex(
-          (q) => q.id === answer.questionId
-        );
+      if (!answer.text.trim()) continue;
 
-        if (questionIndex !== -1) {
-          const result = await saveDraft({
-            sessionId: data.sessionId,
-            questionId: questionIndex.toString(),
-            answer: answer.text,
-          });
-
-          if (result.status === 200) {
-            const resultData = await result.json();
-            results.push(resultData.submission);
-          } else {
-            let errorMsg = `HTTP ${result.status}`;
-            try {
-              const errData = await result.json();
-              errorMsg = errData.message || errorMsg;
-            } catch { /* ignore parse error */ }
-            failedDrafts.push({ questionId: answer.questionId, error: errorMsg });
-          }
-        }
+      const qIdx = questions.findIndex((q) => q.id === answer.questionId);
+      if (qIdx === -1 || qIdx >= questionCount) {
+        failedDrafts.push({ questionId: answer.questionId, error: "Invalid question index" });
+        continue;
       }
+
+      const existing = existingByQIdx.get(qIdx);
+      if (existing) {
+        const answerChanged = existing.answer !== answer.text;
+        let answerHistory: Array<{ text: string; timestamp: string }> = Array.isArray(existing.answer_history) ? existing.answer_history : [];
+
+        if (answerChanged && existing.answer) {
+          answerHistory = [...answerHistory, { text: existing.answer, timestamp: existing.updated_at || existing.created_at }];
+        }
+
+        upsertPayloads.push({
+          session_id: data.sessionId,
+          q_idx: qIdx,
+          answer: answer.text,
+          created_at: existing.created_at,
+          updated_at: now,
+          answer_history: answerHistory.length > 0 ? answerHistory : null,
+          edit_count: answerChanged ? (existing.edit_count || 0) + 1 : existing.edit_count || 0,
+        });
+      } else {
+        upsertPayloads.push({
+          session_id: data.sessionId,
+          q_idx: qIdx,
+          answer: answer.text,
+          created_at: now,
+          updated_at: now,
+          edit_count: 0,
+          answer_history: [],
+        });
+      }
+    }
+
+    // 5. Single batch upsert (1 query)
+    let results: unknown[] = [];
+    if (upsertPayloads.length > 0) {
+      const { data: upsertedData, error: upsertError } = await supabase
+        .from("submissions")
+        .upsert(upsertPayloads, { onConflict: "session_id,q_idx" })
+        .select();
+
+      if (upsertError) throw upsertError;
+      results = upsertedData || [];
     }
 
     return successJson({

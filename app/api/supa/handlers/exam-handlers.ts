@@ -50,7 +50,7 @@ export async function createExam(data: {
     const userRole = user.unsafeMetadata?.role as string;
 
     if (userRole !== "instructor") {
-      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403, `User role: ${userRole || "not set"}`);
+      return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
 
     // 시험 코드 중복 검증 및 자동 재생성
@@ -347,11 +347,11 @@ export async function getExamById(data: { id: string }) {
   try {
     // Validate input
     if (!data || !data.id) {
-      return errorJson("MISSING_EXAM_ID", "Missing exam ID", 400, "The 'id' field is required");
+      return errorJson("MISSING_EXAM_ID", "Missing exam ID", 400);
     }
 
     if (typeof data.id !== "string" || data.id.trim() === "") {
-      return errorJson("INVALID_EXAM_ID", "Invalid exam ID", 400, "Exam ID must be a non-empty string");
+      return errorJson("INVALID_EXAM_ID", "Invalid exam ID", 400);
     }
 
     // Get current user
@@ -383,14 +383,14 @@ export async function getExamById(data: { id: string }) {
 
     if (checkError) {
       if (checkError.code === "PGRST116") {
-        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "No exam exists with this ID");
+        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
       }
       throw checkError;
     }
 
     // Check if exam belongs to this instructor
     if (examExists && examExists.instructor_id !== user.id) {
-      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "Exam does not belong to this instructor");
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
     // Now fetch the full exam data (Gate 필드 포함)
@@ -405,13 +405,13 @@ export async function getExamById(data: { id: string }) {
 
     if (error) {
       if (error.code === "PGRST116") {
-        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "No exam found matching the criteria");
+        return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
       }
       throw error;
     }
 
     if (!exam) {
-      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, "Exam data is null");
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
     return successJson({ exam });

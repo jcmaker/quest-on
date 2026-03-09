@@ -1,4 +1,4 @@
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
@@ -183,22 +183,36 @@ export async function POST(request: NextRequest) {
             );
           }
 
+          // Race-safe: upsert with ignoreDuplicates prevents duplicate sessions
           const { data: newSession, error: createError } = await supabase
             .from("sessions")
-            .insert([
+            .upsert(
               {
                 exam_id: exam.id,
                 student_id: verifiedStudentId,
               },
-            ])
+              { onConflict: "exam_id,student_id", ignoreDuplicates: true }
+            )
             .select()
-            .single();
+            .maybeSingle();
 
-          if (createError || !newSession) {
-            throw createError || new Error("Failed to create session");
+          if (createError) {
+            throw createError;
           }
 
-          actualSessionId = newSession.id;
+          if (newSession) {
+            actualSessionId = newSession.id;
+          } else {
+            // ignoreDuplicates skipped — fetch existing
+            const { data: existing, error: fetchError } = await supabase
+              .from("sessions")
+              .select("id")
+              .eq("exam_id", exam.id)
+              .eq("student_id", verifiedStudentId)
+              .single();
+            if (fetchError) throw fetchError;
+            actualSessionId = existing.id;
+          }
         }
       }
 
@@ -206,41 +220,32 @@ export async function POST(request: NextRequest) {
         throw new Error("Failed to resolve submission session");
       }
 
+      // Cold-start path: if ownedSession was null (no sessionId provided),
+      // perform time check on the resolved session to prevent post-deadline submission
+      if (!ownedSession && exam.duration !== 0) {
+        const { data: resolvedSession } = await supabase
+          .from("sessions")
+          .select("attempt_timer_started_at, started_at, created_at")
+          .eq("id", actualSessionId)
+          .single();
+        if (resolvedSession) {
+          const timerStart = resolvedSession.attempt_timer_started_at
+            || resolvedSession.started_at || resolvedSession.created_at;
+          const sessionStartTime = new Date(timerStart).getTime();
+          const examDurationMs = exam.duration * 60 * 1000;
+          const gracePeriodMs = 30 * 1000;
+          if (Date.now() > sessionStartTime + examDurationMs + gracePeriodMs) {
+            return errorJson("BAD_REQUEST", "시험 시간이 종료되었습니다.", 400);
+          }
+        }
+      }
+
       const finalSessionId = actualSessionId;
 
       const submittedAt = new Date().toISOString();
 
-      // Compress session data
-      const sessionData = {
-        chatHistory: chatHistory || [],
-        answers: answers,
-      };
-
-      const compressedSessionData = compressData(sessionData);
-
-      // Update session with compressed data and deactivate
-      // Guard: only update if not already submitted (prevents duplicate submissions)
-      const { data: updatedSession, error: updateSessionError } = await supabase
-        .from("sessions")
-        .update({
-          compressed_session_data: compressedSessionData.data,
-          compression_metadata: compressedSessionData.metadata,
-          submitted_at: submittedAt,
-          status: "submitted",
-          is_active: false, // Deactivate session on submission
-        })
-        .eq("id", finalSessionId)
-        .eq("student_id", verifiedStudentId)
-        .eq("exam_id", exam.id)
-        .is("submitted_at", null)
-        .select("id")
-        .maybeSingle();
-
-      if (!updatedSession && !updateSessionError) {
-        return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
-      }
-
-      // Store individual submissions
+      // ★ 답안 먼저 저장 (세션 상태 변경 전) — 답안 손실 방지
+      // Store individual submissions BEFORE marking session as submitted
       const submissionInserts = answers.map(
         (answer: { text?: string } | string, index: number) => {
           const rawAnswerText =
@@ -297,6 +302,36 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      // Compress session data
+      const sessionData = {
+        chatHistory: chatHistory || [],
+        answers: answers,
+      };
+
+      const compressedSessionData = compressData(sessionData);
+
+      // ★ 세션 상태 변경은 답안 저장 성공 후에만 수행
+      // Guard: only update if not already submitted (prevents duplicate submissions)
+      const { data: updatedSession, error: updateSessionError } = await supabase
+        .from("sessions")
+        .update({
+          compressed_session_data: compressedSessionData.data,
+          compression_metadata: compressedSessionData.metadata,
+          submitted_at: submittedAt,
+          status: "submitted",
+          is_active: false,
+        })
+        .eq("id", finalSessionId)
+        .eq("student_id", verifiedStudentId)
+        .eq("exam_id", exam.id)
+        .is("submitted_at", null)
+        .select("id")
+        .maybeSingle();
+
+      if (!updatedSession && !updateSessionError) {
+        return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
+      }
+
       // Atomic student_count increment (race-safe via RPC)
       const { error: rpcError } = await supabase.rpc(
         "increment_student_count",
@@ -351,6 +386,13 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         targetId: actualSessionId,
         details: { examId: exam.id, examCode },
+      }).then((ok) => {
+        if (!ok) {
+          logError("[feedback] Audit log failed for session_submit", new Error("auditLog returned false"), {
+            path: "/api/feedback",
+            additionalData: { sessionId: actualSessionId, examId: exam.id },
+          });
+        }
       });
     }
 

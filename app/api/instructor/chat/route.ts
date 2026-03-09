@@ -6,7 +6,7 @@ export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
-import { openai, AI_MODEL } from "@/lib/openai";
+import { getOpenAI, AI_MODEL } from "@/lib/openai";
 import { buildInstructorChatSystemPrompt } from "@/lib/prompts";
 import { handleCorsPreFlight } from "@/lib/cors";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
@@ -42,7 +42,7 @@ async function getAIResponse(
   try {
     const { data: response } = await callTrackedResponse(
       () =>
-        openai.responses.create({
+        getOpenAI().responses.create({
           model: AI_MODEL,
           instructions: systemPrompt,
           input: userMessage,

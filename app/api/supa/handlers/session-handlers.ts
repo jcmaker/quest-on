@@ -8,6 +8,19 @@ import { logError } from "@/lib/logger";
 /** 30-second grace period for network latency (shared across heartbeat/initExamSession/feedback) */
 const GRACE_PERIOD_MS = 30_000;
 
+/** 5-minute threshold: sessions with no heartbeat for this long are considered stale (orphaned) */
+const STALE_HEARTBEAT_MS = 5 * 60 * 1000;
+
+/**
+ * Check if a session is stale based on last_heartbeat_at.
+ * A stale session is one where the heartbeat hasn't been received for STALE_HEARTBEAT_MS.
+ * Returns false if lastHeartbeatAt is null (session never had heartbeat — could be legacy).
+ */
+export function isSessionStale(lastHeartbeatAt: string | null | undefined): boolean {
+  if (!lastHeartbeatAt) return false;
+  return (Date.now() - new Date(lastHeartbeatAt).getTime()) > STALE_HEARTBEAT_MS;
+}
+
 const supabase = getSupabaseServer();
 
 /**
@@ -334,6 +347,22 @@ export async function initExamSession(data: {
       (s) => !s.submitted_at
     );
 
+    // Auto-deactivate stale sessions (orphaned from browser crash)
+    const staleSessions = unsubmittedSessions.filter(
+      (s) => s.is_active && isSessionStale(s.last_heartbeat_at)
+    );
+    if (staleSessions.length > 0) {
+      const staleIds = staleSessions.map((s) => s.id);
+      await supabase
+        .from("sessions")
+        .update({ is_active: false })
+        .in("id", staleIds);
+      // Update local state to reflect deactivation
+      for (const s of staleSessions) {
+        s.is_active = false;
+      }
+    }
+
     const incomingFingerprint = data.deviceFingerprint || null;
 
     const exactDeviceMatch =
@@ -382,19 +411,33 @@ export async function initExamSession(data: {
           .select("id, q_idx, answer, compressed_answer_data, compression_metadata")
           .eq("session_id", existingSession.id);
 
-        // 자동 제출 처리 (빈 답안이라도 제출)
+        // 자동 제출 처리 (빈 답안이라도 제출) — 이미 제출된 세션은 건너뜀
         const { data: updatedSession, error: updateError } = await supabase
           .from("sessions")
           .update({
             submitted_at: now,
             is_active: false,
+            status: "auto_submitted",
+            auto_submitted: true,
           })
           .eq("id", existingSession.id)
+          .is("submitted_at", null)
           .select()
-          .single();
+          .maybeSingle();
 
         if (updateError) throw updateError;
-        session = updatedSession;
+
+        // 이미 제출된 세션이면 기존 세션 데이터 사용
+        if (!updatedSession) {
+          const { data: alreadySubmitted } = await supabase
+            .from("sessions")
+            .select("*")
+            .eq("id", existingSession.id)
+            .single();
+          session = alreadySubmitted || existingSession;
+        } else {
+          session = updatedSession;
+        }
 
         // 메시지 로드
         const { data: sessionMessages } = await supabase
@@ -495,6 +538,7 @@ export async function initExamSession(data: {
       const initialStatus = (examStarted || exam.duration === 0) ? "in_progress" : "waiting";
 
       // Upsert session (race-safe: uses UNIQUE(exam_id, student_id) constraint)
+      // ignoreDuplicates: true prevents overwriting existing session data (timer, status)
       const { data: upsertedSession, error: upsertError } = await supabase
         .from("sessions")
         .upsert(
@@ -510,13 +554,26 @@ export async function initExamSession(data: {
             started_at: initialStatus === "in_progress" ? now : null,
             attempt_timer_started_at: initialStatus === "in_progress" ? now : null,
           },
-          { onConflict: "exam_id,student_id" }
+          { onConflict: "exam_id,student_id", ignoreDuplicates: true }
         )
         .select()
-        .single();
+        .maybeSingle();
 
       if (upsertError) throw upsertError;
-      session = upsertedSession;
+
+      // ignoreDuplicates skipped the insert — fetch existing session
+      if (!upsertedSession) {
+        const { data: existing, error: fetchError } = await supabase
+          .from("sessions")
+          .select("id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at")
+          .eq("exam_id", exam.id)
+          .eq("student_id", data.studentId)
+          .single();
+        if (fetchError) throw fetchError;
+        session = existing;
+      } else {
+        session = upsertedSession;
+      }
     }
 
     if (!session) {
@@ -672,12 +729,18 @@ export async function submitExam(data: {
     }
 
     // Audit log: session submit (awaited for critical operations)
-    await auditLog({
+    const auditOk = await auditLog({
       action: "session_submit",
       userId: verifiedStudentId,
       targetId: data.sessionId,
       details: { examId: data.examId, submissionsCount: submissionsPayload.length },
     });
+    if (!auditOk) {
+      logError("[submitExam] Audit log failed for session_submit", new Error("auditLog returned false"), {
+        path: "/api/supa/session-handlers",
+        additionalData: { sessionId: data.sessionId, examId: data.examId },
+      });
+    }
 
     return successJson({
       session: { id: data.sessionId, submitted_at: submittedAt, status: "submitted" },

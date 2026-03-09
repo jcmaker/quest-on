@@ -5,7 +5,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { generateRubricSchema, validateRequest } from "@/lib/validations";
 import { buildRubricGenerationPrompt } from "@/lib/prompts";
-import { openai, AI_MODEL } from "@/lib/openai";
+import { getOpenAI, AI_MODEL } from "@/lib/openai";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import {
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     const tracked = await callTrackedChatCompletion(
       () =>
-        openai.chat.completions.create({
+        getOpenAI().chat.completions.create({
           model: AI_MODEL,
           messages: [
             { role: "system", content: system },
@@ -83,7 +83,12 @@ export async function POST(request: NextRequest) {
       return errorJson("AI_GENERATION_FAILED", "AI 응답이 비어있습니다.", 500);
     }
 
-    const parsed = JSON.parse(content);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return errorJson("AI_GENERATION_FAILED", "AI 응답을 파싱할 수 없습니다. 다시 시도해주세요.", 500);
+    }
 
     if (!parsed.rubric || !Array.isArray(parsed.rubric)) {
       return errorJson("AI_GENERATION_FAILED", "AI 응답 형식이 올바르지 않습니다.", 500);

@@ -2,7 +2,7 @@
  * 임베딩 관련 유틸리티 함수
  */
 
-import { openai } from "./openai";
+import { getOpenAI } from "./openai";
 import {
   buildAiTextMetadata,
   callTrackedEmbedding,
@@ -34,7 +34,7 @@ export async function createEmbedding(
     const input = text.trim();
     const { data: response } = await callTrackedEmbedding(
       () =>
-        openai.embeddings.create({
+        getOpenAI().embeddings.create({
           model: EMBEDDING_MODEL,
           input,
           dimensions: EMBEDDING_DIMENSIONS,
@@ -81,7 +81,7 @@ export async function createEmbeddings(
     const inputs = texts.map((t) => t.trim());
     const { data: response } = await callTrackedEmbedding(
       () =>
-        openai.embeddings.create({
+        getOpenAI().embeddings.create({
           model: EMBEDDING_MODEL,
           input: inputs,
           dimensions: EMBEDDING_DIMENSIONS,

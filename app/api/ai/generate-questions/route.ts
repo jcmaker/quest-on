@@ -5,7 +5,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { generateCaseQuestionsSchema, validateRequest } from "@/lib/validations";
 import { buildCaseQuestionGenerationPrompt } from "@/lib/prompts";
-import { openai, AI_MODEL_HEAVY } from "@/lib/openai";
+import { getOpenAI, AI_MODEL_HEAVY } from "@/lib/openai";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import {
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
     const attemptGeneration = async () => {
       const tracked = await callTrackedChatCompletion(
         () =>
-          openai.chat.completions.create(
+          getOpenAI().chat.completions.create(
             {
               model: AI_MODEL_HEAVY,
               messages: [

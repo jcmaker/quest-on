@@ -5,7 +5,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { errorJson } from "@/lib/api-response";
 import { generateCaseQuestionsSchema, validateRequest } from "@/lib/validations";
 import { buildSingleCaseQuestionPrompt } from "@/lib/prompts";
-import { openai, AI_MODEL_HEAVY } from "@/lib/openai";
+import { getOpenAI, AI_MODEL_HEAVY } from "@/lib/openai";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import {
   buildAiTextMetadata,
@@ -46,7 +46,7 @@ async function generateSingleQuestion(
     try {
       const tracked = await callTrackedChatCompletion(
         () =>
-          openai.chat.completions.create({
+          getOpenAI().chat.completions.create({
             model: AI_MODEL_HEAVY,
             messages: [
               { role: "system", content: system },

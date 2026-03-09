@@ -6,7 +6,7 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { adjustCaseQuestionSchema, validateRequest } from "@/lib/validations";
 import { buildCaseQuestionAdjustmentPrompt } from "@/lib/prompts";
-import { openai, AI_MODEL } from "@/lib/openai";
+import { getOpenAI, AI_MODEL } from "@/lib/openai";
 import {
   buildAiTextMetadata,
   callTrackedChatCompletion,
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     // Call OpenAI
     const tracked = await callTrackedChatCompletion(
       () =>
-        openai.chat.completions.create({
+        getOpenAI().chat.completions.create({
           model: AI_MODEL,
           messages: [
             { role: "system", content: system },

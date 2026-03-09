@@ -83,6 +83,7 @@ export function useExamSession({
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   // Internal refs for beforeunload (track latest values)
   const sessionIdRef = useRef<string | null>(null);
+  const [heartbeatSessionId, setHeartbeatSessionId] = useState<string | null>(null);
   const isSubmittedRef = useRef(false);
   isSubmittedRef.current = isSubmitted;
 
@@ -178,6 +179,7 @@ export function useExamSession({
       setIsSubmitted(true);
       setSessionId(initData.session.id);
       sessionIdRef.current = initData.session.id;
+      setHeartbeatSessionId(initData.session.id);
       if (initData.messages) setChatHistory(initData.messages);
       setExamInitialized(true);
       return;
@@ -187,6 +189,7 @@ export function useExamSession({
       setIsSubmitted(true);
       setSessionId(initData.session.id);
       sessionIdRef.current = initData.session.id;
+      setHeartbeatSessionId(initData.session.id);
       if (initData.messages) setChatHistory(initData.messages);
       setExamInitialized(true);
       return;
@@ -206,6 +209,7 @@ export function useExamSession({
     if (initData.session) {
       setSessionId(initData.session.id);
       sessionIdRef.current = initData.session.id;
+      setHeartbeatSessionId(initData.session.id);
 
       const currentSessionStatus =
         initData.sessionStatus || initData.session.status || "not_joined";
@@ -259,11 +263,11 @@ export function useExamSession({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initData, router]);
 
-  // Heartbeat — uses sessionIdRef for the query key to avoid stale closure
+  // Heartbeat — uses heartbeatSessionId state for reactive query key
   const { data: heartbeatData } = useQuery({
-    queryKey: ["session-heartbeat", sessionIdRef.current],
+    queryKey: ["session-heartbeat", heartbeatSessionId],
     queryFn: async () => {
-      const sid = sessionIdRef.current;
+      const sid = heartbeatSessionId;
       if (!sid) return null;
       const response = await fetch("/api/supa", {
         method: "POST",
@@ -276,7 +280,7 @@ export function useExamSession({
       if (!response.ok) return null;
       return response.json();
     },
-    enabled: !!sessionIdRef.current && !!user && !isSubmitted,
+    enabled: !!heartbeatSessionId && !!user && !isSubmitted,
     refetchInterval: timeRemaining !== null && timeRemaining <= 300 ? 30000 : 60000,
     refetchIntervalInBackground: true,
     staleTime: 0,

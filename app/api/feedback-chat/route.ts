@@ -8,7 +8,7 @@ export const maxDuration = 60;
 
 import { NextRequest } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
-import { openai, AI_MODEL } from "@/lib/openai";
+import { getOpenAI, AI_MODEL } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { compressData } from "@/lib/compression";
 import { buildFeedbackChatSystemPrompt, type RubricItem } from "@/lib/prompts";
@@ -30,8 +30,8 @@ const feedbackChatRouteSchema = z.object({
   questionId: z.string().optional(),
   conversationHistory: z.array(z.object({
     type: z.string(),
-    content: z.string(),
-  })).optional(),
+    content: z.string().max(10000).transform(sanitizeUserInput),
+  })).max(50).optional(),
   studentId: z.string().optional(),
 });
 
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
 
     const tracked = await callTrackedChatCompletion(
       () =>
-        openai.chat.completions.create({
+        getOpenAI().chat.completions.create({
           model: AI_MODEL,
           messages: [
             { role: "system", content: systemPrompt },
