@@ -1,35 +1,44 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { decompressData } from "@/lib/compression";
-import { currentUser } from "@clerk/nextjs/server";
-import { openai, AI_MODEL } from "@/lib/openai";
-import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
+export const maxDuration = 120;
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { NextRequest } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { decompressData } from "@/lib/compression";
+import { currentUser } from "@/lib/get-current-user";
+import { getOpenAI, AI_MODEL_HEAVY } from "@/lib/openai";
+import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
+import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import {
+  buildAiTextMetadata,
+  callTrackedChatCompletion,
+} from "@/lib/ai-tracking";
+
+const supabase = getSupabaseServer();
 
 export async function POST(request: NextRequest) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
+    }
+
+    // Rate limit: expensive OpenAI summary generation
+    const rl = await checkRateLimitAsync(`ai:generate-summary:${user.id}`, RATE_LIMITS.ai);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please wait.", 429);
     }
 
     const body = await request.json();
     const { sessionId } = body;
 
     if (!sessionId) {
-      return NextResponse.json(
-        { error: "Session ID required" },
-        { status: 400 }
-      );
+      return errorJson("MISSING_SESSION_ID", "Session ID required", 400);
     }
 
     // Fetch session
@@ -40,7 +49,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
     // Fetch exam
@@ -51,17 +60,17 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Fetch submissions
     const { data: submissions, error: submissionsError } = await supabase
       .from("submissions")
-      .select("*")
+      .select("q_idx, answer, compressed_answer_data")
       .eq("session_id", sessionId);
 
     if (submissionsError) {
@@ -75,8 +84,8 @@ export async function POST(request: NextRequest) {
         try {
           const decompressed = decompressData(sub.compressed_answer_data);
           answer = (decompressed as { answer?: string }).answer || answer;
-        } catch (e) {
-          console.error("Decompression error", e);
+        } catch {
+          // Use original answer on decompression failure
         }
       }
       return {
@@ -132,14 +141,41 @@ JSON 형식으로 응답해주세요:
 }
 `;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-    });
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        getOpenAI().chat.completions.create({
+          model: AI_MODEL_HEAVY,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      {
+        feature: "generate_summary",
+        route: "/api/instructor/generate-summary",
+        model: AI_MODEL_HEAVY,
+        userId: user.id,
+        examId: exam.id,
+        sessionId,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userPrompt],
+          extra: {
+            question_count: processedSubmissions.length,
+          },
+        }),
+      },
+      {
+        timeoutMs: 60_000,
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
+          }),
+      }
+    );
+    const completion = tracked.data;
 
     const result = JSON.parse(completion.choices[0].message.content || "{}");
 
@@ -150,16 +186,16 @@ JSON 형식으로 응답해주세요:
       .eq("id", sessionId);
 
     if (updateError) {
-      console.error("Error saving summary to database:", updateError);
-      // Don't fail the request, just log the error
+      // Don't fail the request if saving summary fails
     }
 
-    return NextResponse.json({ summary: result });
+    return successJson({ summary: result });
   } catch (error: unknown) {
-    console.error("Summary generation error:", error);
-    return NextResponse.json(
-      { error: (error as Error).message || "Internal server error" },
-      { status: 500 }
+    logError("Summary generation failed", error, { path: "/api/instructor/generate-summary" });
+    return errorJson(
+      "SUMMARY_GENERATION_FAILED",
+      "요약 생성 중 오류가 발생했습니다.",
+      500
     );
   }
 }

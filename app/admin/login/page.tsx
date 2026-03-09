@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Shield, Eye, EyeOff } from "lucide-react";
+import { ErrorAlert } from "@/components/ui/error-alert";
 
 export default function AdminLoginPage() {
   const [username, setUsername] = useState("");
@@ -41,10 +42,9 @@ export default function AdminLoginPage() {
       if (response.ok) {
         router.push("/admin");
       } else {
-        setError(data.error || "로그인에 실패했습니다.");
+        setError(data.message || data.error || "로그인에 실패했습니다.");
       }
-    } catch (error) {
-      console.error("Login error:", error);
+    } catch {
       setError("서버 오류가 발생했습니다.");
     } finally {
       setIsLoading(false);
@@ -105,11 +105,7 @@ export default function AdminLoginPage() {
                 </Button>
               </div>
             </div>
-            {error && (
-              <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
-                {error}
-              </div>
-            )}
+            {error && <ErrorAlert message={error} />}
             <Button
               type="submit"
               className="w-full h-12 text-lg"

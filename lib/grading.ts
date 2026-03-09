@@ -1,50 +1,103 @@
-import { openai, AI_MODEL } from "@/lib/openai";
-import { createClient } from "@supabase/supabase-js";
-import { decompressData } from "@/lib/compression";
+import { z } from "zod";
+import { getOpenAI, AI_MODEL_HEAVY } from "@/lib/openai";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import {
-  buildChatGradingSystemPrompt,
-  buildAnswerGradingSystemPrompt,
+  buildUnifiedGradingSystemPrompt,
+  buildUnifiedGradingUserPrompt,
   buildSummaryEvaluationSystemPrompt,
 } from "@/lib/prompts";
+import { logError } from "@/lib/logger";
+import {
+  decompressSubmissions,
+  decompressMessages,
+  normalizeQuestions,
+  buildRubricText,
+  calculateWeightedScore,
+  analyzeAiDependency,
+  formatAiDependencyForPrompt,
+  summarizeAiDependencyAssessments,
+  resolveQuestionRubric,
+  type DecompressionWarning,
+} from "@/lib/grading-helpers";
+import {
+  buildAiTextMetadata,
+  callTrackedChatCompletion,
+} from "@/lib/ai-tracking";
+import type {
+  StageGrading,
+  SummaryData,
+} from "@/lib/types/grading";
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+/** Maximum time for the entire grading operation (240 seconds — must fit within Vercel maxDuration=300s with room for summary) */
+const GRADING_TIMEOUT_MS = 240_000;
 
 interface GradeResult {
   q_idx: number;
   score: number; // 0-100
   comment: string;
-  stage_grading?: {
-    chat?: { score: number; comment: string };
-    answer?: { score: number; comment: string };
-    feedback?: { score: number; comment: string };
-  };
+  stage_grading?: StageGrading;
 }
 
-interface SummaryResult {
-  sentiment: "positive" | "negative" | "neutral";
-  summary: string;
-  strengths: string[];
-  weaknesses: string[];
-  keyQuotes: string[];
+interface FailedGradeResult {
+  q_idx: number;
+  failureReason: string;
+}
+
+interface AutoGradeResult {
+  grades: GradeResult[];
+  summary: SummaryData | null;
+  failedQuestions: number[];
+  timedOut: boolean;
+  decompressionWarnings?: DecompressionWarning[];
+}
+
+import DOMPurify from "isomorphic-dompurify";
+
+/** P0-4: Sanitize AI-generated comment using DOMPurify — strips ALL HTML tags to prevent XSS */
+function sanitizeComment(comment: string): string {
+  if (!comment) return "";
+  return DOMPurify.sanitize(comment, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).slice(0, 10000);
+}
+
+/** Clamp a score to [0, 100] and log if clamping occurred */
+function clampAndLog(
+  score: number,
+  context: { sessionId: string; qIdx: number; field: string }
+): { value: number; clamped: boolean } {
+  const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  const wasClamped = clamped !== Math.round(score);
+  if (wasClamped) {
+    logError("[AUTO_GRADE] Score clamped to 0-100 range", null, {
+      path: "lib/grading.ts",
+      additionalData: {
+        sessionId: context.sessionId,
+        qIdx: context.qIdx,
+        field: context.field,
+        originalScore: score,
+        clampedScore: clamped,
+      },
+    });
+  }
+  return { value: clamped, clamped: wasClamped };
 }
 
 /**
  * 서버 사이드 자동 채점 함수
  * 루브릭 기반으로 각 문제를 0-100점으로 채점
+ * Outer timeout (90s) 적용 — 시간 초과 시 완료된 채점만 저장
  */
 export async function autoGradeSession(
-  sessionId: string
-): Promise<{ grades: GradeResult[]; summary: SummaryResult | null }> {
-  const startTime = Date.now();
-
-  console.log(
-    `🤖 [AUTO_GRADE] Starting auto-grading for session: ${sessionId}`
-  );
-
+  sessionId: string,
+  options?: { signal?: AbortSignal }
+): Promise<AutoGradeResult> {
+  // P1-3: Track request start time for Vercel maxDuration budget calculation
+  const requestStartTime = Date.now();
+  const supabase = getSupabaseServer();
+  const abortController = new AbortController();
+  // If caller provides an external signal, forward its abort
+  if (options?.signal) {
+    options.signal.addEventListener("abort", () => abortController.abort(), { once: true });
+  }
   // 1. 세션 정보 가져오기
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
@@ -59,7 +112,7 @@ export async function autoGradeSession(
   // 2. 시험 정보 가져오기 (루브릭 포함)
   const { data: exam, error: examError } = await supabase
     .from("exams")
-    .select("id, title, questions, rubric")
+    .select("id, title, questions, rubric, chat_weight")
     .eq("id", session.exam_id)
     .single();
 
@@ -75,10 +128,7 @@ export async function autoGradeSession(
       id,
       q_idx,
       answer,
-      ai_feedback,
-      student_reply,
       compressed_answer_data,
-      compressed_feedback_data,
       created_at
     `
     )
@@ -86,20 +136,11 @@ export async function autoGradeSession(
     .order("created_at", { ascending: false }); // 최신 것부터 정렬
 
   if (submissionsError) {
-    console.error(
-      "❌ [AUTO_GRADE] Error fetching submissions:",
-      submissionsError
-    );
     throw new Error(`Failed to fetch submissions: ${submissionsError.message}`);
   }
 
   if (!submissions || submissions.length === 0) {
-    console.warn(
-      `⚠️ [AUTO_GRADE] No submissions found for session: ${sessionId}`
-    );
     // submissions가 없어도 계속 진행 (메시지만으로 채점 가능할 수 있음)
-  } else {
-    console.log(`📤 [AUTO_GRADE] Found ${submissions.length} submissions`);
   }
 
   // 4. 메시지 가져오기 (채팅 기록)
@@ -119,480 +160,515 @@ export async function autoGradeSession(
     .order("created_at", { ascending: true });
 
   if (messagesError) {
-    console.error("❌ [AUTO_GRADE] Error fetching messages:", messagesError);
     // messages는 필수가 아니므로 에러를 throw하지 않음
-  } else {
-    console.log(`💬 [AUTO_GRADE] Found ${messages?.length || 0} messages`);
-  }
-
-  // 5. 데이터 압축 해제 및 정리
-  // 같은 q_idx에 여러 submission이 있으면 가장 최신 것(또는 가장 완전한 것)을 선택
-  const submissionsByQuestion: Record<
-    number,
-    {
-      answer: string;
-      ai_feedback?: string;
-      student_reply?: string;
-    }
-  > = {};
-
-  if (submissions) {
-    // q_idx별로 그룹화하고, 각 그룹에서 가장 최신이거나 가장 완전한 것을 선택
-    const submissionsByQIdx = new Map<number, Array<Record<string, unknown>>>();
-
-    submissions.forEach((submission: Record<string, unknown>) => {
-      const qIdx = submission.q_idx as number;
-      if (!submissionsByQIdx.has(qIdx)) {
-        submissionsByQIdx.set(qIdx, []);
-      }
-      submissionsByQIdx.get(qIdx)!.push(submission);
-    });
-
-    // 각 q_idx에 대해 가장 좋은 submission 선택
-    submissionsByQIdx.forEach((subs, qIdx) => {
-      // 같은 q_idx에 여러 submission이 있으면:
-      // 1. answer가 가장 긴 것 (더 완전한 답안)
-      // 2. ai_feedback이 있는 것
-      // 3. 가장 최신 것
-      const bestSubmission = subs.reduce((best, current) => {
-        const bestAnswer = (best.answer as string) || "";
-        const currentAnswer = (current.answer as string) || "";
-        const bestHasFeedback = !!best.ai_feedback;
-        const currentHasFeedback = !!current.ai_feedback;
-
-        // ai_feedback이 있는 것을 우선
-        if (currentHasFeedback && !bestHasFeedback) return current;
-        if (bestHasFeedback && !currentHasFeedback) return best;
-
-        // answer가 더 긴 것을 우선
-        if (currentAnswer.length > bestAnswer.length) return current;
-        if (bestAnswer.length > currentAnswer.length) return best;
-
-        // 최신 것을 우선 (created_at 비교)
-        const bestCreated = best.created_at
-          ? new Date(best.created_at as string).getTime()
-          : 0;
-        const currentCreated = current.created_at
-          ? new Date(current.created_at as string).getTime()
-          : 0;
-        return currentCreated > bestCreated ? current : best;
-      });
-
-      let answer = (bestSubmission.answer as string) || "";
-
-      if (
-        bestSubmission.compressed_answer_data &&
-        typeof bestSubmission.compressed_answer_data === "string"
-      ) {
-        try {
-          const decompressed = decompressData(
-            bestSubmission.compressed_answer_data as string
-          );
-          answer = (decompressed as { answer?: string })?.answer || answer;
-        } catch (error) {
-          console.error(
-            `❌ [AUTO_GRADE] Error decompressing answer data for q_idx ${qIdx}:`,
-            error
-          );
-        }
-      }
-
-      // ai_feedback 처리 (JSON 객체일 수 있음)
-      let aiFeedback: string | undefined = undefined;
-      if (bestSubmission.ai_feedback) {
-        if (typeof bestSubmission.ai_feedback === "string") {
-          aiFeedback = bestSubmission.ai_feedback;
-        } else if (
-          typeof bestSubmission.ai_feedback === "object" &&
-          bestSubmission.ai_feedback !== null
-        ) {
-          // JSON 객체인 경우 feedback 필드 추출
-          const feedbackObj = bestSubmission.ai_feedback as {
-            feedback?: string;
-          };
-          aiFeedback = feedbackObj.feedback;
-        }
-      }
-
-      submissionsByQuestion[qIdx] = {
-        answer: answer || "",
-        ai_feedback: aiFeedback,
-        student_reply:
-          typeof bestSubmission.student_reply === "string"
-            ? bestSubmission.student_reply
-            : undefined,
-      };
-
-      if (subs.length > 1) {
-        console.log(
-          `⚠️ [AUTO_GRADE] Found ${subs.length} submissions for q_idx ${qIdx}, using the best one`
-        );
-      }
-    });
-
-    console.log(
-      `📝 [AUTO_GRADE] Processed ${submissionsByQIdx.size} unique questions from submissions`
-    );
-  }
-
-  const messagesByQuestion: Record<
-    number,
-    Array<{ role: string; content: string }>
-  > = {};
-
-  if (messages) {
-    messages.forEach((message: Record<string, unknown>) => {
-      const qIdx = message.q_idx as number;
-      let content = message.content as string;
-
-      if (
-        message.compressed_content &&
-        typeof message.compressed_content === "string"
-      ) {
-        try {
-          content =
-            (decompressData(message.compressed_content as string) as string) ||
-            content;
-        } catch (error) {
-          console.error("Error decompressing message content:", error);
-        }
-      }
-
-      if (!messagesByQuestion[qIdx]) {
-        messagesByQuestion[qIdx] = [];
-      }
-
-      messagesByQuestion[qIdx].push({
-        role: message.role as string,
-        content: content || "",
-      });
+    logError("[AUTO_GRADE] Error fetching messages", messagesError, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId },
     });
   }
+
+  // P1-3: Log large sessions for monitoring (grading needs all messages, no limit applied)
+  if (messages && messages.length > 200) {
+    logError("[AUTO_GRADE] Large session detected — high message count", null, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, messageCount: messages.length },
+    });
+  }
+
+  // 5. 데이터 압축 해제 및 정리 (헬퍼 함수 사용)
+  const decompressionWarnings: DecompressionWarning[] = [];
+  const submissionsByQuestion = decompressSubmissions(submissions || [], decompressionWarnings);
+  const messagesByQuestion = decompressMessages(messages || [], decompressionWarnings);
 
   // 6. 문제 정규화
-  const questions: Array<{
-    idx: number;
-    prompt?: string;
-    ai_context?: string;
-  }> = exam.questions
-    ? Array.isArray(exam.questions)
-      ? exam.questions.map((q: Record<string, unknown>, index: number) => ({
-          idx: q.idx !== undefined ? (q.idx as number) : index,
-          prompt:
-            typeof q.prompt === "string"
-              ? q.prompt
-              : typeof q.text === "string"
-              ? q.text
-              : undefined,
-          ai_context:
-            typeof q.ai_context === "string" ? q.ai_context : undefined,
-        }))
-      : []
-    : [];
+  const questions = normalizeQuestions(exam.questions);
 
-  // 7. 루브릭 텍스트 생성
-  const rubricItems =
-    exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
-      ? (exam.rubric as Array<{
-          evaluationArea: string;
-          detailedCriteria: string;
-        }>)
-      : [];
+  // 7-8. 각 문제별 채점 (병렬 처리로 ~5배 속도 개선)
+  // 루브릭은 문제별로 resolveQuestionRubric을 사용하여 해결
+  const chatWeight = Math.max(0, Math.min(100, exam.chat_weight ?? 50));
 
-  const rubricText =
-    rubricItems.length > 0
-      ? `
-**평가 루브릭 기준:**
-${rubricItems
-  .map(
-    (
-      item: {
-        evaluationArea: string;
-        detailedCriteria: string;
-      },
-      index: number
-    ) =>
-      `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
-  )
-  .join("\n")}
-`
-      : "";
+  const failedGradeResults: FailedGradeResult[] = [];
 
-  // 8. 각 문제별 채점
-  const grades: GradeResult[] = [];
-
-  for (const question of questions) {
-    const qIdx = question.idx;
-    let submission = submissionsByQuestion[qIdx];
-    if (!submission && questions.indexOf(question) >= 0) {
-      const questionIndex = questions.indexOf(question);
-      submission = submissionsByQuestion[questionIndex];
+  const gradePromises = questions.map(async (question): Promise<GradeResult | null> => {
+    // Per-question rubric resolution (resolveQuestionRubric returns DEFAULT_RUBRIC when empty)
+    const rubricItems = resolveQuestionRubric(question, exam.rubric);
+    if (rubricItems.length === 1 && rubricItems[0].evaluationArea === "전반적 답변 품질") {
+      logError("[AUTO_GRADE] Using default rubric — no rubric configured for question or exam", null, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx: question.idx, examId: exam.id },
+      });
     }
+    const rubricText = buildRubricText(rubricItems);
+    const rubricScoresSchema = rubricItems
+      .map(
+        (item) =>
+          `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
+      )
+      .join(",\n");
+    const qIdx = question.idx;
+    const submission = submissionsByQuestion[qIdx];
+    // No fallback — if no submission matches question.idx, treat as unanswered
     const questionMessages = messagesByQuestion[qIdx] || [];
+    const aiDependencyAssessment = analyzeAiDependency({
+      messages: questionMessages,
+      finalAnswer: submission?.answer || "",
+    });
 
     if (!submission) {
-      console.log(
-        `⚠️ [AUTO_GRADE] No submission found for question ${qIdx}, skipping`
+      return null;
+    }
+
+    // Unified grading: single call evaluates both chat + answer together
+    const systemPrompt = buildUnifiedGradingSystemPrompt({
+      rubricText,
+      rubricScoresSchema,
+      chatWeightPercent: chatWeight,
+    });
+
+    const userPrompt = buildUnifiedGradingUserPrompt({
+      questionPrompt: question.prompt || "",
+      questionAiContext: question.ai_context,
+      messages: questionMessages,
+      answer: submission.answer || "",
+      aiDependencyAssessment,
+    });
+
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        getOpenAI().chat.completions.create({
+          model: AI_MODEL_HEAVY,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }, { signal: abortController.signal }),
+      {
+        feature: "auto_grading_question",
+        route: "lib/grading.ts",
+        model: AI_MODEL_HEAVY,
+        userId: session.student_id,
+        examId: exam.id,
+        sessionId,
+        qIdx,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userPrompt],
+          extra: {
+            chat_weight: chatWeight,
+            rubric_item_count: rubricItems.length,
+            message_count: questionMessages.length,
+          },
+        }),
+      },
+      {
+        timeoutMs: 90_000,
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
+          }),
+      }
+    );
+    const completion = tracked.data;
+
+    // Zod schema for AI grading response — validates structure before trusting scores
+    const aiGradingResponseSchema = z.object({
+      chat_score: z.number().finite().optional(),
+      chat_comment: z.string().optional(),
+      answer_score: z.number().finite().optional(),
+      answer_comment: z.string().optional(),
+      overall_comment: z.string().optional(),
+      rubric_scores: z.record(z.string(), z.number().finite().min(0).max(5)).optional(),
+    });
+
+    // Fix 3A: Validate choices array before accessing
+    if (!completion.choices?.length) {
+      logError("[AUTO_GRADE] Empty AI response (no choices)", null, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx },
+      });
+      failedGradeResults.push({ q_idx: qIdx, failureReason: "Empty AI response (no choices)" });
+      return null;
+    }
+
+    let rawParsed: unknown;
+    try {
+      rawParsed = JSON.parse(
+        completion.choices[0]?.message?.content || "{}"
       );
-      continue;
-    }
-
-    const stageGrading: {
-      chat?: {
-        score: number;
-        comment: string;
-        rubric_scores?: Record<string, number>;
-      };
-      answer?: {
-        score: number;
-        comment: string;
-        rubric_scores?: Record<string, number>;
-      };
-    } = {};
-
-    // 8-1. Chat stage 채점
-    if (questionMessages.length > 0) {
-      try {
-        const rubricScoresSchema = rubricItems
-          .map(
-            (item) =>
-              `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
-          )
-          .join(",\n");
-
-        const chatSystemPrompt = buildChatGradingSystemPrompt({
-          rubricText,
-          rubricScoresSchema,
-        });
-
-        const chatUserPrompt = `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
-
-**문제:**
-${question.prompt || ""}
-
-${question.ai_context ? `**문제 컨텍스트:**\n${question.ai_context}\n` : ""}
-
-**학생과 AI의 대화 기록:**
-${questionMessages
-  .map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`)
-  .join("\n\n")}
-
-위 정보를 바탕으로 루브릭 기준에 따라 채팅 단계의 점수와 피드백을 제공해주세요.`;
-
-        const chatCompletion = await openai.chat.completions.create({
-          model: AI_MODEL,
-          messages: [
-            { role: "system", content: chatSystemPrompt },
-            { role: "user", content: chatUserPrompt },
-          ],
-          response_format: { type: "json_object" },
-        });
-
-        const chatResponseContent =
-          chatCompletion.choices[0]?.message?.content || "";
-        const chatParsedResponse = JSON.parse(chatResponseContent);
-
-        // 루브릭 항목별 점수 추출
-        const rubricScores: Record<string, number> = {};
-        if (chatParsedResponse.rubric_scores && rubricItems.length > 0) {
-          rubricItems.forEach((item) => {
-            const score = chatParsedResponse.rubric_scores[item.evaluationArea];
-            if (typeof score === "number") {
-              rubricScores[item.evaluationArea] = Math.max(
-                0,
-                Math.min(5, Math.round(score))
-              );
-            }
-          });
-        }
-
-        stageGrading.chat = {
-          score: Math.max(
-            0,
-            Math.min(100, Math.round(chatParsedResponse.score || 0))
-          ),
-          comment: chatParsedResponse.comment || "채팅 단계 평가 완료",
-          rubric_scores:
-            Object.keys(rubricScores).length > 0 ? rubricScores : undefined,
-        };
-
-        console.log(
-          `✅ [AUTO_GRADE] Question ${qIdx} chat stage: ${stageGrading.chat.score}점`
-        );
-      } catch (error) {
-        console.error(
-          `❌ [AUTO_GRADE] Error grading chat stage for question ${qIdx}:`,
-          error
-        );
-      }
-    }
-
-    // 8-2. Answer stage 채점
-    if (submission.answer) {
-      try {
-        const answerRubricScoresSchema = rubricItems
-          .map(
-            (item) =>
-              `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
-          )
-          .join(",\n");
-
-        const answerSystemPrompt = buildAnswerGradingSystemPrompt({
-          rubricText,
-          rubricScoresSchema: answerRubricScoresSchema,
-        });
-
-        const answerUserPrompt = `다음 정보를 바탕으로 최종 답안을 평가해주세요:
-
-**문제:**
-${question.prompt || ""}
-
-${question.ai_context ? `**문제 컨텍스트:**\n${question.ai_context}\n` : ""}
-
-**학생의 최종 답안:**
-${submission.answer || "답안이 없습니다."}
-
-위 정보를 바탕으로 루브릭 기준에 따라 답안의 점수와 피드백을 제공해주세요.`;
-
-        const answerCompletion = await openai.chat.completions.create({
-          model: AI_MODEL,
-          messages: [
-            { role: "system", content: answerSystemPrompt },
-            { role: "user", content: answerUserPrompt },
-          ],
-          response_format: { type: "json_object" },
-        });
-
-        const answerResponseContent =
-          answerCompletion.choices[0]?.message?.content || "";
-        const answerParsedResponse = JSON.parse(answerResponseContent);
-
-        // 루브릭 항목별 점수 추출
-        const answerRubricScores: Record<string, number> = {};
-        if (answerParsedResponse.rubric_scores && rubricItems.length > 0) {
-          rubricItems.forEach((item) => {
-            const score =
-              answerParsedResponse.rubric_scores[item.evaluationArea];
-            if (typeof score === "number") {
-              answerRubricScores[item.evaluationArea] = Math.max(
-                0,
-                Math.min(5, Math.round(score))
-              );
-            }
-          });
-        }
-
-        stageGrading.answer = {
-          score: Math.max(
-            0,
-            Math.min(100, Math.round(answerParsedResponse.score || 0))
-          ),
-          comment: answerParsedResponse.comment || "답안 평가 완료",
-          rubric_scores:
-            Object.keys(answerRubricScores).length > 0
-              ? answerRubricScores
-              : undefined,
-        };
-
-        console.log(
-          `✅ [AUTO_GRADE] Question ${qIdx} answer stage: ${stageGrading.answer.score}점`
-        );
-      } catch (error) {
-        console.error(
-          `❌ [AUTO_GRADE] Error grading answer stage for question ${qIdx}:`,
-          error
-        );
-      }
-    }
-
-    // 8-3. 종합 점수 계산 (0-100 범위 보장)
-    let overallScore = 0;
-    let stageCount = 0;
-    if (stageGrading.chat) {
-      overallScore += stageGrading.chat.score;
-      stageCount++;
-    }
-    if (stageGrading.answer) {
-      overallScore += stageGrading.answer.score;
-      stageCount++;
-    }
-
-    // 0-100 범위로 명시적으로 제한 (평균 계산 후)
-    const finalScore =
-      stageCount > 0
-        ? Math.max(0, Math.min(100, Math.round(overallScore / stageCount)))
-        : 0;
-    const overallComment = `채팅 단계: ${
-      stageGrading.chat?.score || "N/A"
-    }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점`;
-
-    // 최소 하나의 단계라도 채점되었으면 추가
-    if (Object.keys(stageGrading).length > 0) {
-      grades.push({
-        q_idx: qIdx,
-        score: finalScore, // 0-100 점수
-        comment: overallComment,
-        stage_grading: stageGrading,
+    } catch (parseErr) {
+      const rawContent = completion.choices[0]?.message?.content ?? "(empty)";
+      logError("[AUTO_GRADE] Failed to parse grading JSON response, retrying in 2s", parseErr, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx, rawContent: rawContent.slice(0, 500) },
       });
 
-      console.log(
-        `✅ [AUTO_GRADE] Question ${qIdx} overall: ${finalScore}점 (stages: ${Object.keys(
-          stageGrading
-        ).join(", ")})`
-      );
+      // P1-1: Retry once after 2-3s delay with jitter to avoid thundering herd
+      try {
+        await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
+        const retryTracked = await callTrackedChatCompletion(
+          () =>
+            getOpenAI().chat.completions.create({
+              model: AI_MODEL_HEAVY,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+              ],
+              response_format: { type: "json_object" },
+            }, { signal: abortController.signal }),
+          {
+            feature: "auto_grading_question",
+            route: "lib/grading.ts",
+            model: AI_MODEL_HEAVY,
+            userId: session.student_id,
+            examId: exam.id,
+            sessionId,
+            qIdx,
+            metadata: buildAiTextMetadata({
+              inputText: [systemPrompt, userPrompt],
+              extra: { retry: true },
+            }),
+          },
+          {
+            timeoutMs: 90_000,
+            metadataBuilder: (result) =>
+              buildAiTextMetadata({
+                outputText:
+                  (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                    .choices?.[0]?.message?.content ?? null,
+              }),
+          }
+        );
+        const retryCompletion = retryTracked.data;
+        // Fix 3A: Validate choices array on retry too
+        if (!retryCompletion.choices?.length) {
+          logError("[AUTO_GRADE] Empty AI response (no choices) on retry", null, {
+            path: "lib/grading.ts",
+            additionalData: { sessionId, qIdx },
+          });
+          failedGradeResults.push({ q_idx: qIdx, failureReason: "Empty AI response (no choices) after retry" });
+          return null;
+        }
+        rawParsed = JSON.parse(
+          retryCompletion.choices[0]?.message?.content || "{}"
+        );
+      } catch (retryErr) {
+        logError("[AUTO_GRADE] Retry also failed for grading JSON parse", retryErr, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId, qIdx },
+        });
+        failedGradeResults.push({ q_idx: qIdx, failureReason: "JSON parse failure after retry" });
+        return null;
+      }
+    }
+
+    const schemaResult = aiGradingResponseSchema.safeParse(rawParsed);
+    if (!schemaResult.success) {
+      logError("[AUTO_GRADE] AI response schema validation failed", schemaResult.error, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx, rawContent: JSON.stringify(rawParsed).slice(0, 500) },
+      });
+      failedGradeResults.push({ q_idx: qIdx, failureReason: "Schema validation failure" });
+      return null;
+    }
+    const parsed = schemaResult.data;
+
+    // P0-2: Reject empty/invalid responses — at least one score must be a finite number
+    const hasChatScore = typeof parsed.chat_score === "number" && Number.isFinite(parsed.chat_score);
+    const hasAnswerScore = typeof parsed.answer_score === "number" && Number.isFinite(parsed.answer_score);
+    if (!hasChatScore && !hasAnswerScore) {
+      logError("[AUTO_GRADE] AI returned no valid scores — rejecting to prevent 0-score grade", null, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx, rawContent: JSON.stringify(rawParsed).slice(0, 500) },
+      });
+      failedGradeResults.push({ q_idx: qIdx, failureReason: "No valid scores in AI response" });
+      return null;
+    }
+
+    // Parse rubric_scores
+    const rubricScores: Record<string, number> = {};
+    if (parsed.rubric_scores && typeof parsed.rubric_scores === "object" && rubricItems.length > 0) {
+      const rawRubricScores = parsed.rubric_scores;
+      rubricItems.forEach((item) => {
+        const score = rawRubricScores[item.evaluationArea];
+        if (typeof score === "number" && Number.isFinite(score)) {
+          rubricScores[item.evaluationArea] = Math.max(0, Math.min(5, Math.round(score)));
+        }
+      });
+    }
+    const rubricScoresOrUndef = Object.keys(rubricScores).length > 0 ? rubricScores : undefined;
+
+    // Build StageGrading — populate both chat and answer for backward compat
+    const stageGrading: StageGrading = {};
+
+    let scoreClamped = false;
+
+    if (questionMessages.length > 0) {
+      const chatClamp = clampAndLog(parsed.chat_score || 0, { sessionId, qIdx, field: "chat_score" });
+      scoreClamped = scoreClamped || chatClamp.clamped;
+      const adjustedChatScore = Math.max(0, Math.min(100, chatClamp.value - aiDependencyAssessment.penaltyApplied));
+      stageGrading.chat = {
+        score: adjustedChatScore,
+        comment: sanitizeComment(`${parsed.chat_comment || "채팅 단계 평가 완료"}\n\nAI 활용 해석: ${aiDependencyAssessment.summary}`),
+        rubric_scores: rubricScoresOrUndef,
+        ai_dependency: aiDependencyAssessment,
+      };
+    }
+
+    if (submission.answer) {
+      const answerClamp = clampAndLog(parsed.answer_score || 0, { sessionId, qIdx, field: "answer_score" });
+      scoreClamped = scoreClamped || answerClamp.clamped;
+      stageGrading.answer = {
+        score: answerClamp.value,
+        comment: sanitizeComment(parsed.answer_comment || "답안 평가 완료"),
+        rubric_scores: rubricScoresOrUndef,
+      };
+    }
+
+    // 종합 점수 계산 — 가중 평균 (0-100 범위 보장)
+    const finalScore = calculateWeightedScore(stageGrading, chatWeight);
+    const overallComment = sanitizeComment(
+      parsed.overall_comment
+      || `채팅 단계: ${stageGrading.chat?.score ?? "N/A"}점, 답안 단계: ${stageGrading.answer?.score ?? "N/A"}점`
+    );
+
+    if (Object.keys(stageGrading).length > 0) {
+      const gradeResult: GradeResult = {
+        q_idx: qIdx,
+        score: finalScore,
+        comment: overallComment,
+        stage_grading: scoreClamped
+          ? { ...stageGrading, _score_clamped: true }
+          : stageGrading,
+      };
+      return gradeResult;
+    }
+
+    return null;
+  });
+
+  // 모든 문제 병렬 채점 실행 (with outer timeout)
+  // Track settlement of each promise so we can recover partial results on timeout
+  // Pre-fill with default fulfilled(null) to avoid undefined access on timeout
+  let gradingDone = false;
+  const settled: Array<PromiseSettledResult<GradeResult | null>> =
+    Array.from({ length: gradePromises.length }, () => ({ status: "fulfilled" as const, value: null }));
+  gradePromises.forEach((p, i) => {
+    p.then(
+      (value) => { if (!gradingDone) settled[i] = { status: "fulfilled", value }; },
+      (reason) => { if (!gradingDone) settled[i] = { status: "rejected", reason }; }
+    );
+  });
+
+  const gradingPromise = Promise.allSettled(gradePromises);
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<"TIMEOUT">((resolve) => {
+    timeoutId = setTimeout(() => resolve("TIMEOUT"), GRADING_TIMEOUT_MS);
+  });
+
+  const raceResult = await Promise.race([gradingPromise, timeoutPromise]);
+  clearTimeout(timeoutId!);
+  const timedOut = raceResult === "TIMEOUT";
+
+  // Fix 3B: Set gradingDone and snapshot in the same synchronous block
+  // to prevent TOCTOU race between .then() callbacks and timeout snapshot
+  gradingDone = true;
+  if (timedOut) {
+    abortController.abort();
+  }
+
+  // On timeout, snapshot whatever results have settled so far (gradingDone prevents further mutations)
+  const gradeResults: Array<PromiseSettledResult<GradeResult | null>> = timedOut
+    ? [...settled]
+    : raceResult;
+
+  const grades: GradeResult[] = gradeResults
+    .filter(
+      (r): r is PromiseFulfilledResult<GradeResult | null> =>
+        r.status === "fulfilled" && r.value !== null
+    )
+    .map((r) => r.value!);
+
+  // Track failed and timed-out questions
+  const failedQuestions: number[] = [];
+  gradeResults.forEach((r, idx) => {
+    if (r.status === "rejected") {
+      failedQuestions.push(idx);
+      const reasonMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      failedGradeResults.push({ q_idx: idx, failureReason: reasonMsg });
+      logError("[AUTO_GRADE] Question grading failed", r.reason, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, failureReason: reasonMsg },
+      });
+    } else if (r.status === "fulfilled" && r.value === null && timedOut) {
+      // Question was null due to timeout (not because it had no submission)
+      const question = questions[idx];
+      const submission = submissionsByQuestion[question?.idx];
+      if (submission) {
+        failedQuestions.push(idx);
+        failedGradeResults.push({ q_idx: question.idx, failureReason: "Timed out" });
+      }
+    }
+  });
+
+  // Include AI parse/schema failures in failedQuestions
+  for (const failed of failedGradeResults) {
+    if (!failedQuestions.includes(failed.q_idx)) {
+      failedQuestions.push(failed.q_idx);
     }
   }
 
-  // 9. 채점 결과 저장
+  if (timedOut) {
+    logError("[AUTO_GRADE] Grading timed out", new Error(`Grading timed out after ${GRADING_TIMEOUT_MS}ms`), {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, completedCount: grades.length, totalQuestions: questions.length },
+    });
+  }
+
+  // 9a. Insert ai_failed grade records for questions that failed grading
+  if (failedGradeResults.length > 0) {
+    const failedGradeRecords = failedGradeResults.map((failed) => ({
+      session_id: sessionId,
+      q_idx: failed.q_idx,
+      score: 0,
+      comment: `[AI 채점 실패] ${failed.failureReason} — 강사의 수동 채점이 필요합니다.`,
+      stage_grading: null,
+      grade_type: "ai_failed",
+    }));
+
+    const { error: failedInsertError } = await supabase
+      .from("grades")
+      .upsert(failedGradeRecords, { onConflict: "session_id,q_idx" });
+
+    if (failedInsertError) {
+      logError("[AUTO_GRADE] Failed to insert ai_failed grade records", failedInsertError, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, failedQIdxes: failedGradeResults.map((f) => f.q_idx) },
+      });
+    }
+  }
+
+  // 9b. 채점 결과 저장 (partial 결과라도 저장) + insert 반환값으로 직접 검증
   if (grades.length > 0) {
-    const { error: insertError } = await supabase.from("grades").insert(
+    const { data: insertedRows, error: insertError } = await supabase.from("grades").upsert(
       grades.map((grade) => ({
         session_id: sessionId,
         q_idx: grade.q_idx,
         score: grade.score,
         comment: grade.comment,
         stage_grading: grade.stage_grading || null,
-      }))
-    );
+        grade_type: "auto",
+      })),
+      { onConflict: "session_id,q_idx" }
+    ).select("q_idx");
 
     if (insertError) {
-      console.error(`❌ [AUTO_GRADE] Database insert error:`, insertError);
       throw insertError;
     }
-    console.log(`✅ [AUTO_GRADE] Saved ${grades.length} grades`);
+
+    // Verify via insert return — no separate SELECT needed
+    if (insertedRows) {
+      const insertedQIdxSet = new Set(insertedRows.map((g) => g.q_idx));
+      for (const grade of grades) {
+        if (!insertedQIdxSet.has(grade.q_idx)) {
+          failedQuestions.push(grade.q_idx);
+          logError("[AUTO_GRADE] Grade not returned after insert", new Error("Grade verification failed"), {
+            path: "lib/grading.ts",
+            additionalData: { sessionId, q_idx: grade.q_idx },
+          });
+        }
+      }
+    }
+  }
+
+  // 10. 요약 평가 생성 (timeout 시에도 완료된 결과로 시도)
+  // P1-3: Dynamic time budget — skip summary if insufficient time remains for Vercel maxDuration=300s
+  const VERCEL_BUDGET_MS = 280_000; // Leave 20s safety margin from maxDuration=300s
+  const MIN_SUMMARY_TIME_MS = 30_000; // Need at least 30s for summary generation
+  let summary: SummaryData | null = null;
+  const elapsedMs = Date.now() - requestStartTime;
+  const remainingMs = VERCEL_BUDGET_MS - elapsedMs;
+
+  if (timedOut) {
+    logError("[AUTO_GRADE] Skipping summary — grading timed out", null, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, elapsedMs },
+    });
+  } else if (remainingMs < MIN_SUMMARY_TIME_MS) {
+    logError("[AUTO_GRADE] Skipping summary — insufficient time budget", null, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, elapsedMs, remainingMs },
+    });
   } else {
-    console.warn(
-      `⚠️ [AUTO_GRADE] No grades generated for session ${sessionId}. ` +
-        `Submissions: ${submissions?.length || 0}, ` +
-        `Messages: ${messages?.length || 0}, ` +
-        `Questions: ${questions.length}`
-    );
-    // grades가 비어있어도 에러를 throw하지 않음 (경고만)
+    try {
+      summary = await generateSummary(
+        sessionId,
+        session.student_id,
+        exam,
+        questions,
+        submissionsByQuestion,
+        messagesByQuestion,
+        grades,
+        remainingMs
+      );
+    } catch (err) {
+      logError("[AUTO_GRADE] Summary generation failed", err, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId },
+      });
+    }
   }
 
-  // 10. 요약 평가 생성
-  let summary: SummaryResult | null = null;
-  try {
-    summary = await generateSummary(
-      sessionId,
-      exam,
-      questions,
-      submissionsByQuestion,
-      messagesByQuestion,
-      grades
+  // 11. Persist grading status in ai_summary so instructors can see partial grading
+  const isPartial = timedOut || failedQuestions.length > 0;
+  if (isPartial) {
+    const gradingFailureDetails = failedGradeResults.reduce<Record<number, string>>(
+      (acc, f) => { acc[f.q_idx] = f.failureReason; return acc; },
+      {}
     );
-  } catch (error) {
-    console.error(`❌ [AUTO_GRADE] Error generating summary:`, error);
-    // 요약 생성 실패해도 채점 결과는 반환
+
+    const gradingStatusPayload = {
+      grading_status: "partial" as const,
+      grading_failed_questions: failedQuestions,
+      grading_completed_count: grades.length,
+      grading_total_count: questions.length,
+      grading_timed_out: timedOut,
+      grading_failure_details: gradingFailureDetails,
+    };
+    const mergedSummary = { ...(summary || {}), ...gradingStatusPayload };
+    const { error: statusError } = await supabase
+      .from("sessions")
+      .update({ ai_summary: mergedSummary })
+      .eq("id", sessionId);
+
+    if (statusError) {
+      logError("[AUTO_GRADE] Failed to save partial grading status — retrying once", statusError, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, failedQuestions },
+      });
+      // P0-3: Retry once after 1s — grades are already saved, so log-only on second failure
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const { error: retryStatusError } = await supabase
+        .from("sessions")
+        .update({ ai_summary: mergedSummary })
+        .eq("id", sessionId);
+      if (retryStatusError) {
+        logError("[AUTO_GRADE] Retry also failed for partial grading status update", retryStatusError, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId, failedQuestions },
+        });
+      }
+    }
   }
 
-  const duration = Date.now() - startTime;
-  console.log(
-    `✅ [AUTO_GRADE] Completed in ${duration}ms | Session: ${sessionId} | Grades: ${grades.length}`
-  );
-
-  return { grades, summary };
+  return {
+    grades,
+    summary,
+    failedQuestions,
+    timedOut,
+    ...(decompressionWarnings.length > 0 && { decompressionWarnings }),
+  };
 }
 
 /**
@@ -600,12 +676,15 @@ ${submission.answer || "답안이 없습니다."}
  */
 async function generateSummary(
   sessionId: string,
-  exam: { title: string; rubric?: unknown },
+  studentId: string,
+  exam: { id: string; title: string; rubric?: unknown },
   questions: Array<{ idx: number; prompt?: string; ai_context?: string }>,
   submissionsByQuestion: Record<number, { answer: string }>,
   messagesByQuestion: Record<number, Array<{ role: string; content: string }>>,
-  grades: GradeResult[]
-): Promise<SummaryResult | null> {
+  grades: GradeResult[],
+  timeBudgetMs?: number
+): Promise<SummaryData | null> {
+  const supabase = getSupabaseServer();
   try {
     const rubricText =
       exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
@@ -644,7 +723,7 @@ ${questionMessages
   .join("\n\n")}`
             : "";
 
-        return `문제 ${index + 1}:
+        return `문제 ${qIdx + 1}:
 ${q.prompt || ""}
 
 답안:
@@ -660,6 +739,12 @@ ${
 ${
   grade?.stage_grading?.answer
     ? `답안 단계 점수: ${grade.stage_grading.answer.score}점`
+    : ""
+}
+${
+  grade?.stage_grading?.chat?.ai_dependency
+    ? `AI 활용/의존 신호:
+${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
     : ""
 }
 `;
@@ -678,18 +763,22 @@ ${
       
       [범용 평가 엄격화 가이드]
       - 질문의 '논리적 구조'와 '내용의 사실 관계'를 분리하여 평가하십시오.
-      - 다음의 경우 오히려 '이해도 부족'으로 간주하여 엄격히 평가합니다:
-        1) 문제에서 주어진 수치나 조건을 임의로 변형하여 질문하는 경우.
-        2) 핵심 개념(원인과 결과, 정의 등)을 거꾸로 이해하고 질문하는 경우.
-        3) AI가 오류를 교정해주었음에도 최종 답안에 반영하지 않는 경우.
+      - 아래 5가지 행동 패턴이 발견되면 '이해도 부족'으로 간주하여 엄격히 평가합니다.
+        사용된 표현의 형식(직접적/우회적/공손한)과 무관하게, 행동의 의도로 판단합니다:
+        1) **답/풀이 위임형**: 자신의 분석 없이 AI에게 정답, 풀이법, 접근법, 프레임워크 선택을 요청. "어떻게 풀어?"든 "일반적으로 어떤 접근이 통용되나요?"든 의도가 동일하면 동일하게 판단.
+        2) **출발점 의존형**: 어디서 시작해야 하는지, 어떤 개념을 써야 하는지를 AI에게 물어봄. 스스로 진입점을 잡지 못함.
+        3) **조건/수치 변형형**: 시나리오에 명시된 수치/조건을 임의로 다른 값으로 바꿔서 질문하거나 답안에 사용.
+        4) **개념 역전형**: 핵심 인과관계, 정의, 방향성을 거꾸로 이해하여 질문하거나 답안 작성.
+        5) **교정 미반영형**: AI가 오류를 교정했음에도 최종 답안이 동일한 오류를 그대로 포함.
       - 질문의 양이 많더라도, 그 질문들이 문제의 본질(Core Task)에서 벗어난 지엽적인 것이라면 '자기주도적 학습 역량' 점수를 높게 주지 마십시오.
+      - 직접 답변을 받은 사실 자체는 금지 위반이 아닙니다. 그러나 이후 독립 추론이 약하면 엄격히 감점하고, 회복이 확인되면 그 회복 근거를 분명히 적으십시오.
       - 학생이 주어지지 않은 정보를 논리적으로 가정(Assume)하여 논의를 진전시키는 경우에는 이를 '문제 해결을 위한 창의적 접근'으로 보아 긍정적으로 평가하십시오.
         다만, 이러한 가정이 문제에 이미 명시된 조건을 부정하는 용도로 쓰인다면 예외 없이 엄격하게 감점하십시오.
-      
+
       [이해도 과대평가 방지 상한 규칙(매우 중요)]
-      - 채팅에 "이거 어떻게 풀어/뭐 써야 해/개념 설명/접근 방법/답만/모르겠어" 유형이 1회라도 등장했고,
+      - 위 5가지 행동 패턴 중 하나라도 1회 이상 발견되었고,
         학생이 이후에 스스로 '개념 선택 + 조건/가정 정리 + 중간 추론/검증'을 모두 보여주지 못했다면 sentiment는 절대 positive로 주지 마세요.
-      - 위 유형이 반복되거나, 조건/개념을 거꾸로 이해하거나, 교정 미반영이 확인되면 negative를 우선하세요(회복이 매우 강한 경우만 neutral).
+      - 행동 패턴이 반복되거나, 개념 역전형 또는 교정 미반영형이 확인되면 negative를 우선하세요(회복이 매우 강한 경우만 neutral).
       
       위 내용을 바탕으로 학생의 전체적인 수행 능력을 상세하게 분석하여 요약 평가해주세요.
       **중요**: 채팅 대화 기록이 있는 경우, 학생이 AI와의 대화에서 보여준 질문의 질, 문제 이해도, 개념 파악 수준, 학습 태도 등을 종합적으로 고려하여 평가하세요.
@@ -711,46 +800,117 @@ ${
         "keyQuotes": ["인용구1", "인용구2"]
       }`;
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        getOpenAI().chat.completions.create({
+          model: AI_MODEL_HEAVY,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      {
+        feature: "auto_grading_summary",
+        route: "lib/grading.ts",
+        model: AI_MODEL_HEAVY,
+        userId: studentId,
+        examId: exam.id,
+        sessionId,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userPrompt],
+          extra: {
+            graded_question_count: grades.length,
+          },
+        }),
+      },
+      {
+        // P1-3: Dynamic timeout based on remaining Vercel budget (default 120s, capped to budget)
+        timeoutMs: timeBudgetMs ? Math.min(timeBudgetMs - 5_000, 120_000) : 120_000,
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
+          }),
+      }
+    );
+    const completion = tracked.data;
+
+    const summaryResponseSchema = z.object({
+      sentiment: z.enum(["positive", "negative", "neutral"]),
+      summary: z.string(),
+      strengths: z.array(z.string()),
+      weaknesses: z.array(z.string()),
+      keyQuotes: z.array(z.string()).optional(),
     });
 
-    const result = JSON.parse(
-      completion.choices[0]?.message?.content || "{}"
-    ) as SummaryResult;
+    let rawSummary: unknown;
+    try {
+      rawSummary = JSON.parse(
+        completion.choices[0]?.message?.content || "{}"
+      );
+    } catch (parseErr) {
+      const rawContent = completion.choices[0]?.message?.content ?? "(empty)";
+      logError("[AUTO_GRADE] Failed to parse summary JSON response", parseErr, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, rawContent: rawContent.slice(0, 500) },
+      });
+      return null;
+    }
+
+    const summaryValidation = summaryResponseSchema.safeParse(rawSummary);
+    if (!summaryValidation.success) {
+      logError("[AUTO_GRADE] Summary response schema validation failed", summaryValidation.error, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, rawContent: JSON.stringify(rawSummary).slice(0, 500) },
+      });
+      return null;
+    }
+    const result: SummaryData = summaryValidation.data;
+
+    const aiDependencySummary = summarizeAiDependencyAssessments(
+      grades.map((grade) => ({
+        q_idx: grade.q_idx,
+        assessment: grade.stage_grading?.chat?.ai_dependency,
+      }))
+    );
+    const summaryWithDependency: SummaryData = {
+      ...result,
+      aiDependency: aiDependencySummary,
+    };
 
     // 세션에 요약 저장 (ai_summary 컬럼이 없을 수 있으므로 에러 처리)
     const { error: updateError } = await supabase
       .from("sessions")
-      .update({ ai_summary: result })
+      .update({ ai_summary: summaryWithDependency })
       .eq("id", sessionId);
 
     if (updateError) {
-      console.error(
-        `❌ [AUTO_GRADE] Error saving summary to database:`,
-        updateError
-      );
-      // 컬럼이 없는 경우 에러를 무시하고 계속 진행 (마이그레이션 필요)
-      if (
-        updateError.code === "42703" ||
-        updateError.message?.includes("does not exist")
-      ) {
-        console.warn(
-          `⚠️ [AUTO_GRADE] ai_summary column does not exist. Please run migration to add the column.`
-        );
+      logError("[AUTO_GRADE] Error saving summary to database — retrying once", updateError, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId },
+      });
+      // P0-3: Retry once after 1s — grades are already saved
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const { error: retryUpdateError } = await supabase
+        .from("sessions")
+        .update({ ai_summary: summaryWithDependency })
+        .eq("id", sessionId);
+      if (retryUpdateError) {
+        logError("[AUTO_GRADE] Retry also failed for summary save", retryUpdateError, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId },
+        });
       }
-    } else {
-      console.log(`✅ [AUTO_GRADE] Summary saved for session: ${sessionId}`);
     }
 
-    return result;
-  } catch (error) {
-    console.error("Error generating summary:", error);
+    return summaryWithDependency;
+  } catch (err) {
+    logError("[AUTO_GRADE] Summary generation failed in generateSummary", err, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId },
+    });
     return null;
   }
 }

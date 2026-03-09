@@ -1,28 +1,23 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { currentUser } from "@clerk/nextjs/server";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { currentUser } from "@/lib/get-current-user";
+import { successJson, errorJson } from "@/lib/api-response";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET() {
   try {
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is student
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
-      return NextResponse.json(
-        { error: "Student access required" },
-        { status: 403 }
-      );
+      return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
     // Get all sessions for this student (for stats only, no pagination)
@@ -32,12 +27,11 @@ export async function GET() {
       .eq("student_id", user.id);
 
     if (sessionsError) {
-      console.error("Error fetching student sessions:", sessionsError);
       throw sessionsError;
     }
 
     if (!sessions || sessions.length === 0) {
-      return NextResponse.json({
+      return successJson({
         totalSessions: 0,
         completedSessions: 0,
         inProgressSessions: 0,
@@ -52,7 +46,7 @@ export async function GET() {
     const sessionIds = completedSessions.map((s) => s.id);
     
     if (sessionIds.length === 0) {
-      return NextResponse.json({
+      return successJson({
         totalSessions: sessions.length,
         completedSessions: completedSessions.length,
         inProgressSessions: inProgressSessions.length,
@@ -66,7 +60,7 @@ export async function GET() {
       .in("session_id", sessionIds);
 
     if (gradesError) {
-      console.error("Error fetching grades:", gradesError);
+      // Non-critical: grades fetch failed
     }
 
     // Calculate overall average score
@@ -95,18 +89,14 @@ export async function GET() {
       }
     }
 
-    return NextResponse.json({
+    return successJson({
       totalSessions: sessions.length,
       completedSessions: completedSessions.length,
       inProgressSessions: inProgressSessions.length,
       overallAverageScore,
     });
   } catch (error) {
-    console.error("Get student stats error:", error);
-    return NextResponse.json(
-      { error: "Failed to get student stats" },
-      { status: 500 }
-    );
+    return errorJson("FETCH_STATS_FAILED", "Failed to get student stats", 500);
   }
 }
 

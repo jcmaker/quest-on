@@ -249,7 +249,6 @@ function FolderTreeItem({
           });
         }
       } catch (error) {
-        console.error("Error moving node:", error);
         const errorMessage = getErrorMessage(error, "이동에 실패했습니다");
         toast.error(errorMessage, {
           duration: 5000,
@@ -571,7 +570,6 @@ export function FileTree({
           });
         }
       } catch (error) {
-        console.error("Error moving node:", error);
         const errorMessage = getErrorMessage(error, "이동에 실패했습니다");
         toast.error(errorMessage, {
           duration: 5000,

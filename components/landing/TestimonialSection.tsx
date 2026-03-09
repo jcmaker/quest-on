@@ -114,8 +114,10 @@ function TestimonialCard({
           <Image
             src={testimonial.avatar}
             alt={testimonial.name}
-            fill
-            className="object-contain object-right-bottom"
+            width={256}
+            height={256}
+            sizes="(max-width: 768px) 12rem, (max-width: 1024px) 14rem, 16rem"
+            className="h-full w-full object-contain object-right-bottom"
             loading="lazy"
           />
           {testimonial.avatarSize === "small" && (
@@ -178,8 +180,10 @@ function TestimonialCard({
               <Image
                 src={testimonial.logo}
                 alt={testimonial.title}
-                fill
-                className="object-contain"
+                width={40}
+                height={40}
+                sizes="40px"
+                className="h-full w-full object-contain"
                 loading="lazy"
               />
             </div>

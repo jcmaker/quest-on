@@ -37,6 +37,7 @@ interface RichTextEditorProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  testId?: string;
 }
 
 export function RichTextEditor({
@@ -44,6 +45,7 @@ export function RichTextEditor({
   onChange,
   placeholder = "여기에 입력하세요...",
   className = "",
+  testId,
 }: RichTextEditorProps) {
   const editor = useEditor({
     immediatelyRender: false,
@@ -72,6 +74,7 @@ export function RichTextEditor({
     editorProps: {
       attributes: {
         class: "prose max-w-none focus:outline-none min-h-[300px] p-4",
+        ...(testId ? { "data-testid": testId } : {}),
       },
     },
   });

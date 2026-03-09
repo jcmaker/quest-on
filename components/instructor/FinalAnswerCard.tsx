@@ -42,17 +42,6 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
 
     // 붙여넣기가 있으면 하이라이트 적용
     if (pasteLogs && pasteLogs.length > 0) {
-      // 디버깅: 로그 확인
-      console.log(
-        "[FinalAnswerCard] Paste logs:",
-        pasteLogs.map((log) => ({
-          id: log.id,
-          is_internal: log.is_internal,
-          suspicious: log.suspicious,
-          pasted_text_length: log.pasted_text?.length,
-        }))
-      );
-
       // 내부 복사 - 파란색 (먼저 필터링하여 외부 복사와 구분)
       const internalPastes = pasteLogs.filter(
         (log) => log.is_internal === true && log.pasted_text
@@ -61,13 +50,6 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
       // 외부 복사 (의심스러운 붙여넣기) - 빨간색 (내부 복사가 아닌 것만)
       const externalPastes = pasteLogs.filter(
         (log) => log.is_internal !== true && log.suspicious && log.pasted_text
-      );
-
-      console.log(
-        "[FinalAnswerCard] Internal:",
-        internalPastes.length,
-        "External:",
-        externalPastes.length
       );
 
       // 내부 복사 하이라이트 (파란색) - 외부 복사와 동일한 로직, 색상만 다름
@@ -211,8 +193,6 @@ interface Submission {
   id: string;
   q_idx: number;
   answer: string;
-  ai_feedback?: Record<string, unknown>;
-  student_reply?: string;
 }
 
 interface PasteLog {

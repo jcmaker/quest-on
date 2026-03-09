@@ -1,13 +1,13 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { NextRequest } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
+import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
+import { validateUUID } from "@/lib/validate-params";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
@@ -15,19 +15,20 @@ export async function GET(
 ) {
   try {
     const { sessionId } = await params;
+
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
+
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is student
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
-      return NextResponse.json(
-        { error: "Student access required" },
-        { status: 403 }
-      );
+      return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
     // Get session data
@@ -38,20 +39,17 @@ export async function GET(
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
     // Check if student owns this session
     if (session.student_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Check if session is submitted
     if (!session.submitted_at) {
-      return NextResponse.json(
-        { error: "Session not submitted yet" },
-        { status: 400 }
-      );
+      return errorJson("SESSION_NOT_SUBMITTED", "Session not submitted yet", 400);
     }
 
     // Get exam data
@@ -62,7 +60,7 @@ export async function GET(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
     // Normalize questions format
@@ -84,10 +82,7 @@ export async function GET(
         id,
         q_idx,
         answer,
-        ai_feedback,
-        student_reply,
         compressed_answer_data,
-        compressed_feedback_data,
         compression_metadata,
         created_at
       `
@@ -96,7 +91,7 @@ export async function GET(
       .order("q_idx", { ascending: true });
 
     if (submissionsError) {
-      console.error("Error fetching submissions:", submissionsError);
+      logError("Error fetching submissions", submissionsError);
     }
 
     // Get messages
@@ -117,7 +112,7 @@ export async function GET(
       .order("created_at", { ascending: true });
 
     if (messagesError) {
-      console.error("Error fetching messages:", messagesError);
+      logError("Error fetching messages", messagesError);
     }
 
     // Get grades
@@ -129,6 +124,7 @@ export async function GET(
         q_idx,
         score,
         comment,
+        stage_grading,
         created_at
       `
       )
@@ -136,7 +132,7 @@ export async function GET(
       .order("q_idx", { ascending: true });
 
     if (gradesError) {
-      console.error("Error fetching grades:", gradesError);
+      logError("Error fetching grades", gradesError);
     }
 
     // Decompress session data if available
@@ -149,8 +145,8 @@ export async function GET(
         decompressedSessionData = decompressData(
           session.compressed_session_data
         );
-      } catch (error) {
-        console.error("Error decompressing session data:", error);
+      } catch {
+        // Decompression failed, continue with null
       }
     }
 
@@ -161,8 +157,6 @@ export async function GET(
         id: string;
         q_idx: number;
         answer: string;
-        ai_feedback: unknown;
-        student_reply: string | null;
         created_at: string;
       }
     > = {};
@@ -170,7 +164,6 @@ export async function GET(
     if (submissions) {
       submissions.forEach((submission) => {
         let answer = submission.answer;
-        let aiFeedback = submission.ai_feedback;
 
         // Decompress if needed
         if (submission.compressed_answer_data) {
@@ -185,16 +178,8 @@ export async function GET(
                   ? decompressedObj.answer
                   : answer) || answer;
             }
-          } catch (error) {
-            console.error("Error decompressing answer:", error);
-          }
-        }
-
-        if (submission.compressed_feedback_data) {
-          try {
-            aiFeedback = decompressData(submission.compressed_feedback_data);
-          } catch (error) {
-            console.error("Error decompressing feedback:", error);
+          } catch {
+            // Decompression failed, continue with original
           }
         }
 
@@ -202,8 +187,6 @@ export async function GET(
           id: submission.id,
           q_idx: submission.q_idx,
           answer: typeof answer === "string" ? answer : JSON.stringify(answer),
-          ai_feedback: aiFeedback,
-          student_reply: submission.student_reply,
           created_at: submission.created_at,
         };
       });
@@ -223,8 +206,8 @@ export async function GET(
         if (message.compressed_content) {
           try {
             content = decompressData(message.compressed_content);
-          } catch (error) {
-            console.error("Error decompressing message:", error);
+          } catch {
+            // Decompression failed, continue with original
           }
         }
 
@@ -245,7 +228,13 @@ export async function GET(
     // Organize grades by question index
     const gradesByQuestion: Record<
       number,
-      { id: string; q_idx: number; score: number; comment?: string }
+      {
+        id: string;
+        q_idx: number;
+        score: number;
+        comment?: string;
+        stage_grading?: unknown;
+      }
     > = {};
 
     if (grades) {
@@ -255,6 +244,7 @@ export async function GET(
           q_idx: grade.q_idx,
           score: grade.score,
           comment: grade.comment || undefined,
+          stage_grading: grade.stage_grading || undefined,
         };
       });
     }
@@ -270,7 +260,7 @@ export async function GET(
       overallScore = Math.round(totalScore / questionCount);
     }
 
-    return NextResponse.json({
+    return successJson({
       session: {
         id: session.id,
         exam_id: session.exam_id,
@@ -287,11 +277,7 @@ export async function GET(
       overallScore,
       aiSummary: session.ai_summary || null,
     });
-  } catch (error) {
-    console.error("Get student report error:", error);
-    return NextResponse.json(
-      { error: "Failed to get report" },
-      { status: 500 }
-    );
+  } catch {
+    return errorJson("FETCH_REPORT_FAILED", "Failed to get report", 500);
   }
 }

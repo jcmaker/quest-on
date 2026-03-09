@@ -53,9 +53,22 @@ export function compressData(data: unknown): CompressedData {
  * @param compressedData - The compressed data string
  * @returns Decompressed data
  */
+/** Max compressed input size (5 MB) — reject before decompressing */
+const MAX_COMPRESSED_INPUT_SIZE = 5 * 1024 * 1024;
+/** Max decompressed output size (10 MB) */
+const MAX_DECOMPRESSED_SIZE = 10 * 1024 * 1024;
+/** Max decompression ratio — reject zip-bomb patterns */
+const MAX_DECOMPRESSION_RATIO = 100;
+
 export function decompressData(compressedData: string): unknown {
   if (!compressedData) {
     throw new Error("No compressed data provided");
+  }
+
+  // Guard: reject oversized compressed input before decompressing
+  const compressedSize = new Blob([compressedData]).size;
+  if (compressedSize > MAX_COMPRESSED_INPUT_SIZE) {
+    throw new Error(`Compressed input too large: ${compressedSize} bytes (limit ${MAX_COMPRESSED_INPUT_SIZE})`);
   }
 
   // Try Base64 decompression first (new format)
@@ -68,6 +81,17 @@ export function decompressData(compressedData: string): unknown {
 
   if (!decompressed) {
     throw new Error("Failed to decompress data");
+  }
+
+  // Size limit to prevent decompression bombs
+  if (decompressed.length > MAX_DECOMPRESSED_SIZE) {
+    throw new Error(`Decompressed data exceeds size limit: ${decompressed.length} bytes (limit ${MAX_DECOMPRESSED_SIZE})`);
+  }
+
+  // Ratio check to detect zip-bomb patterns
+  const ratio = compressedSize > 0 ? decompressed.length / compressedSize : 0;
+  if (ratio > MAX_DECOMPRESSION_RATIO) {
+    throw new Error(`Decompression ratio too high: ${ratio.toFixed(1)}x (limit ${MAX_DECOMPRESSION_RATIO}x)`);
   }
 
   // Try to parse as JSON, fallback to string

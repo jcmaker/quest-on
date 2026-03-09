@@ -1,28 +1,47 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { currentUser } from "@/lib/get-current-user";
 import { decompressData } from "@/lib/compression";
+import { successJson, errorJson } from "@/lib/api-response";
+import { validateUUID } from "@/lib/validate-params";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ examId: string }> }
 ) {
   try {
+    // Authentication + authorization
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return errorJson("INSTRUCTOR_ACCESS_REQUIRED", "Instructor access required", 403);
+    }
+
     const { examId } = await params;
+
+    const invalidId = validateUUID(examId, "examId");
+    if (invalidId) return invalidId;
 
     // 1. 시험 정보 가져오기 (루브릭 정보 포함)
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, code, rubric, questions")
+      .select("id, title, code, rubric, questions, instructor_id")
       .eq("id", examId)
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
+    }
+
+    // Verify instructor owns this exam
+    if (exam.instructor_id !== user.id) {
+      return errorJson("ACCESS_DENIED", "Access denied", 403);
     }
 
     // 시험 타입 확인: 모든 문제가 essay 타입인지 확인
@@ -36,54 +55,56 @@ export async function GET(
       questions.every((q) => q.type === "essay" || !q.type);
     // essay 타입 시험에는 피드백 단계가 없음
 
-    // 2. 모든 세션 가져오기
-    const { data: sessions, error: sessionsError } = await supabase
-      .from("sessions")
-      .select("id, student_id, used_clarifications, created_at, submitted_at")
-      .eq("exam_id", examId)
-      .order("created_at", { ascending: false });
+    // 2. 학생별 최적 세션 가져오기 (DISTINCT ON으로 DB 레벨 중복 제거)
+    // RPC 실패 시 기존 JS 로직으로 폴백
+    let filteredSessions: Array<{
+      id: string;
+      student_id: string;
+      used_clarifications: number;
+      created_at: string;
+      submitted_at: string | null;
+    }>;
 
-    if (sessionsError) {
-      console.error("Error fetching sessions:", sessionsError);
-      return NextResponse.json(
-        { error: "Failed to fetch sessions" },
-        { status: 500 }
-      );
-    }
+    const { data: rpcSessions, error: rpcError } = await supabase
+      .rpc("get_best_sessions_for_exam", { p_exam_id: examId });
 
-    // 2-0. 중복/불완전 세션 필터링: 학생별로 가장 적절한 세션만 선택
-    // 우선순위: 1) 제출된 세션 중 가장 최근, 2) 제출 안된 세션 중 가장 최근
-    const sessionMap = new Map<string, (typeof sessions)[0]>();
-    if (sessions) {
-      // 먼저 제출된 세션들을 처리 (우선순위 높음)
-      const submittedSessions = sessions.filter((s) => s.submitted_at);
-      submittedSessions.forEach((session) => {
-        const existing = sessionMap.get(session.student_id);
-        if (!existing || !existing.submitted_at) {
-          // 기존 세션이 없거나 제출 안된 세션이면 교체
-          sessionMap.set(session.student_id, session);
-        } else if (session.submitted_at && existing.submitted_at) {
-          // 둘 다 제출된 경우 더 최근 것 선택
-          if (
-            new Date(session.submitted_at) > new Date(existing.submitted_at)
-          ) {
+    if (!rpcError && rpcSessions) {
+      filteredSessions = rpcSessions;
+    } else {
+      // Fallback: 기존 JS 로직 (RPC 함수 미배포 시)
+      const { data: sessions, error: sessionsError } = await supabase
+        .from("sessions")
+        .select("id, student_id, used_clarifications, created_at, submitted_at")
+        .eq("exam_id", examId)
+        .order("created_at", { ascending: false });
+
+      if (sessionsError) {
+        return errorJson("FETCH_SESSIONS_FAILED", "Failed to fetch sessions", 500);
+      }
+
+      const sessionMap = new Map<string, (typeof sessions)[0]>();
+      if (sessions) {
+        const submittedSessions = sessions.filter((s) => s.submitted_at);
+        submittedSessions.forEach((session) => {
+          const existing = sessionMap.get(session.student_id);
+          if (!existing || !existing.submitted_at) {
+            sessionMap.set(session.student_id, session);
+          } else if (session.submitted_at && existing.submitted_at) {
+            if (new Date(session.submitted_at) > new Date(existing.submitted_at)) {
+              sessionMap.set(session.student_id, session);
+            }
+          }
+        });
+
+        const unsubmittedSessions = sessions.filter((s) => !s.submitted_at);
+        unsubmittedSessions.forEach((session) => {
+          if (!sessionMap.has(session.student_id)) {
             sessionMap.set(session.student_id, session);
           }
-        }
-      });
-
-      // 제출 안된 세션들 처리 (제출된 세션이 없는 학생만)
-      const unsubmittedSessions = sessions.filter((s) => !s.submitted_at);
-      unsubmittedSessions.forEach((session) => {
-        if (!sessionMap.has(session.student_id)) {
-          // 제출된 세션이 없는 학생만 추가
-          sessionMap.set(session.student_id, session);
-        }
-      });
+        });
+      }
+      filteredSessions = Array.from(sessionMap.values());
     }
-
-    // 필터링된 세션 목록
-    const filteredSessions = Array.from(sessionMap.values());
 
     // 2-1. 학생 프로필 정보 가져오기 (별도 조회)
     const studentIds = filteredSessions
@@ -114,7 +135,7 @@ export async function GET(
     }
 
     if (!filteredSessions || filteredSessions.length === 0) {
-      return NextResponse.json({
+      return successJson({
         examId,
         examTitle: exam.title,
         totalStudents: 0,
@@ -700,46 +721,47 @@ export async function GET(
           },
         ];
 
-    return NextResponse.json({
-      examId,
-      examTitle: exam.title,
-      totalStudents: studentData.length,
-      submittedStudents: submittedStudents.length,
-      averageScore,
-      averageQuestions,
-      averageAnswerLength,
-      averageExamDuration,
-      standardDeviationScore,
-      standardDeviationQuestions,
-      standardDeviationAnswerLength,
-      standardDeviationExamDuration,
-      students: sortedStudents,
-      statistics: {
-        scoreDistribution,
-        questionCountDistribution,
-        answerLengthDistribution,
-        examDurationDistribution,
+    return successJson(
+      {
+        examId,
+        examTitle: exam.title,
+        totalStudents: studentData.length,
+        submittedStudents: submittedStudents.length,
+        averageScore,
+        averageQuestions,
+        averageAnswerLength,
+        averageExamDuration,
+        standardDeviationScore,
+        standardDeviationQuestions,
+        standardDeviationAnswerLength,
+        standardDeviationExamDuration,
+        students: sortedStudents,
+        statistics: {
+          scoreDistribution,
+          questionCountDistribution,
+          answerLengthDistribution,
+          examDurationDistribution,
+        },
+        // 새로운 분석 데이터
+        stageAnalysis: {
+          averageScores: averageStageScores,
+          comparisonData: stageComparisonData,
+          hasFeedback: !isEssayTypeOnly,
+        },
+        rubricAnalysis: {
+          averageScores: rubricAverageScores,
+          radarData: rubricRadarData,
+        },
+        questionTypeAnalysis: {
+          distribution: questionTypeDistribution,
+          pieData: questionTypePieData,
+        },
       },
-      // 새로운 분석 데이터
-      stageAnalysis: {
-        averageScores: averageStageScores,
-        comparisonData: stageComparisonData,
-        hasFeedback: !isEssayTypeOnly,
-      },
-      rubricAnalysis: {
-        averageScores: rubricAverageScores,
-        radarData: rubricRadarData,
-      },
-      questionTypeAnalysis: {
-        distribution: questionTypeDistribution,
-        pieData: questionTypePieData,
-      },
-    });
-  } catch (error) {
-    console.error("Analytics API error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+      {
+        headers: { "Cache-Control": "private, max-age=120, stale-while-revalidate=300" },
+      }
     );
+  } catch (error) {
+    return errorJson("INTERNAL_SERVER_ERROR", "Internal server error", 500);
   }
 }

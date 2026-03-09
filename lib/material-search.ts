@@ -180,19 +180,12 @@ export function searchRelevantMaterials(
   maxLength: number = 2000
 ): string {
   if (!materialsText || materialsText.length === 0) {
-    console.log("[material-search] materialsText가 비어있음");
     return "";
   }
 
   const keywords = extractKeywords(question);
-  console.log("[material-search] 추출된 키워드:", {
-    question: question.substring(0, 100),
-    keywords,
-    keywordsCount: keywords.length,
-  });
 
   if (keywords.length === 0) {
-    console.log("[material-search] 키워드 추출 실패 - 빈 결과 반환");
     return "";
   }
 
@@ -222,15 +215,6 @@ export function searchRelevantMaterials(
   // 관련도 점수로 정렬
   results.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-  console.log("[material-search] 검색 결과:", {
-    totalResults: results.length,
-    topScores: results.slice(0, 5).map((r) => ({
-      score: r.relevanceScore,
-      textPreview: r.text.substring(0, 50),
-      fileName: r.fileName,
-    })),
-  });
-
   // 상위 결과만 선택하고 텍스트 길이 제한
   const selectedResults = results.slice(0, maxResults);
   let totalLength = 0;
@@ -253,16 +237,10 @@ export function searchRelevantMaterials(
   }
 
   if (finalTexts.length === 0) {
-    console.log("[material-search] 최종 결과 없음");
     return "";
   }
 
   const result = `\n\n[수업 자료 참고 내용]\n${finalTexts.join("\n\n---\n\n")}`;
-  console.log("[material-search] 최종 결과:", {
-    resultCount: finalTexts.length,
-    totalLength: result.length,
-    preview: result.substring(0, 200),
-  });
 
   return result;
 }

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/prisma";
+import { currentUser } from "@/lib/get-current-user";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { successJson, errorJson } from "@/lib/api-response";
+
+const supabase = getSupabaseServer();
 
 // 프로필 조회
 export async function GET() {
@@ -8,41 +11,27 @@ export async function GET() {
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    // Check if user is student
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
-      return NextResponse.json(
-        { error: "Student access required" },
-        { status: 403 }
-      );
+      return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
-    // Prisma를 사용하여 프로필 조회
-    console.log("[Profile API] Fetching profile for student_id:", user.id);
-    const profile = await prisma.student_profiles.findUnique({
-      where: { student_id: user.id },
-    });
-    console.log("[Profile API] Profile found:", profile ? "yes" : "no");
+    const { data: profile, error } = await supabase
+      .from("student_profiles")
+      .select("*")
+      .eq("student_id", user.id)
+      .single();
 
-    return NextResponse.json({ profile });
+    if (error && error.code !== "PGRST116") {
+      throw error;
+    }
+
+    return successJson({ profile: profile || null });
   } catch (error) {
-    console.error("[Profile API] Error fetching profile:", error);
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    const errorStack = error instanceof Error ? error.stack : undefined;
-    console.error("[Profile API] Error stack:", errorStack);
-    return NextResponse.json(
-      {
-        error: "Failed to fetch profile",
-        details: errorMessage,
-        // 개발 환경에서만 스택 트레이스 포함
-        ...(process.env.NODE_ENV === "development" && { stack: errorStack }),
-      },
-      { status: 500 }
-    );
+    return errorJson("FETCH_PROFILE_FAILED", "Failed to fetch profile", 500);
   }
 }
 
@@ -52,51 +41,43 @@ export async function POST(request: NextRequest) {
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    // Check if user is student
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
-      return NextResponse.json(
-        { error: "Student access required" },
-        { status: 403 }
-      );
+      return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
-    const { name, student_number, school } = await request.json();
+    const body = await request.json();
+    const name = typeof body.name === "string" ? body.name.trim().slice(0, 100) : "";
+    const student_number = typeof body.student_number === "string" ? body.student_number.trim().slice(0, 50) : "";
+    const school = typeof body.school === "string" ? body.school.trim().slice(0, 100) : "";
 
-    // Validation
     if (!name || !student_number || !school) {
-      return NextResponse.json(
-        { error: "Name, student number, and school are required" },
-        { status: 400 }
-      );
+      return errorJson("MISSING_FIELDS", "Name, student number, and school are required", 400);
     }
 
-    // Upsert profile (create or update)
-    const profile = await prisma.student_profiles.upsert({
-      where: { student_id: user.id },
-      update: {
-        name,
-        student_number,
-        school,
-        updated_at: new Date(),
-      },
-      create: {
-        student_id: user.id,
-        name,
-        student_number,
-        school,
-      },
-    });
+    // Upsert profile using Supabase
+    const { data: profile, error } = await supabase
+      .from("student_profiles")
+      .upsert(
+        {
+          student_id: user.id,
+          name,
+          student_number,
+          school,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "student_id" }
+      )
+      .select()
+      .single();
 
-    return NextResponse.json({ profile, success: true });
+    if (error) throw error;
+
+    return successJson({ profile });
   } catch (error) {
-    console.error("Error saving profile:", error);
-    return NextResponse.json(
-      { error: "Failed to save profile" },
-      { status: 500 }
-    );
+    return errorJson("SAVE_PROFILE_FAILED", "Failed to save profile", 500);
   }
 }

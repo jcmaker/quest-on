@@ -5,77 +5,79 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import { openai, AI_MODEL } from "@/lib/openai";
+import { currentUser } from "@/lib/get-current-user";
+import { getOpenAI, AI_MODEL } from "@/lib/openai";
 import { buildInstructorChatSystemPrompt } from "@/lib/prompts";
+import { handleCorsPreFlight } from "@/lib/cors";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { validateRequest, instructorChatRequestSchema } from "@/lib/validations";
+import { successJson, errorJson } from "@/lib/api-response";
+import { extractResponseText } from "@/lib/parse-openai-response";
+import {
+  buildAiTextMetadata,
+  callTrackedResponse,
+} from "@/lib/ai-tracking";
 
-// Some environments may send OPTIONS (preflight) or GET accidentally.
 export async function OPTIONS(request: NextRequest) {
-  const origin = request.headers.get("origin") ?? "*";
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-      Vary: "Origin",
-    },
-  });
+  return handleCorsPreFlight(request);
 }
 
 export async function GET() {
   return NextResponse.json(
     { ok: true, route: "/api/instructor/chat", methods: ["POST", "OPTIONS"] },
-    { status: 200, headers: { Allow: "POST, OPTIONS" } },
+    { status: 200, headers: { Allow: "POST, OPTIONS" } }
   );
 }
-
-type InstructorChatRequestBody = {
-  message: string;
-  sessionId: string;
-  context: string;
-  scopeDescription?: string;
-  userId?: string;
-};
 
 // 공통 Completion 함수 - Responses API 사용
 async function getAIResponse(
   systemPrompt: string,
   userMessage: string,
   previousResponseId: string | null = null,
+  tracking?: {
+    userId?: string;
+    sessionId?: string;
+  }
 ): Promise<{ response: string; responseId: string }> {
-  const aiStartTime = Date.now();
   try {
-    if (process.env.NODE_ENV === "development") {
-    }
-
-    // Responses API 사용
-    const response = await openai.responses.create({
-      model: AI_MODEL,
-      instructions: systemPrompt,
-      input: userMessage,
-      previous_response_id: previousResponseId || undefined,
-      store: true,
-    });
-
-    // output 배열에서 메시지 타입 찾기
-    let responseText = "";
-    const outputArray = response.output as any;
-    if (outputArray && Array.isArray(outputArray)) {
-      const messageOutput = outputArray.find(
-        (item: any) => item.type === "message" && item.content,
-      );
-
-      if (messageOutput && Array.isArray(messageOutput.content)) {
-        const textParts = messageOutput.content
-          .filter((part: any) => part.type === "output_text" && part.text)
-          .map((part: any) => part.text);
-        responseText = textParts.join("");
+    const { data: response } = await callTrackedResponse(
+      () =>
+        getOpenAI().responses.create({
+          model: AI_MODEL,
+          instructions: systemPrompt,
+          input: userMessage,
+          previous_response_id: previousResponseId || undefined,
+          store: true,
+        }),
+      {
+        feature: "instructor_chat",
+        route: "/api/instructor/chat",
+        model: AI_MODEL,
+        userId: tracking?.userId,
+        sessionId: tracking?.sessionId,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userMessage],
+          extra: previousResponseId
+            ? { previous_response_id: previousResponseId }
+            : undefined,
+        }),
+      },
+      {
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText: extractResponseText(
+              ((result as { output?: unknown[] }).output as
+                | Parameters<typeof extractResponseText>[0]
+                | undefined) ?? []
+            ),
+          }),
       }
-    }
+    );
+
+    // output 배열에서 텍스트 추출
+    const responseText = extractResponseText(response.output);
 
     if (!responseText || responseText.trim().length === 0) {
-      console.warn("[instructor-chat] OpenAI returned empty or null response");
       return {
         response:
           "죄송합니다. 질문을 처리하는 중에 문제가 발생했습니다. 다시 시도해주세요.",
@@ -88,35 +90,40 @@ async function getAIResponse(
       responseId: response.id,
     };
   } catch (openaiError) {
-    console.error("[instructor-chat] OpenAI Responses API error:", openaiError);
     throw new Error(
-      `OpenAI Responses API failed: ${(openaiError as Error).message}`,
+      `OpenAI Responses API failed: ${(openaiError as Error).message}`
     );
   }
 }
 
 export async function POST(request: NextRequest) {
-  const requestStartTime = Date.now();
   try {
-    const body = (await request.json()) as InstructorChatRequestBody;
-
-    const { message, sessionId, context, scopeDescription, userId } = body;
-
-    if (!message) {
-      return NextResponse.json(
-        { error: "Missing message field" },
-        { status: 400 },
-      );
+    // Authentication check
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    if (!context) {
-      return NextResponse.json(
-        { error: "Missing context field" },
-        { status: 400 },
-      );
+    const userRole = user.unsafeMetadata?.role as string;
+    if (userRole !== "instructor") {
+      return errorJson("FORBIDDEN", "Instructor access required", 403);
     }
 
-    // 📊 사용자 활동 로그
+    // Rate limiting
+    const rl = await checkRateLimitAsync(`instructor-chat:${user.id}`, RATE_LIMITS.ai);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
+    }
+
+    const body = await request.json();
+
+    // Input validation
+    const validation = validateRequest(instructorChatRequestSchema, body);
+    if (!validation.success) {
+      return errorJson("VALIDATION_ERROR", validation.error!, 400);
+    }
+
+    const { message, sessionId, context, scopeDescription } = validation.data;
 
     // 교수용 프롬프트 생성
     const systemPrompt = buildInstructorChatSystemPrompt({
@@ -131,32 +138,24 @@ export async function POST(request: NextRequest) {
       systemPrompt,
       message,
       previousResponseId,
+      {
+        userId: user.id,
+        sessionId,
+      }
     );
 
-    return NextResponse.json({
+    return successJson({
       response: aiResponse,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("[instructor-chat] Chat API error:", error);
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
 
-    console.error("[instructor-chat] Chat API error details:", {
-      message: errorMessage,
-      stack: errorStack,
-      errorType: typeof error,
-    });
-
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        message:
-          "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.",
-        details:
-          process.env.NODE_ENV === "development" ? errorMessage : undefined,
-      },
-      { status: 500 },
+    return errorJson(
+      "INTERNAL_ERROR",
+      "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.",
+      500,
+      process.env.NODE_ENV === "development" ? errorMessage : undefined
     );
   }
 }

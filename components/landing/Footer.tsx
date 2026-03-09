@@ -81,6 +81,7 @@ export default function Footer({ mode = "light" }: FooterProps) {
                 alt="Quest-On Logo"
                 width={40}
                 height={40}
+                sizes="40px"
                 className="h-10 w-10"
                 loading="lazy"
               />
@@ -111,7 +112,7 @@ export default function Footer({ mode = "light" }: FooterProps) {
               className="px-8 py-3.5 rounded-full font-semibold text-white transition-all duration-200 shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] flex items-center gap-2"
               style={{
                 background:
-                  "linear-gradient(135deg, #3b82f6 0%, #6366f1 25%, #8b5cf6 50%, #a855f7 75%, #9333ea 100%)",
+                  "linear-gradient(135deg, #2563eb 0%, #6366f1 25%, #8b5cf6 50%, #a855f7 75%, #9333ea 100%)",
                 backgroundSize: "200% 200%",
                 animation: "gradient-shift-blue-purple 4s ease infinite",
               }}
@@ -121,7 +122,7 @@ export default function Footer({ mode = "light" }: FooterProps) {
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background =
-                  "linear-gradient(135deg, #3b82f6 0%, #6366f1 25%, #8b5cf6 50%, #a855f7 75%, #9333ea 100%)";
+                  "linear-gradient(135deg, #2563eb 0%, #6366f1 25%, #8b5cf6 50%, #a855f7 75%, #9333ea 100%)";
               }}
             >
               <Mail className="w-5 h-5" />
@@ -221,7 +222,7 @@ export default function Footer({ mode = "light" }: FooterProps) {
               className="text-sm font-medium"
               style={{ color: colors.textSec }}
             >
-              Copyright © 2025{" "}
+              Copyright © {new Date().getFullYear()}{" "}
               <span className="font-semibold" style={{ color: colors.text }}>
                 Quest-On Inc.
               </span>

@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
 
 # next.js
 /.next/
@@ -35,6 +37,13 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# supabase local
+supabase/.branches/
+supabase/.temp/
+
+# npm cache
+.npm-cache
 
 # typescript
 *.tsbuildinfo

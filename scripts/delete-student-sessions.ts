@@ -8,7 +8,10 @@
  *   npx tsx scripts/delete-student-sessions.ts P5AD7X 조준형
  */
 
-import { prisma } from "../lib/prisma";
+// NOTE: This script previously used Prisma which has been removed.
+// To use this script, replace with Supabase client or direct pg connection.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const prisma = null as any; // Placeholder — migrate to Supabase before using
 
 const EXAM_CODE = process.argv[2];
 const STUDENT_IDENTIFIER = process.argv[3]; // student_id 또는 학생 이름

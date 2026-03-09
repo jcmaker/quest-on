@@ -1,4 +1,4 @@
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import { redirect } from "next/navigation";
 
 export async function redirectByRole() {

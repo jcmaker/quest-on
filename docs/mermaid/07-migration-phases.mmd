@@ -1,0 +1,10 @@
+flowchart LR
+  classDef phase fill:#f8fafc,stroke:#94a3b8,color:#0f172a;
+  classDef emphasis fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#111827;
+
+  p0["Phase 0<br/>Discovery<br/>상태 전이 맵 정리<br/>중복 책임 목록화<br/>trace id, 메트릭 추가"]:::phase
+  p1["Phase 1<br/>Coexistence<br/>신규 API 골격 추가<br/>/api/supa를 호환층으로 연결<br/>enqueue 인터페이스 도입"]:::emphasis
+  p2["Phase 2<br/>Migration<br/>학생 시험 플로우 이전<br/>강사 시작/종료/채점 이전<br/>RAG, grading을 worker로 이동"]:::emphasis
+  p3["Phase 3<br/>Cleanup<br/>레거시 액션 제거 또는 축소<br/>동기 AI 경로 제거<br/>중복 상태 계산 정리"]:::phase
+
+  p0 --> p1 --> p2 --> p3

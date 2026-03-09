@@ -52,36 +52,22 @@ export function ExamControlButtons({
     }
     const data = await response.json();
     
-    // waiting 상태이고 활성 세션인 학생만 필터링
-    // 활성 세션: is_active가 true이고, last_heartbeat_at이 최근 5분 이내인 경우
-    const now = Date.now();
-    const FIVE_MINUTES = 5 * 60 * 1000;
-    
-    const waiting = (data.sessions || []).filter((session: any) => {
-      // 상태가 waiting이어야 함
-      const isWaiting = session.status === "waiting" || 
-        (!session.status && !session.submitted_at);
-      
-      if (!isWaiting) return false;
-      
-      // 활성 세션 체크: is_active가 true이고, 최근 하트비트가 있거나 생성된 지 5분 이내
-      const isActive = session.is_active !== false; // null이나 undefined도 활성으로 간주
-      
-      if (session.last_heartbeat_at) {
-        const heartbeatTime = new Date(session.last_heartbeat_at).getTime();
-        return isActive && (now - heartbeatTime) < FIVE_MINUTES;
-      }
-      
-      // 하트비트가 없으면 생성 시간 기준으로 5분 이내면 활성으로 간주
-      if (session.created_at) {
-        const createdTime = new Date(session.created_at).getTime();
-        return isActive && (now - createdTime) < FIVE_MINUTES;
-      }
-      
-      // 기본적으로 활성으로 간주 (하지만 하트비트가 없으면 비활성으로 처리)
-      return false;
+    // Show ALL students with waiting status — dead sessions get cleaned up on exam start
+    // (they transition to in_progress and time out if the student is gone)
+    interface SessionRecord {
+      student_id: string;
+      status?: string;
+      submitted_at?: string | null;
+      student_name?: string;
+      student_email?: string;
+      student_number?: string;
+      student_school?: string;
+    }
+
+    const waiting = (data.sessions || []).filter((session: SessionRecord) => {
+      return session.status === "waiting" || (!session.status && !session.submitted_at);
     });
-    
+
     // 학생 정보 추출 (중복 제거)
     const studentMap = new Map<string, {
       student_id: string;
@@ -89,8 +75,8 @@ export function ExamControlButtons({
       student_number?: string;
       school?: string;
     }>();
-    
-    waiting.forEach((session: any) => {
+
+    waiting.forEach((session: SessionRecord) => {
       if (!studentMap.has(session.student_id)) {
         studentMap.set(session.student_id, {
           student_id: session.student_id,
@@ -130,19 +116,11 @@ export function ExamControlButtons({
           table: "sessions",
           filter: `exam_id=eq.${examId}`, // 해당 시험의 세션만 필터링
         },
-        (payload) => {
-          console.log("[REALTIME] Session changed:", payload);
-          // 데이터가 변할 때마다 캐시를 무효화하여 다시 가져오기
+        () => {
           queryClient.invalidateQueries({ queryKey });
         }
       )
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          console.log("[REALTIME] Subscribed to waiting room changes");
-        } else if (status === "CHANNEL_ERROR") {
-          console.error("[REALTIME] Channel error");
-        }
-      });
+      .subscribe();
 
     // cleanup: 컴포넌트 언마운트 또는 모달이 닫힐 때 구독 해제
     return () => {
@@ -179,7 +157,6 @@ export function ExamControlButtons({
         );
       }
     } catch (error) {
-      console.error("Error starting exam:", error);
       toast.error("시험 시작 중 오류가 발생했습니다.");
     } finally {
       setIsStarting(false);
@@ -208,7 +185,6 @@ export function ExamControlButtons({
         );
       }
     } catch (error) {
-      console.error("Error ending exam:", error);
       toast.error("시험 종료 중 오류가 발생했습니다.");
     } finally {
       setIsEnding(false);
@@ -349,17 +325,6 @@ export function ExamControlButtons({
   };
 
   const { badge, button } = getStatusDisplay();
-
-  // 디버깅: 실제 값 확인
-  if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
-    console.log("[ExamControlButtons] Debug:", {
-      examId,
-      examStatus,
-      hasGateFields,
-      buttonExists: !!button,
-      badgeExists: !!badge,
-    });
-  }
 
   return (
     <>

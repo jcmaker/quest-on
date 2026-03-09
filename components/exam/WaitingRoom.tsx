@@ -1,20 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Clock, Users, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { createSupabaseClient } from "@/lib/supabase-client";
 
 interface WaitingRoomProps {
   examTitle?: string;
   examCode?: string;
   allowDraftInWaiting?: boolean;
   allowChatInWaiting?: boolean;
-  onGateStart?: () => void;
+  onGateStart?: (gateState: {
+    sessionStatus?: string;
+    sessionStartTime?: string | null;
+    timeRemaining?: number | null;
+  }) => void;
   sessionId?: string;
   examId?: string;
   studentId?: string;
+  examDuration?: number;
+  questionCount?: number;
 }
 
 export function WaitingRoom({
@@ -25,55 +31,99 @@ export function WaitingRoom({
   onGateStart,
   sessionId,
   examId,
-  studentId,
+  examDuration,
+  questionCount,
 }: WaitingRoomProps) {
-  const [isPolling, setIsPolling] = useState(true);
+  const [isWaiting, setIsWaiting] = useState(true);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const onGateStartRef = useRef(onGateStart);
+  onGateStartRef.current = onGateStart;
 
-  // Gate Start 신호를 주기적으로 확인 (Polling)
+  // Elapsed time counter
   useEffect(() => {
-    if (!sessionId || !examCode || !studentId || !isPolling) return;
+    if (!isWaiting) return;
+    const interval = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isWaiting]);
 
-    const checkGateStart = async () => {
-      try {
-        const response = await fetch("/api/supa", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "init_exam_session",
-            data: {
-              examCode,
-              studentId,
-            },
-          }),
-        });
+  // Lightweight status check (used for fallback polling only)
+  const checkExamStatus = useCallback(async () => {
+    if (!examId || !sessionId) return;
+    try {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "check_exam_gate_status",
+          data: { examId, sessionId },
+        }),
+      });
 
-        if (response.ok) {
-          const result = await response.json();
-          // Gate Start 신호가 수신되었고 세션이 InProgress 상태인지 확인
-          if (result.gateStarted && result.sessionStatus === "in_progress") {
-            setIsPolling(false);
-            if (onGateStart) {
-              onGateStart();
-            }
+      if (response.ok) {
+        const result = await response.json();
+        if (result.gateStarted && result.sessionStatus === "in_progress") {
+          setIsWaiting(false);
+          onGateStartRef.current?.({
+            sessionStatus: result.sessionStatus,
+            sessionStartTime: result.sessionStartTime ?? null,
+            timeRemaining: result.timeRemaining ?? null,
+          });
+        }
+      }
+    } catch {
+      // Non-critical polling error
+    }
+  }, [examId, sessionId]);
+
+  // Supabase Realtime subscription for exam status changes
+  useEffect(() => {
+    if (!examId || !isWaiting) return;
+
+    const supabase = createSupabaseClient();
+
+    const channel = supabase
+      .channel(`exam_gate_${examId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "exams",
+          filter: `id=eq.${examId}`,
+        },
+        (payload) => {
+          // When exam status changes to "running", trigger gate start check
+          const newStatus = payload.new?.status;
+          if (newStatus === "running") {
+            checkExamStatus();
           }
         }
-      } catch (error) {
-        console.error("Error checking gate start:", error);
-      }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
+  }, [examId, isWaiting, checkExamStatus]);
 
-    // 초기 확인
-    checkGateStart();
+  // Fallback polling: 10-second interval for faster exam start detection
+  useEffect(() => {
+    if (!sessionId || !examId || !isWaiting) return;
 
-    // 3초마다 확인 (Gate Start 신호 대기)
-    const interval = setInterval(checkGateStart, 3000);
+    // Initial check
+    checkExamStatus();
+
+    // 10-second fallback polling
+    const interval = setInterval(checkExamStatus, 10000);
 
     return () => clearInterval(interval);
-  }, [sessionId, examCode, studentId, isPolling, onGateStart]);
+  }, [sessionId, examId, isWaiting, checkExamStatus]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl">
+      <Card className="w-full max-w-2xl" data-testid="waiting-room">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
             <div className="relative">
@@ -104,6 +154,21 @@ export function WaitingRoom({
                       <span className="font-medium">시험 코드:</span> {examCode}
                     </p>
                   )}
+                  {examDuration != null && examDuration > 0 && (
+                    <p>
+                      <span className="font-medium">시험 시간:</span> {examDuration}분
+                    </p>
+                  )}
+                  {examDuration === 0 && (
+                    <p>
+                      <span className="font-medium">시험 시간:</span> 무제한 (과제형)
+                    </p>
+                  )}
+                  {questionCount != null && questionCount > 0 && (
+                    <p>
+                      <span className="font-medium">문제 수:</span> {questionCount}문제
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -116,7 +181,7 @@ export function WaitingRoom({
               <div className="space-y-2">
                 <p className="font-semibold">시험 시작 대기 중</p>
                 <p className="text-sm">
-                  강사가 "시험 시작" 버튼을 클릭하면 시험이 시작됩니다. 이 페이지를
+                  강사가 &quot;시험 시작&quot; 버튼을 클릭하면 시험이 시작됩니다. 이 페이지를
                   닫지 마세요.
                 </p>
                 {!allowDraftInWaiting && !allowChatInWaiting && (
@@ -141,9 +206,14 @@ export function WaitingRoom({
           )}
 
           {/* 상태 표시 */}
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>시험 시작 신호 대기 중...</span>
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>시험 시작 신호 대기 중...</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              대기 시간: {Math.floor(elapsedSeconds / 60)}분 {(elapsedSeconds % 60).toString().padStart(2, "0")}초
+            </div>
           </div>
         </CardContent>
       </Card>

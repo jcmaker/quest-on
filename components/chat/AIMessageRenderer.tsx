@@ -3,10 +3,17 @@
 import React from "react";
 import ReactMarkdown, { Components } from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
+import {
+  containsMathSyntax,
+  normalizeMathDelimiters,
+} from "@/lib/math-formatting";
+import { CopyMessageButton } from "@/components/chat/CopyMessageButton";
 
 interface AIMessageRendererProps {
   content: string;
@@ -20,19 +27,21 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
   variant = "bubble",
 }) => {
   const isPlain = variant === "plain";
+  const normalizedContent = normalizeMathDelimiters(content);
+  const hasMathSyntax = containsMathSyntax(content);
   return (
     <div
       className={
         isPlain
-          ? "text-foreground w-full"
-          : "bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30"
+          ? "text-foreground w-full group relative"
+          : "group bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[92%] sm:max-w-[82%] lg:max-w-[68%] xl:max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30"
       }
     >
       <div
         className={
           isPlain
-            ? "prose prose-sm max-w-none dark:prose-invert break-words [&_*]:break-words [&_*]:leading-[1.5]"
-            : "prose prose-sm max-w-none dark:prose-invert prose-headings:mb-0 prose-p:mb-0 prose-p:last:mb-0 prose-ul:mb-0 prose-ol:mb-0 prose-li:mb-0 break-words [&_*]:break-words [&_*]:leading-[1.3]"
+            ? "prose prose-sm max-w-none dark:prose-invert break-words [&_*]:break-words [&_*]:leading-[1.5] [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden [&_.katex-display]:py-1"
+            : "prose prose-sm max-w-none dark:prose-invert prose-headings:mb-0 prose-p:mb-0 prose-p:last:mb-0 prose-ul:mb-0 prose-ol:mb-0 prose-li:mb-0 break-words [&_*]:break-words [&_*]:leading-[1.3] [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden [&_.katex-display]:py-1 [&_.katex-display]:max-w-full [&_.katex]:text-[0.95em]"
         }
       >
         {/* 항상 마크다운으로 렌더링 */}
@@ -98,14 +107,12 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
                       <span>{match[1]}</span>
                     </div>
                     <SyntaxHighlighter
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      style={vscDarkPlus as any}
+                      style={vscDarkPlus as SyntaxHighlighterProps["style"]}
                       language={match[1]}
                       PreTag="div"
                       className="!m-0 !rounded-none !bg-[#1e1e1e]"
                       showLineNumbers={true}
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      {...(props as any)}
+                      {...(props as Omit<SyntaxHighlighterProps, "children" | "style" | "language">)}
                     >
                       {String(children).replace(/\n$/, "")}
                     </SyntaxHighlighter>
@@ -203,14 +210,12 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
               ),
 
               // 수학 식 렌더링 (remark-math 플러그인용)
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              math: ({ children }: any) => (
+              math: ({ children }: { children?: React.ReactNode }) => (
                 <div className="my-0 mt-0 mb-0 overflow-x-auto p-0.5 bg-muted/20 rounded-lg text-center [&+*]:mt-0">
                   {children}
                 </div>
               ),
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              inlineMath: ({ children }: any) => (
+              inlineMath: ({ children }: { children?: React.ReactNode }) => (
                 <span className="inline-block mx-1 px-1 bg-muted/20 rounded">
                   {children}
                 </span>
@@ -228,9 +233,16 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
             } as Components
           }
         >
-          {content}
+          {normalizedContent}
         </ReactMarkdown>
       </div>
+
+      {isPlain && (
+        <CopyMessageButton
+          text={content}
+          className="absolute top-0 right-0"
+        />
+      )}
 
       {!isPlain && (
         <>
@@ -240,6 +252,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
               <span className="text-xs font-medium text-muted-foreground">
                 AI 답변
               </span>
+              <CopyMessageButton text={content} />
             </div>
             <p className="text-xs text-muted-foreground font-mono">
               {new Date(timestamp).toLocaleTimeString([], {
@@ -248,7 +261,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
               })}
             </p>
           </div>
-          {content.includes("$") && (
+          {hasMathSyntax && (
             <div className="mt-1 text-[10px] text-muted-foreground/70 text-right">
               LaTeX 수식 포함됨
             </div>

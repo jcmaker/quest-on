@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { currentUser } from "@/lib/get-current-user";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { successJson, errorJson } from "@/lib/api-response";
+import { validateUUID } from "@/lib/validate-params";
+import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Missing Supabase environment variables");
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = getSupabaseServer();
 
 /**
  * POST /api/exam/[examId]/end
@@ -21,24 +18,29 @@ const supabase = createClient(supabaseUrl, supabaseKey);
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ examId: string }> },
+  { params }: { params: Promise<{ examId: string }> }
 ) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 },
-      );
+      return errorJson("FORBIDDEN", "Instructor access required", 403);
+    }
+
+    const rl = await checkRateLimitAsync(`exam-end:${user.id}`, RATE_LIMITS.examControl);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests", 429);
     }
 
     const resolvedParams = await params;
     const examId = resolvedParams.examId;
+
+    const invalidId = validateUUID(examId, "examId");
+    if (invalidId) return invalidId;
 
     // 1. 시험 정보 확인 및 권한 검증
     const { data: exam, error: examError } = await supabase
@@ -48,23 +50,21 @@ export async function POST(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Access denied", 403);
     }
 
     // 2. 상태 검증: Running 또는 EntryClosed 상태에서만 End 가능
     const validStatuses = ["running", "entry_closed"];
     if (!validStatuses.includes(exam.status || "")) {
-      return NextResponse.json(
-        {
-          error: "Exam cannot be ended",
-          currentStatus: exam.status,
-          message: "Exam must be in 'running' or 'entry_closed' status to end",
-        },
-        { status: 400 },
+      return errorJson(
+        "BAD_REQUEST",
+        "Exam must be in 'running' or 'entry_closed' status to end",
+        400,
+        { currentStatus: exam.status }
       );
     }
 
@@ -80,16 +80,26 @@ export async function POST(
       .eq("id", examId);
 
     if (updateExamError) {
-      console.error("[END_EXAM] Failed to update exam:", updateExamError);
-      return NextResponse.json(
-        { error: "Failed to end exam" },
-        { status: 500 },
-      );
+      return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);
     }
 
-    // 4. (선택사항) 모든 진행 중 세션 강제 제출
-    // 주의: 이는 비상 상황에서만 사용해야 함
-    // 일반적으로는 개별 타이머로 자연 종료되도록 함
+    // 4. 모든 진행 중 세션 강제 제출 + 대기 중 세션 정리 (재시도 로직 포함)
+    // Also close "waiting" sessions that never started
+    const { error: waitingCloseError } = await supabase
+      .from("sessions")
+      .update({
+        status: "closed",
+        is_active: false,
+      })
+      .eq("exam_id", examId)
+      .eq("status", "waiting");
+
+    if (waitingCloseError) {
+      logError("Failed to close waiting sessions", waitingCloseError, {
+        path: "/api/exam/end",
+      });
+    }
+
     const { data: activeSessions, error: sessionsError } = await supabase
       .from("sessions")
       .select("id, submitted_at")
@@ -97,41 +107,57 @@ export async function POST(
       .eq("status", "in_progress")
       .is("submitted_at", null);
 
-    if (sessionsError) {
-      console.error(
-        "[END_EXAM] Failed to fetch active sessions:",
-        sessionsError,
-      );
-    } else if (activeSessions && activeSessions.length > 0) {
+    let sessionsForceSubmitted = 0;
+    let forceSubmitFailed: string[] = [];
+
+    if (!sessionsError && activeSessions && activeSessions.length > 0) {
       const sessionIds = activeSessions.map((s) => s.id);
 
-      // 진행 중인 세션을 모두 제출 처리 (비상 강제 종료)
-      const { error: updateSessionsError } = await supabase
+      // 1차 시도: 일괄 업데이트
+      const { error: batchError } = await supabase
         .from("sessions")
         .update({
           status: "submitted",
           submitted_at: now,
-          updated_at: now,
+          auto_submitted: true,
         })
         .in("id", sessionIds);
 
-      if (updateSessionsError) {
-        console.error(
-          "[END_EXAM] Failed to force submit sessions:",
-          updateSessionsError,
-        );
+      if (!batchError) {
+        sessionsForceSubmitted = sessionIds.length;
       } else {
+        // 2차 시도: 개별 업데이트로 폴백
+        for (const sid of sessionIds) {
+          const { error: individualError } = await supabase
+            .from("sessions")
+            .update({
+              status: "submitted",
+              submitted_at: now,
+              auto_submitted: true,
+            })
+            .eq("id", sid);
+
+          if (!individualError) {
+            sessionsForceSubmitted++;
+          } else {
+            forceSubmitFailed.push(sid);
+          }
+        }
       }
     }
 
-    return NextResponse.json({
-      success: true,
+    return successJson({
       examId,
       status: "closed",
       endedAt: now,
-      sessionsForceSubmitted: activeSessions?.length || 0,
+      sessionsForceSubmitted,
+      ...(forceSubmitFailed.length > 0 && {
+        forceSubmitFailed,
+        warning: `${forceSubmitFailed.length} session(s) failed to force-submit`,
+      }),
     });
   } catch (error) {
-    return NextResponse.json({ error: "Failed to end exam" }, { status: 500 });
+    logError("Failed to end exam", error, { path: "/api/exam/end" });
+    return errorJson("INTERNAL_ERROR", "Failed to end exam", 500);
   }
 }

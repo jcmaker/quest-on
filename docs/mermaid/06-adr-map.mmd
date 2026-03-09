@@ -1,0 +1,17 @@
+flowchart TB
+  classDef target fill:#0f172a,stroke:#0f172a,color:#ffffff;
+  classDef adr fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#111827;
+
+  target["To-Be Architecture"]:::target
+
+  adr1["ADR-001<br/>시험 세션 상태 전이는<br/>Lifecycle API만 소유"]:::adr
+  adr2["ADR-002<br/>신규 기능은 명시형 API로 추가하고<br/>/api/supa는 호환층으로 축소"]:::adr
+  adr3["ADR-003<br/>운영 트랜잭션 데이터와<br/>파생 AI 산출물을 분리"]:::adr
+  adr4["ADR-004<br/>Clerk와 관리자 권한을<br/>Identity Adapter에서 일관 해석"]:::adr
+  adr5["ADR-005<br/>채점과 RAG는 enqueue 후<br/>worker가 비동기 처리"]:::adr
+
+  target --> adr1
+  target --> adr2
+  target --> adr3
+  target --> adr4
+  target --> adr5

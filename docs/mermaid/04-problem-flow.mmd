@@ -1,0 +1,50 @@
+sequenceDiagram
+  actor Student as 학생
+  actor Instructor as 강사
+  participant UI as Exam UI
+  participant Lifecycle as Lifecycle APIs
+  participant InstructorApi as Instructor Exam APIs
+  participant Assessment as Assessment API
+  participant Session as Session Service
+  participant DB as Supabase
+  participant AI as OpenAI
+
+  Student->>UI: 시험 코드로 진입
+  UI->>Lifecycle: init_exam_session
+  Lifecycle->>Session: 세션 생성 또는 복원
+  Session->>DB: exams, sessions, submissions, messages 조회
+  Lifecycle-->>UI: sessionStatus, timeRemaining 반환
+
+  alt preflight 필요
+    Student->>Lifecycle: preflight 수락
+    Lifecycle->>Session: waiting 또는 in_progress 결정
+    Session->>DB: preflight_accepted_at, session.status 업데이트
+    Lifecycle-->>UI: gate 상태 반환
+  end
+
+  loop 시험 시작 전
+    UI->>Lifecycle: check_exam_gate_status
+    Lifecycle->>Session: 시작 여부 재계산
+    Session->>DB: exam.started_at, session.status 조회
+    Lifecycle-->>UI: waiting 또는 in_progress
+  end
+
+  Instructor->>InstructorApi: exam/start
+  InstructorApi->>DB: exam.status = running
+  InstructorApi->>DB: waiting 세션을 in_progress로 일괄 전환
+
+  loop 시험 진행 중
+    UI->>Lifecycle: session_heartbeat / save_draft
+    Lifecycle->>Session: 남은 시간 계산, 자동 제출 여부 확인
+    Session->>DB: last_heartbeat_at, submissions 업데이트
+  end
+
+  Student->>Assessment: final submit
+  Assessment->>DB: session submitted 반영
+  Assessment->>AI: 자동 채점 실행
+  AI-->>Assessment: 채점 결과 반환
+  Assessment->>DB: grades, ai_summary 저장
+  Assessment-->>Student: 제출 완료
+
+  Note over UI,DB: 상태 규칙이 여러 경로에 분산되어 있어 변경 영향이 넓다.
+  Note over Assessment,AI: 무거운 AI 작업이 요청 경로 안에서 동기 실행된다.

@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
-import { currentUser } from "@clerk/nextjs/server";
-import { createClerkClient } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
+import { successJson, errorJson } from "@/lib/api-response";
+import { batchGetUserInfo } from "@/lib/clerk-users";
+import { validateUUID } from "@/lib/validate-params";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-// Initialize Clerk client
-const clerk = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY!,
-});
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
@@ -21,19 +15,23 @@ export async function GET(
 ) {
   try {
     const { sessionId } = await params;
+
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
+
     const searchParams = request.nextUrl.searchParams;
     const since = searchParams.get("since"); // ISO timestamp
 
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get session to verify it exists and get exam_id
@@ -44,7 +42,7 @@ export async function GET(
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
     // Get exam to verify instructor owns it
@@ -55,12 +53,12 @@ export async function GET(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get student profile
@@ -70,18 +68,9 @@ export async function GET(
       .eq("student_id", session.student_id)
       .single();
 
-    // Get student info from Clerk
-    let studentName = `Student ${session.student_id.slice(0, 8)}`;
-    try {
-      const clerkUser = await clerk.users.getUser(session.student_id);
-      if (clerkUser.firstName || clerkUser.lastName) {
-        studentName = `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim();
-      } else if (clerkUser.fullName) {
-        studentName = clerkUser.fullName;
-      }
-    } catch (error) {
-      console.error("Error fetching student info:", error);
-    }
+    // Get student info from Clerk (batch call for consistency)
+    const clerkUserMap = await batchGetUserInfo([session.student_id]);
+    const studentName = clerkUserMap.get(session.student_id)?.name ?? `Student ${session.student_id.slice(0, 8)}`;
 
     // Build query for messages
     let messagesQuery = supabase
@@ -112,7 +101,7 @@ export async function GET(
           const decompressed = decompressData(message.compressed_content);
           content = typeof decompressed === "string" ? decompressed : content;
         } catch (error) {
-          console.error("Error decompressing message content:", error);
+          // Use original content on decompression failure
         }
       }
 
@@ -133,15 +122,11 @@ export async function GET(
       };
     });
 
-    return NextResponse.json({
+    return successJson({
       messages: processedMessages,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Error fetching live messages:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

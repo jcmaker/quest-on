@@ -1,55 +1,90 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
 import crypto from "crypto";
+import { createAdminToken } from "@/lib/admin-auth";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { validateRequest, adminAuthSchema } from "@/lib/validations";
+import { successJson, errorJson } from "@/lib/api-response";
+import { auditLog } from "@/lib/audit";
+import { logError } from "@/lib/logger";
 
-// 간단한 세션 ID 생성
-function generateSessionId(): string {
-  return crypto.randomBytes(32).toString('hex');
+/** Constant-time string comparison to prevent timing attacks */
+function timingSafeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  if (bufA.length !== bufB.length) {
+    // Compare against self to keep constant time, then return false
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json();
+    // Rate limiting by IP to prevent brute force (always applied)
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const rl = await checkRateLimitAsync(`admin-login:${ip}`, RATE_LIMITS.adminLogin);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many login attempts. Please try again later.", 429);
+    }
 
-    // 환경 변수에서 어드민 계정 정보 확인
+    const body = await request.json();
+    const validation = validateRequest(adminAuthSchema, body);
+    if (!validation.success) {
+      return errorJson("BAD_REQUEST", validation.error!, 400);
+    }
+
+    const { username, password } = validation.data;
+
     const adminUsername = process.env.ADMIN_USERNAME;
     const adminPassword = process.env.ADMIN_PASSWORD;
 
     if (!adminUsername || !adminPassword) {
-      return NextResponse.json(
-        { error: "Admin credentials not configured" },
-        { status: 500 }
-      );
+      return errorJson("INTERNAL_ERROR", "Admin credentials not configured", 500);
     }
 
-    // 인증 확인
-    if (username === adminUsername && password === adminPassword) {
-      // 세션 ID 생성
-      const sessionId = generateSessionId();
+    if (timingSafeCompare(username, adminUsername) && timingSafeCompare(password, adminPassword)) {
+      const token = createAdminToken();
 
-      // 쿠키에 세션 저장
       const cookieStore = await cookies();
-      cookieStore.set("admin-session", sessionId, {
+      cookieStore.set("admin-session", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 24 * 60 * 60, // 24시간
+        sameSite: "strict",
+        maxAge: 24 * 60 * 60, // 24 hours
         path: "/",
       });
 
-      return NextResponse.json({ success: true });
+      try {
+        await auditLog({
+          action: "admin_login_success",
+          userId: "admin",
+          targetId: "admin-session",
+          details: { ip, username },
+        });
+      } catch (auditError) {
+        logError("[admin-auth] Audit log failed for login success", auditError, { path: "/api/admin/auth" });
+      }
+
+      return successJson();
     } else {
-      return NextResponse.json(
-        { error: "Invalid credentials" },
-        { status: 401 }
-      );
+      try {
+        await auditLog({
+          action: "admin_login_failure",
+          userId: "anonymous",
+          targetId: "admin-session",
+          details: { ip, username },
+        });
+      } catch (auditError) {
+        logError("[admin-auth] Audit log failed for login failure", auditError, { path: "/api/admin/auth" });
+      }
+
+      return errorJson("UNAUTHORIZED", "Invalid credentials", 401);
     }
   } catch (error) {
-    console.error("Admin auth error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    logError("Admin auth POST failed", error, { path: "/api/admin/auth" });
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }
 
@@ -57,12 +92,9 @@ export async function DELETE() {
   try {
     const cookieStore = await cookies();
     cookieStore.delete("admin-session");
-    return NextResponse.json({ success: true });
+    return successJson();
   } catch (error) {
-    console.error("Admin logout error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    logError("Admin auth DELETE failed", error, { path: "/api/admin/auth" });
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }
