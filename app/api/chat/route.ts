@@ -33,8 +33,11 @@ export async function GET() {
   );
 }
 
-// Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
-const supabase = getSupabaseServer();
+// Lazy Supabase client getter — creates a fresh client per invocation
+// to avoid stale connections in serverless environments
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 type RagResult = {
   relevantMaterialsText: string;
@@ -114,7 +117,7 @@ async function getRagContext(params: {
 
     let materials = examMaterialsText;
     if (!materials) {
-      const { data: examData } = await supabase
+      const { data: examData } = await getSupabase()
         .from("exams")
         .select("materials_text")
         .eq("id", examId)
@@ -249,7 +252,7 @@ async function fetchPreviousResponseId(params: {
   qIdx: number;
 }): Promise<string | null> {
   const { sessionId, qIdx } = params;
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from("messages")
     .select("response_id")
     .eq("session_id", sessionId)
@@ -275,7 +278,7 @@ async function incrementUsedClarifications(params: {
   if (skip) return;
 
   // Atomic increment via RPC (prevents race conditions with concurrent requests)
-  const { error } = await supabase.rpc("increment_used_clarifications", {
+  const { error } = await getSupabase().rpc("increment_used_clarifications", {
     p_session_id: sessionId,
     p_amount: 1,
   });
@@ -306,7 +309,7 @@ async function resolveTempSession(params: {
     };
   }
 
-  const { data: existingSession } = await supabase
+  const { data: existingSession } = await getSupabase()
     .from("sessions")
     .select("id, used_clarifications")
     .eq("exam_id", examId)
@@ -324,7 +327,7 @@ async function resolveTempSession(params: {
   }
 
   // 새 세션은 첫 대화에서 used_clarifications가 1이 되도록 바로 세팅 (추가 update 왕복 제거)
-  const { data: newSession } = await supabase
+  const { data: newSession } = await getSupabase()
     .from("sessions")
     .insert([
       { exam_id: examId, student_id: studentId, used_clarifications: 1 },
@@ -401,23 +404,31 @@ async function handleChatLogic(params: {
       messageTypePromise,
       ragPromise,
     ]);
-    const { error } = await supabase.from("messages").insert([
-      {
-        session_id: sessionId,
-        q_idx: qIdx,
-        role: "user",
-        content: message,
-        message_type: messageType,
-        metadata: {
-          rag: {
-            topSimilarity: rag.topSimilarity,
-            resultsCount: rag.resultsCount,
-            method: rag.method,
-          },
+    const userMsgPayload = {
+      session_id: sessionId,
+      q_idx: qIdx,
+      role: "user",
+      content: message,
+      message_type: messageType,
+      metadata: {
+        rag: {
+          topSimilarity: rag.topSimilarity,
+          resultsCount: rag.resultsCount,
+          method: rag.method,
         },
       },
-    ]);
-    if (error) logError("Error saving user message", error, { path: "/api/chat" });
+    };
+    const { error } = await getSupabase().from("messages").insert([userMsgPayload]);
+    if (error) {
+      // P1-9: Retry once on user message insert failure (same pattern as AI message)
+      logError("Error saving user message — retrying once", error, { path: "/api/chat" });
+      const { error: retryError } = await getSupabase().from("messages").insert([
+        { ...userMsgPayload, metadata: { ...userMsgPayload.metadata, _retried: true } },
+      ]);
+      if (retryError) {
+        logError("Error saving user message — retry also failed", retryError, { path: "/api/chat" });
+      }
+    }
   })();
 
   // 세 작업은 동시에 시작되며, 응답 반환 전에는 반드시 모두 완료되도록 await
@@ -456,7 +467,7 @@ async function handleChatLogic(params: {
   );
 
   // AI 응답/세션 업데이트는 반드시 응답 전에 await (fetch failed 방지)
-  const insertAiPromise = supabase.from("messages").insert([
+  const insertAiPromise = getSupabase().from("messages").insert([
     {
       session_id: sessionId,
       q_idx: qIdx,
@@ -492,12 +503,49 @@ async function handleChatLogic(params: {
     insertAiPromise,
     incrementPromise,
   ]);
-  if (aiInsertSettled.status === "rejected") {
-    logError("Error saving AI message", aiInsertSettled.reason, { path: "/api/chat" });
-    warnings.push("message_save_failed");
-  } else if (aiInsertSettled.value?.error) {
-    logError("Error saving AI message", aiInsertSettled.value.error, { path: "/api/chat" });
-    warnings.push("message_save_failed");
+
+  // P0-2: Retry once on AI message insert failure to prevent grading evidence loss
+  const aiInsertFailed =
+    aiInsertSettled.status === "rejected" || aiInsertSettled.value?.error;
+  if (aiInsertFailed) {
+    const firstError =
+      aiInsertSettled.status === "rejected"
+        ? aiInsertSettled.reason
+        : aiInsertSettled.value?.error;
+    logError("Error saving AI message — retrying once", firstError, { path: "/api/chat" });
+
+    const { error: retryError } = await getSupabase().from("messages").insert([
+      {
+        session_id: sessionId,
+        q_idx: qIdx,
+        role: "ai",
+        content: aiResponse,
+        response_id: responseId,
+        tokens_used: tokensUsed ?? null,
+        metadata: {
+          rag: {
+            topSimilarity: rag.topSimilarity,
+            resultsCount: rag.resultsCount,
+            method: rag.method,
+          },
+          usage: usage
+            ? {
+                input_tokens: usage.inputTokens,
+                output_tokens: usage.outputTokens,
+                total_tokens: usage.totalTokens,
+                cached_input_tokens: usage.cachedInputTokens,
+                reasoning_tokens: usage.reasoningTokens,
+              }
+            : {},
+          _retried: true,
+        },
+      },
+    ]);
+
+    if (retryError) {
+      logError("Error saving AI message — retry also failed", retryError, { path: "/api/chat" });
+      warnings.push("message_save_failed_critical");
+    }
   }
   if (incrementSettled.status === "rejected") {
     logError("Error incrementing clarifications", incrementSettled.reason, { path: "/api/chat" });
@@ -642,14 +690,20 @@ export async function POST(request: NextRequest) {
     }
 
     // ✅ 정규 세션 처리 (컨텍스트 조회)
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
       .select("id, exam_id, student_id, used_clarifications")
       .eq("id", sessionId)
       .single();
 
     if (sessionError || !session) {
-      return errorJson("INVALID_SESSION", "Invalid session", 400, sessionError?.message);
+      if (sessionError) {
+        logError("[CHAT] Session lookup failed", sessionError, {
+          path: "api/chat/route.ts",
+          additionalData: { sessionId },
+        });
+      }
+      return errorJson("INVALID_SESSION", "Invalid session", 400);
     }
 
     // Verify session ownership: session must belong to authenticated user
@@ -661,7 +715,7 @@ export async function POST(request: NextRequest) {
       return errorJson("MISSING_EXAM_INFO", "Session is missing exam information", 400);
     }
 
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = await getSupabase()
       .from("exams")
       .select("id, code, title, rubric, questions, materials_text, chat_weight")
       .eq("id", session.exam_id)

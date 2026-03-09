@@ -74,6 +74,9 @@ export function useExamChat({
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Fix 2B: 30-second timeout to prevent infinite loading on OpenAI hang
+    const timeoutId = setTimeout(() => controller.abort(), 30_000);
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -136,6 +139,22 @@ export function useExamChat({
     } catch (err) {
       // Don't show error for intentional abort (unmount or new request)
       if (err instanceof DOMException && err.name === "AbortError") {
+        // Distinguish timeout abort from intentional abort (unmount/new request)
+        if (controller.signal.aborted) {
+          setChatHistory((prev) => [
+            ...prev,
+            {
+              type: "assistant",
+              message:
+                "응답 시간이 초과되었습니다. 다시 시도해주세요.",
+              timestamp: new Date().toISOString(),
+              qIdx: currentQuestion,
+            },
+          ]);
+          // Restore user input on timeout
+          setChatMessage(currentMsg);
+          scrollToBottom();
+        }
         return;
       }
       setChatHistory((prev) => [
@@ -150,10 +169,9 @@ export function useExamChat({
       ]);
       scrollToBottom();
     } finally {
-      if (!controller.signal.aborted) {
-        setIsLoading(false);
-        setIsTyping(false);
-      }
+      clearTimeout(timeoutId);
+      setIsLoading(false);
+      setIsTyping(false);
     }
   }, [chatMessage, sessionId, currentQuestion, exam, userId, scrollToBottom]);
 

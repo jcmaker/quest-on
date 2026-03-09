@@ -3,7 +3,22 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 
-const supabase = getSupabaseServer();
+// Lazy Supabase client getter — creates a fresh client per invocation
+// to avoid stale connections in serverless environments
+function getSupabase() {
+  return getSupabaseServer();
+}
+
+/** Maximum number of answer history entries to keep per submission */
+const MAX_ANSWER_HISTORY = 50;
+
+/** Trim answer history to MAX_ANSWER_HISTORY entries, removing oldest first */
+function trimAnswerHistory(
+  history: Array<{ text: string; timestamp: string }>
+): Array<{ text: string; timestamp: string }> {
+  if (history.length <= MAX_ANSWER_HISTORY) return history;
+  return history.slice(history.length - MAX_ANSWER_HISTORY);
+}
 
 export async function saveDraft(data: {
   sessionId: string;
@@ -16,7 +31,7 @@ export async function saveDraft(data: {
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
-    const { data: sessionCheck } = await supabase
+    const { data: sessionCheck } = await getSupabase()
       .from("sessions")
       .select("student_id, exam_id")
       .eq("id", data.sessionId)
@@ -32,7 +47,7 @@ export async function saveDraft(data: {
     }
 
     // Validate q_idx upper bound against exam questions
-    const { data: examForValidation } = await supabase
+    const { data: examForValidation } = await getSupabase()
       .from("exams")
       .select("questions")
       .eq("id", sessionCheck.exam_id)
@@ -46,7 +61,7 @@ export async function saveDraft(data: {
     const now = new Date().toISOString();
 
     // First, try to get existing submission for history tracking
-    const { data: existingSubmission } = await supabase
+    const { data: existingSubmission } = await getSupabase()
       .from("submissions")
       .select("id, answer, answer_history, edit_count, updated_at, created_at")
       .eq("session_id", data.sessionId)
@@ -76,28 +91,80 @@ export async function saveDraft(data: {
           timestamp:
             existingSubmission.updated_at || existingSubmission.created_at,
         });
+        answerHistory = trimAnswerHistory(answerHistory);
       }
 
-      // Update existing submission
-      const { data: updatedSubmission, error: updateError } = await supabase
+      // Update existing submission with optimistic lock on edit_count to prevent lost increments
+      const currentEditCount = existingSubmission.edit_count || 0;
+      const newEditCount = answerChanged ? currentEditCount + 1 : currentEditCount;
+
+      const { data: updatedSubmission, error: updateError } = await getSupabase()
         .from("submissions")
         .update({
           answer: data.answer,
           updated_at: now,
           answer_history: answerHistory.length > 0 ? answerHistory : null,
-          edit_count: answerChanged
-            ? (existingSubmission.edit_count || 0) + 1
-            : existingSubmission.edit_count || 0,
+          edit_count: newEditCount,
         })
         .eq("id", existingSubmission.id)
+        .eq("edit_count", currentEditCount) // optimistic lock: only update if edit_count hasn't changed
         .select()
         .single();
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        // Optimistic lock failure (concurrent edit) — retry once with fresh data
+        const { data: freshSubmission } = await getSupabase()
+          .from("submissions")
+          .select("id, edit_count, answer, answer_history")
+          .eq("id", existingSubmission.id)
+          .single();
+
+        if (freshSubmission) {
+          // P1-1: Re-compute answer_history from fresh data to avoid losing concurrent edits
+          let freshHistory: Array<{ text: string; timestamp: string }> = [];
+          if (freshSubmission.answer_history) {
+            try {
+              freshHistory = Array.isArray(freshSubmission.answer_history)
+                ? freshSubmission.answer_history
+                : [];
+            } catch {
+              freshHistory = [];
+            }
+          }
+          const freshAnswerChanged = freshSubmission.answer !== data.answer;
+          if (freshAnswerChanged && freshSubmission.answer) {
+            freshHistory.push({ text: freshSubmission.answer, timestamp: now });
+            freshHistory = trimAnswerHistory(freshHistory);
+          }
+
+          const retryEditCount = freshAnswerChanged
+            ? (freshSubmission.edit_count || 0) + 1
+            : freshSubmission.edit_count || 0;
+
+          const { data: retryResult, error: retryError } = await getSupabase()
+            .from("submissions")
+            .update({
+              answer: data.answer,
+              updated_at: now,
+              answer_history: freshHistory.length > 0 ? freshHistory : null,
+              edit_count: retryEditCount,
+            })
+            .eq("id", freshSubmission.id)
+            .eq("edit_count", freshSubmission.edit_count) // P0-5: CAS guard on retry path
+            .select()
+            .single();
+
+          if (retryError) {
+            return errorJson("CONFLICT", "Concurrent edit conflict — please retry", 409);
+          }
+          return successJson({ submission: retryResult });
+        }
+        throw updateError;
+      }
       return successJson({ submission: updatedSubmission });
     } else {
       // Upsert new submission (race-safe: uses UNIQUE(session_id, q_idx) constraint)
-      const { data: newSubmission, error: upsertError } = await supabase
+      const { data: newSubmission, error: upsertError } = await getSupabase()
         .from("submissions")
         .upsert(
           {
@@ -133,7 +200,7 @@ export async function saveAllDrafts(data: {
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
-    const { data: sessionCheck } = await supabase
+    const { data: sessionCheck } = await getSupabase()
       .from("sessions")
       .select("student_id, exam_id")
       .eq("id", data.sessionId)
@@ -143,17 +210,18 @@ export async function saveAllDrafts(data: {
     }
 
     // Fetch exam for q_idx upper bound validation
-    const { data: examForValidation } = await supabase
+    const { data: examForValidation } = await getSupabase()
       .from("exams")
       .select("questions")
       .eq("id", sessionCheck.exam_id)
       .single();
-    const questionCount = Array.isArray(examForValidation?.questions)
-      ? examForValidation.questions.length
-      : Infinity;
+    if (!examForValidation?.questions || !Array.isArray(examForValidation.questions)) {
+      return errorJson("EXAM_NOT_FOUND", "Exam questions not found for validation", 404);
+    }
+    const questionCount = examForValidation.questions.length;
 
     // Batch: fetch all existing submissions for this session in one query
-    const { data: existingSubmissions } = await supabase
+    const { data: existingSubmissions } = await getSupabase()
       .from("submissions")
       .select("id, q_idx, answer, answer_history, edit_count, updated_at, created_at")
       .eq("session_id", data.sessionId);
@@ -181,7 +249,7 @@ export async function saveAllDrafts(data: {
         let answerHistory: Array<{ text: string; timestamp: string }> = Array.isArray(existing.answer_history) ? existing.answer_history : [];
 
         if (answerChanged && existing.answer) {
-          answerHistory = [...answerHistory, { text: existing.answer, timestamp: existing.updated_at || existing.created_at }];
+          answerHistory = trimAnswerHistory([...answerHistory, { text: existing.answer, timestamp: existing.updated_at || existing.created_at }]);
         }
 
         upsertPayloads.push({
@@ -208,13 +276,31 @@ export async function saveAllDrafts(data: {
 
     let results: unknown[] = [];
     if (upsertPayloads.length > 0) {
-      const { data: upsertedData, error: upsertError } = await supabase
+      const { data: upsertedData, error: upsertError } = await getSupabase()
         .from("submissions")
         .upsert(upsertPayloads, { onConflict: "session_id,q_idx" })
         .select();
 
       if (upsertError) throw upsertError;
       results = upsertedData || [];
+
+      // P0-2: Post-upsert verification — detect partial write failures
+      if (results.length !== upsertPayloads.length) {
+        logError("[saveAllDrafts] Upsert count mismatch — possible partial write", null, {
+          path: "/api/supa/submission-handlers",
+          additionalData: {
+            sessionId: data.sessionId,
+            expected: upsertPayloads.length,
+            actual: results.length,
+          },
+        });
+        return successJson({
+          submissions: results,
+          warning: `${results.length}/${upsertPayloads.length} drafts saved — some may need retry`,
+          partialFailure: true,
+          ...(failedDrafts.length > 0 && { failedDrafts }),
+        });
+      }
     }
 
     return successJson({
@@ -237,7 +323,7 @@ export async function saveDraftAnswers(data: {
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
-    const { data: sessionCheck } = await supabase
+    const { data: sessionCheck } = await getSupabase()
       .from("sessions")
       .select("student_id, exam_id")
       .eq("id", data.sessionId)
@@ -247,7 +333,7 @@ export async function saveDraftAnswers(data: {
     }
 
     // 2. Fetch exam questions for questionId→qIdx mapping (1 query)
-    const { data: exam } = await supabase
+    const { data: exam } = await getSupabase()
       .from("exams")
       .select("questions")
       .eq("id", sessionCheck.exam_id)
@@ -261,7 +347,7 @@ export async function saveDraftAnswers(data: {
     const questionCount = questions.length;
 
     // 3. Fetch all existing submissions for this session (1 query)
-    const { data: existingSubmissions } = await supabase
+    const { data: existingSubmissions } = await getSupabase()
       .from("submissions")
       .select("id, q_idx, answer, answer_history, edit_count, updated_at, created_at")
       .eq("session_id", data.sessionId);
@@ -290,7 +376,7 @@ export async function saveDraftAnswers(data: {
         let answerHistory: Array<{ text: string; timestamp: string }> = Array.isArray(existing.answer_history) ? existing.answer_history : [];
 
         if (answerChanged && existing.answer) {
-          answerHistory = [...answerHistory, { text: existing.answer, timestamp: existing.updated_at || existing.created_at }];
+          answerHistory = trimAnswerHistory([...answerHistory, { text: existing.answer, timestamp: existing.updated_at || existing.created_at }]);
         }
 
         upsertPayloads.push({
@@ -318,13 +404,31 @@ export async function saveDraftAnswers(data: {
     // 5. Single batch upsert (1 query)
     let results: unknown[] = [];
     if (upsertPayloads.length > 0) {
-      const { data: upsertedData, error: upsertError } = await supabase
+      const { data: upsertedData, error: upsertError } = await getSupabase()
         .from("submissions")
         .upsert(upsertPayloads, { onConflict: "session_id,q_idx" })
         .select();
 
       if (upsertError) throw upsertError;
       results = upsertedData || [];
+
+      // P0-2: Post-upsert verification — detect partial write failures
+      if (results.length !== upsertPayloads.length) {
+        logError("[saveDraftAnswers] Upsert count mismatch — possible partial write", null, {
+          path: "/api/supa/submission-handlers",
+          additionalData: {
+            sessionId: data.sessionId,
+            expected: upsertPayloads.length,
+            actual: results.length,
+          },
+        });
+        return successJson({
+          submissions: results,
+          warning: `${results.length}/${upsertPayloads.length} answers saved — some may need retry`,
+          partialFailure: true,
+          ...(failedDrafts.length > 0 && { failedDrafts }),
+        });
+      }
     }
 
     return successJson({
@@ -344,7 +448,7 @@ export async function getSessionSubmissions(data: { sessionId: string }) {
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
-    const { data: sessionCheck } = await supabase
+    const { data: sessionCheck } = await getSupabase()
       .from("sessions")
       .select("student_id, exam_id")
       .eq("id", data.sessionId)
@@ -354,7 +458,7 @@ export async function getSessionSubmissions(data: { sessionId: string }) {
     }
     // Allow access if user is the session owner (student) or the exam's instructor
     if (sessionCheck.student_id !== user.id) {
-      const { data: examCheck } = await supabase
+      const { data: examCheck } = await getSupabase()
         .from("exams")
         .select("instructor_id")
         .eq("id", sessionCheck.exam_id)
@@ -364,7 +468,7 @@ export async function getSessionSubmissions(data: { sessionId: string }) {
       }
     }
 
-    const { data: submissions, error } = await supabase
+    const { data: submissions, error } = await getSupabase()
       .from("submissions")
       .select("id, q_idx, answer, compressed_answer_data, compression_metadata, created_at")
       .eq("session_id", data.sessionId)
@@ -386,7 +490,7 @@ export async function getSessionMessages(data: { sessionId: string }) {
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
-    const { data: sessionCheck } = await supabase
+    const { data: sessionCheck } = await getSupabase()
       .from("sessions")
       .select("student_id, exam_id")
       .eq("id", data.sessionId)
@@ -395,7 +499,7 @@ export async function getSessionMessages(data: { sessionId: string }) {
       return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
     if (sessionCheck.student_id !== user.id) {
-      const { data: examCheck } = await supabase
+      const { data: examCheck } = await getSupabase()
         .from("exams")
         .select("instructor_id")
         .eq("id", sessionCheck.exam_id)
@@ -405,7 +509,7 @@ export async function getSessionMessages(data: { sessionId: string }) {
       }
     }
 
-    const { data: messages, error } = await supabase
+    const { data: messages, error } = await getSupabase()
       .from("messages")
       .select("id, q_idx, role, content, compressed_content, compression_metadata, created_at")
       .eq("session_id", data.sessionId)

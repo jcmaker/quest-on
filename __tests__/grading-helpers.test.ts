@@ -6,18 +6,20 @@ import {
   normalizeQuestions,
   buildRubricText,
   calculateWeightedScore,
+  calculateAiDependencyPenalty,
   analyzeAiDependency,
   summarizeAiDependencyAssessments,
 } from "@/lib/grading-helpers";
 
 describe("selectBestSubmission", () => {
-  it("prefers the longer answer", () => {
+  it("uses deterministic id-based tiebreak when timestamps match", () => {
     const subs = [
-      { answer: "short", created_at: "2024-01-01T00:00:00Z" },
-      { answer: "a longer answer here", created_at: "2024-01-01T00:00:00Z" },
+      { id: "aaa", answer: "short", created_at: "2024-01-01T00:00:00Z" },
+      { id: "bbb", answer: "a longer answer here", created_at: "2024-01-01T00:00:00Z" },
     ];
     const best = selectBestSubmission(subs);
-    expect(best.answer).toBe("a longer answer here");
+    // Higher id wins (deterministic, not answer-length-based)
+    expect(best.id).toBe("bbb");
   });
 
   it("prefers the most recent when answers are equal length", () => {
@@ -79,6 +81,33 @@ describe("selectBestSubmission", () => {
     ];
     const best = selectBestSubmission(subs);
     expect(best.answer).toBe("new draft");
+  });
+
+  it("prefers non-empty answer over empty auto-save with same status (P0-3)", () => {
+    const subs = [
+      { answer: "", created_at: "2024-01-01T00:01:00Z" },
+      { answer: "my actual answer with content", created_at: "2024-01-01T00:00:00Z" },
+    ];
+    const best = selectBestSubmission(subs);
+    expect(best.answer).toBe("my actual answer with content");
+  });
+
+  it("prefers non-empty answer over whitespace-only answer (P0-3)", () => {
+    const subs = [
+      { answer: "   \n  ", created_at: "2024-01-01T00:02:00Z" },
+      { answer: "real answer", created_at: "2024-01-01T00:00:00Z" },
+    ];
+    const best = selectBestSubmission(subs);
+    expect(best.answer).toBe("real answer");
+  });
+
+  it("uses created_at tiebreak when both have content (P0-3)", () => {
+    const subs = [
+      { answer: "first version", created_at: "2024-01-01T00:00:00Z" },
+      { answer: "second version", created_at: "2024-01-01T00:05:00Z" },
+    ];
+    const best = selectBestSubmission(subs);
+    expect(best.answer).toBe("second version");
   });
 
   it("handles auto-submit race: auto-submit empty vs manual submit", () => {
@@ -196,6 +225,33 @@ describe("normalizeQuestions", () => {
     expect(normalizeQuestions(null)).toEqual([]);
     expect(normalizeQuestions(undefined)).toEqual([]);
     expect(normalizeQuestions("string")).toEqual([]);
+  });
+
+  it("converts string idx to number (P0-3)", () => {
+    const questions = [{ text: "q1", idx: "2" }, { text: "q2", idx: "0" }];
+    const result = normalizeQuestions(questions);
+    expect(result[0].idx).toBe(2);
+    expect(result[1].idx).toBe(0);
+    expect(typeof result[0].idx).toBe("number");
+  });
+
+  it("falls back to array index for NaN idx (P0-3)", () => {
+    const questions = [{ text: "q1", idx: "abc" }, { text: "q2", idx: NaN }];
+    const result = normalizeQuestions(questions);
+    expect(result[0].idx).toBe(0);
+    expect(result[1].idx).toBe(1);
+  });
+
+  it("handles non-sequential idx values (P0-1)", () => {
+    const questions = [
+      { text: "q1", idx: 5 },
+      { text: "q2", idx: 10 },
+      { text: "q3", idx: 0 },
+    ];
+    const result = normalizeQuestions(questions);
+    expect(result[0].idx).toBe(5);
+    expect(result[1].idx).toBe(10);
+    expect(result[2].idx).toBe(0);
   });
 
   it("preserves ai_context", () => {
@@ -366,5 +422,52 @@ describe("calculateWeightedScore", () => {
         answer: { score: -50 },
       })
     ).toBe(0);
+  });
+
+  it("throws on NaN chat score (P1-3)", () => {
+    expect(() =>
+      calculateWeightedScore({ chat: { score: NaN } })
+    ).toThrow("not a finite number");
+  });
+
+  it("throws on Infinity answer score (P1-3)", () => {
+    expect(() =>
+      calculateWeightedScore({ answer: { score: Infinity } })
+    ).toThrow("not a finite number");
+  });
+
+  it("throws on -Infinity chat score (P1-3)", () => {
+    expect(() =>
+      calculateWeightedScore({ chat: { score: -Infinity } })
+    ).toThrow("not a finite number");
+  });
+});
+
+describe("calculateAiDependencyPenalty", () => {
+  it("uses Math.floor for recovery penalty (P1-10)", () => {
+    // A penalty that would differ between Math.round and Math.floor
+    // delegation: 8, starting: 5 → base 13, recovery: floor(13*0.45)=floor(5.85)=5
+    const penalty = calculateAiDependencyPenalty({
+      delegationRequestCount: 1,
+      startingPointDependencyCount: 1,
+      directAnswerRequestCount: 0,
+      directAnswerRelianceCount: 0,
+      finalAnswerOverlapScore: 0,
+      recoveryObserved: true,
+    });
+    // floor(13 * 0.45) = floor(5.85) = 5 (Math.round would give 6)
+    expect(penalty).toBe(5);
+  });
+
+  it("returns 0 for no dependency signals", () => {
+    const penalty = calculateAiDependencyPenalty({
+      delegationRequestCount: 0,
+      startingPointDependencyCount: 0,
+      directAnswerRequestCount: 0,
+      directAnswerRelianceCount: 0,
+      finalAnswerOverlapScore: 0,
+      recoveryObserved: false,
+    });
+    expect(penalty).toBe(0);
   });
 });

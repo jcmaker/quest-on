@@ -27,6 +27,8 @@ export interface StageGrading {
   chat?: StageGrade;
   answer?: StageGrade;
   feedback?: { score: number; comment: string };
+  /** Set to true when AI returned out-of-range scores that were clamped */
+  _score_clamped?: boolean;
 }
 
 export interface AiDependencySummary {

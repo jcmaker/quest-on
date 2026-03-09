@@ -49,7 +49,10 @@ export async function POST(request: NextRequest) {
       return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
-    const { name, student_number, school } = await request.json();
+    const body = await request.json();
+    const name = typeof body.name === "string" ? body.name.trim().slice(0, 100) : "";
+    const student_number = typeof body.student_number === "string" ? body.student_number.trim().slice(0, 50) : "";
+    const school = typeof body.school === "string" ? body.school.trim().slice(0, 100) : "";
 
     if (!name || !student_number || !school) {
       return errorJson("MISSING_FIELDS", "Name, student number, and school are required", 400);

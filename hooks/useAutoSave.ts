@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import toast from "react-hot-toast";
 
-interface DraftAnswer {
+export interface DraftAnswer {
   questionId: string;
   text: string;
   lastSaved?: string;
@@ -12,6 +13,7 @@ interface UseAutoSaveOptions {
   sessionId: string | null;
   examExists: boolean;
   intervalMs?: number;
+  localStorageKey?: string;
 }
 
 function isHtmlEmpty(html: string): boolean {
@@ -30,6 +32,7 @@ export function useAutoSave({
   sessionId,
   examExists,
   intervalMs = 30000,
+  localStorageKey,
 }: UseAutoSaveOptions) {
   const [draftAnswers, setDraftAnswers] = useState<DraftAnswer[]>([]);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
@@ -39,16 +42,57 @@ export function useAutoSave({
   const consecutiveFailures = useRef(0);
   const wasOfflineRef = useRef(false);
   const savingRef = useRef(false);
+  const pendingAnswersRef = useRef<DraftAnswer[] | null>(null);
 
-  // Keep a ref to latest draftAnswers — used by event handlers to avoid stale closures
+  const prevSaveErrorRef = useRef(false);
+
+  // Keep refs to avoid stale closures in event handlers and callbacks
   const draftAnswersRef = useRef(draftAnswers);
   draftAnswersRef.current = draftAnswers;
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+
+  // Fix 1A: Toast notification when saveError changes
+  useEffect(() => {
+    if (saveError && !prevSaveErrorRef.current) {
+      toast.error("답안 저장에 실패했습니다. 인터넷 연결을 확인해주세요.", {
+        id: "auto-save-failure",
+        duration: 8000,
+      });
+    } else if (!saveError && prevSaveErrorRef.current) {
+      toast.success("답안 저장이 복구되었습니다.", {
+        id: "auto-save-failure",
+        duration: 3000,
+      });
+    }
+    prevSaveErrorRef.current = saveError;
+  }, [saveError]);
+
+  // Fix 1B: localStorage backup on draftAnswers change
+  useEffect(() => {
+    if (!localStorageKey || draftAnswers.length === 0) return;
+    try {
+      localStorage.setItem(
+        localStorageKey,
+        JSON.stringify({
+          answers: draftAnswers,
+          timestamp: new Date().toISOString(),
+        })
+      );
+    } catch {
+      // localStorage write failure (e.g. quota exceeded) is non-critical
+    }
+  }, [draftAnswers, localStorageKey]);
 
   const saveDrafts = useCallback(
     async (answers: DraftAnswer[]) => {
-      if (!sessionId || !examExists) return;
-      // 이전 요청이 진행 중이면 스킵 — 동시 요청 방지
-      if (savingRef.current) return;
+      const currentSessionId = sessionIdRef.current;
+      if (!currentSessionId || !examExists) return;
+      // If a save is in progress, queue the latest answers instead of dropping
+      if (savingRef.current) {
+        pendingAnswersRef.current = answers;
+        return;
+      }
 
       savingRef.current = true;
       setIsSaving(true);
@@ -59,7 +103,7 @@ export function useAutoSave({
           body: JSON.stringify({
             action: "save_draft_answers",
             data: {
-              sessionId,
+              sessionId: currentSessionId,
               answers: answers.map((answer) => ({
                 questionId: answer.questionId,
                 text: answer.text?.replace(/\u0000/g, "") || "",
@@ -73,12 +117,60 @@ export function useAutoSave({
           consecutiveFailures.current = 0;
           setSaveError(false);
         } else {
-          consecutiveFailures.current++;
-          if (consecutiveFailures.current >= 3) {
-            setSaveError(true);
+          // P1-6: Immediate retry once after 5s on failure
+          await new Promise((r) => setTimeout(r, 5_000));
+          const retryResponse = await fetch("/api/supa", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "save_draft_answers",
+              data: {
+                sessionId: currentSessionId,
+                answers: answers.map((answer) => ({
+                  questionId: answer.questionId,
+                  text: answer.text?.replace(/\u0000/g, "") || "",
+                })),
+              },
+            }),
+          });
+          if (retryResponse.ok) {
+            setLastSaved(new Date().toLocaleTimeString());
+            consecutiveFailures.current = 0;
+            setSaveError(false);
+          } else {
+            consecutiveFailures.current++;
+            if (consecutiveFailures.current >= 3) {
+              setSaveError(true);
+            }
           }
         }
       } catch {
+        // P1-6: Immediate retry once after 5s on network failure
+        try {
+          await new Promise((r) => setTimeout(r, 5_000));
+          const retryResponse = await fetch("/api/supa", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "save_draft_answers",
+              data: {
+                sessionId: currentSessionId,
+                answers: answers.map((answer) => ({
+                  questionId: answer.questionId,
+                  text: answer.text?.replace(/\u0000/g, "") || "",
+                })),
+              },
+            }),
+          });
+          if (retryResponse.ok) {
+            setLastSaved(new Date().toLocaleTimeString());
+            consecutiveFailures.current = 0;
+            setSaveError(false);
+            return;
+          }
+        } catch {
+          // Retry also failed
+        }
         consecutiveFailures.current++;
         if (consecutiveFailures.current >= 3) {
           setSaveError(true);
@@ -86,9 +178,15 @@ export function useAutoSave({
       } finally {
         savingRef.current = false;
         setIsSaving(false);
+        // Drain queued save if any (always keep only the latest)
+        const pending = pendingAnswersRef.current;
+        if (pending) {
+          pendingAnswersRef.current = null;
+          saveDrafts(pending);
+        }
       }
     },
-    [sessionId, examExists]
+    [examExists]
   );
 
   // Manual save (wraps current draftAnswers)
@@ -102,8 +200,10 @@ export function useAutoSave({
       setIsOnline(true);
       if (wasOfflineRef.current) {
         wasOfflineRef.current = false;
-        // Immediate save on reconnect — use ref for latest answers
-        saveDrafts(draftAnswersRef.current);
+        // P1-8: Guard against thundering herd — skip if already saving
+        if (!savingRef.current) {
+          saveDrafts(draftAnswersRef.current);
+        }
       }
     };
     const handleOffline = () => {
@@ -125,6 +225,8 @@ export function useAutoSave({
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key === "s") {
         event.preventDefault();
+        // P1-7: Skip if already saving (debounce rapid Cmd+S)
+        if (savingRef.current) return;
         saveDrafts(draftAnswersRef.current);
       }
     };
@@ -169,14 +271,15 @@ export function useAutoSave({
 
   // Save via sendBeacon (for beforeunload)
   const saveViaBeacon = useCallback(() => {
-    if (!sessionId || !examExists) return;
+    const currentSessionId = sessionIdRef.current;
+    if (!currentSessionId || !examExists) return;
     const answers = draftAnswersRef.current;
     if (!answers.some((a) => a.text && !isHtmlEmpty(a.text))) return;
 
     const payload = JSON.stringify({
       action: "save_draft_answers",
       data: {
-        sessionId,
+        sessionId: currentSessionId,
         answers: answers.map((a) => ({
           questionId: a.questionId,
           text: a.text?.replace(/\u0000/g, "") || "",
@@ -197,7 +300,7 @@ export function useAutoSave({
         keepalive: true,
       }).catch(() => {});
     }
-  }, [sessionId, examExists]);
+  }, [examExists]);
 
   return {
     draftAnswers,

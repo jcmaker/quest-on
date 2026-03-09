@@ -165,6 +165,9 @@ async function checkRateLimitUpstash(
 // Public API — same signature, auto-selects backend
 // ============================================================
 
+// P1-2: Track whether we've already warned about in-memory fallback (once per cold start)
+let inMemoryFallbackWarned = false;
+
 /**
  * Check rate limit for a given key.
  * Uses Upstash Redis when available, falls back to in-memory.
@@ -181,7 +184,23 @@ export async function checkRateLimitAsync(
   ) {
     return checkRateLimitUpstash(key, config);
   }
-  return checkRateLimitInMemory(key, config);
+
+  // P1-2: In-memory fallback is ineffective in serverless — warn once and apply conservative limits
+  if (!inMemoryFallbackWarned && process.env.NODE_ENV === "production") {
+    inMemoryFallbackWarned = true;
+    console.warn(
+      "[rate-limit] UPSTASH_REDIS not configured — using in-memory fallback. " +
+      "Rate limiting is ineffective across serverless instances. " +
+      "Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN for production."
+    );
+  }
+
+  // Apply more conservative limits in serverless fallback mode (1/3 of configured limit, min 1)
+  const conservativeConfig: RateLimitConfig = process.env.NODE_ENV === "production"
+    ? { ...config, limit: Math.max(1, Math.floor(config.limit / 3)) }
+    : config;
+
+  return checkRateLimitInMemory(key, conservativeConfig);
 }
 
 /**

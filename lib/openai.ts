@@ -95,11 +95,13 @@ export async function callOpenAIWithTelemetry<T>(
           latencyMs: Date.now() - startedAt,
         };
       } catch (error) {
-        const isRateLimit =
-          error instanceof OpenAI.APIError && error.status === 429;
+        const RETRYABLE_STATUS = [408, 429, 500, 502, 503, 504];
+        const isRetryable =
+          error instanceof OpenAI.APIError &&
+          RETRYABLE_STATUS.includes(error.status);
         const isLastAttempt = attempt === maxAttempts - 1;
 
-        if (!isRateLimit || isLastAttempt) {
+        if (!isRetryable || isLastAttempt) {
           throw new OpenAICallTelemetryError({
             error,
             attemptCount: attempt + 1,
@@ -109,8 +111,9 @@ export async function callOpenAIWithTelemetry<T>(
 
         // Exponential backoff with jitter: 1-2s, 2-3s, 4-5s
         const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+        const statusCode = error instanceof OpenAI.APIError ? error.status : "unknown";
         logError(
-          `[callOpenAI] 429 rate limit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`,
+          `[callOpenAI] ${statusCode} error, retrying in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`,
           error
         );
         await new Promise((resolve) => setTimeout(resolve, delay));

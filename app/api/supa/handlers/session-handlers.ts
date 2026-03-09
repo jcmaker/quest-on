@@ -21,7 +21,11 @@ export function isSessionStale(lastHeartbeatAt: string | null | undefined): bool
   return (Date.now() - new Date(lastHeartbeatAt).getTime()) > STALE_HEARTBEAT_MS;
 }
 
-const supabase = getSupabaseServer();
+// Lazy Supabase client getter — creates a fresh client per invocation
+// to avoid stale connections in serverless environments
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 /**
  * Calculate remaining time in ms for a session timer, including grace period.
@@ -148,7 +152,7 @@ export async function promoteSessionToInProgress(
   }
 
   // Compare-and-Set: only update if status hasn't changed (prevents race conditions)
-  const { data: updatedSession, error } = await supabase
+  const { data: updatedSession, error } = await getSupabase()
     .from("sessions")
     .update(updateData)
     .eq("id", session.id)
@@ -164,11 +168,11 @@ export async function promoteSessionToInProgress(
 
   // CAS failed (concurrent request already promoted) — re-read current state
   if (!updatedSession) {
-    const { data: currentSession, error: readError } = await supabase
+    const sessionSelectFields = "id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at, preflight_accepted_at";
+
+    const { data: currentSession, error: readError } = await getSupabase()
       .from("sessions")
-      .select(
-        "id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at, preflight_accepted_at"
-      )
+      .select(sessionSelectFields)
       .eq("id", session.id)
       .single();
 
@@ -176,6 +180,32 @@ export async function promoteSessionToInProgress(
       throw readError || new Error(`Session not found after CAS: ${session.id}`);
     }
 
+    // If already promoted to in_progress by another request, return success
+    if (currentSession.status === "in_progress") {
+      return currentSession;
+    }
+
+    // Still waiting — retry CAS once with fresh status
+    if (currentSession.status === "waiting" || currentSession.status === "joined" || currentSession.status === "not_joined") {
+      const { data: retrySession, error: retryError } = await getSupabase()
+        .from("sessions")
+        .update(updateData)
+        .eq("id", session.id)
+        .eq("status", currentSession.status)
+        .select(sessionSelectFields)
+        .maybeSingle();
+
+      if (retryError) {
+        throw retryError;
+      }
+
+      // Retry succeeded
+      if (retrySession) {
+        return retrySession;
+      }
+    }
+
+    // Retry also failed or unexpected status — return current state
     return currentSession;
   }
 
@@ -195,7 +225,7 @@ export async function createOrGetSession(data: { examId: string; studentId: stri
 
     // Upsert session (race-safe: uses UNIQUE(exam_id, student_id) constraint)
     // Use ignoreDuplicates to avoid overwriting existing session data
-    const { data: upsertedSession, error: upsertError } = await supabase
+    const { data: upsertedSession, error: upsertError } = await getSupabase()
       .from("sessions")
       .upsert(
         {
@@ -214,7 +244,7 @@ export async function createOrGetSession(data: { examId: string; studentId: stri
     // If ignoreDuplicates skipped the insert, fetch the existing session
     let session = upsertedSession;
     if (!session) {
-      const { data: existing, error: fetchError } = await supabase
+      const { data: existing, error: fetchError } = await getSupabase()
         .from("sessions")
         .select("id, exam_id, student_id, used_clarifications, created_at, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, last_heartbeat_at, compressed_session_data, compression_metadata")
         .eq("exam_id", data.examId)
@@ -225,7 +255,7 @@ export async function createOrGetSession(data: { examId: string; studentId: stri
     }
 
     // Get existing messages for this session
-    const { data: messages, error: messagesError } = await supabase
+    const { data: messages, error: messagesError } = await getSupabase()
       .from("messages")
       .select("id, role, content, q_idx, created_at")
       .eq("session_id", session.id)
@@ -268,7 +298,7 @@ export async function initExamSession(data: {
     }
 
     // 1. Fetch Exam by Code
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = await getSupabase()
       .from("exams")
       .select("id, title, code, description, duration, questions, rubric, rubric_public, chat_weight, status, instructor_id, materials, materials_text, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, student_count")
       .eq("code", data.examCode)
@@ -316,7 +346,7 @@ export async function initExamSession(data: {
     }
 
     // 2. Get all existing sessions (most recent first)
-    const { data: existingSessions, error: checkError } = await supabase
+    const { data: existingSessions, error: checkError } = await getSupabase()
       .from("sessions")
       .select("id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at")
       .eq("exam_id", exam.id)
@@ -333,7 +363,7 @@ export async function initExamSession(data: {
       // 제출된 세션이 있으면 재시험 불가 - 제출된 세션만 반환
 
       // Get messages for submitted session (read-only)
-      const { data: sessionMessages } = await supabase
+      const { data: sessionMessages } = await getSupabase()
         .from("messages")
         .select("id, role, content, q_idx, created_at")
         .eq("session_id", mostRecentSubmittedSession.id)
@@ -347,7 +377,7 @@ export async function initExamSession(data: {
       }));
 
       // Fetch submissions for the submitted session
-      const { data: submittedSubmissions } = await supabase
+      const { data: submittedSubmissions } = await getSupabase()
         .from("submissions")
         .select("q_idx, answer")
         .eq("session_id", mostRecentSubmittedSession.id);
@@ -372,7 +402,7 @@ export async function initExamSession(data: {
     );
     if (staleSessions.length > 0) {
       const staleIds = staleSessions.map((s) => s.id);
-      await supabase
+      await getSupabase()
         .from("sessions")
         .update({ is_active: false })
         .in("id", staleIds);
@@ -425,13 +455,13 @@ export async function initExamSession(data: {
       if (initTimeRemaining !== null && initTimeRemaining <= 0) {
         {
         // 기존 답안 가져오기
-        const { data: existingSubmissions } = await supabase
+        const { data: existingSubmissions } = await getSupabase()
           .from("submissions")
           .select("id, q_idx, answer, compressed_answer_data, compression_metadata")
           .eq("session_id", existingSession.id);
 
         // 자동 제출 처리 (빈 답안이라도 제출) — 이미 제출된 세션은 건너뜀
-        const { data: updatedSession, error: updateError } = await supabase
+        const { data: updatedSession, error: updateError } = await getSupabase()
           .from("sessions")
           .update({
             submitted_at: now,
@@ -448,7 +478,7 @@ export async function initExamSession(data: {
 
         // 이미 제출된 세션이면 기존 세션 데이터 사용
         if (!updatedSession) {
-          const { data: alreadySubmitted } = await supabase
+          const { data: alreadySubmitted } = await getSupabase()
             .from("sessions")
             .select("*")
             .eq("id", existingSession.id)
@@ -459,7 +489,7 @@ export async function initExamSession(data: {
         }
 
         // 메시지 로드
-        const { data: sessionMessages } = await supabase
+        const { data: sessionMessages } = await getSupabase()
           .from("messages")
           .select("id, role, content, q_idx, created_at")
           .eq("session_id", existingSession.id)
@@ -489,7 +519,7 @@ export async function initExamSession(data: {
 
       // 이미 InProgress인 경우 (시험이 시작된 경우)
       if (currentStatus === "in_progress") {
-        const { data: updatedSession, error: updateError } = await supabase
+        const { data: updatedSession, error: updateError } = await getSupabase()
           .from("sessions")
           .update({
             is_active: true,
@@ -505,7 +535,7 @@ export async function initExamSession(data: {
         if (updateError) throw updateError;
         // CAS miss: re-read current state
         if (!updatedSession) {
-          const { data: reread } = await supabase
+          const { data: reread } = await getSupabase()
             .from("sessions")
             .select("*")
             .eq("id", existingSession.id)
@@ -528,7 +558,7 @@ export async function initExamSession(data: {
           currentStatus === "joined" || currentStatus === "not_joined"
             ? "waiting"
             : currentStatus;
-        const { data: updatedSession, error: updateError } = await supabase
+        const { data: updatedSession, error: updateError } = await getSupabase()
           .from("sessions")
           .update({
             is_active: true,
@@ -545,7 +575,7 @@ export async function initExamSession(data: {
         if (updateError) throw updateError;
         // CAS miss: re-read current state
         if (!updatedSession) {
-          const { data: reread } = await supabase
+          const { data: reread } = await getSupabase()
             .from("sessions")
             .select("*")
             .eq("id", existingSession.id)
@@ -557,7 +587,7 @@ export async function initExamSession(data: {
       }
 
       // Get messages for existing session
-      const { data: sessionMessages } = await supabase
+      const { data: sessionMessages } = await getSupabase()
         .from("messages")
         .select("id, role, content, q_idx, created_at")
         .eq("session_id", existingSession.id)
@@ -580,7 +610,7 @@ export async function initExamSession(data: {
 
       // Upsert session (race-safe: uses UNIQUE(exam_id, student_id) constraint)
       // ignoreDuplicates: true prevents overwriting existing session data (timer, status)
-      const { data: upsertedSession, error: upsertError } = await supabase
+      const { data: upsertedSession, error: upsertError } = await getSupabase()
         .from("sessions")
         .upsert(
           {
@@ -604,7 +634,7 @@ export async function initExamSession(data: {
 
       // ignoreDuplicates skipped the insert — fetch existing session
       if (!upsertedSession) {
-        const { data: existing, error: fetchError } = await supabase
+        const { data: existing, error: fetchError } = await getSupabase()
           .from("sessions")
           .select("id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at")
           .eq("exam_id", exam.id)
@@ -622,7 +652,7 @@ export async function initExamSession(data: {
     }
 
     // Fetch existing submissions for this session
-    const { data: sessionSubmissions } = await supabase
+    const { data: sessionSubmissions } = await getSupabase()
       .from("submissions")
       .select("q_idx, answer")
       .eq("session_id", session.id);
@@ -675,7 +705,7 @@ export async function submitExam(data: {
     }
     const verifiedStudentId = user.id;
 
-    const { data: sessionCheck, error: sessionCheckError } = await supabase
+    const { data: sessionCheck, error: sessionCheckError } = await getSupabase()
       .from("sessions")
       .select("id, student_id, exam_id, submitted_at, attempt_timer_started_at, status, exams(duration)")
       .eq("id", data.sessionId)
@@ -709,7 +739,7 @@ export async function submitExam(data: {
     }
 
     // Validate answers array length against exam question count
-    const { data: examForValidation, error: examValError } = await supabase
+    const { data: examForValidation, error: examValError } = await getSupabase()
       .from("exams")
       .select("questions")
       .eq("id", data.examId)
@@ -750,7 +780,7 @@ export async function submitExam(data: {
     const submittedAt = new Date().toISOString();
 
     // Atomic RPC: session update + submission inserts in a single transaction
-    const { data: rpcResult, error: rpcError } = await supabase.rpc(
+    const { data: rpcResult, error: rpcError } = await getSupabase().rpc(
       "submit_exam_atomic",
       {
         p_session_id: data.sessionId,
@@ -805,7 +835,7 @@ export async function sessionHeartbeat(data: {
     if (user.id !== data.studentId) return errorJson("UNAUTHORIZED", "Student ID mismatch", 403);
 
     // Verify the session belongs to the student
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
       .select("id, student_id, is_active, submitted_at, created_at, exam_id, status, started_at, attempt_timer_started_at")
       .eq("id", data.sessionId)
@@ -827,7 +857,7 @@ export async function sessionHeartbeat(data: {
     }
 
     // ✅ 시험 정보 가져와서 시간 체크
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = await getSupabase()
       .from("exams")
       .select("duration")
       .eq("id", session.exam_id)
@@ -848,7 +878,7 @@ export async function sessionHeartbeat(data: {
 
         if (heartbeatRemaining !== null && heartbeatRemaining <= 0) {
           // ✅ 시간 종료 - 자동 제출 처리 (grace period 포함)
-          const { data: autoSubmittedSession, error: updateError } = await supabase
+          const { data: autoSubmittedSession, error: updateError } = await getSupabase()
             .from("sessions")
             .update({
               submitted_at: new Date().toISOString(),
@@ -875,7 +905,7 @@ export async function sessionHeartbeat(data: {
 
     // Only update heartbeat if session is active and not submitted
     if (session.is_active && !session.submitted_at) {
-      const { error: updateError } = await supabase
+      const { error: updateError } = await getSupabase()
         .from("sessions")
         .update({ last_heartbeat_at: new Date().toISOString() })
         .eq("id", data.sessionId);
@@ -912,7 +942,7 @@ export async function checkExamGateStatus(data: {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
       .select(
         "id, exam_id, student_id, status, started_at, attempt_timer_started_at, created_at, preflight_accepted_at, last_heartbeat_at, device_fingerprint"
@@ -932,7 +962,7 @@ export async function checkExamGateStatus(data: {
       return errorJson("BAD_REQUEST", "Session does not belong to this exam", 400);
     }
 
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = await getSupabase()
       .from("exams")
       .select("id, status, started_at, duration")
       .eq("id", data.examId)
@@ -979,7 +1009,7 @@ export async function deactivateSession(data: {
     if (user.id !== data.studentId) return errorJson("UNAUTHORIZED", "Student ID mismatch", 403);
 
     // Verify the session belongs to the student
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
       .select("id, student_id")
       .eq("id", data.sessionId)
@@ -994,7 +1024,7 @@ export async function deactivateSession(data: {
     }
 
     // Deactivate the session
-    const { error: updateError } = await supabase
+    const { error: updateError } = await getSupabase()
       .from("sessions")
       .update({ is_active: false })
       .eq("id", data.sessionId);

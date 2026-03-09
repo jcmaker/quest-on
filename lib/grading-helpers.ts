@@ -27,6 +27,12 @@ export function selectBestSubmission(
     if (currentSubmitted && !bestSubmitted) return current;
     if (bestSubmitted && !currentSubmitted) return best;
 
+    // 1.5. Same status — prefer non-empty answer over empty
+    const bestHasContent = !!(best.answer as string)?.trim();
+    const currentHasContent = !!(current.answer as string)?.trim();
+    if (currentHasContent && !bestHasContent) return current;
+    if (bestHasContent && !currentHasContent) return best;
+
     // 2. Same submission status — prefer most recent (created_at)
     const bestCreated = best.created_at
       ? new Date(best.created_at as string).getTime()
@@ -37,10 +43,10 @@ export function selectBestSubmission(
     if (currentCreated > bestCreated) return current;
     if (bestCreated > currentCreated) return best;
 
-    // 3. Last tiebreak: prefer longer answer
-    const bestAnswer = (best.answer as string) || "";
-    const currentAnswer = (current.answer as string) || "";
-    if (currentAnswer.length > bestAnswer.length) return current;
+    // 3. Deterministic tiebreak: prefer higher id (lexicographic) for consistency
+    const bestId = (best.id as string) || "";
+    const currentId = (current.id as string) || "";
+    if (currentId > bestId) return current;
 
     return best;
   });
@@ -147,7 +153,7 @@ export function normalizeQuestions(
   if (!questions || !Array.isArray(questions)) return [];
 
   return questions.map((q: Record<string, unknown>, index: number) => ({
-    idx: q.idx !== undefined ? (q.idx as number) : index,
+    idx: q.idx !== undefined && !Number.isNaN(Number(q.idx)) ? Number(q.idx) : index,
     prompt:
       typeof q.prompt === "string"
         ? q.prompt
@@ -234,6 +240,14 @@ export function calculateWeightedScore(
   const chatWeight = chatWeightPercent / 100;
   const answerWeight = 1 - chatWeight;
 
+  // P1-3: Validate input scores are finite numbers
+  if (stageGrading.chat && !Number.isFinite(stageGrading.chat.score)) {
+    throw new Error(`calculateWeightedScore: chat.score is not a finite number (${stageGrading.chat.score})`);
+  }
+  if (stageGrading.answer && !Number.isFinite(stageGrading.answer.score)) {
+    throw new Error(`calculateWeightedScore: answer.score is not a finite number (${stageGrading.answer.score})`);
+  }
+
   let finalScore = 0;
   if (stageGrading.chat && stageGrading.answer) {
     finalScore = Math.round(
@@ -318,7 +332,7 @@ function calculateOverlapScore(answer: string, aiMessages: string[]): number {
 }
 
 export function calculateAiDependencyPenalty(
-  assessment: Omit<AiDependencyAssessment, "penaltyApplied" | "summary">
+  assessment: Pick<AiDependencyAssessment, "delegationRequestCount" | "startingPointDependencyCount" | "directAnswerRequestCount" | "directAnswerRelianceCount" | "finalAnswerOverlapScore" | "recoveryObserved">
 ): number {
   let penalty = 0;
 
@@ -345,7 +359,7 @@ export function calculateAiDependencyPenalty(
   }
 
   if (assessment.recoveryObserved) {
-    penalty = Math.max(2, Math.round(penalty * 0.45));
+    penalty = Math.max(2, Math.floor(penalty * 0.45));
   }
 
   return Math.max(0, Math.min(22, penalty));
@@ -553,10 +567,7 @@ export function analyzeAiDependency(params: {
     directAnswerRequestCount,
     directAnswerRelianceCount,
     recoveryObserved,
-    recoveryEvidence,
-    triggerEvidence,
     finalAnswerOverlapScore,
-    overallRisk: "low",
   });
 
   const overallRisk = calculateAiDependencyRiskLevel({

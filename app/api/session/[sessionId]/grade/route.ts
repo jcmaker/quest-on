@@ -14,8 +14,12 @@ import { singleGradeUpdateSchema, validateRequest } from "@/lib/validations";
 // Auto-grading (PUT) calls AI_MODEL_HEAVY multiple times — needs 300s
 export const maxDuration = 300;
 
-// Initialize Supabase client
-const supabase = getSupabaseServer();
+// P1-4: Supabase client created inside each handler (not module-level)
+// to avoid stale connections in serverless cold starts.
+// Same lazy getter pattern as submission-handlers.ts.
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 export async function GET(
   request: NextRequest,
@@ -42,6 +46,8 @@ export async function GET(
 
     // Get session data first (including ai_summary for auto-graded summary)
     // ai_summary가 없을 수 있으므로 안전하게 처리
+    const supabase = getSupabase();
+
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
       .select("id, exam_id, student_id, submitted_at, used_clarifications, created_at, compressed_session_data, compression_metadata, ai_summary")
@@ -387,6 +393,7 @@ export async function POST(
     const invalidId = validateUUID(sessionId, "sessionId");
     if (invalidId) return invalidId;
 
+    const supabase = getSupabase();
     const user = await currentUser();
     const body = await request.json();
 
@@ -434,7 +441,10 @@ export async function POST(
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
-    // Validate q_idx upper bound against exam questions
+    // Validate q_idx bounds against exam questions (P1-2: also reject negative)
+    if (questionIdx < 0) {
+      return errorJson("VALIDATION_ERROR", `Invalid question index: ${questionIdx}`, 400);
+    }
     if (Array.isArray(exam.questions) && questionIdx >= exam.questions.length) {
       return errorJson("VALIDATION_ERROR", `Invalid question index: ${questionIdx} (exam has ${exam.questions.length} questions)`, 400);
     }
@@ -514,6 +524,7 @@ export async function PUT(
     const invalidId = validateUUID(sessionId, "sessionId");
     if (invalidId) return invalidId;
 
+    const supabase = getSupabase();
     const user = await currentUser();
     const body = await request.json().catch(() => ({}));
     const { forceRegrade = false } = body;
@@ -564,6 +575,9 @@ export async function PUT(
     }
 
     // Check if already graded (unless force regrade)
+    // P0-1: forceRegrade no longer deletes existing grades first.
+    // autoGradeSession uses upsert(onConflict: "session_id,q_idx") which safely overwrites.
+    // This prevents permanent grade loss if AI grading fails mid-way.
     if (!forceRegrade) {
       const { data: existingGrades } = await supabase
         .from("grades")
@@ -573,8 +587,6 @@ export async function PUT(
       if (existingGrades && existingGrades.length > 0) {
         return successJson({ message: "Already graded", skipped: true });
       }
-    } else {
-      await supabase.from("grades").delete().eq("session_id", sessionId);
     }
 
     // Delegate to centralized grading logic (parallel, retry, timeout)

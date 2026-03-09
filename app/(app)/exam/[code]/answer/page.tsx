@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
+import { z } from "zod";
 import { useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +30,7 @@ import { Kbd } from "@/components/ui/kbd";
 import {
   SubmissionOverlay,
 } from "@/components/exam/ExamLoading";
+import { useAutoSave } from "@/hooks/useAutoSave";
 
 interface Question {
   id: string;
@@ -46,9 +48,17 @@ interface Exam {
   questions: Question[];
 }
 
-interface Answer {
-  questionId: string;
-  text: string;
+// P1-1: Zod schema for chatHistory URL parameter validation
+const chatHistoryMessageSchema = z.object({
+  type: z.enum(["user", "assistant"]),
+  message: z.string().max(50000),
+  timestamp: z.string(),
+});
+const chatHistorySchema = z.array(chatHistoryMessageSchema).max(200);
+
+/** Strip HTML tags to prevent XSS when rendering chat history from URL params */
+function stripHtmlTags(text: string): string {
+  return text.replace(/<[^>]*>/g, "");
 }
 
 export default function AnswerSubmission() {
@@ -60,7 +70,6 @@ export default function AnswerSubmission() {
   const examCode = params.code as string;
 
   const [exam, setExam] = useState<Exam | null>(null);
-  const [answers, setAnswers] = useState<Answer[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [startQuestion, setStartQuestion] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -72,8 +81,16 @@ export default function AnswerSubmission() {
   const [loadedChatHistory, setLoadedChatHistory] = useState<
     Array<{ type: "user" | "assistant"; message: string; timestamp: string }>
   >([]);
-  const [lastSaved, setLastSaved] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+
+  // Fix 1C: Use useAutoSave hook instead of inline auto-save logic
+  const autoSave = useAutoSave({
+    sessionId,
+    examExists: !!exam,
+    intervalMs: 30000,
+    localStorageKey: `exam_answers_${examCode}`,
+  });
+  // saveError is handled by toast notifications inside useAutoSave
+  const { draftAnswers: answers, setDraftAnswers: setAnswers, isSaving, lastSaved, manualSave, updateAnswer: autoSaveUpdateAnswer } = autoSave;
 
   // Detect platform for keyboard shortcut display
   const isMac =
@@ -88,128 +105,6 @@ export default function AnswerSubmission() {
       <Kbd>Ctrl</Kbd>+<Kbd>S</Kbd>
     </>
   );
-
-  // Manual save function
-  const manualSave = useCallback(async () => {
-    if (!sessionId || !exam) return;
-
-    setIsSaving(true);
-    try {
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "save_draft_answers",
-          data: {
-            sessionId,
-            answers: answers.map((answer) => ({
-              questionId: answer.questionId,
-              text: answer.text?.replace(/\u0000/g, "") || "",
-            })),
-          },
-        }),
-      });
-
-      if (response.ok) {
-        setLastSaved(new Date().toLocaleTimeString());
-      }
-    } catch {
-      // Save failure is non-critical; auto-save will retry
-    } finally {
-      setIsSaving(false);
-    }
-  }, [sessionId, exam, answers]);
-
-  // Keyboard shortcut for manual save (Ctrl+S / Cmd+S)
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
-        event.preventDefault();
-        manualSave();
-      }
-    };
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [manualSave]);
-
-  // Auto-save functionality
-  const autoSaveAnswers = useCallback(async () => {
-    if (!sessionId || !exam) return;
-
-    setIsSaving(true);
-    try {
-      const response = await fetch("/api/supa", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "save_draft_answers",
-          data: {
-            sessionId,
-            answers: answers.map((answer) => ({
-              questionId: answer.questionId,
-              text: answer.text?.replace(/\u0000/g, "") || "",
-            })),
-          },
-        }),
-      });
-
-      if (response.ok) {
-        setLastSaved(new Date().toLocaleTimeString());
-      }
-    } catch {
-      // Auto-save failure is non-critical; will retry on next interval
-    } finally {
-      setIsSaving(false);
-    }
-  }, [sessionId, exam, answers]);
-
-  // Auto-save every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (answers.some((answer) => answer.text && !isHtmlEmpty(answer.text))) {
-        autoSaveAnswers();
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [autoSaveAnswers, answers]);
-
-  // Save to localStorage as backup
-  useEffect(() => {
-    if (exam) {
-      const saveData = {
-        examCode,
-        answers,
-        timestamp: new Date().toISOString(),
-      };
-      localStorage.setItem(
-        `exam_answers_${examCode}`,
-        JSON.stringify(saveData)
-      );
-    }
-  }, [answers, examCode, exam]);
-
-  // Load saved answers from localStorage on mount
-  useEffect(() => {
-    if (exam) {
-      const savedData = localStorage.getItem(`exam_answers_${examCode}`);
-      if (savedData) {
-        try {
-          const parsed = JSON.parse(savedData);
-          if (parsed.examCode === examCode && parsed.answers) {
-            // Only load from localStorage if we don't have server data yet
-            // This prevents overriding server data with potentially older localStorage data
-            if (!sessionId) {
-              setAnswers(parsed.answers);
-            }
-          }
-        } catch {
-          // localStorage parse failure is non-critical
-        }
-      }
-    }
-  }, [exam, examCode, sessionId]);
 
   // Load saved answers from server when session is available
   useEffect(() => {
@@ -242,17 +137,7 @@ export default function AnswerSubmission() {
             });
 
             setAnswers(serverAnswers);
-
-            // Update localStorage with server data
-            const saveData = {
-              examCode,
-              answers: serverAnswers,
-              timestamp: new Date().toISOString(),
-            };
-            localStorage.setItem(
-              `exam_answers_${examCode}`,
-              JSON.stringify(saveData)
-            );
+            // localStorage backup is auto-handled by useAutoSave hook
           }
         }
       } catch {
@@ -261,7 +146,7 @@ export default function AnswerSubmission() {
     };
 
     loadSavedAnswersFromServer();
-  }, [sessionId, exam, examCode]);
+  }, [sessionId, exam, examCode, setAnswers]);
 
   // Handle startQuestion and chatHistory parameters from URL
   useEffect(() => {
@@ -277,15 +162,23 @@ export default function AnswerSubmission() {
       }
     }
 
-    // Load chat history from URL params
+    // P1-1: Load chat history from URL params with Zod validation + sanitization
     if (chatHistoryParam) {
       try {
-        const parsedChatHistory = JSON.parse(
+        const rawParsed = JSON.parse(
           decodeURIComponent(chatHistoryParam)
         );
 
-        // Store for display in left panel
-        setLoadedChatHistory(parsedChatHistory);
+        const validated = chatHistorySchema.safeParse(rawParsed);
+        if (validated.success) {
+          // Sanitize message content to prevent XSS via URL manipulation
+          const sanitized = validated.data.map((msg) => ({
+            ...msg,
+            message: stripHtmlTags(msg.message),
+          }));
+          setLoadedChatHistory(sanitized);
+        }
+        // Invalid shape is silently dropped (non-critical)
       } catch {
         // Chat history parse failure is non-critical
       }
@@ -386,37 +279,12 @@ export default function AnswerSubmission() {
     fetchExamAndSession();
   }, [examCode, user, getOrCreateSession]);
 
-  const updateAnswer = (questionId: string, text: string) => {
-    setAnswers((prev) =>
-      prev.map((answer) =>
-        answer.questionId === questionId ? { ...answer, text } : answer
-      )
-    );
-  };
+  const updateAnswer = autoSaveUpdateAnswer;
 
   // Handle back to chat page
   const handleBackToChat = async () => {
     // Save current answers before going back
-    if (sessionId && exam) {
-      try {
-        await fetch("/api/supa", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "save_draft_answers",
-            data: {
-              sessionId,
-              answers: answers.map((answer) => ({
-                questionId: answer.questionId,
-                text: answer.text?.replace(/\u0000/g, "") || "",
-              })),
-            },
-          }),
-        });
-      } catch {
-        // Save failure before navigation is non-critical
-      }
-    }
+    await manualSave();
 
     // Navigate back to chat page with current question
     router.push(`/exam/${examCode}?startQuestion=${currentQuestion}`);

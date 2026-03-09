@@ -6,7 +6,10 @@ import { validateUUID } from "@/lib/validate-params";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-const supabase = getSupabaseServer();
+// P1-4: Supabase client created inside handler to avoid stale connections in serverless
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 /**
  * POST /api/exam/[examId]/start
@@ -32,6 +35,8 @@ export async function POST(
       return errorJson("FORBIDDEN", "Instructor access required", 403);
     }
 
+    const supabase = getSupabase();
+
     const rl = await checkRateLimitAsync(`exam-start:${user.id}`, RATE_LIMITS.examControl);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many requests", 429);
@@ -50,7 +55,7 @@ export async function POST(
     // 1. 시험 정보 확인 및 권한 검증
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, instructor_id, status, started_at")
+      .select("id, instructor_id, status, started_at, updated_at, close_at")
       .eq("id", examId)
       .single();
 
@@ -62,15 +67,16 @@ export async function POST(
       return errorJson("FORBIDDEN", "Access denied", 403);
     }
 
-    // 2. 상태 검증: Running이 아닌 모든 상태에서 Start 가능 (기본적으로 항상 시작 가능)
-    // Closed 상태는 제외 (이미 종료된 시험)
-    const invalidStatuses = ["running", "closed"];
-    if (invalidStatuses.includes(exam.status || "")) {
+    // 2. 상태 검증: 화이트리스트 기반 — draft 또는 scheduled 상태에서만 Start 가능 (P1-6)
+    const allowedStatuses = ["draft", "scheduled"];
+    if (!allowedStatuses.includes(exam.status || "")) {
       return errorJson(
         "BAD_REQUEST",
         exam.status === "running"
           ? "Exam is already running"
-          : "Exam is already closed",
+          : exam.status === "closed"
+            ? "Exam is already closed"
+            : `Exam cannot be started from '${exam.status}' status`,
         400,
         { currentStatus: exam.status }
       );
@@ -162,21 +168,39 @@ export async function POST(
         .select("id");
 
       if (sessionsError) {
-        // 세션 전환 실패 시 시험 상태 롤백
+        // 세션 전환 실패 시 시험 상태를 원본 필드 값으로 정확히 롤백
         const { error: rollbackError } = await supabase
           .from("exams")
           .update({
             started_at: exam.started_at,
             status: exam.status || "draft",
-            updated_at: now,
-            close_at: null,
+            updated_at: exam.updated_at,
+            close_at: exam.close_at,
           })
           .eq("id", examId);
 
         if (rollbackError) {
-          logError("Failed to rollback exam state after session update failure", rollbackError, {
+          // P1-5: Rollback also failed — exam is in inconsistent state
+          logError("CRITICAL: Failed to rollback exam state after session update failure", rollbackError, {
             path: "/api/exam/start",
+            additionalData: {
+              examId,
+              originalStatus: exam.status,
+              originalStartedAt: exam.started_at,
+              originalCloseAt: exam.close_at,
+            },
           });
+          return errorJson(
+            "INCONSISTENT_STATE",
+            "시험 상태가 불일치합니다. 시험 상태를 확인하고 필요 시 관리자에게 문의하세요.",
+            500,
+            {
+              examId,
+              examStatus: "running",
+              sessionsUpdated: false,
+              requiresManualCheck: true,
+            }
+          );
         }
 
         return errorJson("INTERNAL_ERROR", "Failed to update sessions, exam state rolled back", 500);

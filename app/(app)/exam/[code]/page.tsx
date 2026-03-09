@@ -121,6 +121,7 @@ export default function ExamPage() {
     sessionId,
     examExists: !!exam,
     intervalMs: 30000,
+    localStorageKey: `exam_answers_${examCode}`,
   });
 
   // 2. Chat — uses page-owned exam & sessionId

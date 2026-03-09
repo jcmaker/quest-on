@@ -101,8 +101,8 @@ export function useExamSession({
       return { hasProfile: !!data.profile };
     },
     enabled: !!user && isLoaded,
-    retry: false,
-    staleTime: Infinity,
+    retry: 1,
+    staleTime: 30_000,
   });
 
   useEffect(() => {
@@ -138,7 +138,7 @@ export function useExamSession({
       }
     },
     enabled: !!examCode && isLoaded && !!user && profileGateChecked,
-    retry: false,
+    retry: 2,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
@@ -298,11 +298,14 @@ export function useExamSession({
   }, [heartbeatData]);
 
   // Session deactivation on unload/unmount
+  // Fix 2A: Read sessionIdRef.current inside handlers to avoid stale closure
   useEffect(() => {
-    const sid = sessionIdRef.current;
-    if (!sid || !user || isSubmitted) return;
+    if (!user || isSubmitted) return;
 
     const handleBeforeUnload = () => {
+      const currentSid = sessionIdRef.current;
+      if (!currentSid) return;
+
       saveViaBeaconRef.current();
 
       if (navigator.sendBeacon) {
@@ -310,7 +313,7 @@ export function useExamSession({
           "/api/supa",
           JSON.stringify({
             action: "deactivate_session",
-            data: { sessionId: sid, studentId: user.id },
+            data: { sessionId: currentSid, studentId: user.id },
           })
         );
       } else {
@@ -319,7 +322,7 @@ export function useExamSession({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "deactivate_session",
-            data: { sessionId: sid, studentId: user.id },
+            data: { sessionId: currentSid, studentId: user.id },
           }),
           keepalive: true,
         }).catch(() => {});
@@ -330,20 +333,20 @@ export function useExamSession({
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
-      if (!isSubmittedRef.current) {
+      const currentSid = sessionIdRef.current;
+      if (currentSid && !isSubmittedRef.current) {
         fetch("/api/supa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "deactivate_session",
-            data: { sessionId: sid, studentId: user.id },
+            data: { sessionId: currentSid, studentId: user.id },
           }),
           keepalive: true,
         }).catch(() => {});
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionIdRef.current, user, isSubmitted]);
+  }, [user, isSubmitted]);
 
   return {
     sessionStartTime,

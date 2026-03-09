@@ -5,6 +5,7 @@ import {
   buildUnifiedGradingSystemPrompt,
   buildUnifiedGradingUserPrompt,
   buildSummaryEvaluationSystemPrompt,
+  sanitizeForPrompt,
 } from "@/lib/prompts";
 import { logError } from "@/lib/logger";
 import {
@@ -31,14 +32,16 @@ import type {
 /** Maximum time for the entire grading operation (240 seconds — must fit within Vercel maxDuration=300s with room for summary) */
 const GRADING_TIMEOUT_MS = 240_000;
 
-// Initialize Supabase client
-const supabase = getSupabaseServer();
-
 interface GradeResult {
   q_idx: number;
   score: number; // 0-100
   comment: string;
   stage_grading?: StageGrading;
+}
+
+interface FailedGradeResult {
+  q_idx: number;
+  failureReason: string;
 }
 
 interface AutoGradeResult {
@@ -47,6 +50,42 @@ interface AutoGradeResult {
   failedQuestions: number[];
   timedOut: boolean;
   decompressionWarnings?: DecompressionWarning[];
+}
+
+/** P1-6: Sanitize AI-generated comment to strip potential XSS payloads before DB storage */
+function sanitizeComment(comment: string): string {
+  if (!comment) return "";
+  return comment
+    // Strip script tags
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    // Strip event handlers
+    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, "")
+    // Strip javascript: protocol
+    .replace(/javascript\s*:/gi, "")
+    // Use sanitizeForPrompt for additional cleanup (prompt injection + length)
+    .slice(0, 10000);
+}
+
+/** Clamp a score to [0, 100] and log if clamping occurred */
+function clampAndLog(
+  score: number,
+  context: { sessionId: string; qIdx: number; field: string }
+): { value: number; clamped: boolean } {
+  const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  const wasClamped = clamped !== Math.round(score);
+  if (wasClamped) {
+    logError("[AUTO_GRADE] Score clamped to 0-100 range", null, {
+      path: "lib/grading.ts",
+      additionalData: {
+        sessionId: context.sessionId,
+        qIdx: context.qIdx,
+        field: context.field,
+        originalScore: score,
+        clampedScore: clamped,
+      },
+    });
+  }
+  return { value: clamped, clamped: wasClamped };
 }
 
 /**
@@ -58,6 +97,9 @@ export async function autoGradeSession(
   sessionId: string,
   options?: { signal?: AbortSignal }
 ): Promise<AutoGradeResult> {
+  // P1-3: Track request start time for Vercel maxDuration budget calculation
+  const requestStartTime = Date.now();
+  const supabase = getSupabaseServer();
   const abortController = new AbortController();
   // If caller provides an external signal, forward its abort
   if (options?.signal) {
@@ -132,6 +174,14 @@ export async function autoGradeSession(
     });
   }
 
+  // P1-3: Log large sessions for monitoring (grading needs all messages, no limit applied)
+  if (messages && messages.length > 200) {
+    logError("[AUTO_GRADE] Large session detected — high message count", null, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, messageCount: messages.length },
+    });
+  }
+
   // 5. 데이터 압축 해제 및 정리 (헬퍼 함수 사용)
   const decompressionWarnings: DecompressionWarning[] = [];
   const submissionsByQuestion = decompressSubmissions(submissions || [], decompressionWarnings);
@@ -143,6 +193,8 @@ export async function autoGradeSession(
   // 7-8. 각 문제별 채점 (병렬 처리로 ~5배 속도 개선)
   // 루브릭은 문제별로 resolveQuestionRubric을 사용하여 해결
   const chatWeight = Math.max(0, Math.min(100, exam.chat_weight ?? 50));
+
+  const failedGradeResults: FailedGradeResult[] = [];
 
   const gradePromises = questions.map(async (question): Promise<GradeResult | null> => {
     // Per-question rubric resolution (resolveQuestionRubric returns DEFAULT_RUBRIC when empty)
@@ -161,11 +213,8 @@ export async function autoGradeSession(
       )
       .join(",\n");
     const qIdx = question.idx;
-    let submission = submissionsByQuestion[qIdx];
-    if (!submission && questions.indexOf(question) >= 0) {
-      const questionIndex = questions.indexOf(question);
-      submission = submissionsByQuestion[questionIndex];
-    }
+    const submission = submissionsByQuestion[qIdx];
+    // No fallback — if no submission matches question.idx, treat as unanswered
     const questionMessages = messagesByQuestion[qIdx] || [];
     const aiDependencyAssessment = analyzeAiDependency({
       messages: questionMessages,
@@ -232,13 +281,23 @@ export async function autoGradeSession(
 
     // Zod schema for AI grading response — validates structure before trusting scores
     const aiGradingResponseSchema = z.object({
-      chat_score: z.number().optional(),
+      chat_score: z.number().finite().optional(),
       chat_comment: z.string().optional(),
-      answer_score: z.number().optional(),
+      answer_score: z.number().finite().optional(),
       answer_comment: z.string().optional(),
       overall_comment: z.string().optional(),
-      rubric_scores: z.record(z.string(), z.number().min(0).max(5)).optional(),
+      rubric_scores: z.record(z.string(), z.number().finite().min(0).max(5)).optional(),
     });
+
+    // Fix 3A: Validate choices array before accessing
+    if (!completion.choices?.length) {
+      logError("[AUTO_GRADE] Empty AI response (no choices)", null, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx },
+      });
+      failedGradeResults.push({ q_idx: qIdx, failureReason: "Empty AI response (no choices)" });
+      return null;
+    }
 
     let rawParsed: unknown;
     try {
@@ -247,11 +306,68 @@ export async function autoGradeSession(
       );
     } catch (parseErr) {
       const rawContent = completion.choices[0]?.message?.content ?? "(empty)";
-      logError("[AUTO_GRADE] Failed to parse grading JSON response", parseErr, {
+      logError("[AUTO_GRADE] Failed to parse grading JSON response, retrying in 2s", parseErr, {
         path: "lib/grading.ts",
         additionalData: { sessionId, qIdx, rawContent: rawContent.slice(0, 500) },
       });
-      return null;
+
+      // P1-1: Retry once after 2s delay (re-call AI API)
+      try {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const retryTracked = await callTrackedChatCompletion(
+          () =>
+            getOpenAI().chat.completions.create({
+              model: AI_MODEL_HEAVY,
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt },
+              ],
+              response_format: { type: "json_object" },
+            }, { signal: abortController.signal }),
+          {
+            feature: "auto_grading_question",
+            route: "lib/grading.ts",
+            model: AI_MODEL_HEAVY,
+            userId: session.student_id,
+            examId: exam.id,
+            sessionId,
+            qIdx,
+            metadata: buildAiTextMetadata({
+              inputText: [systemPrompt, userPrompt],
+              extra: { retry: true },
+            }),
+          },
+          {
+            timeoutMs: 90_000,
+            metadataBuilder: (result) =>
+              buildAiTextMetadata({
+                outputText:
+                  (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                    .choices?.[0]?.message?.content ?? null,
+              }),
+          }
+        );
+        const retryCompletion = retryTracked.data;
+        // Fix 3A: Validate choices array on retry too
+        if (!retryCompletion.choices?.length) {
+          logError("[AUTO_GRADE] Empty AI response (no choices) on retry", null, {
+            path: "lib/grading.ts",
+            additionalData: { sessionId, qIdx },
+          });
+          failedGradeResults.push({ q_idx: qIdx, failureReason: "Empty AI response (no choices) after retry" });
+          return null;
+        }
+        rawParsed = JSON.parse(
+          retryCompletion.choices[0]?.message?.content || "{}"
+        );
+      } catch (retryErr) {
+        logError("[AUTO_GRADE] Retry also failed for grading JSON parse", retryErr, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId, qIdx },
+        });
+        failedGradeResults.push({ q_idx: qIdx, failureReason: "JSON parse failure after retry" });
+        return null;
+      }
     }
 
     const schemaResult = aiGradingResponseSchema.safeParse(rawParsed);
@@ -260,9 +376,22 @@ export async function autoGradeSession(
         path: "lib/grading.ts",
         additionalData: { sessionId, qIdx, rawContent: JSON.stringify(rawParsed).slice(0, 500) },
       });
+      failedGradeResults.push({ q_idx: qIdx, failureReason: "Schema validation failure" });
       return null;
     }
     const parsed = schemaResult.data;
+
+    // P0-2: Reject empty/invalid responses — at least one score must be a finite number
+    const hasChatScore = typeof parsed.chat_score === "number" && Number.isFinite(parsed.chat_score);
+    const hasAnswerScore = typeof parsed.answer_score === "number" && Number.isFinite(parsed.answer_score);
+    if (!hasChatScore && !hasAnswerScore) {
+      logError("[AUTO_GRADE] AI returned no valid scores — rejecting to prevent 0-score grade", null, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx, rawContent: JSON.stringify(rawParsed).slice(0, 500) },
+      });
+      failedGradeResults.push({ q_idx: qIdx, failureReason: "No valid scores in AI response" });
+      return null;
+    }
 
     // Parse rubric_scores
     const rubricScores: Record<string, number> = {};
@@ -280,37 +409,47 @@ export async function autoGradeSession(
     // Build StageGrading — populate both chat and answer for backward compat
     const stageGrading: StageGrading = {};
 
+    let scoreClamped = false;
+
     if (questionMessages.length > 0) {
-      const rawChatScore = Math.max(0, Math.min(100, Math.round(parsed.chat_score || 0)));
-      const adjustedChatScore = Math.max(0, Math.min(100, rawChatScore - aiDependencyAssessment.penaltyApplied));
+      const chatClamp = clampAndLog(parsed.chat_score || 0, { sessionId, qIdx, field: "chat_score" });
+      scoreClamped = scoreClamped || chatClamp.clamped;
+      const adjustedChatScore = Math.max(0, Math.min(100, chatClamp.value - aiDependencyAssessment.penaltyApplied));
       stageGrading.chat = {
         score: adjustedChatScore,
-        comment: `${parsed.chat_comment || "채팅 단계 평가 완료"}\n\nAI 활용 해석: ${aiDependencyAssessment.summary}`,
+        comment: sanitizeComment(`${parsed.chat_comment || "채팅 단계 평가 완료"}\n\nAI 활용 해석: ${aiDependencyAssessment.summary}`),
         rubric_scores: rubricScoresOrUndef,
         ai_dependency: aiDependencyAssessment,
       };
     }
 
     if (submission.answer) {
+      const answerClamp = clampAndLog(parsed.answer_score || 0, { sessionId, qIdx, field: "answer_score" });
+      scoreClamped = scoreClamped || answerClamp.clamped;
       stageGrading.answer = {
-        score: Math.max(0, Math.min(100, Math.round(parsed.answer_score || 0))),
-        comment: parsed.answer_comment || "답안 평가 완료",
+        score: answerClamp.value,
+        comment: sanitizeComment(parsed.answer_comment || "답안 평가 완료"),
         rubric_scores: rubricScoresOrUndef,
       };
     }
 
     // 종합 점수 계산 — 가중 평균 (0-100 범위 보장)
     const finalScore = calculateWeightedScore(stageGrading, chatWeight);
-    const overallComment = parsed.overall_comment
-      || `채팅 단계: ${stageGrading.chat?.score ?? "N/A"}점, 답안 단계: ${stageGrading.answer?.score ?? "N/A"}점`;
+    const overallComment = sanitizeComment(
+      parsed.overall_comment
+      || `채팅 단계: ${stageGrading.chat?.score ?? "N/A"}점, 답안 단계: ${stageGrading.answer?.score ?? "N/A"}점`
+    );
 
     if (Object.keys(stageGrading).length > 0) {
-      return {
+      const gradeResult: GradeResult = {
         q_idx: qIdx,
         score: finalScore,
         comment: overallComment,
-        stage_grading: stageGrading,
+        stage_grading: scoreClamped
+          ? { ...stageGrading, _score_clamped: true }
+          : stageGrading,
       };
+      return gradeResult;
     }
 
     return null;
@@ -339,12 +478,14 @@ export async function autoGradeSession(
   clearTimeout(timeoutId!);
   const timedOut = raceResult === "TIMEOUT";
 
+  // Fix 3B: Set gradingDone and snapshot in the same synchronous block
+  // to prevent TOCTOU race between .then() callbacks and timeout snapshot
+  gradingDone = true;
   if (timedOut) {
-    gradingDone = true;
     abortController.abort();
   }
 
-  // On timeout, snapshot whatever results have settled so far
+  // On timeout, snapshot whatever results have settled so far (gradingDone prevents further mutations)
   const gradeResults: Array<PromiseSettledResult<GradeResult | null>> = timedOut
     ? [...settled]
     : raceResult;
@@ -371,9 +512,17 @@ export async function autoGradeSession(
       const submission = submissionsByQuestion[question?.idx];
       if (submission) {
         failedQuestions.push(idx);
+        failedGradeResults.push({ q_idx: question.idx, failureReason: "Timed out" });
       }
     }
   });
+
+  // Include AI parse/schema failures in failedQuestions
+  for (const failed of failedGradeResults) {
+    if (!failedQuestions.includes(failed.q_idx)) {
+      failedQuestions.push(failed.q_idx);
+    }
+  }
 
   if (timedOut) {
     logError("[AUTO_GRADE] Grading timed out", new Error(`Grading timed out after ${GRADING_TIMEOUT_MS}ms`), {
@@ -382,9 +531,32 @@ export async function autoGradeSession(
     });
   }
 
-  // 9. 채점 결과 저장 (partial 결과라도 저장) + 저장 검증
+  // 9a. Insert ai_failed grade records for questions that failed grading
+  if (failedGradeResults.length > 0) {
+    const failedGradeRecords = failedGradeResults.map((failed) => ({
+      session_id: sessionId,
+      q_idx: failed.q_idx,
+      score: 0,
+      comment: `[AI 채점 실패] ${failed.failureReason} — 강사의 수동 채점이 필요합니다.`,
+      stage_grading: null,
+      grade_type: "ai_failed",
+    }));
+
+    const { error: failedInsertError } = await supabase
+      .from("grades")
+      .upsert(failedGradeRecords, { onConflict: "session_id,q_idx" });
+
+    if (failedInsertError) {
+      logError("[AUTO_GRADE] Failed to insert ai_failed grade records", failedInsertError, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, failedQIdxes: failedGradeResults.map((f) => f.q_idx) },
+      });
+    }
+  }
+
+  // 9b. 채점 결과 저장 (partial 결과라도 저장) + insert 반환값으로 직접 검증
   if (grades.length > 0) {
-    const { error: insertError } = await supabase.from("grades").insert(
+    const { data: insertedRows, error: insertError } = await supabase.from("grades").upsert(
       grades.map((grade) => ({
         session_id: sessionId,
         q_idx: grade.q_idx,
@@ -392,31 +564,21 @@ export async function autoGradeSession(
         comment: grade.comment,
         stage_grading: grade.stage_grading || null,
         grade_type: "auto",
-      }))
-    );
+      })),
+      { onConflict: "session_id,q_idx" }
+    ).select("q_idx");
 
     if (insertError) {
       throw insertError;
     }
 
-    // Verify inserted grades — detect missing rows
-    const { data: savedGrades, error: verifyError } = await supabase
-      .from("grades")
-      .select("q_idx")
-      .eq("session_id", sessionId)
-      .eq("grade_type", "auto");
-
-    if (verifyError) {
-      logError("[AUTO_GRADE] Failed to verify saved grades", verifyError, {
-        path: "lib/grading.ts",
-        additionalData: { sessionId },
-      });
-    } else if (savedGrades) {
-      const savedQIdxSet = new Set(savedGrades.map((g) => g.q_idx));
+    // Verify via insert return — no separate SELECT needed
+    if (insertedRows) {
+      const insertedQIdxSet = new Set(insertedRows.map((g) => g.q_idx));
       for (const grade of grades) {
-        if (!savedQIdxSet.has(grade.q_idx)) {
+        if (!insertedQIdxSet.has(grade.q_idx)) {
           failedQuestions.push(grade.q_idx);
-          logError("[AUTO_GRADE] Grade not found after insert", new Error("Grade verification failed"), {
+          logError("[AUTO_GRADE] Grade not returned after insert", new Error("Grade verification failed"), {
             path: "lib/grading.ts",
             additionalData: { sessionId, q_idx: grade.q_idx },
           });
@@ -426,8 +588,24 @@ export async function autoGradeSession(
   }
 
   // 10. 요약 평가 생성 (timeout 시에도 완료된 결과로 시도)
+  // P1-3: Dynamic time budget — skip summary if insufficient time remains for Vercel maxDuration=300s
+  const VERCEL_BUDGET_MS = 280_000; // Leave 20s safety margin from maxDuration=300s
+  const MIN_SUMMARY_TIME_MS = 30_000; // Need at least 30s for summary generation
   let summary: SummaryData | null = null;
-  if (!timedOut) {
+  const elapsedMs = Date.now() - requestStartTime;
+  const remainingMs = VERCEL_BUDGET_MS - elapsedMs;
+
+  if (timedOut) {
+    logError("[AUTO_GRADE] Skipping summary — grading timed out", null, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, elapsedMs },
+    });
+  } else if (remainingMs < MIN_SUMMARY_TIME_MS) {
+    logError("[AUTO_GRADE] Skipping summary — insufficient time budget", null, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, elapsedMs, remainingMs },
+    });
+  } else {
     try {
       summary = await generateSummary(
         sessionId,
@@ -436,7 +614,8 @@ export async function autoGradeSession(
         questions,
         submissionsByQuestion,
         messagesByQuestion,
-        grades
+        grades,
+        remainingMs
       );
     } catch (err) {
       logError("[AUTO_GRADE] Summary generation failed", err, {
@@ -449,12 +628,18 @@ export async function autoGradeSession(
   // 11. Persist grading status in ai_summary so instructors can see partial grading
   const isPartial = timedOut || failedQuestions.length > 0;
   if (isPartial) {
+    const gradingFailureDetails = failedGradeResults.reduce<Record<number, string>>(
+      (acc, f) => { acc[f.q_idx] = f.failureReason; return acc; },
+      {}
+    );
+
     const gradingStatusPayload = {
       grading_status: "partial" as const,
       grading_failed_questions: failedQuestions,
       grading_completed_count: grades.length,
       grading_total_count: questions.length,
       grading_timed_out: timedOut,
+      grading_failure_details: gradingFailureDetails,
     };
     const mergedSummary = { ...(summary || {}), ...gradingStatusPayload };
     const { error: statusError } = await supabase
@@ -463,10 +648,22 @@ export async function autoGradeSession(
       .eq("id", sessionId);
 
     if (statusError) {
-      logError("[AUTO_GRADE] Failed to save partial grading status", statusError, {
+      logError("[AUTO_GRADE] Failed to save partial grading status — retrying once", statusError, {
         path: "lib/grading.ts",
         additionalData: { sessionId, failedQuestions },
       });
+      // P0-3: Retry once after 1s — grades are already saved, so log-only on second failure
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const { error: retryStatusError } = await supabase
+        .from("sessions")
+        .update({ ai_summary: mergedSummary })
+        .eq("id", sessionId);
+      if (retryStatusError) {
+        logError("[AUTO_GRADE] Retry also failed for partial grading status update", retryStatusError, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId, failedQuestions },
+        });
+      }
     }
   }
 
@@ -489,8 +686,10 @@ async function generateSummary(
   questions: Array<{ idx: number; prompt?: string; ai_context?: string }>,
   submissionsByQuestion: Record<number, { answer: string }>,
   messagesByQuestion: Record<number, Array<{ role: string; content: string }>>,
-  grades: GradeResult[]
+  grades: GradeResult[],
+  timeBudgetMs?: number
 ): Promise<SummaryData | null> {
+  const supabase = getSupabaseServer();
   try {
     const rubricText =
       exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
@@ -631,7 +830,8 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
         }),
       },
       {
-        timeoutMs: 120_000,
+        // P1-3: Dynamic timeout based on remaining Vercel budget (default 120s, capped to budget)
+        timeoutMs: timeBudgetMs ? Math.min(timeBudgetMs - 5_000, 120_000) : 120_000,
         metadataBuilder: (result) =>
           buildAiTextMetadata({
             outputText:
@@ -692,11 +892,22 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
       .eq("id", sessionId);
 
     if (updateError) {
-      // 컬럼이 없는 경우 에러를 무시하고 계속 진행 (마이그레이션 필요)
-      logError("[AUTO_GRADE] Error saving summary to database", updateError, {
+      logError("[AUTO_GRADE] Error saving summary to database — retrying once", updateError, {
         path: "lib/grading.ts",
         additionalData: { sessionId },
       });
+      // P0-3: Retry once after 1s — grades are already saved
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      const { error: retryUpdateError } = await supabase
+        .from("sessions")
+        .update({ ai_summary: summaryWithDependency })
+        .eq("id", sessionId);
+      if (retryUpdateError) {
+        logError("[AUTO_GRADE] Retry also failed for summary save", retryUpdateError, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId },
+        });
+      }
     }
 
     return summaryWithDependency;

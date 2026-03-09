@@ -1,11 +1,24 @@
 import { NextRequest } from "next/server";
 import { cookies } from "next/headers";
+import crypto from "crypto";
 import { createAdminToken } from "@/lib/admin-auth";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, adminAuthSchema } from "@/lib/validations";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
+
+/** Constant-time string comparison to prevent timing attacks */
+function timingSafeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a, "utf8");
+  const bufB = Buffer.from(b, "utf8");
+  if (bufA.length !== bufB.length) {
+    // Compare against self to keep constant time, then return false
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,14 +44,14 @@ export async function POST(request: NextRequest) {
       return errorJson("INTERNAL_ERROR", "Admin credentials not configured", 500);
     }
 
-    if (username === adminUsername && password === adminPassword) {
+    if (timingSafeCompare(username, adminUsername) && timingSafeCompare(password, adminPassword)) {
       const token = createAdminToken();
 
       const cookieStore = await cookies();
       cookieStore.set("admin-session", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        sameSite: "strict",
         maxAge: 24 * 60 * 60, // 24 hours
         path: "/",
       });
