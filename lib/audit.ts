@@ -17,7 +17,7 @@ interface AuditLogParams {
 
 // Failure monitoring: track consecutive failures
 let consecutiveFailures = 0;
-const FAILURE_WARN_THRESHOLD = 5;
+const FAILURE_WARN_THRESHOLD = 1;
 
 /**
  * audit_logs 테이블에 감사 로그를 기록합니다.

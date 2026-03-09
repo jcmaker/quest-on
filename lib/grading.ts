@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { openai, AI_MODEL_HEAVY } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import {
@@ -214,16 +215,47 @@ export async function autoGradeSession(
     );
     const completion = tracked.data;
 
-    const parsed = JSON.parse(
-      completion.choices[0]?.message?.content || "{}"
-    );
+    // Zod schema for AI grading response — validates structure before trusting scores
+    const aiGradingResponseSchema = z.object({
+      chat_score: z.number().optional(),
+      chat_comment: z.string().optional(),
+      answer_score: z.number().optional(),
+      answer_comment: z.string().optional(),
+      overall_comment: z.string().optional(),
+      rubric_scores: z.record(z.string(), z.number()).optional(),
+    });
+
+    let rawParsed: unknown;
+    try {
+      rawParsed = JSON.parse(
+        completion.choices[0]?.message?.content || "{}"
+      );
+    } catch (parseErr) {
+      const rawContent = completion.choices[0]?.message?.content ?? "(empty)";
+      logError("[AUTO_GRADE] Failed to parse grading JSON response", parseErr, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx, rawContent: rawContent.slice(0, 500) },
+      });
+      return null;
+    }
+
+    const schemaResult = aiGradingResponseSchema.safeParse(rawParsed);
+    if (!schemaResult.success) {
+      logError("[AUTO_GRADE] AI response schema validation failed", schemaResult.error, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx, rawContent: JSON.stringify(rawParsed).slice(0, 500) },
+      });
+      return null;
+    }
+    const parsed = schemaResult.data;
 
     // Parse rubric_scores
     const rubricScores: Record<string, number> = {};
-    if (parsed.rubric_scores && rubricItems.length > 0) {
+    if (parsed.rubric_scores && typeof parsed.rubric_scores === "object" && rubricItems.length > 0) {
+      const rawRubricScores = parsed.rubric_scores;
       rubricItems.forEach((item) => {
-        const score = parsed.rubric_scores[item.evaluationArea];
-        if (typeof score === "number") {
+        const score = rawRubricScores[item.evaluationArea];
+        if (typeof score === "number" && Number.isFinite(score)) {
           rubricScores[item.evaluationArea] = Math.max(0, Math.min(5, Math.round(score)));
         }
       });
@@ -270,6 +302,17 @@ export async function autoGradeSession(
   });
 
   // 모든 문제 병렬 채점 실행 (with outer timeout)
+  // Track settlement of each promise so we can recover partial results on timeout
+  // Pre-fill with default fulfilled(null) to avoid undefined access on timeout
+  const settled: Array<PromiseSettledResult<GradeResult | null>> =
+    Array.from({ length: gradePromises.length }, () => ({ status: "fulfilled" as const, value: null }));
+  gradePromises.forEach((p, i) => {
+    p.then(
+      (value) => { settled[i] = { status: "fulfilled", value }; },
+      (reason) => { settled[i] = { status: "rejected", reason }; }
+    );
+  });
+
   const gradingPromise = Promise.allSettled(gradePromises);
   const timeoutPromise = new Promise<"TIMEOUT">((resolve) =>
     setTimeout(() => resolve("TIMEOUT"), GRADING_TIMEOUT_MS)
@@ -278,12 +321,9 @@ export async function autoGradeSession(
   const raceResult = await Promise.race([gradingPromise, timeoutPromise]);
   const timedOut = raceResult === "TIMEOUT";
 
-  // If timed out, still collect whatever results completed so far
-  // Promise.allSettled doesn't reject, so we await it after timeout too
-  const gradeResults = timedOut
-    ? await Promise.allSettled(gradePromises.map((p) =>
-        Promise.race([p, new Promise<null>((resolve) => setTimeout(() => resolve(null), 0))])
-      ))
+  // On timeout, snapshot whatever results have settled so far
+  const gradeResults: Array<PromiseSettledResult<GradeResult | null>> = timedOut
+    ? [...settled]
     : raceResult;
 
   const grades: GradeResult[] = gradeResults
@@ -319,7 +359,7 @@ export async function autoGradeSession(
     });
   }
 
-  // 9. 채점 결과 저장 (partial 결과라도 저장)
+  // 9. 채점 결과 저장 (partial 결과라도 저장) + 저장 검증
   if (grades.length > 0) {
     const { error: insertError } = await supabase.from("grades").insert(
       grades.map((grade) => ({
@@ -334,6 +374,31 @@ export async function autoGradeSession(
 
     if (insertError) {
       throw insertError;
+    }
+
+    // Verify inserted grades — detect missing rows
+    const { data: savedGrades, error: verifyError } = await supabase
+      .from("grades")
+      .select("q_idx")
+      .eq("session_id", sessionId)
+      .eq("grade_type", "auto");
+
+    if (verifyError) {
+      logError("[AUTO_GRADE] Failed to verify saved grades", verifyError, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId },
+      });
+    } else if (savedGrades) {
+      const savedQIdxSet = new Set(savedGrades.map((g) => g.q_idx));
+      for (const grade of grades) {
+        if (!savedQIdxSet.has(grade.q_idx)) {
+          failedQuestions.push(grade.q_idx);
+          logError("[AUTO_GRADE] Grade not found after insert", new Error("Grade verification failed"), {
+            path: "lib/grading.ts",
+            additionalData: { sessionId, q_idx: grade.q_idx },
+          });
+        }
+      }
     }
   }
 
@@ -411,7 +476,7 @@ ${questionMessages
   .join("\n\n")}`
             : "";
 
-        return `문제 ${index + 1}:
+        return `문제 ${qIdx + 1}:
 ${q.prompt || ""}
 
 답안:
@@ -524,9 +589,19 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
     );
     const completion = tracked.data;
 
-    const result = JSON.parse(
-      completion.choices[0]?.message?.content || "{}"
-    ) as SummaryData;
+    let result: SummaryData;
+    try {
+      result = JSON.parse(
+        completion.choices[0]?.message?.content || "{}"
+      ) as SummaryData;
+    } catch (parseErr) {
+      const rawContent = completion.choices[0]?.message?.content ?? "(empty)";
+      logError("[AUTO_GRADE] Failed to parse summary JSON response", parseErr, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, rawContent: rawContent.slice(0, 500) },
+      });
+      return null;
+    }
 
     const aiDependencySummary = summarizeAiDependencyAssessments(
       grades.map((grade) => ({

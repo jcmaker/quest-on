@@ -9,6 +9,7 @@ import { batchGetUserInfo } from "@/lib/clerk-users";
 import { logError } from "@/lib/logger";
 import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { singleGradeUpdateSchema, validateRequest } from "@/lib/validations";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -172,7 +173,8 @@ export async function GET(
       school: studentProfile?.school,
     };
 
-    // Decompress session data if available
+    // Decompress session data if available — track errors for frontend warning
+    const decompressionErrors: Array<{ target: string; error: string }> = [];
     let decompressedSessionData = null;
     if (
       session.compressed_session_data &&
@@ -183,6 +185,8 @@ export async function GET(
           session.compressed_session_data
         );
       } catch (error) {
+        const errMsg = error instanceof Error ? error.message : "Unknown decompression error";
+        decompressionErrors.push({ target: "sessionData", error: errMsg });
         logError("Error decompressing session data", error, {
           path: `/api/session/${sessionId}/grade`,
         });
@@ -205,6 +209,8 @@ export async function GET(
               submission.compressed_answer_data as string
             );
           } catch (error) {
+            const errMsg = error instanceof Error ? error.message : "Unknown decompression error";
+            decompressionErrors.push({ target: `submission_q${qIdx}`, error: errMsg });
             logError("Error decompressing answer data", error, {
               path: `/api/session/${sessionId}/grade`,
             });
@@ -236,6 +242,8 @@ export async function GET(
               message.compressed_content as string
             );
           } catch (error) {
+            const errMsg = error instanceof Error ? error.message : "Unknown decompression error";
+            decompressionErrors.push({ target: `message_q${qIdx}_${message.id}`, error: errMsg });
             logError("Error decompressing message content", error, {
               path: `/api/session/${sessionId}/grade`,
             });
@@ -346,6 +354,7 @@ export async function GET(
       pasteLogs: pasteLogsByQuestion, // 부정행위 의심 로그 (question_id별로 그룹화)
       overallScore,
       aiSummary: session.ai_summary || null, // 하위 호환성을 위해 유지
+      ...(decompressionErrors.length > 0 && { decompressionErrors }),
     };
 
     return successJson(responseData);
@@ -355,7 +364,9 @@ export async function GET(
     });
     return errorJson(
       "INTERNAL_ERROR",
-      (error as Error)?.message || "Internal server error",
+      process.env.NODE_ENV === "development"
+        ? (error as Error)?.message || "Internal server error"
+        : "Internal server error",
       500
     );
   }
@@ -375,7 +386,13 @@ export async function POST(
 
     const user = await currentUser();
     const body = await request.json();
-    const { questionIdx, score, comment, stageGrading } = body;
+
+    // Validate POST body with schema
+    const validation = validateRequest(singleGradeUpdateSchema, body);
+    if (!validation.success) {
+      return errorJson("VALIDATION_ERROR", validation.error, 400);
+    }
+    const { questionIdx, score, comment, stageGrading, expected_updated_at } = validation.data;
 
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
@@ -398,10 +415,10 @@ export async function POST(
       return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
-    // Get exam to check instructor
+    // Get exam to check instructor and validate q_idx upper bound
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("instructor_id")
+      .select("instructor_id, questions")
       .eq("id", session.exam_id)
       .single();
 
@@ -412,6 +429,25 @@ export async function POST(
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
       return errorJson("FORBIDDEN", "Forbidden", 403);
+    }
+
+    // Validate q_idx upper bound against exam questions
+    if (Array.isArray(exam.questions) && questionIdx >= exam.questions.length) {
+      return errorJson("VALIDATION_ERROR", `Invalid question index: ${questionIdx} (exam has ${exam.questions.length} questions)`, 400);
+    }
+
+    // Optimistic locking: if client sends expected_updated_at, verify no concurrent edit
+    if (expected_updated_at) {
+      const { data: existingGrade } = await supabase
+        .from("grades")
+        .select("updated_at")
+        .eq("session_id", sessionId)
+        .eq("q_idx", questionIdx)
+        .single();
+
+      if (existingGrade && existingGrade.updated_at !== expected_updated_at) {
+        return errorJson("CONFLICT", "Grade was modified by another user. Please refresh and try again.", 409);
+      }
     }
 
     // Upsert grade (atomic: handles concurrent grading safely)
@@ -425,6 +461,7 @@ export async function POST(
           comment,
           stage_grading: stageGrading || null,
           grade_type: "manual",
+          updated_at: new Date().toISOString(),
         },
         { onConflict: "session_id,q_idx" }
       )
@@ -455,7 +492,9 @@ export async function POST(
     });
     return errorJson(
       "INTERNAL_ERROR",
-      (error as Error)?.message || "Internal server error",
+      process.env.NODE_ENV === "development"
+        ? (error as Error)?.message || "Internal server error"
+        : "Internal server error",
       500
     );
   }
@@ -557,9 +596,10 @@ export async function PUT(
     });
     return errorJson(
       "INTERNAL_ERROR",
-      (error as Error)?.message || "Unknown error occurred",
-      500,
-      (error as Error)?.message
+      process.env.NODE_ENV === "development"
+        ? (error as Error)?.message || "Unknown error occurred"
+        : "Internal server error",
+      500
     );
   }
 }

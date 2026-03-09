@@ -269,31 +269,19 @@ async function fetchPreviousResponseId(params: {
 
 async function incrementUsedClarifications(params: {
   sessionId: string;
-  fallbackValue?: number;
   skip?: boolean;
 }): Promise<void> {
-  const { sessionId, fallbackValue, skip } = params;
+  const { sessionId, skip } = params;
   if (skip) return;
 
-  // 가능하면 RPC로 원자적 증가(경쟁 상태 방지). 없으면 기존 update로 폴백.
-  try {
-    const { error } = await supabase.rpc("increment_used_clarifications", {
-      p_session_id: sessionId,
-      p_amount: 1,
-    });
-    if (!error) return;
-
-    // function 미존재 등은 폴백
-    // RPC not available, fall back to manual update
-  } catch {
-    // RPC threw, fall back to manual update
+  // Atomic increment via RPC (prevents race conditions with concurrent requests)
+  const { error } = await supabase.rpc("increment_used_clarifications", {
+    p_session_id: sessionId,
+    p_amount: 1,
+  });
+  if (error) {
+    throw new Error(`Failed to increment used_clarifications: ${error.message}`);
   }
-
-  // 폴백: 현재 값 기반 단일 update (동시성 완전 보장은 아니지만 왕복 최소화)
-  await supabase
-    .from("sessions")
-    .update({ used_clarifications: (fallbackValue ?? 0) + 1 })
-    .eq("id", sessionId);
 }
 
 async function resolveTempSession(params: {
@@ -369,13 +357,13 @@ async function handleChatLogic(params: {
   rubric?: RubricItem[];
   currentQuestionText?: string;
   currentQuestionAiContext?: string;
-  usedClarificationsFallback?: number;
   skipIncrementUsedClarifications?: boolean;
   userId?: string;
 }): Promise<{
   aiResponse: string;
   responseId: string;
   topSimilarity: number | null;
+  warnings: string[];
 }> {
   const {
     sessionId,
@@ -389,10 +377,10 @@ async function handleChatLogic(params: {
     rubric,
     currentQuestionText,
     currentQuestionAiContext,
-    usedClarificationsFallback,
     skipIncrementUsedClarifications,
     userId,
   } = params;
+  const warnings: string[] = [];
 
   const messageTypePromise = classifyMessageType(message).catch(
     () => "other" as MessageType
@@ -497,7 +485,6 @@ async function handleChatLogic(params: {
 
   const incrementPromise = incrementUsedClarifications({
     sessionId,
-    fallbackValue: usedClarificationsFallback,
     skip: !!skipIncrementUsedClarifications,
   });
 
@@ -507,14 +494,17 @@ async function handleChatLogic(params: {
   ]);
   if (aiInsertSettled.status === "rejected") {
     logError("Error saving AI message", aiInsertSettled.reason, { path: "/api/chat" });
+    warnings.push("message_save_failed");
   } else if (aiInsertSettled.value?.error) {
     logError("Error saving AI message", aiInsertSettled.value.error, { path: "/api/chat" });
+    warnings.push("message_save_failed");
   }
   if (incrementSettled.status === "rejected") {
     logError("Error incrementing clarifications", incrementSettled.reason, { path: "/api/chat" });
+    warnings.push("clarification_increment_failed");
   }
 
-  return { aiResponse, responseId, topSimilarity: rag.topSimilarity };
+  return { aiResponse, responseId, topSimilarity: rag.topSimilarity, warnings };
 }
 
 export async function POST(request: NextRequest) {
@@ -562,10 +552,10 @@ export async function POST(request: NextRequest) {
     let safeQIdx: number;
     if (questionIdx !== undefined && questionIdx !== null) {
       const parsed = parseInt(String(questionIdx), 10);
-      safeQIdx = Number.isFinite(parsed) ? parsed : 0;
+      safeQIdx = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
     } else if (questionId) {
       const parsed = parseInt(String(questionId), 10);
-      safeQIdx = Number.isFinite(parsed) ? Math.abs(parsed % 2147483647) : 0;
+      safeQIdx = Number.isFinite(parsed) && parsed >= 0 ? Math.abs(parsed % 2147483647) : 0;
     } else {
       safeQIdx = 0;
     }
@@ -628,7 +618,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const { aiResponse } = await handleChatLogic({
+      const { aiResponse, warnings } = await handleChatLogic({
         sessionId: actualSessionId,
         message,
         qIdx: safeQIdx,
@@ -638,7 +628,6 @@ export async function POST(request: NextRequest) {
         examId,
         currentQuestionText,
         currentQuestionAiContext,
-        usedClarificationsFallback: usedClarifications,
         skipIncrementUsedClarifications,
         userId: user?.id ?? studentId,
       });
@@ -648,6 +637,7 @@ export async function POST(request: NextRequest) {
         timestamp: new Date().toISOString(),
         examCode: requestExamCode || "TEMP",
         questionId: questionId || "temp",
+        ...(warnings?.length ? { warnings } : {}),
       });
     }
 
@@ -703,7 +693,7 @@ export async function POST(request: NextRequest) {
         }>)
       : undefined;
 
-    const { aiResponse } = await handleChatLogic({
+    const { aiResponse, warnings } = await handleChatLogic({
       sessionId,
       message,
       qIdx: safeQIdx,
@@ -715,7 +705,6 @@ export async function POST(request: NextRequest) {
       rubric,
       currentQuestionText,
       currentQuestionAiContext,
-      usedClarificationsFallback: session.used_clarifications ?? 0,
       userId: user?.id ?? session.student_id,
     });
 
@@ -724,6 +713,7 @@ export async function POST(request: NextRequest) {
       timestamp: new Date().toISOString(),
       examCode: exam.code,
       questionId,
+      ...(warnings?.length ? { warnings } : {}),
     });
   } catch (error) {
     logError("Chat API error", error, { path: "/api/chat" });

@@ -170,9 +170,13 @@ export async function createExam(data: {
       .single();
 
     if (nodeError) {
-      // Exam is created but node creation failed - this is not critical
-      // but we should log it
-      logError("Failed to create exam node", nodeError, { path: "/api/supa", user_id: user.id });
+      logError("Failed to create exam node, rolling back exam", nodeError, { path: "/api/supa", user_id: user.id, additionalData: { examId: exam.id } });
+      // Rollback: delete the orphaned exam and any material chunks
+      await Promise.all([
+        supabase.from("exams").delete().eq("id", exam.id),
+        supabase.from("exam_material_chunks").delete().eq("exam_id", exam.id),
+      ]);
+      return errorJson("DATABASE_ERROR", "Failed to create exam", 500);
     }
 
     // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
@@ -300,9 +304,9 @@ export async function updateExam(data: {
       throw error;
     }
 
-    // Audit log: exam status change
+    // Audit log: exam status change (awaited for critical operations)
     if (data.update.status) {
-      auditLog({
+      await auditLog({
         action: "exam_status_change",
         userId: user.id,
         targetId: data.id,

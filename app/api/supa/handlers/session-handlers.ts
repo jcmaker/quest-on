@@ -10,6 +10,22 @@ const GRACE_PERIOD_MS = 30_000;
 
 const supabase = getSupabaseServer();
 
+/**
+ * Calculate remaining time in ms for a session timer, including grace period.
+ * Returns positive ms remaining, 0 if expired, or null if timer not applicable.
+ */
+export function getSessionTimeRemainingMs(
+  timerStartIso: string | null | undefined,
+  durationMinutes: number,
+  nowTime = Date.now()
+): number | null {
+  if (!timerStartIso || durationMinutes === 0) return null;
+  const timerStartTime = new Date(timerStartIso).getTime();
+  const examDurationMs = durationMinutes * 60_000;
+  const sessionEndTime = timerStartTime + examDurationMs + GRACE_PERIOD_MS;
+  return Math.max(0, sessionEndTime - nowTime);
+}
+
 type GateExamRecord = {
   id: string;
   status?: string | null;
@@ -65,14 +81,9 @@ export function getSessionTimeRemainingSeconds(
   nowTime = Date.now()
 ): number | null {
   const timerStartIso = getSessionTimerStartIso(session);
-  if (!timerStartIso || examDuration === 0) {
-    return null;
-  }
-
-  const timerStartTime = new Date(timerStartIso).getTime();
-  const examDurationMs = examDuration * 60 * 1000;
-  const sessionEndTime = timerStartTime + examDurationMs;
-  return Math.max(0, Math.floor((sessionEndTime - nowTime) / 1000));
+  const remainingMs = getSessionTimeRemainingMs(timerStartIso, examDuration, nowTime);
+  if (remainingMs === null) return null;
+  return Math.max(0, Math.floor(remainingMs / 1000));
 }
 
 export function buildGateStatePayload(
@@ -358,20 +369,13 @@ export async function initExamSession(data: {
       // ✅ Gate 방식: 세션 상태 확인 및 타이머 계산
       const sessionStatus = existingSession.status || "not_joined";
 
-      // ✅ 중요: 타이머는 in_progress 상태이고 attempt_timer_started_at이 설정된 경우에만 시작됨
-      // waiting 상태에서는 타이머가 시작되지 않으므로 시간 체크를 하지 않음
-      const timerStartTime = existingSession.attempt_timer_started_at
-        ? new Date(existingSession.attempt_timer_started_at).getTime()
+      // ✅ 시험 시간 종료 체크는 in_progress 상태이고 타이머가 시작된 경우에만 수행
+      const initTimeRemaining = sessionStatus === "in_progress"
+        ? getSessionTimeRemainingMs(existingSession.attempt_timer_started_at, exam.duration, nowTime)
         : null;
 
-      // ✅ 시험 시간 종료 체크는 in_progress 상태이고 타이머가 시작된 경우에만 수행
-      if (sessionStatus === "in_progress" && timerStartTime !== null && exam.duration !== 0) {
-        const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
-        const sessionEndTime = timerStartTime + examDurationMs + GRACE_PERIOD_MS;
-        const timeRemaining = sessionEndTime - nowTime;
-
-        // 시간 종료 체크 및 자동 제출 처리 (grace period 포함)
-        if (timeRemaining <= 0) {
+      if (initTimeRemaining !== null && initTimeRemaining <= 0) {
+        {
         // 기존 답안 가져오기
         const { data: existingSubmissions } = await supabase
           .from("submissions")
@@ -595,21 +599,28 @@ export async function submitExam(data: {
       return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
     }
 
-    // Server-side deadline enforcement
-    const GRACE_PERIOD_MS = 30_000;
+    // Server-side deadline enforcement (uses shared utility)
     const examsRaw = sessionCheck.exams as { duration: number } | { duration: number }[] | null;
     const examDuration = Array.isArray(examsRaw) ? examsRaw[0]?.duration : examsRaw?.duration;
-    const timerStartedAt = sessionCheck.attempt_timer_started_at;
 
-    if (
-      examDuration &&
-      examDuration > 0 &&
-      timerStartedAt &&
-      sessionCheck.status === "in_progress"
-    ) {
-      const endTime = new Date(timerStartedAt).getTime() + examDuration * 60_000 + GRACE_PERIOD_MS;
-      if (Date.now() > endTime) {
+    if (examDuration && examDuration > 0 && sessionCheck.status === "in_progress") {
+      const remaining = getSessionTimeRemainingMs(sessionCheck.attempt_timer_started_at, examDuration);
+      if (remaining !== null && remaining <= 0) {
         return errorJson("DEADLINE_EXCEEDED", "Exam time has expired", 403);
+      }
+    }
+
+    // Validate answers array length against exam question count
+    const { data: examForValidation, error: examValError } = await supabase
+      .from("exams")
+      .select("questions")
+      .eq("id", data.examId)
+      .single();
+
+    if (!examValError && examForValidation?.questions && Array.isArray(examForValidation.questions)) {
+      const questionCount = examForValidation.questions.length;
+      if (data.answers.length > questionCount) {
+        return errorJson("VALIDATION_ERROR", `Too many answers: got ${data.answers.length}, expected at most ${questionCount}`, 400);
       }
     }
 
@@ -660,8 +671,8 @@ export async function submitExam(data: {
       return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
     }
 
-    // Audit log: session submit
-    auditLog({
+    // Audit log: session submit (awaited for critical operations)
+    await auditLog({
       action: "session_submit",
       userId: verifiedStudentId,
       targetId: data.sessionId,
@@ -724,22 +735,14 @@ export async function sessionHeartbeat(data: {
         logError("Failed to fetch exam for heartbeat", examError, { path: "/api/supa" });
       }
     } else {
-      // ✅ Gate 방식: attempt_timer_started_at 기준으로 시간 체크
-      // InProgress 상태이고 타이머가 시작된 경우만 시간 체크
+      // ✅ Gate 방식: attempt_timer_started_at 기준으로 시간 체크 (shared utility)
       const sessionStatus = (session.status as string) || "not_joined";
-      const timerStartTime = session.attempt_timer_started_at
-        ? new Date(session.attempt_timer_started_at as string).getTime()
-        : session.started_at
-        ? new Date(session.started_at as string).getTime()
-        : null;
+      const timerStartIso = (session.attempt_timer_started_at as string) || (session.started_at as string) || null;
 
-      if (sessionStatus === "in_progress" && timerStartTime !== null && exam.duration !== 0) {
-        const examDurationMs = exam.duration * 60 * 1000;
-        const sessionEndTime = timerStartTime + examDurationMs + GRACE_PERIOD_MS;
-        const now = Date.now();
-        const timeRemaining = sessionEndTime - now;
+      if (sessionStatus === "in_progress") {
+        const heartbeatRemaining = getSessionTimeRemainingMs(timerStartIso, exam.duration);
 
-        if (timeRemaining <= 0) {
+        if (heartbeatRemaining !== null && heartbeatRemaining <= 0) {
           // ✅ 시간 종료 - 자동 제출 처리 (grace period 포함)
           const { data: autoSubmittedSession, error: updateError } = await supabase
             .from("sessions")
@@ -775,27 +778,12 @@ export async function sessionHeartbeat(data: {
 
       if (updateError) throw updateError;
 
-      // ✅ Gate 방식: attempt_timer_started_at 기준으로 남은 시간 계산
-      let timeRemaining = null;
+      // Gate 방식: 남은 시간 계산 (getSessionTimeRemainingSeconds로 통일)
       const sessionStatus = (session.status as string) || "not_joined";
-      const timerStartTime = session.attempt_timer_started_at
-        ? new Date(session.attempt_timer_started_at as string).getTime()
-        : session.started_at
-        ? new Date(session.started_at as string).getTime()
-        : null;
-
-      if (
-        exam &&
-        exam.duration !== 0 &&
-        sessionStatus === "in_progress" &&
-        timerStartTime !== null
-      ) {
-        const examDurationMs = exam.duration * 60 * 1000;
-        const sessionEndTime = timerStartTime + examDurationMs;
-        const now = Date.now();
-        timeRemaining = Math.max(0, Math.floor((sessionEndTime - now) / 1000));
-      }
-      // duration이 0이거나 타이머가 시작되지 않았으면 timeRemaining은 null로 유지
+      const timeRemaining =
+        exam && sessionStatus === "in_progress"
+          ? getSessionTimeRemainingSeconds(session as GateSessionRecord, exam.duration)
+          : null;
 
       return successJson({
         timeRemaining,

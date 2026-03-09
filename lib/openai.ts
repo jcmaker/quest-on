@@ -107,8 +107,8 @@ export async function callOpenAIWithTelemetry<T>(
           });
         }
 
-        // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, attempt) * 1000;
+        // Exponential backoff with jitter: 1-2s, 2-3s, 4-5s
+        const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
         logError(
           `[callOpenAI] 429 rate limit, retrying in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`,
           error
