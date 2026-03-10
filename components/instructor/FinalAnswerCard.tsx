@@ -15,17 +15,51 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "");
 }
 
-// 텍스트를 HTML로 변환 (줄바꿈 처리)
-function textToHtml(text: string): string {
-  if (!text) return "";
-  // HTML 특수문자 이스케이프
+function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;")
-    .replace(/\n/g, "<br>"); // 줄바꿈을 <br>로 변환
+    .replace(/'/g, "&#039;");
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const FLEXIBLE_WHITESPACE_PATTERN = "(?:\\s|&nbsp;|<br\\s*/?>)+";
+
+// 원본 텍스트 기준으로 특수문자 이스케이프를 먼저 수행한 뒤,
+// HTML 이스케이프와 공백/줄바꿈 유연 매칭 패턴을 결합한다.
+function buildFlexibleHtmlRegexFromRawText(rawText: string): RegExp | null {
+  const normalized = rawText.replace(/\r\n?/g, "\n");
+  const segments = normalized.match(/\s+|[^\s]+/g);
+  if (!segments || segments.length === 0) return null;
+
+  const pattern = segments
+    .map((segment) => {
+      if (/^\s+$/.test(segment)) return FLEXIBLE_WHITESPACE_PATTERN;
+      const regexEscaped = escapeRegExp(segment);
+      return escapeHtml(regexEscaped);
+    })
+    .join("");
+
+  if (!pattern) return null;
+  return new RegExp(pattern, "g");
+}
+
+function sortLogsByLengthDesc(logs: PasteLog[]): PasteLog[] {
+  return [...logs].sort(
+    (a, b) => (b.pasted_text?.length ?? 0) - (a.pasted_text?.length ?? 0)
+  );
+}
+
+// 텍스트를 HTML로 변환 (줄바꿈 처리)
+function textToHtml(text: string): string {
+  if (!text) return "";
+  // HTML 특수문자 이스케이프
+  return escapeHtml(text).replace(/\n/g, "<br>"); // 줄바꿈을 <br>로 변환
 }
 
 // 답안에서 복사-붙여넣기한 부분을 하이라이트
@@ -43,19 +77,22 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
     // 붙여넣기가 있으면 하이라이트 적용
     if (pasteLogs && pasteLogs.length > 0) {
       // 내부 복사 - 파란색 (먼저 필터링하여 외부 복사와 구분)
-      const internalPastes = pasteLogs.filter(
-        (log) => log.is_internal === true && log.pasted_text
+      const internalPastes = sortLogsByLengthDesc(
+        pasteLogs.filter((log) => log.is_internal === true && log.pasted_text)
       );
 
       // 외부 복사 (의심스러운 붙여넣기) - 빨간색 (내부 복사가 아닌 것만)
-      const externalPastes = pasteLogs.filter(
-        (log) => log.is_internal !== true && log.suspicious && log.pasted_text
+      const externalPastes = sortLogsByLengthDesc(
+        pasteLogs.filter(
+          (log) => log.is_internal !== true && log.suspicious && log.pasted_text
+        )
       );
 
       // 내부 복사 하이라이트 (파란색) - 외부 복사와 동일한 로직, 색상만 다름
       for (const log of internalPastes) {
         const pastedText = log.pasted_text!;
-        const escapedText = textToHtml(pastedText);
+        const regex = buildFlexibleHtmlRegexFromRawText(pastedText);
+        if (!regex) continue;
         // 이미 하이라이트되지 않은 부분만 매칭
         const parts = htmlAnswer.split(/<mark[^>]*>.*?<\/mark>/g);
         const markers = htmlAnswer.match(/<mark[^>]*>.*?<\/mark>/g) || [];
@@ -64,13 +101,9 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
         let newHtmlAnswer = "";
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
-          const regex = new RegExp(
-            escapedText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-            "g"
-          );
           const highlightedPart = part.replace(
             regex,
-            `<mark class="bg-blue-200 text-blue-900 font-semibold px-1 rounded">${escapedText}</mark>`
+            `<mark class="bg-blue-200 text-blue-900 font-semibold px-1 rounded">$&</mark>`
           );
           newHtmlAnswer += highlightedPart;
           if (i < markers.length) {
@@ -83,7 +116,8 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
       // 외부 복사 하이라이트 (빨간색) - 내부 복사와 동일한 로직, 색상만 다름
       for (const log of externalPastes) {
         const pastedText = log.pasted_text!;
-        const escapedText = textToHtml(pastedText);
+        const regex = buildFlexibleHtmlRegexFromRawText(pastedText);
+        if (!regex) continue;
         // 이미 하이라이트되지 않은 부분만 매칭
         const parts = htmlAnswer.split(/<mark[^>]*>.*?<\/mark>/g);
         const markers = htmlAnswer.match(/<mark[^>]*>.*?<\/mark>/g) || [];
@@ -92,13 +126,9 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
         let newHtmlAnswer = "";
         for (let i = 0; i < parts.length; i++) {
           const part = parts[i];
-          const regex = new RegExp(
-            escapedText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-            "g"
-          );
           const highlightedPart = part.replace(
             regex,
-            `<mark class="bg-red-200 text-red-900 font-semibold px-1 rounded">${escapedText}</mark>`
+            `<mark class="bg-red-200 text-red-900 font-semibold px-1 rounded">$&</mark>`
           );
           newHtmlAnswer += highlightedPart;
           if (i < markers.length) {
@@ -116,13 +146,15 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
   if (!pasteLogs || pasteLogs.length === 0) return answer;
 
   // 내부 복사 - 파란색 (먼저 필터링하여 외부 복사와 구분)
-  const internalPastes = pasteLogs.filter(
-    (log) => log.is_internal === true && log.pasted_text
+  const internalPastes = sortLogsByLengthDesc(
+    pasteLogs.filter((log) => log.is_internal === true && log.pasted_text)
   );
 
   // 외부 복사 (의심스러운 붙여넣기) - 빨간색 (내부 복사가 아닌 것만)
-  const externalPastes = pasteLogs.filter(
-    (log) => log.is_internal !== true && log.suspicious && log.pasted_text
+  const externalPastes = sortLogsByLengthDesc(
+    pasteLogs.filter(
+      (log) => log.is_internal !== true && log.suspicious && log.pasted_text
+    )
   );
 
   if (externalPastes.length === 0 && internalPastes.length === 0) return answer;
@@ -133,6 +165,8 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
   // 내부 복사 하이라이트 (파란색) - 외부 복사와 동일한 로직, 색상만 다름
   for (const log of internalPastes) {
     if (!log.pasted_text) continue;
+    const regex = buildFlexibleHtmlRegexFromRawText(log.pasted_text);
+    if (!regex) continue;
 
     // 이미 하이라이트되지 않은 부분만 매칭
     const parts = highlightedAnswer.split(/<mark[^>]*>.*?<\/mark>/g);
@@ -142,13 +176,9 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
     let newHighlightedAnswer = "";
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      const regex = new RegExp(
-        `(${log.pasted_text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
-        "g"
-      );
       const highlightedPart = part.replace(
         regex,
-        `<mark class="bg-blue-200 text-blue-900 font-semibold px-1 rounded">$1</mark>`
+        `<mark class="bg-blue-200 text-blue-900 font-semibold px-1 rounded">$&</mark>`
       );
       newHighlightedAnswer += highlightedPart;
       if (i < markers.length) {
@@ -161,6 +191,8 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
   // 외부 복사 하이라이트 (빨간색) - 내부 복사와 동일한 로직, 색상만 다름
   for (const log of externalPastes) {
     if (!log.pasted_text) continue;
+    const regex = buildFlexibleHtmlRegexFromRawText(log.pasted_text);
+    if (!regex) continue;
 
     // 이미 하이라이트되지 않은 부분만 매칭
     const parts = highlightedAnswer.split(/<mark[^>]*>.*?<\/mark>/g);
@@ -170,13 +202,9 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
     let newHighlightedAnswer = "";
     for (let i = 0; i < parts.length; i++) {
       const part = parts[i];
-      const regex = new RegExp(
-        `(${log.pasted_text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
-        "g"
-      );
       const highlightedPart = part.replace(
         regex,
-        `<mark class="bg-red-200 text-red-900 font-semibold px-1 rounded">$1</mark>`
+        `<mark class="bg-red-200 text-red-900 font-semibold px-1 rounded">$&</mark>`
       );
       newHighlightedAnswer += highlightedPart;
       if (i < markers.length) {

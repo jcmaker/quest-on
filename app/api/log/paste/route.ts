@@ -52,20 +52,14 @@ export async function POST(request: Request) {
     const suspicious = !isInternal;
     const timestamp = new Date(ts);
 
-    // Truncate pasted text to prevent storing sensitive data (passwords, etc.)
-    const MAX_PASTE_TEXT_LENGTH = 200;
-    const truncatedText = pasted_text
-      ? pasted_text.length > MAX_PASTE_TEXT_LENGTH
-        ? pasted_text.slice(0, MAX_PASTE_TEXT_LENGTH) + "...[truncated]"
-        : pasted_text
-      : null;
-
     const { error: insertError } = await supabase.from("paste_logs").insert({
       session_id: sessionId,
       exam_code: examCode,
       question_id: questionId,
       length: length,
-      pasted_text: truncatedText,
+      // Store raw pasted text without mutation so downstream regex/highlight
+      // logic can match against the exact original content.
+      pasted_text: pasted_text ?? null,
       paste_start: paste_start ?? null,
       paste_end: paste_end ?? null,
       answer_length_before: answer_length_before ?? null,

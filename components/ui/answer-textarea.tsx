@@ -22,6 +22,7 @@ interface AnswerTextareaProps {
 const INTERNAL_COPY_MARKER_START = "\u200B\u200B\u200B";
 const INTERNAL_COPY_MARKER_END = "\u200B\u200B\u200B";
 const INTERNAL_COPY_MARKER = INTERNAL_COPY_MARKER_START + INTERNAL_COPY_MARKER_END;
+const INTERNAL_COPY_MIME_TYPE = "application/x-queston-internal";
 
 export function AnswerTextarea({
   value,
@@ -55,6 +56,8 @@ export function AnswerTextarea({
           "text/plain",
           INTERNAL_COPY_MARKER_START + selectedText + INTERNAL_COPY_MARKER_END
         );
+        // More robust internal copy signal than zero-width markers alone.
+        e.clipboardData.setData(INTERNAL_COPY_MIME_TYPE, "1");
       }
     },
     []
@@ -72,13 +75,15 @@ export function AnswerTextarea({
       const clipboard = e.clipboardData;
       if (!clipboard) return;
 
+      const isInternalByMime = clipboard.types.includes(INTERNAL_COPY_MIME_TYPE);
       const pastedData = clipboard.getData("text/plain");
       if (!pastedData) return;
 
       // 내부 복사 마커 확인
-      const isInternal =
+      const isInternalByMarker =
         pastedData.startsWith(INTERNAL_COPY_MARKER_START) ||
         pastedData.includes(INTERNAL_COPY_MARKER);
+      const isInternal = isInternalByMime || isInternalByMarker;
 
       // 마커 제거 (실제 텍스트만 저장)
       const cleanText = pastedData
