@@ -77,7 +77,9 @@ test.describe("Error Scenarios — Edge Cases", () => {
     await studentPage.route("**/api/supa**", (route) => route.abort("failed"));
 
     // Try to trigger an API call (e.g., auto-save) — wait for the aborted request
-    const savePromise = studentPage.waitForEvent("requestfailed").catch(() => {});
+    const savePromise = studentPage
+      .waitForEvent("requestfailed", { timeout: TIMEOUTS.API_RESPONSE })
+      .catch(() => {});
     await studentPage.keyboard.press("Control+s");
     await savePromise;
 

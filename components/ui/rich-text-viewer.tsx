@@ -27,6 +27,7 @@ export function RichTextViewer({
 
   return (
     <div
+      data-testid="rich-text-content"
       className={`prose max-w-none rich-text-content overflow-x-auto [&_.qa-math-block]:max-w-full [&_.qa-math-block]:overflow-x-auto [&_.katex-display]:overflow-x-auto ${className}`}
       dangerouslySetInnerHTML={{ __html: renderedContent }}
     />

@@ -25,6 +25,7 @@ import {
   InstructorGradePage,
   StudentReportPage,
 } from "../pages";
+import { TIMEOUTS } from "../../constants";
 
 test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
   test.afterEach(async () => {
@@ -35,6 +36,8 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
     browser,
     baseURL,
   }) => {
+    // Full cross-role flow: join → wait → start → answer → submit → grade → report
+    // Requires 120s due to multiple page navigations and AI grading wait
     test.setTimeout(120_000);
 
     const url = baseURL ?? "http://localhost:3000";
@@ -57,9 +60,9 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
       await examPage.goto(exam.code);
 
       // ── Step 3: Accept preflight → land in waiting room ──
-      await expect(examPage.preflightHeading).toBeVisible({ timeout: 15_000 });
+      await expect(examPage.preflightHeading).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
       await examPage.acceptPreflight();
-      await expect(examPage.waitingRoom).toBeVisible({ timeout: 15_000 });
+      await expect(examPage.waitingRoom).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
       // Verify session created with "waiting" status in DB
       const sessions = await getSessionsByExam(exam.id);
@@ -69,7 +72,7 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
       await expect(async () => {
         const s = await getSession(sessionId);
         expect(s.status).toBe("waiting");
-      }).toPass({ timeout: 10_000, intervals: [1_000] });
+      }).toPass({ timeout: TIMEOUTS.ELEMENT_VISIBLE, intervals: [1_000] });
 
       // ── Step 4: Instructor starts exam (via API for atomic update) ──
       const startResponse = await iPage.request.post(
@@ -90,35 +93,35 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
       // WaitingRoom polls every 10s; generous timeout to allow detection
       await expect(
         sPage.getByText(/polymorphism|stack|queue/i),
-      ).toBeVisible({ timeout: 30_000 });
+      ).toBeVisible({ timeout: TIMEOUTS.AI_RESPONSE });
 
       // ── Step 6: Student answers ALL questions ──
       // Q1: Polymorphism
-      await expect(examPage.answerArea).toBeVisible({ timeout: 10_000 });
+      await expect(examPage.answerArea).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
       await examPage.typeAnswer(
         "Polymorphism allows objects of different classes to be treated as objects of a common superclass.",
       );
 
       // Navigate to Q2 and answer it
       await examPage.nextBtn.click();
-      await expect(examPage.answerArea).toBeVisible({ timeout: 5_000 });
+      await expect(examPage.answerArea).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
       await examPage.typeAnswer(
         "A stack is LIFO (last in, first out) while a queue is FIFO (first in, first out).",
       );
 
       // Save all answers
       await examPage.manualSave();
-      await expect(examPage.saveIndicator).toBeVisible({ timeout: 5_000 });
+      await expect(examPage.saveIndicator).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
 
       // ── Step 7: Student submits exam ──
-      await expect(examPage.submitBtn).toBeVisible({ timeout: 10_000 });
+      await expect(examPage.submitBtn).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
       await examPage.submitBtn.click();
 
       // Submit confirmation dialog (single dialog since all Qs are answered)
       const confirmBtn = sPage
         .locator('[role="alertdialog"], [role="dialog"]')
         .getByRole("button", { name: /제출하기/ });
-      await expect(confirmBtn).toBeVisible({ timeout: 5_000 });
+      await expect(confirmBtn).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
       await confirmBtn.click();
 
       // Wait for submission to complete — check submitted_at in DB
@@ -134,18 +137,18 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
 
       await expect(
         iPage.getByRole("heading", { name: /채점/ }),
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
       // ── Step 9: Instructor grades the student ──
-      await expect(gradePage.scoreInput).toBeVisible({ timeout: 10_000 });
+      await expect(gradePage.scoreInput).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
       await gradePage.setScore("90");
       await gradePage.saveBtn.click();
 
       // Grade question 1 if navigation button is available
       const q1Nav = gradePage.questionNavButton(1);
-      if (await q1Nav.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      if (await q1Nav.isVisible({ timeout: TIMEOUTS.QUICK_CHECK }).catch(() => false)) {
         await q1Nav.click();
-        await expect(gradePage.scoreInput).toBeVisible({ timeout: 5_000 });
+        await expect(gradePage.scoreInput).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
         await gradePage.setScore("85");
         await gradePage.saveBtn.click();
       }
@@ -157,7 +160,7 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
         const q0 = grades.find((g) => g.q_idx === 0);
         expect(q0).toBeDefined();
         expect(q0!.score).toBe(90);
-      }).toPass({ timeout: 10_000, intervals: [1_000] });
+      }).toPass({ timeout: TIMEOUTS.ELEMENT_VISIBLE, intervals: [1_000] });
 
       // ── Step 10: Student views report ──
       const reportPage = new StudentReportPage(sPage);
@@ -165,9 +168,9 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
 
       await expect(
         sPage.getByRole("heading", { name: exam.title }),
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
       await expect(reportPage.overallScore).toContainText("전체 점수: 88/100점", {
-        timeout: 10_000,
+        timeout: TIMEOUTS.ELEMENT_VISIBLE,
       });
     } finally {
       await studentCtx.close();

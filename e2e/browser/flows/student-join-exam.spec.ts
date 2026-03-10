@@ -1,6 +1,7 @@
 import { test, expect } from "../fixtures/auth-browser.fixture";
 import { seedStudentExamScenario, cleanupTestData } from "../helpers/test-data-builder";
 import { StudentExamPage } from "../pages";
+import { TIMEOUTS } from "../../constants";
 
 test.describe("Student — Join Exam Flow", () => {
   test.afterEach(async () => {
@@ -15,7 +16,7 @@ test.describe("Student — Join Exam Flow", () => {
     await studentPage.waitForLoadState("domcontentloaded");
 
     const otpInput = studentPage.locator("[data-input-otp]");
-    await expect(otpInput).toBeVisible({ timeout: 10_000 });
+    await expect(otpInput).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await expect(otpInput).toHaveAttribute("inputmode", "text");
     await expect(otpInput).toHaveAttribute("autocapitalize", "characters");
     await expect(otpInput).toHaveAttribute("spellcheck", "false");
@@ -39,17 +40,17 @@ test.describe("Student — Join Exam Flow", () => {
 
     // Type the exam code into the OTP input
     const otpInput = studentPage.locator("[data-input-otp]");
-    await expect(otpInput).toBeVisible({ timeout: 10_000 });
+    await expect(otpInput).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await otpInput.click();
     await studentPage.keyboard.type(exam.code);
 
     await studentPage.waitForURL(new RegExp(`/exam/${exam.code}`), {
-      timeout: 10_000,
+      timeout: TIMEOUTS.PAGE_LOAD,
     });
 
     await expect(
       studentPage.getByText(/polymorphism|stack|queue/i),
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await expect(
       studentPage.getByRole("dialog", { name: /시험 시작 전 안내사항/i })
     ).toHaveCount(0);
@@ -69,18 +70,18 @@ test.describe("Student — Join Exam Flow", () => {
 
     // Enter code and submit
     const otpInput = studentPage.locator("[data-input-otp]");
-    await expect(otpInput).toBeVisible({ timeout: 10_000 });
+    await expect(otpInput).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await otpInput.click();
     await studentPage.keyboard.type(exam.code);
 
     await studentPage.waitForURL(new RegExp(`/exam/${exam.code}`), {
-      timeout: 10_000,
+      timeout: TIMEOUTS.PAGE_LOAD,
     });
 
     // Wait for dialog, then click confirm
     await expect(
       studentPage.getByRole("dialog", { name: /시험 시작 전 안내사항/i })
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
 
     await studentPage.getByTestId("preflight-rules-checkbox").click();
     await studentPage.getByTestId("preflight-ailog-checkbox").click();
@@ -90,9 +91,9 @@ test.describe("Student — Join Exam Flow", () => {
 
     await expect(
       studentPage.getByRole("dialog", { name: /시험 시작 전 안내사항/i })
-    ).toBeHidden({ timeout: 10_000 });
+    ).toBeHidden({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await expect(examPage.waitingRoom).toBeVisible({
-      timeout: 10_000,
+      timeout: TIMEOUTS.ELEMENT_VISIBLE,
     });
   });
 
@@ -104,7 +105,7 @@ test.describe("Student — Join Exam Flow", () => {
 
     // Type only 3 characters
     const otpInput = studentPage.locator("[data-input-otp]");
-    await expect(otpInput).toBeVisible({ timeout: 10_000 });
+    await expect(otpInput).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await otpInput.click();
     await studentPage.keyboard.type("ABC");
 
@@ -123,7 +124,7 @@ test.describe("Student — Join Exam Flow", () => {
 
     await expect(
       studentPage.getByText(/이미 제출/i)
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
   });
 
   test("error=exam_not_found → shows error message", async ({
@@ -134,7 +135,7 @@ test.describe("Student — Join Exam Flow", () => {
 
     await expect(
       studentPage.getByText(/찾을 수 없습니다/i)
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
   });
 
   test("error=exam_not_available → shows error message", async ({
@@ -145,7 +146,7 @@ test.describe("Student — Join Exam Flow", () => {
 
     await expect(
       studentPage.getByText(/응시할 수 없/i)
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
   });
 
   test("error=entry_window_closed → shows error message", async ({
@@ -156,6 +157,6 @@ test.describe("Student — Join Exam Flow", () => {
 
     await expect(
       studentPage.getByText(/마감/i)
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
   });
 });

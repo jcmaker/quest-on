@@ -9,6 +9,7 @@ import {
 } from "../helpers/test-data-builder";
 import { seedExam } from "../../helpers/seed";
 import { InstructorGradePage } from "../pages";
+import { TIMEOUTS } from "../../constants";
 
 test.describe("Instructor — Exam & Grading Flow", () => {
   test.afterEach(async () => {
@@ -24,7 +25,7 @@ test.describe("Instructor — Exam & Grading Flow", () => {
 
     // Dashboard should load and show exam titles
     await expect(instructorPage.getByText(/Midterm Exam/)).toBeVisible({
-      timeout: 15_000,
+      timeout: TIMEOUTS.PAGE_LOAD,
     });
     await expect(instructorPage.getByText(/Final Exam/)).toBeVisible();
   });
@@ -40,13 +41,13 @@ test.describe("Instructor — Exam & Grading Flow", () => {
 
     // Should show exam title
     await expect(instructorPage.getByText(exam.title)).toBeVisible({
-      timeout: 15_000,
+      timeout: TIMEOUTS.PAGE_LOAD,
     });
 
     // Should show student list heading
     await expect(
       instructorPage.getByRole("heading", { name: /학생 목록/i }),
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
   });
 
   test("grading page loads with question, answer, and grading panel", async ({
@@ -60,13 +61,13 @@ test.describe("Instructor — Exam & Grading Flow", () => {
 
     // Should show question prompt (scoped to rich-text container to avoid matching ai_context/answer)
     await expect(
-      instructorPage.locator(".rich-text-content").getByText(/Question 1/i),
-    ).toBeVisible({ timeout: 15_000 });
+      instructorPage.locator("[data-testid='rich-text-content']").getByText(/Question 1/i),
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
     // Should show student's answer
     await expect(
       instructorPage.getByText("Student 0 answer to question 1"),
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
   });
 
   test("instructor can input a grade score", async ({ instructorPage }) => {
@@ -77,7 +78,7 @@ test.describe("Instructor — Exam & Grading Flow", () => {
     await gradePage.goto(exam.id, session.id);
 
     // Find a score input field via data-testid
-    await expect(gradePage.scoreInput).toBeVisible({ timeout: 10_000 });
+    await expect(gradePage.scoreInput).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await gradePage.setScore("85");
     await expect(gradePage.scoreInput).toHaveValue("85");
   });
@@ -94,15 +95,15 @@ test.describe("Instructor — Exam & Grading Flow", () => {
     await gradePage.goto(exam.id, session.id);
 
     // Wait for page to load — use question nav button
-    await expect(gradePage.questionNavButton(0)).toBeVisible({ timeout: 15_000 });
+    await expect(gradePage.questionNavButton(0)).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
     // Click on question 2 navigation
-    await expect(gradePage.questionNavButton(1)).toBeVisible({ timeout: 5_000 });
+    await expect(gradePage.questionNavButton(1)).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
     await gradePage.questionNavButton(1).click();
 
     // Should show second question's content (scoped to rich-text container)
     await expect(
-      instructorPage.locator(".rich-text-content").getByText(/Question 2/i),
-    ).toBeVisible({ timeout: 5_000 });
+      instructorPage.locator("[data-testid='rich-text-content']").getByText(/Question 2/i),
+    ).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
   });
 });

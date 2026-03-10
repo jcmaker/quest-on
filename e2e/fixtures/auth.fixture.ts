@@ -10,7 +10,12 @@ export const BYPASS_SECRET = process.env.TEST_BYPASS_SECRET ?? "e2e-test-bypass-
 // --------------- Admin token generation ---------------
 
 function createTestAdminToken(): string {
-  const secret = process.env.ADMIN_SESSION_SECRET!;
+  const secret = process.env.ADMIN_SESSION_SECRET;
+  if (!secret) {
+    throw new Error(
+      "ADMIN_SESSION_SECRET not set in .env.test — admin fixture tests cannot run."
+    );
+  }
   const payload = JSON.stringify({
     sid: crypto.randomBytes(16).toString("hex"),
     iat: Date.now(),

@@ -45,8 +45,8 @@ test.describe("Concurrency — simultaneous draft saves", () => {
       }),
     ]);
 
-    expect(res1.status()).toBe(200);
-    expect(res2.status()).toBe(200);
+    expect(res1.status(), "Draft save Q0 failed").toBe(200);
+    expect(res2.status(), "Draft save Q1 failed").toBe(200);
 
     // Verify both drafts were saved correctly
     const { data: submissions } = await supabase
@@ -94,8 +94,8 @@ test.describe("Concurrency — simultaneous draft saves", () => {
     ]);
 
     // Both should succeed (no 500 errors)
-    expect(res1.status()).toBe(200);
-    expect(res2.status()).toBe(200);
+    expect(res1.status(), "Same-question save A failed").toBe(200);
+    expect(res2.status(), "Same-question save B failed").toBe(200);
 
     // Verify exactly 1 row exists (UPSERT behavior)
     const { data: submissions } = await supabase
@@ -131,8 +131,8 @@ test.describe("Concurrency — simultaneous draft saves", () => {
       }),
     ]);
 
-    expect(res1.status()).toBe(200);
-    expect(res2.status()).toBe(200);
+    expect(res1.status(), "Concurrent session create 1 failed").toBe(200);
+    expect(res2.status(), "Concurrent session create 2 failed").toBe(200);
 
     const body1 = await res1.json();
     const body2 = await res2.json();

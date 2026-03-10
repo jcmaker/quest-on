@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { test, expect, TEST_STUDENT } from "./fixtures/auth-browser.fixture";
 import { cleanupTestData } from "./helpers/test-data-builder";
 import { seedStudentProfile } from "../helpers/seed";
+import { TIMEOUTS } from "../constants";
 
 test.describe("Accessibility — WCAG 2.1 AA", () => {
   test.afterEach(async () => {
@@ -14,7 +15,10 @@ test.describe("Accessibility — WCAG 2.1 AA", () => {
     await studentPage.goto("/");
     await studentPage.waitForLoadState("domcontentloaded");
     // Wait for CSS animations (fade-in-up) to complete
-    await studentPage.waitForTimeout(2000);
+    await studentPage.locator("h1").first().waitFor({
+      state: "visible",
+      timeout: TIMEOUTS.ELEMENT_VISIBLE,
+    });
 
     const results = await new AxeBuilder({ page: studentPage })
       .withTags(["wcag2a", "wcag2aa"])
@@ -40,7 +44,7 @@ test.describe("Accessibility — WCAG 2.1 AA", () => {
     await studentPage
       .locator("main, [role='main'], #__next")
       .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+      .waitFor({ state: "visible", timeout: TIMEOUTS.ELEMENT_VISIBLE });
 
     const results = await new AxeBuilder({ page: studentPage })
       .withTags(["wcag2a", "wcag2aa"])
@@ -63,7 +67,7 @@ test.describe("Accessibility — WCAG 2.1 AA", () => {
     await instructorPage
       .locator("main, [role='main'], #__next")
       .first()
-      .waitFor({ state: "visible", timeout: 10_000 });
+      .waitFor({ state: "visible", timeout: TIMEOUTS.ELEMENT_VISIBLE });
 
     const results = await new AxeBuilder({ page: instructorPage })
       .withTags(["wcag2a", "wcag2aa"])
