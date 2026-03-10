@@ -75,10 +75,12 @@ export function AnswerTextarea({
       const pastedData = clipboard.getData("text/plain");
       if (!pastedData) return;
 
-      // 내부 복사 마커 확인
-      const isInternal =
+      // 내부 복사 판별: MIME 타입(1차) + 마커(2차) 이중 감지
+      const hasInternalMimeType = clipboard.types.includes("application/x-queston-internal");
+      const hasInternalMarker =
         pastedData.startsWith(INTERNAL_COPY_MARKER_START) ||
         pastedData.includes(INTERNAL_COPY_MARKER);
+      const isInternal = hasInternalMimeType || hasInternalMarker;
 
       // 마커 제거 (실제 텍스트만 저장)
       const cleanText = pastedData

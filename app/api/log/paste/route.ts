@@ -52,12 +52,11 @@ export async function POST(request: Request) {
     const suspicious = !isInternal;
     const timestamp = new Date(ts);
 
-    // Truncate pasted text to prevent storing sensitive data (passwords, etc.)
+    // Truncate pasted text to prevent storing excessively large data
+    // Note: no suffix appended — stored text must be a clean substring for highlight matching
     const MAX_PASTE_TEXT_LENGTH = 200;
     const truncatedText = pasted_text
-      ? pasted_text.length > MAX_PASTE_TEXT_LENGTH
-        ? pasted_text.slice(0, MAX_PASTE_TEXT_LENGTH) + "...[truncated]"
-        : pasted_text
+      ? pasted_text.slice(0, MAX_PASTE_TEXT_LENGTH)
       : null;
 
     const { error: insertError } = await supabase.from("paste_logs").insert({
