@@ -951,6 +951,61 @@ export default function InstructorHome() {
     onDrop: (e: React.DragEvent) => handleDrop(e, node),
   });
 
+  // Folder card: the card itself IS the folder shape (tab + fold + body)
+  const renderFolderCard = useCallback(
+    (node: ExamNode) => {
+      const dragHandlers = getDragHandlers(node);
+      const isDragSource = draggedNode?.id === node.id;
+      const isDragTarget = dragOverNodeId === node.id;
+
+      return (
+        <div
+          key={node.id}
+          {...dragHandlers}
+          className={cn(
+            "folder-card cursor-grab transition-all duration-200 group",
+            isDragSource && "opacity-50 scale-95 cursor-grabbing",
+            isDragTarget && "ring-2 ring-primary ring-offset-2",
+            isMoving && "pointer-events-none opacity-60"
+          )}
+          onClick={() => {
+            if (isMoving) return;
+            handleNodeClick(node);
+          }}
+        >
+          <div className="folder-card__tab" aria-hidden />
+          <div className="folder-card__fold" aria-hidden />
+          <div className="folder-card__body relative">
+            <div
+              className="absolute right-1 top-1 z-10"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {renderNodeActions(node)}
+            </div>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-foreground/80">
+              폴더
+            </p>
+            <p className="font-medium text-foreground truncate text-sm mt-0.5">
+              {node.name}
+            </p>
+            <p className="text-xs text-foreground/85 mt-0.5">
+              {formatDate(node.updated_at)}
+            </p>
+          </div>
+        </div>
+      );
+    },
+    [
+      formatDate,
+      handleNodeClick,
+      renderNodeActions,
+      getDragHandlers,
+      draggedNode,
+      dragOverNodeId,
+      isMoving,
+    ]
+  );
+
   const renderGridNode = useCallback(
     (node: ExamNode) => {
       const isFolder = node.kind === "folder";
@@ -1403,70 +1458,13 @@ export default function InstructorHome() {
     ]
   );
 
-  const renderSection = (
-    title: string,
-    nodesList: ExamNode[],
-    options: { emptyLabel: string; emptyFilteredLabel: string }
-  ) => {
-    const emptyMessage = isFiltering
-      ? options.emptyFilteredLabel
-      : options.emptyLabel;
-
-    const content =
-      nodesList.length > 0 ? (
-        viewMode === "grid" ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {nodesList.map((node) => renderGridNode(node))}
-          </div>
-        ) : (
-          <div className="space-y-2">{nodesList.map(renderListNode)}</div>
-        )
-      ) : (
-        <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-card/40 py-6 text-center text-sm text-muted-foreground">
-          {emptyMessage}
-        </div>
-      );
-
-    return (
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {title}
-          </p>
-          <span className="text-xs text-muted-foreground">
-            {nodesList.length}개
-          </span>
-        </div>
-        {content}
-      </div>
-    );
-  };
-
   return (
     <>
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
-                  {/* Welcome Section */}
-                  <Card className="border-0 shadow-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground overflow-hidden">
-                    <CardContent className="p-6 sm:p-8">
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="space-y-2 flex-1 min-w-0">
-                          <h2 className="text-xl sm:text-2xl font-bold">
-                            안녕하세요,{" "}
-                            {user?.firstName || user?.fullName || ""} 강사님!
-                          </h2>
-                          <p className="text-sm sm:text-base text-primary-foreground/90 leading-relaxed">
-                            AI 기반 인터랙티브 시험을 생성하고 관리하세요
-                          </p>
-                        </div>
-                        <div className="hidden md:block shrink-0">
-                          <BookOpen
-                            className="w-16 h-16 text-primary-foreground/60"
-                            aria-hidden="true"
-                          />
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  {/* Simple greeting */}
+                  <p className="text-lg font-medium text-foreground">
+                    안녕하세요, {user?.firstName || user?.fullName || "강사"}님
+                  </p>
 
                   {/* 시험 관리 */}
                   <Card className="border-0 shadow-xl">
@@ -1495,9 +1493,9 @@ export default function InstructorHome() {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4 sm:space-y-6">
-                      {/* 액션 바 */}
+                      {/* 액션 바: 새 항목 + 검색 + 그리드/리스트 토글 */}
                       <div className="bg-card/80 border border-border rounded-2xl p-4 shadow-sm">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                           <div className="flex items-center gap-2">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -1524,8 +1522,8 @@ export default function InstructorHome() {
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
-                          <div className="flex flex-1 flex-wrap items-center gap-3 min-w-[260px]">
-                            <div className="relative flex-1 min-w-[220px]">
+                          <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0 lg:min-w-[260px] lg:justify-end">
+                            <div className="relative flex-1 min-w-[200px] max-w-md">
                               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                               <Input
                                 value={searchQuery}
@@ -1589,21 +1587,48 @@ export default function InstructorHome() {
                         </div>
                       )}
 
-                      {/* 콘텐츠 */}
+                      {/* 콘텐츠: 폴더 행 + 시험 영역 */}
                       {isLoading ? (
-                        viewMode === "grid" ? (
-                          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                            {[...Array(8)].map((_, i) => (
-                              <GridCardSkeleton key={i} />
-                            ))}
+                        <>
+                          <div className="space-y-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              폴더
+                            </p>
+                            <div className="overflow-x-auto pb-2">
+                              <div className="flex gap-4 min-w-max">
+                                {[...Array(4)].map((_, i) => (
+                                  <div key={i} className="folder-card opacity-70">
+                                    <div className="folder-card__tab bg-muted" />
+                                    <div className="folder-card__fold !border-muted-foreground/30 !border-l !border-b bg-transparent" />
+                                    <div className="folder-card__body !bg-muted/50">
+                                      <Skeleton className="h-3 w-12 bg-muted-foreground/20" />
+                                      <Skeleton className="h-4 w-full mt-1.5 bg-muted-foreground/20" />
+                                      <Skeleton className="h-3 w-16 mt-1 bg-muted-foreground/20" />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           </div>
-                        ) : (
-                          <div className="space-y-2" aria-busy="true" aria-live="polite">
-                            {[...Array(6)].map((_, i) => (
-                              <ListItemSkeleton key={i} />
-                            ))}
+                          <div className="space-y-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              시험
+                            </p>
+                            {viewMode === "grid" ? (
+                              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                {[...Array(4)].map((_, i) => (
+                                  <GridCardSkeleton key={i} />
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="space-y-2" aria-busy="true" aria-live="polite">
+                                {[...Array(4)].map((_, i) => (
+                                  <ListItemSkeleton key={i} />
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        )
+                        </>
                       ) : !hasResults ? (
                         <div className="text-center py-16 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-card/40">
                           <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -1643,16 +1668,59 @@ export default function InstructorHome() {
                           onDragOver={handleRootDragOver}
                           onDrop={handleRootDrop}
                         >
-                          {renderSection("폴더", folderNodes, {
-                            emptyLabel: "폴더가 없습니다.",
-                            emptyFilteredLabel:
-                              "검색 조건에 맞는 폴더가 없습니다.",
-                          })}
-                          {renderSection("시험", examNodes, {
-                            emptyLabel: "시험이 없습니다.",
-                            emptyFilteredLabel:
-                              "검색 조건에 맞는 시험이 없습니다.",
-                          })}
+                          {/* 폴더: 가로 스크롤 카드 행 */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                폴더
+                              </p>
+                              <span className="text-xs text-muted-foreground">
+                                {folderNodes.length}개
+                              </span>
+                            </div>
+                            {folderNodes.length > 0 ? (
+                              <div className="overflow-x-auto pb-2 scrollbar-thin">
+                                <div className="flex gap-4 min-w-max">
+                                  {folderNodes.map((node) => renderFolderCard(node))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-card/40 py-6 text-center text-sm text-muted-foreground">
+                                {isFiltering
+                                  ? "검색 조건에 맞는 폴더가 없습니다."
+                                  : "폴더가 없습니다."}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 시험: 그리드/리스트 선택 */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                시험
+                              </p>
+                              <span className="text-xs text-muted-foreground">
+                                {examNodes.length}개
+                              </span>
+                            </div>
+                            {examNodes.length > 0 ? (
+                              viewMode === "grid" ? (
+                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                  {examNodes.map((node) => renderGridNode(node))}
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {examNodes.map((node) => renderListNode(node))}
+                                </div>
+                              )
+                            ) : (
+                              <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-card/40 py-6 text-center text-sm text-muted-foreground">
+                                {isFiltering
+                                  ? "검색 조건에 맞는 시험이 없습니다."
+                                  : "시험이 없습니다."}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </CardContent>

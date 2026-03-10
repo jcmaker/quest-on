@@ -33,15 +33,15 @@ export function Header() {
 
   const getLinkClassName = (isActive: boolean) => {
     return cn(
-      "flex items-center space-x-2 text-sm font-medium transition-colors",
+      "flex items-center gap-1.5 text-sm font-medium transition-colors px-2.5 py-1.5 rounded-md",
       isActive
-        ? "text-primary font-bold"
-        : "text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white"
+        ? "bg-primary/10 text-primary"
+        : "text-muted-foreground hover:text-foreground hover:bg-accent"
     );
   };
 
   return (
-    <header className="border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/60 dark:bg-gray-950/95 dark:border-gray-800">
+    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         {/* Logo + Separator + Navigation */}
         <div className="flex items-center space-x-4">
