@@ -77,6 +77,51 @@ async function applyMigrations() {
     console.warn("[global-setup] chat_weight migration failed:", err);
   }
 
+  // Migration: add updated_at column to grades table if missing
+  try {
+    const { error: gradeColErr } = await supabase
+      .from("grades")
+      .select("updated_at")
+      .limit(0);
+
+    if (gradeColErr && gradeColErr.message.includes("does not exist")) {
+      console.log("[global-setup] Adding updated_at column to grades table...");
+      execSync(
+        `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres -c "ALTER TABLE grades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;"`,
+        { stdio: "pipe" }
+      );
+      console.log("[global-setup] grades.updated_at column added.");
+    }
+  } catch (err) {
+    console.warn("[global-setup] grades.updated_at migration failed:", err);
+  }
+
+  // Migration: ensure submit_exam_atomic RPC exists (sql/006_submit_exam_atomic.sql)
+  try {
+    const { error: rpcCheckErr } = await supabase.rpc("submit_exam_atomic", {
+      p_session_id: "00000000-0000-0000-0000-000000000000",
+      p_student_id: "__check__",
+      p_exam_id: "00000000-0000-0000-0000-000000000000",
+      p_submitted_at: new Date().toISOString(),
+      p_compressed_data: "",
+      p_compression_metadata: {},
+      p_submissions: [],
+    });
+
+    // If error is "function does not exist", apply the migration
+    if (rpcCheckErr && rpcCheckErr.message.includes("does not exist")) {
+      console.log("[global-setup] Applying submit_exam_atomic RPC...");
+      execSync(
+        `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres < ${path.resolve(__dirname, "../sql/006_submit_exam_atomic.sql")}`,
+        { stdio: "pipe" }
+      );
+      console.log("[global-setup] submit_exam_atomic RPC applied.");
+    }
+    // If error is something else (like FK violation), the function exists — that's fine
+  } catch (err) {
+    console.warn("[global-setup] submit_exam_atomic migration check failed:", err);
+  }
+
   // Ensure exam-materials storage bucket exists (for upload tests)
   try {
     const { data: buckets } = await supabase.storage.listBuckets();

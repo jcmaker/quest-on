@@ -19,7 +19,6 @@ export const examQuestionItemSchema = z.object({
   idx: z.number().optional(),
   ai_context: z.string().optional().nullable(),
   options: z.array(z.string()).optional(),
-  correctAnswer: z.string().optional(),
 });
 
 export const examQuestionsSchema = z.array(examQuestionItemSchema);
@@ -142,7 +141,6 @@ export const createExamSchema = z.object({
     text: z.string(),
     type: z.enum(["multiple-choice", "essay", "short-answer"]),
     options: z.array(z.string()).optional(),
-    correctAnswer: z.string().optional(),
   }).passthrough()),
   materials: z.array(z.string()).optional(),
   materials_text: z.array(z.object({

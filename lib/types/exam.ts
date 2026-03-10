@@ -16,7 +16,6 @@ export interface ExamQuestion {
   prompt?: string;
   ai_context?: string | null;
   options?: string[];
-  correctAnswer?: string;
   rubric?: RubricItem[];
 }
 

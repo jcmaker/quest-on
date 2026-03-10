@@ -60,7 +60,7 @@ import {
 
 // Default-deny: all actions require auth unless explicitly listed as public.
 // Add to this set only for truly unauthenticated use cases.
-const publicActions = new Set<string>([]);
+const publicActions = new Set<string>(["get_exam"]);
 
 export async function POST(request: NextRequest) {
   try {

@@ -94,10 +94,13 @@ app.post("/v1/chat/completions", (req, res) => {
   }
 
   if (sysPrompt.includes("전문 평가위원")) {
-    // auto-grade (chat grading / answer grading / summary evaluation)
+    // auto-grade (unified grading expects chat_score/answer_score fields)
     return res.json(chatCompletionResponse(JSON.stringify({
-      score: 75,
-      comment: "Good understanding of core concepts with room for improvement.",
+      chat_score: 70,
+      chat_comment: "Adequate conversation quality with good questions asked.",
+      answer_score: 80,
+      answer_comment: "Solid answer with minor gaps in explanation.",
+      overall_comment: "Good understanding of core concepts with room for improvement.",
       rubric_scores: {},
       sentiment: "positive",
       summary: "학생은 핵심 개념에 대한 이해도가 높으며, 논리적 전개가 우수합니다.",
@@ -133,9 +136,50 @@ app.post("/v1/chat/completions", (req, res) => {
 });
 
 // ---------- POST /v1/responses ----------
-app.post("/v1/responses", (_req, res) => {
+app.post("/v1/responses", (req, res) => {
+  const responseId = `resp-mock-${Date.now()}`;
+  const mockText = "This is a mock AI response for testing. The concept involves understanding the fundamental principles discussed in class.";
+
+  if (req.body?.stream === true) {
+    // SSE streaming mode
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+
+    // Send text in chunks
+    const chunks = mockText.match(/.{1,20}/g) || [mockText];
+    for (const chunk of chunks) {
+      res.write(`event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: chunk })}\n\n`);
+    }
+
+    // Send completed event
+    const completedResponse = {
+      id: responseId,
+      object: "response",
+      created_at: Math.floor(Date.now() / 1000),
+      model: "gpt5.2-chat-latest",
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          id: `msg-mock-${Date.now()}`,
+          role: "assistant",
+          status: "completed",
+          content: [{ type: "output_text", text: mockText, annotations: [] }],
+        },
+      ],
+      usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+    };
+    res.write(`event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: completedResponse })}\n\n`);
+    res.end();
+    return;
+  }
+
+  // Non-streaming JSON response
   res.json({
-    id: `resp-mock-${Date.now()}`,
+    id: responseId,
     object: "response",
     created_at: Math.floor(Date.now() / 1000),
     model: "gpt5.2-chat-latest",
@@ -151,7 +195,7 @@ app.post("/v1/responses", (_req, res) => {
         content: [
           {
             type: "output_text",
-            text: "This is a mock AI response for testing. The concept involves understanding the fundamental principles discussed in class.",
+            text: mockText,
             annotations: [],
           },
         ],

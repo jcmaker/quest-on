@@ -692,7 +692,7 @@ export async function POST(request: NextRequest) {
     // ✅ 정규 세션 처리 (컨텍스트 조회)
     const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
-      .select("id, exam_id, student_id, used_clarifications")
+      .select("id, exam_id, student_id, used_clarifications, submitted_at")
       .eq("id", sessionId)
       .single();
 
@@ -711,18 +711,26 @@ export async function POST(request: NextRequest) {
       return errorJson("FORBIDDEN", "Session does not belong to this user", 403);
     }
 
+    if (session.submitted_at) {
+      return errorJson("SESSION_SUBMITTED", "이미 제출된 세션입니다.", 403);
+    }
+
     if (!session.exam_id) {
       return errorJson("MISSING_EXAM_INFO", "Session is missing exam information", 400);
     }
 
     const { data: exam, error: examError } = await getSupabase()
       .from("exams")
-      .select("id, code, title, rubric, questions, materials_text, chat_weight")
+      .select("id, code, title, rubric, questions, materials_text, chat_weight, status")
       .eq("id", session.exam_id)
       .single();
 
     if (examError || !exam) {
       return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, examError?.message);
+    }
+
+    if (exam.status === "closed") {
+      return errorJson("EXAM_CLOSED", "시험이 종료되었습니다.", 403);
     }
 
     const questionCount = Array.isArray(exam.questions) ? exam.questions.length : 0;

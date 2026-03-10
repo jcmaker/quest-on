@@ -30,7 +30,6 @@ export async function POST(request: NextRequest) {
       answers,
       examId: requestedExamId,
       sessionId,
-      chatHistory,
       studentId,
     } =
       await request.json();
@@ -80,10 +79,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Allow submission for draft exams (assignment type) and running exams
+    // Note: exam status 체크를 session submitted_at 체크 이후로 지연하여
+    // 강제 종료 후 레이스 컨디션에서 409(성공 처리)가 먼저 반환되도록 함
     const allowedStatuses = ["draft", "running"];
-    if (!exam.status || !allowedStatuses.includes(exam.status)) {
-      return errorJson("BAD_REQUEST", "Exam is no longer active", 400);
-    }
+    const examClosed = !exam.status || !allowedStatuses.includes(exam.status);
 
     let ownedSession:
       | {
@@ -123,6 +122,11 @@ export async function POST(request: NextRequest) {
       }
 
       ownedSession = existingSession;
+    }
+
+    // 시험이 종료된 경우 (session submitted_at 체크 이후에 수행하여 force-submit된 세션은 409로 즉시 반환)
+    if (examClosed) {
+      return errorJson("EXAM_CLOSED", "Exam is no longer active", 400);
     }
 
     // ✅ duration이 0이 아닐 때만 시간 만료 체크
@@ -304,9 +308,20 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Compress session data
+      // Server-side chat history: query messages table instead of trusting client data
+      // (same pattern as app/api/exam/[examId]/end/route.ts force-end)
+      const { data: serverMessages } = await getSupabase()
+        .from("messages")
+        .select("q_idx, role, content, created_at")
+        .eq("session_id", finalSessionId)
+        .order("created_at", { ascending: true });
+
       const sessionData = {
-        chatHistory: chatHistory || [],
+        chatHistory: (serverMessages || []).map((m) => ({
+          type: m.role === "user" ? "student" : "ai",
+          content: m.content,
+          timestamp: m.created_at,
+        })),
         answers: answers,
       };
 

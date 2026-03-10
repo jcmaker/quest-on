@@ -3,6 +3,7 @@ import { test as baseTest } from "@playwright/test";
 import { mockExternalRoutes } from "../helpers/mock-routes";
 import { cleanupTestData } from "../helpers/test-data-builder";
 import { AdminLoginPage } from "../pages";
+import { TIMEOUTS } from "../../constants";
 
 test.describe("Admin — Authenticated Flows", () => {
   test.afterEach(async () => {
@@ -15,7 +16,7 @@ test.describe("Admin — Authenticated Flows", () => {
     // Admin dashboard should show user management or stats
     await expect(
       adminPage.getByText(/관리자/i),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
   });
 
   test("admin dashboard shows stats cards", async ({ adminPage }) => {
@@ -24,7 +25,7 @@ test.describe("Admin — Authenticated Flows", () => {
     // Should show statistics about users
     await expect(
       adminPage.getByText(/전체/i),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
   });
 });
 
@@ -45,7 +46,7 @@ baseTest.describe("Admin — Login Flow", () => {
     await loginPage.login("test-admin", "test-password");
 
     // Should redirect to admin dashboard or show success
-    await page.waitForURL("**/admin", { timeout: 10_000 }).catch(() => {
+    await page.waitForURL("**/admin", { timeout: TIMEOUTS.ELEMENT_VISIBLE }).catch(() => {
       // May not redirect in test mode, check for success indicators
     });
 
@@ -68,7 +69,7 @@ baseTest.describe("Admin — Login Flow", () => {
     await loginPage.login("test-admin", "wrong-password");
 
     // Should show an error message (API returns "Invalid credentials" via data.message)
-    await expect(loginPage.errorMessage).toBeVisible({ timeout: 10_000 });
+    await expect(loginPage.errorMessage).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
 
     // Should still be on the login page
     expect(page.url()).toContain("/admin/login");

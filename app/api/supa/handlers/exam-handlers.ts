@@ -18,7 +18,6 @@ export interface QuestionData {
   text: string;
   type: "multiple-choice" | "essay" | "short-answer";
   options?: string[];
-  correctAnswer?: string;
 }
 
 export async function createExam(data: {
@@ -368,7 +367,14 @@ export async function getExam(data: { code: string }) {
       throw error;
     }
 
-    return successJson({ exam });
+    // Strip sensitive data from public endpoint:
+    // Remove rubric when rubric_public is false (respects instructor privacy setting)
+    const sanitizedExam = {
+      ...exam,
+      ...(exam.rubric_public === false ? { rubric: null } : {}),
+    };
+
+    return successJson({ exam: sanitizedExam });
   } catch (error) {
     logError("[getExam] Failed to get exam", error, { path: "/api/supa/exam-handlers" });
     return errorJson("GET_EXAM_FAILED", "Failed to get exam", 500);

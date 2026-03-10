@@ -4,6 +4,7 @@ import {
   cleanupTestData,
 } from "../helpers/test-data-builder";
 import { seedStudentProfile } from "../../helpers/seed";
+import { TIMEOUTS } from "../../constants";
 
 test.describe("Student — Dashboard & Report Flow", () => {
   test.afterEach(async () => {
@@ -26,7 +27,7 @@ test.describe("Student — Dashboard & Report Flow", () => {
     // Dashboard should load with session/exam data
     await expect(
       studentPage.getByRole("heading", { name: "학생 대시보드" }),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
   });
 
   test("report page shows grades, answers, and feedback", async ({
@@ -45,11 +46,11 @@ test.describe("Student — Dashboard & Report Flow", () => {
     // Should show exam title (use heading role to avoid strict mode with multiple matches)
     await expect(
       studentPage.getByRole("heading", { name: exam.title }),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
     // Should show score or grade info
     await expect(studentPage.getByTestId("report-overall-score")).toBeVisible({
-      timeout: 10_000,
+      timeout: TIMEOUTS.ELEMENT_VISIBLE,
     });
   });
 
@@ -62,7 +63,7 @@ test.describe("Student — Dashboard & Report Flow", () => {
     await studentPage.goto("/student");
 
     await expect(studentPage.getByTestId("student-empty-state")).toBeVisible({
-      timeout: 10_000,
+      timeout: TIMEOUTS.ELEMENT_VISIBLE,
     });
     await expect(studentPage.getByText("아직 치른 시험이 없습니다")).toBeVisible();
   });

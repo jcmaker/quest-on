@@ -37,6 +37,8 @@ interface UseExamSubmissionReturn {
   setAutoSubmitFailed: (value: boolean) => void;
   manualSubmitFailed: boolean;
   setManualSubmitFailed: (value: boolean) => void;
+  submitErrorMessage: string | null;
+  setSubmitErrorMessage: (value: string | null) => void;
   unansweredDialog: { open: boolean; indices: number[] };
   setUnansweredDialog: (value: { open: boolean; indices: number[] }) => void;
   showPreflightCancelConfirm: boolean;
@@ -75,9 +77,36 @@ export function useExamSubmission({
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [autoSubmitFailed, setAutoSubmitFailed] = useState(false);
   const [manualSubmitFailed, setManualSubmitFailed] = useState(false);
+  const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(null);
   const [unansweredDialog, setUnansweredDialog] = useState<{ open: boolean; indices: number[] }>({ open: false, indices: [] });
   const [showPreflightCancelConfirm, setShowPreflightCancelConfirm] = useState(false);
   const timeExpiredCalledRef = useRef(false);
+
+  const parseErrorMessage = useCallback(async (response: Response): Promise<string> => {
+    try {
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const data = await response.json();
+        return data.message || data.error || "답안 제출에 실패했습니다.";
+      }
+      const text = await response.text();
+      return text || "답안 제출에 실패했습니다.";
+    } catch {
+      return "답안 제출에 실패했습니다.";
+    }
+  }, []);
+
+  const checkSubmissionOnServer = useCallback(async (code: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/student/sessions?examCode=${encodeURIComponent(code)}`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      const sessions = Array.isArray(data) ? data : data.sessions || [];
+      return sessions.some((s: { status?: string }) => s.status === "submitted" || s.status === "graded");
+    } catch {
+      return false;
+    }
+  }, []);
 
   const handlePaste = useCallback(
     async (pasteData: {
@@ -144,6 +173,7 @@ export function useExamSubmission({
 
     setIsSubmitting(true);
     setShowSubmitConfirm(false);
+    setSubmitErrorMessage(null);
 
     try {
       await manualSave();
@@ -175,15 +205,58 @@ export function useExamSubmission({
       if (response.ok) {
         setIsSubmitted(true);
         setManualSubmitFailed(false);
+      } else if (response.status === 409) {
+        // Already submitted — treat as success
+        setIsSubmitted(true);
+        setManualSubmitFailed(false);
+      } else if (response.status === 400) {
+        // Check if exam was force-closed — treat EXAM_CLOSED as success
+        try {
+          const errorData = await response.json();
+          if (errorData.code === "EXAM_CLOSED") {
+            const actuallySubmitted = await checkSubmissionOnServer(examCode);
+            if (actuallySubmitted) {
+              setIsSubmitted(true);
+              setManualSubmitFailed(false);
+            } else {
+              // Force-end already submitted the session server-side
+              setIsSubmitted(true);
+              setManualSubmitFailed(false);
+            }
+          } else {
+            setSubmitErrorMessage(errorData.message || "답안 제출에 실패했습니다.");
+            setManualSubmitFailed(true);
+          }
+        } catch {
+          setSubmitErrorMessage("답안 제출에 실패했습니다.");
+          setManualSubmitFailed(true);
+        }
       } else {
-        setManualSubmitFailed(true);
+        const errorMsg = await parseErrorMessage(response);
+        // Double-check: maybe the submission actually went through
+        const actuallySubmitted = await checkSubmissionOnServer(examCode);
+        if (actuallySubmitted) {
+          setIsSubmitted(true);
+          setManualSubmitFailed(false);
+        } else {
+          setSubmitErrorMessage(errorMsg);
+          setManualSubmitFailed(true);
+        }
       }
     } catch {
-      setManualSubmitFailed(true);
+      // Network error — check if submission actually went through
+      const actuallySubmitted = await checkSubmissionOnServer(examCode);
+      if (actuallySubmitted) {
+        setIsSubmitted(true);
+        setManualSubmitFailed(false);
+      } else {
+        setSubmitErrorMessage("네트워크 연결을 확인하고 다시 시도해주세요.");
+        setManualSubmitFailed(true);
+      }
     } finally {
       setIsSubmitting(false);
     }
-  }, [exam, examCode, sessionId, userId, draftAnswers, chatHistory, manualSave, setIsSubmitted]);
+  }, [exam, examCode, sessionId, userId, draftAnswers, chatHistory, manualSave, setIsSubmitted, parseErrorMessage, checkSubmissionOnServer]);
 
   const handleTimeExpired = useCallback(async () => {
     if (timeExpiredCalledRef.current) return;
@@ -228,6 +301,24 @@ export function useExamSubmission({
           setIsSubmitted(true);
           submitted = true;
           break;
+        } else if (response.status === 409) {
+          // Already submitted — treat as success
+          setIsSubmitted(true);
+          submitted = true;
+          break;
+        } else if (response.status === 400) {
+          // Check if exam was force-closed
+          try {
+            const errorData = await response.json();
+            if (errorData.code === "EXAM_CLOSED") {
+              // Force-end already submitted the session server-side
+              setIsSubmitted(true);
+              submitted = true;
+              break;
+            }
+          } catch {
+            // Parse error — continue retry
+          }
         }
       } catch {
         // Retry on network errors
@@ -239,11 +330,17 @@ export function useExamSubmission({
     }
 
     if (!submitted) {
-      try { await manualSave(); } catch {}
-      setAutoSubmitFailed(true);
+      // Final check: maybe it actually went through despite errors
+      const actuallySubmitted = await checkSubmissionOnServer(examCode);
+      if (actuallySubmitted) {
+        setIsSubmitted(true);
+      } else {
+        try { await manualSave(); } catch {}
+        setAutoSubmitFailed(true);
+      }
     }
     setIsSubmitting(false);
-  }, [sessionId, exam, examCode, userId, draftAnswers, chatHistory, manualSave, setIsSubmitted]);
+  }, [sessionId, exam, examCode, userId, draftAnswers, chatHistory, manualSave, setIsSubmitted, checkSubmissionOnServer]);
 
   return {
     isSubmitting,
@@ -254,6 +351,8 @@ export function useExamSubmission({
     setAutoSubmitFailed,
     manualSubmitFailed,
     setManualSubmitFailed,
+    submitErrorMessage,
+    setSubmitErrorMessage,
     unansweredDialog,
     setUnansweredDialog,
     showPreflightCancelConfirm,

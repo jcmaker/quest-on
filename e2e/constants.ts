@@ -14,6 +14,8 @@ export const TIMEOUTS = {
   API_RESPONSE: 5_000,
   DB_POLL: 5_000,
   DB_POLL_INTERVAL: 500,
+  AI_RESPONSE: 30_000,
+  QUICK_CHECK: 3_000,
 } as const;
 
 export const BASE_URL = "http://localhost:3000" as const;

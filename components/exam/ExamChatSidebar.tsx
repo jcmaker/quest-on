@@ -122,19 +122,6 @@ export function ExamChatSidebar({
                   <p className="text-sm sm:text-base text-muted-foreground max-w-md leading-relaxed mb-4">
                     AI를 활용하여 문제를 분석하고 풀이 방향을 탐색해보세요.
                   </p>
-                  <div className="flex flex-wrap justify-center gap-2">
-                    {["이 문제를 분석해줘", "힌트를 줘", "풀이 방향을 제안해줘"].map((prompt) => (
-                      <button
-                        key={prompt}
-                        onClick={() => {
-                          setChatMessage(prompt);
-                        }}
-                        className="px-3 py-1.5 text-xs sm:text-sm rounded-full border border-primary/30 text-primary bg-primary/5 hover:bg-primary/10 transition-colors"
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
                 </div>
               ) : (
                 <>
@@ -194,20 +181,6 @@ export function ExamChatSidebar({
 
           {/* Chat Input */}
           <div className="border-t border-border p-2 sm:p-3 bg-background">
-            {/* Quick prompts (always accessible) */}
-            {chatHistory.length > 0 && (
-              <div className="flex gap-1.5 mb-2 overflow-x-auto hide-scrollbar">
-                {["분석해줘", "힌트", "풀이 방향"].map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => setChatMessage(prompt)}
-                    className="px-2.5 py-1 text-xs rounded-full border border-primary/20 text-primary bg-primary/5 hover:bg-primary/10 transition-colors whitespace-nowrap shrink-0"
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            )}
             <InputGroup className="bg-background shadow-md">
               <InputGroupTextarea
                 placeholder="AI에게 질문하기..."

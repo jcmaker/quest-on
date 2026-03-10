@@ -1,4 +1,5 @@
 import { test, expect } from "./fixtures/browser.fixture";
+import { TIMEOUTS } from "../constants";
 
 /**
  * Layer 2 — Public Page Smoke Tests
@@ -26,7 +27,7 @@ test.describe("Public pages smoke tests", () => {
 
       const response = await page.goto(path, {
         waitUntil: "domcontentloaded",
-        timeout: 15_000,
+        timeout: TIMEOUTS.PAGE_LOAD,
       });
 
       // Page should return 200

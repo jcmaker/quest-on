@@ -67,11 +67,13 @@ function createChain(options: {
   singleResult?: QueryResult;
   maybeSingleResult?: QueryResult;
   selectResult?: QueryResult;
+  awaitResult?: QueryResult;
   onInsert?: (values: unknown) => void;
   onUpdate?: (values: unknown) => void;
   onUpsert?: (values: unknown, config: unknown) => void;
   eqCalls?: Array<[string, unknown]>;
 } = {}) {
+  const defaultAwait = options.awaitResult ?? { data: null, error: null };
   const builder = {
     select: vi.fn(() => {
       if (options.selectResult) {
@@ -97,10 +99,12 @@ function createChain(options: {
     }),
     is: vi.fn(() => builder),
     not: vi.fn(() => builder),
+    order: vi.fn(() => builder),
     single: vi.fn().mockResolvedValue(options.singleResult ?? { data: null, error: null }),
     maybeSingle: vi.fn().mockResolvedValue(
       options.maybeSingleResult ?? { data: null, error: null }
     ),
+    then: vi.fn((resolve: (value: unknown) => unknown) => Promise.resolve(resolve(defaultAwait))),
   };
 
   return builder;
@@ -140,6 +144,7 @@ describe("POST /api/feedback", () => {
     enqueueGradingMock.mockReturnValue(Promise.resolve(undefined));
     autoGradeSessionMock.mockResolvedValue(undefined);
     supabaseMock.rpc.mockResolvedValue({ error: null });
+    auditLogMock.mockResolvedValue(true);
   });
 
   it("rejects forged student ids before touching the database", async () => {
@@ -214,7 +219,7 @@ describe("POST /api/feedback", () => {
       exams: [
         createChain({
           singleResult: {
-            data: { id: "exam-1", code: "EXAM01", status: "active", duration: 0 },
+            data: { id: "exam-1", code: "EXAM01", status: "draft", duration: 0 },
             error: null,
           },
         }),
@@ -227,10 +232,10 @@ describe("POST /api/feedback", () => {
           maybeSingleResult: { data: null, error: null },
         }),
         createChain({
-          onInsert: (values) => {
+          onUpsert: (values) => {
             createdSessionPayload = values;
           },
-          singleResult: {
+          maybeSingleResult: {
             data: { id: "session-1" },
             error: null,
           },
@@ -258,6 +263,17 @@ describe("POST /api/feedback", () => {
           },
         }),
       ],
+      messages: [
+        createChain({
+          awaitResult: {
+            data: [
+              { q_idx: 0, role: "user", content: "Hello", created_at: "2026-03-06T00:00:01.000Z" },
+              { q_idx: 0, role: "assistant", content: "Hi!", created_at: "2026-03-06T00:00:02.000Z" },
+            ],
+            error: null,
+          },
+        }),
+      ],
     });
 
     const response = await POST(
@@ -269,19 +285,18 @@ describe("POST /api/feedback", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    const body = await response.json();
+    expect(body).toMatchObject({
       success: true,
       examCode: "EXAM01",
       examId: "exam-1",
       status: "submitted",
     });
 
-    expect(createdSessionPayload).toEqual([
-      {
-        exam_id: "exam-1",
-        student_id: "student-1",
-      },
-    ]);
+    expect(createdSessionPayload).toEqual({
+      exam_id: "exam-1",
+      student_id: "student-1",
+    });
     expect(updatedSessionPayload).toMatchObject({
       status: "submitted",
       is_active: false,

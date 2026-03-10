@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
       // Regular session — validate ownership + fetch exam context
       const { data: session, error: sessionError } = await getSupabase()
         .from("sessions")
-        .select("id, exam_id, student_id")
+        .select("id, exam_id, student_id, submitted_at")
         .eq("id", sessionId)
         .single();
 
@@ -146,12 +146,26 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (session.submitted_at) {
+        return new Response(
+          JSON.stringify({ error: "SESSION_SUBMITTED", message: "이미 제출된 세션입니다." }),
+          { status: 403, headers: { "Content-Type": "application/json" } }
+        );
+      }
+
       if (session.exam_id) {
         const { data: exam } = await getSupabase()
           .from("exams")
-          .select("id, code, title, rubric, questions, materials_text")
+          .select("id, code, title, rubric, questions, materials_text, status")
           .eq("id", session.exam_id)
           .single();
+
+        if (exam?.status === "closed") {
+          return new Response(
+            JSON.stringify({ error: "EXAM_CLOSED", message: "시험이 종료되었습니다." }),
+            { status: 403, headers: { "Content-Type": "application/json" } }
+          );
+        }
 
         if (exam) {
           examCode = exam.code;

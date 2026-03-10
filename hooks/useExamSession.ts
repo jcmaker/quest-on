@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { getDeviceFingerprint } from "@/lib/device-fingerprint";
+import { createSupabaseClient } from "@/lib/supabase-client";
 
 interface Question {
   id: string;
@@ -50,6 +51,7 @@ interface ChatMessage {
 
 interface UseExamSessionOptions {
   examCode: string;
+  examId: string | null;
   user: { id: string } | null | undefined;
   isLoaded: boolean;
   // State setters owned by the page component
@@ -62,6 +64,7 @@ interface UseExamSessionOptions {
 
 export function useExamSession({
   examCode,
+  examId,
   user,
   isLoaded,
   setExam,
@@ -289,13 +292,55 @@ export function useExamSession({
 
   useEffect(() => {
     if (!heartbeatData) return;
-    if (heartbeatData.timeExpired || heartbeatData.autoSubmitted) {
+    if (heartbeatData.submitted || heartbeatData.timeExpired || heartbeatData.autoSubmitted) {
+      saveViaBeaconRef.current(); // 미저장 답안 최종 저장 시도
       setIsSubmitted(true);
+
+      // 강사 강제 종료 시 토스트 알림
+      if (heartbeatData.submitted && heartbeatData.autoSubmitted) {
+        toast("교수님이 시험을 종료했습니다. 답안이 자동으로 제출되었습니다.", {
+          duration: 6000,
+          icon: "📋",
+        });
+      }
     }
     if (heartbeatData.timeRemaining !== undefined) {
       setTimeRemaining(heartbeatData.timeRemaining);
     }
   }, [heartbeatData]);
+
+  // Supabase Realtime: 시험 종료 즉시 감지
+  useEffect(() => {
+    if (!examId || isSubmitted) return;
+
+    const supabase = createSupabaseClient();
+    const channel = supabase
+      .channel(`exam_end_${examId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "exams",
+          filter: `id=eq.${examId}`,
+        },
+        (payload) => {
+          if (payload.new?.status === "closed") {
+            saveViaBeaconRef.current();
+            setIsSubmitted(true);
+            toast("교수님이 시험을 종료했습니다. 답안이 자동으로 제출되었습니다.", {
+              duration: 6000,
+              icon: "📋",
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [examId, isSubmitted]);
 
   // Session deactivation on unload/unmount
   // Fix 2A: Read sessionIdRef.current inside handlers to avoid stale closure

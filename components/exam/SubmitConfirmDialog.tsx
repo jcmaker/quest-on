@@ -24,7 +24,7 @@ export function SubmitConfirmDialog({
 }: SubmitConfirmDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="max-w-md">
+      <AlertDialogContent data-testid="submit-confirm-dialog" className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle className="text-lg sm:text-xl font-bold">
             시험 제출 확인

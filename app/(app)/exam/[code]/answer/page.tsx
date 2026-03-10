@@ -505,7 +505,7 @@ export default function AnswerSubmission() {
           user={user}
         />
         <div className="container mx-auto px-4 py-16">
-          <Card className="max-w-2xl mx-auto">
+          <Card data-testid="exam-submitted-state" className="max-w-2xl mx-auto">
             <CardHeader className="text-center">
               <CardTitle className="text-2xl text-green-600">
                 답안이 성공적으로 제출되었습니다!

@@ -837,7 +837,7 @@ export async function sessionHeartbeat(data: {
     // Verify the session belongs to the student
     const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
-      .select("id, student_id, is_active, submitted_at, created_at, exam_id, status, started_at, attempt_timer_started_at")
+      .select("id, student_id, is_active, submitted_at, auto_submitted, created_at, exam_id, status, started_at, attempt_timer_started_at")
       .eq("id", data.sessionId)
       .single();
 
@@ -849,10 +849,12 @@ export async function sessionHeartbeat(data: {
       return errorJson("UNAUTHORIZED", "Unauthorized", 403);
     }
 
-    // ✅ 이미 제출된 경우
+    // ✅ 이미 제출된 경우 (강사 강제 종료 포함)
     if (session.submitted_at) {
       return successJson({
         submitted: true,
+        autoSubmitted: !!session.auto_submitted,
+        timeExpired: true,
       });
     }
 

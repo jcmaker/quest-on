@@ -28,6 +28,7 @@ interface ExamDialogsProps {
   manualSubmitFailed: boolean;
   setManualSubmitFailed: (open: boolean) => void;
   onManualSubmitRetry: () => void;
+  submitErrorMessage?: string | null;
 }
 
 export function ExamDialogs({
@@ -45,12 +46,13 @@ export function ExamDialogs({
   manualSubmitFailed,
   setManualSubmitFailed,
   onManualSubmitRetry,
+  submitErrorMessage,
 }: ExamDialogsProps) {
   return (
     <>
       {/* 그만두기 확인 다이얼로그 */}
       <AlertDialog open={showExitConfirm} onOpenChange={setShowExitConfirm}>
-        <AlertDialogContent>
+        <AlertDialogContent data-testid="exit-confirm-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>시험을 그만두시겠습니까?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -141,7 +143,7 @@ export function ExamDialogs({
               답안 제출 실패
             </AlertDialogTitle>
             <AlertDialogDescription>
-              답안 제출에 실패했습니다. 네트워크 연결을 확인하고 다시 시도해주세요.
+              {submitErrorMessage || "답안 제출에 실패했습니다. 네트워크 연결을 확인하고 다시 시도해주세요."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

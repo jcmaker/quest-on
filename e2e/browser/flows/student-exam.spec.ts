@@ -10,6 +10,7 @@ import {
 import { getSession } from "../../helpers/seed";
 import { getTestSupabase } from "../../helpers/supabase-test-client";
 import { StudentExamPage } from "../pages";
+import { TIMEOUTS } from "../../constants";
 
 const supabase = getTestSupabase();
 
@@ -31,7 +32,7 @@ test.describe("Student — Exam Flow", () => {
 
     await expect(
       studentPage.getByText(/polymorphism|stack|queue/i),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
     await expect(examPage.preflightHeading).toHaveCount(0);
 
     const updatedSession = await getSession(session.id);
@@ -55,7 +56,7 @@ test.describe("Student — Exam Flow", () => {
     // Should show the question content
     await expect(
       studentPage.getByText(/polymorphism|stack|queue/i),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
   });
 
   test("navigates between questions using prev/next buttons", async ({
@@ -72,15 +73,15 @@ test.describe("Student — Exam Flow", () => {
     // Wait for first question to load
     await expect(
       studentPage.getByText(/polymorphism/i),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
     // Navigate to next question — button must be visible
-    await expect(examPage.nextBtn).toBeVisible({ timeout: 10_000 });
+    await expect(examPage.nextBtn).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await examPage.nextBtn.click();
     // Second question should show
     await expect(
       studentPage.getByText(/stack|queue/i),
-    ).toBeVisible({ timeout: 10_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
   });
 
   test("can type an answer in the answer panel", async ({ studentPage }) => {
@@ -93,7 +94,7 @@ test.describe("Student — Exam Flow", () => {
     await examPage.goto(exam.code);
 
     // Wait for answer area to be available
-    await expect(examPage.answerArea).toBeVisible({ timeout: 15_000 });
+    await expect(examPage.answerArea).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
     // Type an answer
     await examPage.typeAnswer("This is my test answer about polymorphism.");
@@ -116,17 +117,17 @@ test.describe("Student — Exam Flow", () => {
     // Wait for the page to load
     await expect(
       studentPage.getByText(/polymorphism/i),
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
     // Type something in the answer area
-    await expect(examPage.answerArea).toBeVisible({ timeout: 10_000 });
+    await expect(examPage.answerArea).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await examPage.typeAnswer("Test answer for save");
 
     // Trigger Ctrl+S
     await examPage.manualSave();
 
     // Should show saving/saved indicator via data-testid
-    await expect(examPage.saveIndicator).toBeVisible({ timeout: 5_000 });
+    await expect(examPage.saveIndicator).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
 
     // Verify draft was saved to DB (poll until persisted)
     await expect(async () => {
@@ -137,7 +138,7 @@ test.describe("Student — Exam Flow", () => {
         .eq("q_idx", 0);
       expect(data!.length).toBeGreaterThan(0);
       expect(data![0].answer).toContain("Test answer for save");
-    }).toPass({ timeout: 5_000, intervals: [500] });
+    }).toPass({ timeout: TIMEOUTS.DB_POLL, intervals: [TIMEOUTS.DB_POLL_INTERVAL] });
   });
 
   test("submit button shows confirmation dialog", async ({ studentPage }) => {
@@ -151,13 +152,13 @@ test.describe("Student — Exam Flow", () => {
     await examPage.goto(exam.code);
 
     // Find and click the submit button — must be visible
-    await expect(examPage.submitBtn).toBeVisible({ timeout: 10_000 });
+    await expect(examPage.submitBtn).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
     await examPage.submitBtn.click();
 
     // Confirmation dialog should appear
     await expect(
-      studentPage.getByText(/제출하시겠습니까|수정할 수 없|cannot modify/i),
-    ).toBeVisible({ timeout: 5_000 });
+      studentPage.locator("[data-testid='submit-confirm-dialog']"),
+    ).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
   });
 
   test("shows waiting room when exam is not started", async ({
@@ -172,7 +173,7 @@ test.describe("Student — Exam Flow", () => {
     await examPage.goto(exam.code);
 
     // Should show waiting room via data-testid
-    await expect(examPage.waitingRoom).toBeVisible({ timeout: 15_000 });
+    await expect(examPage.waitingRoom).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
   });
 
   test("shows submitted state for already submitted session", async ({
@@ -189,7 +190,7 @@ test.describe("Student — Exam Flow", () => {
 
     // Should show submission complete message
     await expect(
-      studentPage.getByText(/제출.*완료/i),
-    ).toBeVisible({ timeout: 15_000 });
+      studentPage.locator("[data-testid='exam-submitted-state']"),
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
   });
 });

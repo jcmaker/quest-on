@@ -136,6 +136,7 @@ export default function ExamPage() {
   // 3. Session lifecycle — receives setters for page-owned state
   const session = useExamSession({
     examCode,
+    examId: exam?.id ?? null,
     user,
     isLoaded,
     setExam,
@@ -325,7 +326,7 @@ export default function ExamPage() {
       <div className="min-h-screen bg-background flex flex-col">
         <ExamHeader examCode={examCode} duration={exam.duration} currentStep="exam" user={user} />
         <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
-          <Card className="max-w-2xl w-full shadow-xl border-0">
+          <Card data-testid="exam-submitted-state" className="max-w-2xl w-full shadow-xl border-0">
             <CardHeader className="text-center space-y-4 pb-6">
               <div className="w-20 h-20 sm:w-24 sm:h-24 bg-green-500/10 rounded-full flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12 text-green-600 dark:text-green-400" aria-hidden="true" />
@@ -570,6 +571,7 @@ export default function ExamPage() {
         manualSubmitFailed={submission.manualSubmitFailed}
         setManualSubmitFailed={submission.setManualSubmitFailed}
         onManualSubmitRetry={() => { submission.setManualSubmitFailed(false); submission.handleSubmit(); }}
+        submitErrorMessage={submission.submitErrorMessage}
       />
     </SidebarProvider>
   );
