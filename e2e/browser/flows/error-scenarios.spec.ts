@@ -3,13 +3,14 @@ import {
   seedStudentExamScenario,
   cleanupTestData,
 } from "../helpers/test-data-builder";
+import { TIMEOUTS } from "../../constants";
 
 test.describe("Error Scenarios — Edge Cases", () => {
   test.afterEach(async () => {
     await cleanupTestData();
   });
 
-  test("closed exam → shows submitted/completed message", async ({
+  test("closed exam → shows unavailable message or redirects to join", async ({
     studentPage,
   }) => {
     const { exam } = await seedStudentExamScenario({
@@ -20,10 +21,14 @@ test.describe("Error Scenarios — Edge Cases", () => {
 
     await studentPage.goto(`/exam/${exam.code}`);
 
-    // Should show completed/submitted state (use .first() as regex matches multiple UI elements)
-    await expect(
-      studentPage.getByText(/제출.*완료|submitted|시험.*종료/i).first()
-    ).toBeVisible({ timeout: 15_000 });
+    // Closed exam triggers EXAM_NOT_AVAILABLE → redirects to /join with error,
+    // or shows submitted state if session was already submitted
+    const submittedState = studentPage.locator("[data-testid='exam-submitted-state']");
+    const joinErrorMsg = studentPage.getByText(/응시할 수 없|종료되었|not available/i);
+
+    await expect(submittedState.or(joinErrorMsg)).toBeVisible({
+      timeout: TIMEOUTS.PAGE_LOAD,
+    });
   });
 
   test("non-existent exam code → error or redirect", async ({
@@ -66,7 +71,7 @@ test.describe("Error Scenarios — Edge Cases", () => {
     // Wait for the page to load content first — check for actual exam content
     await expect(
       studentPage.getByText(/polymorphism/i)
-    ).toBeVisible({ timeout: 15_000 });
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
     // Abort a specific API call to simulate network failure
     await studentPage.route("**/api/supa**", (route) => route.abort("failed"));
