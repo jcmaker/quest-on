@@ -63,7 +63,11 @@ export async function createFolder(data: { name: string; parent_id?: string | nu
   }
 }
 
-export async function getFolderContents(data: { folder_id?: string | null }) {
+export async function getFolderContents(data: {
+  folder_id?: string | null;
+  examLimit?: number;
+  examOffset?: number;
+}) {
   try {
     const user = await currentUser();
     if (!user) {
@@ -76,56 +80,63 @@ export async function getFolderContents(data: { folder_id?: string | null }) {
     }
 
     const parentId = data.folder_id || null;
+    const examLimit = data.examLimit ?? 12;
+    const examOffset = data.examOffset ?? 0;
 
-    // Build query
-    let query = supabase
-      .from("exam_nodes")
-      .select(
-        `
-        *,
-        exams (
-          id,
-          title,
-          code,
-          description,
-          duration,
-          status,
-          created_at,
-          updated_at
-        )
-      `
+    const selectFields = `
+      *,
+      exams (
+        id,
+        title,
+        code,
+        description,
+        duration,
+        status,
+        created_at,
+        updated_at
       )
-      .eq("instructor_id", user.id);
+    `;
 
-    // Handle null parent_id (root level)
+    // Always fetch all folder nodes
+    let folderQuery = supabase
+      .from("exam_nodes")
+      .select(selectFields)
+      .eq("instructor_id", user.id)
+      .eq("kind", "folder");
     if (parentId === null) {
-      query = query.is("parent_id", null);
+      folderQuery = folderQuery.is("parent_id", null);
     } else {
-      query = query.eq("parent_id", parentId);
+      folderQuery = folderQuery.eq("parent_id", parentId);
     }
+    const { data: folderNodes, error: folderError } = await folderQuery.order("updated_at", { ascending: false });
+    if (folderError) throw folderError;
 
-    // Apply ordering - 최신순으로 정렬
-    const { data: nodes, error } = await query.order("updated_at", {
-      ascending: false,
-    }); // 최근 수정된 것이 먼저
-
-    if (error) {
-      throw error;
+    // Fetch paginated exam nodes + total count
+    let examQuery = supabase
+      .from("exam_nodes")
+      .select(selectFields, { count: "exact" })
+      .eq("instructor_id", user.id)
+      .eq("kind", "exam");
+    if (parentId === null) {
+      examQuery = examQuery.is("parent_id", null);
+    } else {
+      examQuery = examQuery.eq("parent_id", parentId);
     }
+    const { data: examNodesRaw, count: totalExamCount, error: examError } = await examQuery
+      .order("updated_at", { ascending: false })
+      .range(examOffset, examOffset + examLimit - 1);
+    if (examError) throw examError;
 
-    let nodesWithCounts = nodes || [];
+    const total = totalExamCount ?? 0;
+    const hasMoreExams = examOffset + examLimit < total;
 
-    const examNodes = nodesWithCounts.filter(
-      (node) => node.kind === "exam" && node.exam_id
-    );
+    // Fetch student counts for the paginated exam nodes
+    let examNodesWithCounts = examNodesRaw || [];
+    const examIds = examNodesWithCounts
+      .map((node) => node.exam_id)
+      .filter(Boolean) as string[];
 
-    if (examNodes.length > 0) {
-      const examIds = examNodes
-        .map((node) => node.exam_id)
-        .filter(Boolean) as string[];
-
-      // Optimized query: Use DISTINCT ON or aggregate to get unique student counts per exam
-      // This is more efficient than fetching all sessions and processing in memory
+    if (examIds.length > 0) {
       const { data: sessionsData, error: sessionsError } = await supabase
         .from("sessions")
         .select("exam_id, student_id")
@@ -134,10 +145,7 @@ export async function getFolderContents(data: { folder_id?: string | null }) {
       if (sessionsError) {
         logError("Session count query error", sessionsError, { path: "/api/supa" });
       } else if (sessionsData) {
-        // Use Map for O(1) lookups instead of nested objects
         const studentCountMap = new Map<string, Set<string>>();
-
-        // Build count map efficiently
         for (const session of sessionsData) {
           if (!session.exam_id || !session.student_id) continue;
           if (!studentCountMap.has(session.exam_id)) {
@@ -145,22 +153,22 @@ export async function getFolderContents(data: { folder_id?: string | null }) {
           }
           studentCountMap.get(session.exam_id)!.add(session.student_id);
         }
-
-        // Update nodes with counts
-        nodesWithCounts = nodesWithCounts.map((node) => {
-          if (node.kind === "exam" && node.exam_id) {
+        examNodesWithCounts = examNodesWithCounts.map((node) => {
+          if (node.exam_id) {
             const countSet = studentCountMap.get(node.exam_id);
-            return {
-              ...node,
-              student_count: countSet ? countSet.size : 0,
-            };
+            return { ...node, student_count: countSet ? countSet.size : 0 };
           }
           return node;
         });
       }
     }
 
-    return successJson({ nodes: nodesWithCounts });
+    return successJson({
+      folders: folderNodes || [],
+      exams: examNodesWithCounts,
+      hasMoreExams,
+      totalExamCount: total,
+    });
   } catch (error) {
     logError("[getFolderContents] Failed to get folder contents", error, { path: "/api/supa/drive-handlers" });
     return errorJson("GET_FOLDER_CONTENTS_FAILED", "Failed to get folder contents", 500);

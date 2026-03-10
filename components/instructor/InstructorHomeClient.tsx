@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useMemo, useCallback, memo } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState, useMemo, useCallback, memo, useRef } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import {
@@ -132,33 +132,34 @@ export default function InstructorHome() {
   );
 
 
-  // TanStack Query로 폴더 내용 가져오기 (캐싱 및 최적화)
-  const { data: nodes = [], isLoading } = useQuery({
+  // TanStack Query로 폴더 내용 가져오기 (무한 스크롤 페이지네이션)
+  const {
+    data: infiniteData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = useInfiniteQuery({
     queryKey: qk.drive.folderContents(currentFolderId, user?.id),
-    queryFn: async ({ signal }) => {
+    queryFn: async ({ pageParam, signal }: { pageParam: number; signal: AbortSignal }) => {
+      const limit = pageParam === 0 ? 12 : 8;
       const response = await fetch("/api/supa", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "get_folder_contents",
-          data: { folder_id: currentFolderId },
+          data: { folder_id: currentFolderId, examLimit: limit, examOffset: pageParam },
         }),
-        signal, // AbortSignal로 취소 가능
+        signal,
       });
 
       if (!response.ok) {
         let errorData: { error?: string; details?: string } = {};
         try {
           const text = await response.text();
-          if (text) {
-            errorData = JSON.parse(text);
-          }
-        } catch (parseError) {
-          errorData = {
-            error: `서버 오류 (${response.status}): ${response.statusText}`,
-          };
+          if (text) errorData = JSON.parse(text);
+        } catch {
+          errorData = { error: `서버 오류 (${response.status}): ${response.statusText}` };
         }
         const errorMessage =
           errorData.error ||
@@ -167,12 +168,21 @@ export default function InstructorHome() {
         throw new Error(errorMessage);
       }
 
-      const data = await response.json();
-      return data.nodes || [];
+      return response.json() as Promise<{
+        folders: ExamNode[];
+        exams: ExamNode[];
+        hasMoreExams: boolean;
+        totalExamCount: number;
+      }>;
     },
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.hasMoreExams) return undefined;
+      return allPages.reduce((sum, p) => sum + p.exams.length, 0);
+    },
+    initialPageParam: 0,
     enabled: !!(isLoaded && isSignedIn),
-    staleTime: 1000 * 60 * 1, // 1분 캐시
-    gcTime: 1000 * 60 * 5, // 5분 후 가비지 컬렉션
+    staleTime: 1000 * 60 * 1,
+    gcTime: 1000 * 60 * 5,
   });
 
   // 브레드크럼 쿼리
@@ -214,40 +224,55 @@ export default function InstructorHome() {
     }
   }, []); // 빈 의존성 배열로 마운트 시 한 번만 실행
 
-  const filteredNodes = useMemo<ExamNode[]>(() => {
-    if (!searchQuery.trim()) {
-      return nodes;
-    }
-    const query = searchQuery.toLowerCase();
-    return nodes.filter((node: ExamNode) =>
-      node.name.toLowerCase().includes(query)
-    );
-  }, [nodes, searchQuery]);
+  // Derive flat folder and exam lists from infinite pages
+  const allFolderNodes = useMemo<ExamNode[]>(
+    () => infiniteData?.pages[0]?.folders ?? [],
+    [infiniteData]
+  );
+  const allExamNodes = useMemo<ExamNode[]>(
+    () => infiniteData?.pages.flatMap((p) => p.exams) ?? [],
+    [infiniteData]
+  );
 
   const folderNodes = useMemo(() => {
-    const folders = filteredNodes.filter(
-      (node: ExamNode) => node.kind === "folder"
+    const query = searchQuery.toLowerCase().trim();
+    const folders = query
+      ? allFolderNodes.filter((n) => n.name.toLowerCase().includes(query))
+      : allFolderNodes;
+    return [...folders].sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     );
-    return folders.sort((a: ExamNode, b: ExamNode) => {
-      const dateA = new Date(a.updated_at).getTime();
-      const dateB = new Date(b.updated_at).getTime();
-      return dateB - dateA;
-    });
-  }, [filteredNodes]);
+  }, [allFolderNodes, searchQuery]);
 
   const examNodes = useMemo(() => {
-    const exams = filteredNodes.filter(
-      (node: ExamNode) => node.kind === "exam"
+    const query = searchQuery.toLowerCase().trim();
+    const exams = query
+      ? allExamNodes.filter((n) => n.name.toLowerCase().includes(query))
+      : allExamNodes;
+    return [...exams].sort(
+      (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     );
-    return exams.sort((a: ExamNode, b: ExamNode) => {
-      const dateA = new Date(a.updated_at).getTime();
-      const dateB = new Date(b.updated_at).getTime();
-      return dateB - dateA;
-    });
-  }, [filteredNodes]);
+  }, [allExamNodes, searchQuery]);
 
   const isFiltering = searchQuery.trim().length > 0;
-  const hasResults = filteredNodes.length > 0;
+  const hasResults = folderNodes.length > 0 || examNodes.length > 0;
+
+  // Intersection Observer sentinel for infinite scroll
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage();
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // 삭제 후 데이터 새로고침 (TanStack Query 캐시 무효화)
   const refetchFolderContents = useCallback(() => {
@@ -1098,7 +1123,7 @@ export default function InstructorHome() {
           }
 
           const data = await response.json();
-          return data.nodes || [];
+          return [...(data.folders || []), ...(data.exams || [])];
         },
         enabled: !!userId,
         staleTime: 1000 * 60 * 1,
@@ -1235,7 +1260,7 @@ export default function InstructorHome() {
           }
 
           const data = await response.json();
-          return data.nodes || [];
+          return [...(data.folders || []), ...(data.exams || [])];
         },
         enabled: !!userId,
         staleTime: 1000 * 60 * 1,
@@ -1459,7 +1484,7 @@ export default function InstructorHome() {
                               aria-hidden="true"
                             />
                             <span className="whitespace-nowrap">
-                              총 {nodes.length}개
+                              총 {folderNodes.length + examNodes.length}개
                             </span>
                           </div>
                         </div>
@@ -1680,20 +1705,43 @@ export default function InstructorHome() {
                             </div>
                             {examNodes.length > 0 ? (
                               viewMode === "grid" ? (
-                                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                  {examNodes.map((node) => renderGridNode(node))}
-                                </div>
+                                <>
+                                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                    {examNodes.map((node) => renderGridNode(node))}
+                                  </div>
+                                  <div ref={sentinelRef} />
+                                  {isFetchingNextPage && (
+                                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                      {[...Array(4)].map((_, i) => (
+                                        <GridCardSkeleton key={i} />
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
                               ) : (
-                                <div className="space-y-2">
-                                  {examNodes.map((node) => renderListNode(node))}
-                                </div>
+                                <>
+                                  <div className="space-y-2">
+                                    {examNodes.map((node) => renderListNode(node))}
+                                  </div>
+                                  <div ref={sentinelRef} />
+                                  {isFetchingNextPage && (
+                                    <div className="space-y-2" aria-busy="true" aria-live="polite">
+                                      {[...Array(4)].map((_, i) => (
+                                        <ListItemSkeleton key={i} />
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
                               )
                             ) : (
-                              <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-card/40 py-6 text-center text-sm text-muted-foreground">
-                                {isFiltering
-                                  ? "검색 조건에 맞는 시험이 없습니다."
-                                  : "시험이 없습니다."}
-                              </div>
+                              <>
+                                <div ref={sentinelRef} />
+                                <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-card/40 py-6 text-center text-sm text-muted-foreground">
+                                  {isFiltering
+                                    ? "검색 조건에 맞는 시험이 없습니다."
+                                    : "시험이 없습니다."}
+                                </div>
+                              </>
                             )}
                           </div>
                         </div>
