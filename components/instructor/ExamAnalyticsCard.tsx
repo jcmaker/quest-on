@@ -107,7 +107,7 @@ export function ExamAnalyticsCard({
       </CardHeader>
       <CardContent className="space-y-4">
         {/* 통계 요약 - 더 컴팩트하게 */}
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="flex flex-col items-center justify-center rounded-lg border bg-muted/30 p-3">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
               <TrendingUp className="h-3 w-3" />
@@ -146,7 +146,7 @@ export function ExamAnalyticsCard({
         </div>
 
         {/* 새로운 분석 차트들 */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {/* 1. 단계별 성과 비교 (Bar 차트 - 범주형 비교에 적합) */}
           {stageAnalysis && stageAnalysis.comparisonData.length > 0 && (
             <Card className="flex flex-col">
@@ -462,7 +462,7 @@ export function ExamAnalyticsCard({
             </ChartContainer>
           </CardContent>
           <CardFooter className="flex-col gap-2 text-xs">
-            <div className="grid grid-cols-4 gap-2 w-full">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full">
               <div className="flex flex-col items-center">
                 <div className="text-muted-foreground">점수</div>
                 <div className="font-semibold">{averageScore}점</div>

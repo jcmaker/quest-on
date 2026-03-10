@@ -64,8 +64,7 @@ export async function loadUniversities(): Promise<UniversitySearchResult[]> {
       .sort((a, b) => a.name.localeCompare(b.name, "ko"));
 
     return universitiesCache;
-  } catch (error) {
-    console.error("Failed to load universities:", error);
+  } catch {
     return [];
   }
 }

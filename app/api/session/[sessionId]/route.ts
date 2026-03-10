@@ -1,29 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
+import { successJson, errorJson } from "@/lib/api-response";
+import { validateUUID } from "@/lib/validate-params";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
-  const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
+
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
 
     const user = await currentUser();
 
     if (!user) {
-      console.error(
-        `❌ [AUTH] Unauthorized session access attempt | Session: ${sessionId}`,
-      );
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const rl = await checkRateLimitAsync(`session:${user.id}`, RATE_LIMITS.sessionRead);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests", 429);
     }
 
     // Get session data with related submissions and messages
@@ -41,7 +45,6 @@ export async function GET(
         submissions (
           *,
           compressed_answer_data,
-          compressed_feedback_data,
           compression_metadata
         ),
         messages (
@@ -55,7 +58,7 @@ export async function GET(
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
     // Check if user is authorized to view this session
@@ -64,12 +67,12 @@ export async function GET(
     const isStudentOwner = session.student_id === user.id;
 
     if (!isInstructor && !isStudentOwner) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // If instructor, check if they own the exam
     if (isInstructor && session.exams.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Decompress session data if available
@@ -83,7 +86,7 @@ export async function GET(
           session.compressed_session_data,
         );
       } catch (error) {
-        console.error("Error decompressing session data:", error);
+        // Decompression failed, continue with null
       }
     }
 
@@ -91,7 +94,6 @@ export async function GET(
     const decompressedSubmissions =
       session.submissions?.map((submission: Record<string, unknown>) => {
         let decompressedAnswerData = null;
-        let decompressedFeedbackData = null;
 
         if (
           submission.compressed_answer_data &&
@@ -102,20 +104,7 @@ export async function GET(
               submission.compressed_answer_data,
             );
           } catch (error) {
-            console.error("Error decompressing answer data:", error);
-          }
-        }
-
-        if (
-          submission.compressed_feedback_data &&
-          typeof submission.compressed_feedback_data === "string"
-        ) {
-          try {
-            decompressedFeedbackData = decompressData(
-              submission.compressed_feedback_data,
-            );
-          } catch (error) {
-            console.error("Error decompressing feedback data:", error);
+            // Decompression failed, continue with null
           }
         }
 
@@ -123,7 +112,6 @@ export async function GET(
           ...submission,
           decompressed: {
             answerData: decompressedAnswerData,
-            feedbackData: decompressedFeedbackData,
           },
         };
       }) || [];
@@ -140,7 +128,7 @@ export async function GET(
           try {
             decompressedContent = decompressData(message.compressed_content);
           } catch (error) {
-            console.error("Error decompressing message content:", error);
+            // Decompression failed, continue with null
           }
         }
 
@@ -194,7 +182,7 @@ export async function GET(
     compressionStats.totalOriginalSize = compressionStats.totalOriginalSize;
     compressionStats.totalCompressedSize = compressionStats.totalCompressedSize;
 
-    return NextResponse.json({
+    return successJson({
       session: {
         id: session.id,
         exam_id: session.exam_id,
@@ -214,16 +202,6 @@ export async function GET(
       compressionStats,
     });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    console.error("Get session error:", error);
-    console.error(
-      `❌ [ERROR] Session GET failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`,
-    );
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

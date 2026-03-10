@@ -1,94 +1,47 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { currentUser } from "@clerk/nextjs/server";
-import { createClerkClient } from "@clerk/nextjs/server";
+import { NextRequest } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { currentUser } from "@/lib/get-current-user";
+import { successJson, errorJson } from "@/lib/api-response";
+import { batchGetUserInfo } from "@/lib/clerk-users";
+import { validateUUID } from "@/lib/validate-params";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { logError } from "@/lib/logger";
+
+export const maxDuration = 30;
 
 // Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
-
-// Initialize Clerk client
-const clerk = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY!,
-});
-
-// Helper function to get user info from Clerk
-async function getUserInfo(clerkUserId: string): Promise<{
-  name: string;
-  email: string;
-} | null> {
-  try {
-    const user = await clerk.users.getUser(clerkUserId);
-
-    // Get user name from firstName/lastName or fullName
-    let name = "";
-    if (user.firstName && user.lastName) {
-      name = `${user.firstName} ${user.lastName}`;
-    } else if (user.firstName) {
-      name = user.firstName;
-    } else if (user.lastName) {
-      name = user.lastName;
-    } else if (user.fullName) {
-      name = user.fullName;
-    } else {
-      // Fallback to email or ID
-      name =
-        user.emailAddresses[0]?.emailAddress ||
-        `Student ${clerkUserId.slice(0, 8)}`;
-    }
-
-    const email =
-      user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
-
-    return {
-      name,
-      email,
-    };
-  } catch (error) {
-    console.error("Error fetching user info from Clerk:", error);
-    // Fallback to placeholder
-    return {
-      name: `Student ${clerkUserId.slice(0, 8)}`,
-      email: `${clerkUserId}@example.com`,
-    };
-  }
-}
+const supabase = getSupabaseServer();
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ examId: string }> },
 ) {
-  const requestStartTime = Date.now();
   try {
     const { examId } = await params;
+
+    const invalidId = validateUUID(examId, "examId");
+    if (invalidId) return invalidId;
 
     let user;
     try {
       user = await currentUser();
     } catch (clerkError) {
-      console.error(`❌ [AUTH] Clerk API error | Exam: ${examId}`, clerkError);
-      return NextResponse.json(
-        { error: "Authentication service error" },
-        { status: 500 },
-      );
+      return errorJson("INTERNAL_ERROR", "Authentication service error", 500);
     }
 
     if (!user) {
-      console.error(
-        `❌ [AUTH] Unauthorized exam sessions access | Exam: ${examId}`,
-      );
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const rl = await checkRateLimitAsync(`exam-sessions:${user.id}`, RATE_LIMITS.sessionRead);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests", 429);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      console.error(
-        `❌ [AUTH] Non-instructor access attempt | User: ${user.id} | Exam: ${examId}`,
-      );
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get exam to verify instructor owns it
@@ -99,12 +52,29 @@ export async function GET(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
+    }
+
+    // Parse pagination params (default: page 1, pageSize 50, max 100)
+    const url = new URL(request.url);
+    const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10));
+    const pageSize = Math.max(1, Math.min(100, parseInt(url.searchParams.get("pageSize") || "50", 10)));
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
+    // Get total count for pagination metadata
+    const { count: totalCount, error: countError } = await supabase
+      .from("sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("exam_id", examId);
+
+    if (countError) {
+      throw countError;
     }
 
     // Optimized: Only fetch minimal session data needed for student list
@@ -124,7 +94,8 @@ export async function GET(
       `,
       )
       .eq("exam_id", examId)
-      .order("submitted_at", { ascending: false });
+      .order("submitted_at", { ascending: false })
+      .range(from, to);
 
     if (sessionsError) {
       throw sessionsError;
@@ -154,26 +125,26 @@ export async function GET(
       });
     }
 
-    // Fetch student info for all students in parallel (for email)
+    // Batch fetch all student info from Clerk (single API call)
+    const clerkUserMap = await batchGetUserInfo(uniqueStudentIds);
+
     const studentInfoMap = new Map<
       string,
       { name: string; email: string; student_number?: string; school?: string }
     >();
-    await Promise.all(
-      uniqueStudentIds.map(async (studentId) => {
-        const info = await getUserInfo(studentId);
-        const profile = studentProfileMap.get(studentId);
+    for (const studentId of uniqueStudentIds) {
+      const info = clerkUserMap.get(studentId);
+      const profile = studentProfileMap.get(studentId);
 
-        if (info) {
-          studentInfoMap.set(studentId, {
-            name: profile?.name || info.name,
-            email: info.email,
-            student_number: profile?.student_number,
-            school: profile?.school,
-          });
-        }
-      }),
-    );
+      if (info) {
+        studentInfoMap.set(studentId, {
+          name: profile?.name || info.name,
+          email: info.email,
+          student_number: profile?.student_number,
+          school: profile?.school,
+        });
+      }
+    }
 
     // Optimized: Process sessions without decompression (not needed for list view)
     const processedSessions = sessions.map((session) => {
@@ -203,24 +174,23 @@ export async function GET(
       };
     });
 
-    return NextResponse.json({
+    return successJson({
       exam: {
         id: exam.id,
         title: exam.title,
       },
       sessions: processedSessions,
+      pagination: {
+        page,
+        pageSize,
+        totalCount: totalCount ?? 0,
+        totalPages: Math.ceil((totalCount ?? 0) / pageSize),
+      },
     });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    console.error("Get exam sessions error:", error);
-    console.error(
-      `❌ [ERROR] Exam sessions GET failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`,
-    );
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    logError("Sessions GET handler error", error, {
+      path: `/api/exam/sessions`,
+    });
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

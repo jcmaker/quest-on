@@ -35,27 +35,32 @@ model exam_nodes {
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model exams {
-  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  title                String
-  code                 String                 @unique
-  description          String?
-  duration             Int
-  questions            Json
-  status               String?                @default("draft")
-  instructor_id        String
-  student_count        Int?                   @default(0)
-  created_at           DateTime?              @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime?              @default(now()) @db.Timestamptz(6)
-  materials            Json?                  @default("[]")
-  rubric               Json?                  @default("[]")
+  id                     String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title                  String
+  code                   String                 @unique
+  description            String?
+  duration               Int
+  questions              Json
+  status                 String?                @default("draft")
+  instructor_id          String
+  student_count          Int?                   @default(0)
+  created_at             DateTime?              @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?              @default(now()) @db.Timestamptz(6)
+  materials              Json?                  @default("[]")
+  rubric                 Json?                  @default("[]")
   // Gate 방식 필드 추가
-  open_at              DateTime?              @db.Timestamptz(6) // 입장 시작 시간 (Access Window 시작)
-  close_at             DateTime?              @db.Timestamptz(6) // 입장 마감 시간 (Join cutoff)
-  started_at           DateTime?              @db.Timestamptz(6) // Gate Start 신호 시간 (교수 Start Exam 클릭 시)
-  allow_draft_in_waiting Boolean?              @default(false)   // Waiting Room에서 Drafting 허용 여부
-  allow_chat_in_waiting  Boolean?              @default(false)   // Waiting Room에서 AI Chat 허용 여부
-  exam_nodes           exam_nodes[]
-  exam_material_chunks exam_material_chunks[]
+  open_at                DateTime?              @db.Timestamptz(6) // 입장 시작 시간 (Access Window 시작)
+  close_at               DateTime?              @db.Timestamptz(6) // 입장 마감 시간 (Join cutoff)
+  started_at             DateTime?              @db.Timestamptz(6) // Gate Start 신호 시간 (교수 Start Exam 클릭 시)
+  allow_draft_in_waiting Boolean?               @default(false) // Waiting Room에서 Drafting 허용 여부
+  allow_chat_in_waiting  Boolean?               @default(false) // Waiting Room에서 AI Chat 허용 여부
+  chat_weight            Int?                   @default(50) // 채팅 단계 가중치 (0-100), answer_weight = 100 - chat_weight
+  rubric_public          Boolean?               @default(false) // 루브릭 공개 여부
+  materials_text         Json?                  @default("[]") // 추출된 텍스트 저장
+  ai_events              ai_events[]
+  exam_nodes             exam_nodes[]
+  exam_material_chunks   exam_material_chunks[]
+  sessions               sessions[]
 
   @@index([code], map: "idx_exams_code")
   @@index([instructor_id], map: "idx_exams_instructor_id")
@@ -73,10 +78,50 @@ model grades {
   comment       String?
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   stage_grading Json?
+  grade_type    String   @default("manual") // "auto" | "manual"
   sessions      sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@unique([session_id, q_idx])
   @@index([session_id], map: "idx_grades_session_id")
   @@index([session_id, q_idx], map: "idx_grades_session_qidx")
+  @@index([grade_type], map: "idx_grades_grade_type")
+}
+
+model ai_events {
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider                  String
+  endpoint                  String
+  feature                   String
+  route                     String
+  model                     String
+  user_id                   String?
+  exam_id                   String?   @db.Uuid
+  session_id                String?   @db.Uuid
+  q_idx                     Int?
+  status                    String
+  attempt_count             Int       @default(1)
+  latency_ms                Int?
+  input_tokens              Int?
+  output_tokens             Int?
+  cached_input_tokens       Int?
+  reasoning_tokens          Int?
+  total_tokens              Int?
+  estimated_cost_usd_micros BigInt    @default(0)
+  pricing_version           String
+  request_id                String?
+  response_id               String?
+  error_code                String?
+  metadata                  Json      @default("{}")
+  created_at                DateTime  @default(now()) @db.Timestamptz(6)
+  exams                     exams?    @relation(fields: [exam_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  sessions                  sessions? @relation(fields: [session_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([created_at(sort: Desc)], map: "idx_ai_events_created_at")
+  @@index([feature, created_at(sort: Desc)], map: "idx_ai_events_feature_created_at")
+  @@index([model, created_at(sort: Desc)], map: "idx_ai_events_model_created_at")
+  @@index([exam_id, created_at(sort: Desc)], map: "idx_ai_events_exam_created_at")
+  @@index([session_id], map: "idx_ai_events_session_id")
+  @@index([user_id, created_at(sort: Desc)], map: "idx_ai_events_user_created_at")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -98,6 +143,7 @@ model messages {
 
   @@index([session_id], map: "idx_messages_session_id")
   @@index([session_id, q_idx], map: "idx_messages_session_qidx")
+  @@index([session_id, q_idx, created_at(sort: Desc)], map: "idx_messages_session_qidx_created")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -114,25 +160,31 @@ model questions {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model sessions {
-  id                      String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  exam_id                 String        @db.Uuid
-  student_id              String
-  used_clarifications     Int           @default(0)
-  created_at              DateTime      @default(now()) @db.Timestamptz(6)
-  submitted_at            DateTime?     @db.Timestamptz(6)
-  compressed_session_data String?
-  compression_metadata    Json?         @default("{}")
-  ai_summary              Json? // AI 자동 채점 요약 평가
+  id                       String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  exam_id                  String        @db.Uuid
+  student_id               String
+  used_clarifications      Int           @default(0)
+  created_at               DateTime      @default(now()) @db.Timestamptz(6)
+  submitted_at             DateTime?     @db.Timestamptz(6)
+  compressed_session_data  String?
+  compression_metadata     Json?         @default("{}")
+  ai_summary               Json? // AI 자동 채점 요약 평가
   // Gate 방식 필드 추가
-  status                  String?       @default("not_joined") // "not_joined" | "joined" | "waiting" | "in_progress" | "submitted" | "auto_submitted" | "locked"
-  started_at              DateTime?     @db.Timestamptz(6)     // Gate Start 신호 수신 시간 (InProgress 전환 시)
-  attempt_timer_started_at DateTime?    @db.Timestamptz(6)     // 개별 타이머 시작 시간
-  auto_submitted          Boolean?      @default(false)         // 자동 제출 플래그
-  preflight_accepted_at   DateTime?    @db.Timestamptz(6)      // Preflight Modal 수락 시간
-  grades                  grades[]
-  messages                messages[]
-  submissions             submissions[]
+  status                   String?       @default("not_joined") // "not_joined" | "joined" | "waiting" | "in_progress" | "submitted" | "auto_submitted" | "locked"
+  started_at               DateTime?     @db.Timestamptz(6) // Gate Start 신호 수신 시간 (InProgress 전환 시)
+  attempt_timer_started_at DateTime?     @db.Timestamptz(6) // 개별 타이머 시작 시간
+  auto_submitted           Boolean?      @default(false) // 자동 제출 플래그
+  preflight_accepted_at    DateTime?     @db.Timestamptz(6) // Preflight Modal 수락 시간
+  is_active                Boolean?      @default(true) // 세션 활성 상태
+  last_heartbeat_at        DateTime?     @db.Timestamptz(6) // 마지막 heartbeat 시간
+  device_fingerprint       String? // 디바이스 식별용 핑거프린트
+  exams                    exams         @relation(fields: [exam_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  ai_events                ai_events[]
+  grades                   grades[]
+  messages                 messages[]
+  submissions              submissions[]
 
+  @@unique([exam_id, student_id])
   @@index([exam_id], map: "idx_sessions_exam_id")
   @@index([student_id], map: "idx_sessions_student_id")
   @@index([exam_id, student_id], map: "idx_sessions_exam_student")
@@ -148,17 +200,15 @@ model submissions {
   session_id               String    @db.Uuid
   q_idx                    Int
   answer                   String
-  ai_feedback              Json?
-  student_reply            String?
   created_at               DateTime  @default(now()) @db.Timestamptz(6)
   updated_at               DateTime? @default(now()) @db.Timestamptz(6) // 답안 수정 시간
   answer_history           Json?     @default("[]") // 답안 수정 이력: [{ text: string, timestamp: string }]
   edit_count               Int?      @default(0) // 답안 수정 횟수
   compressed_answer_data   String?
-  compressed_feedback_data String?
   compression_metadata     Json?     @default("{}")
   sessions                 sessions  @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@unique([session_id, q_idx])
   @@index([session_id], map: "idx_submissions_session_id")
   @@index([session_id, q_idx], map: "idx_submissions_session_qidx")
 }

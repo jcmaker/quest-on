@@ -1,16 +1,15 @@
-// Node.js Runtime 사용 (4MB → 25MB 업로드 한도 증가)
+// Node.js Runtime 사용 (Vercel serverless body 제한: 4.5MB)
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { currentUser } from "@clerk/nextjs/server";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { currentUser } from "@/lib/get-current-user";
 import { randomUUID } from "crypto";
+import { logError } from "@/lib/logger";
 
 // Initialize Supabase client with service role key for server-side operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = getSupabaseServer();
 
 // 표준화된 에러 응답 헬퍼
 function errorJson(
@@ -20,7 +19,6 @@ function errorJson(
   status = 400
 ) {
   const traceId = randomUUID();
-  console.error(`[${traceId}] ${code}:`, message, details);
   return NextResponse.json(
     { ok: false, code, message, details, traceId },
     { status }
@@ -40,10 +38,6 @@ function makeSafeObjectKey(originalName: string, extFallback = ".bin") {
 
 // OPTIONS 요청 처리 (CORS preflight)
 export async function OPTIONS(request: NextRequest) {
-  console.log("[upload] OPTIONS request received:", {
-    url: request.url,
-    method: request.method,
-  });
   return NextResponse.json(
     {},
     {
@@ -57,10 +51,6 @@ export async function OPTIONS(request: NextRequest) {
 
 // GET 요청에 대한 명확한 에러 처리
 export async function GET(request: NextRequest) {
-  console.log("[upload] GET request received (NOT ALLOWED):", {
-    url: request.url,
-    method: request.method,
-  });
   return errorJson(
     "METHOD_NOT_ALLOWED",
     "GET 메서드는 지원하지 않습니다. POST 메서드를 사용하세요.",
@@ -73,39 +63,6 @@ export async function POST(request: NextRequest) {
   let objectKey: string | null = null;
 
   try {
-    console.log("[upload] POST request received:", {
-      url: request.url,
-      method: request.method,
-      contentType: request.headers.get("content-type"),
-      userAgent: request.headers.get("user-agent"),
-      origin: request.headers.get("origin"),
-      referer: request.headers.get("referer"),
-      timestamp: new Date().toISOString(),
-      runtime: "nodejs", // 명시적으로 Runtime 표시
-    });
-
-    // 환경 변수 확인
-    console.log("[upload] Environment check:", {
-      hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      supabaseUrlPrefix:
-        process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + "...",
-    });
-
-    // Supabase 연결 테스트
-    try {
-      const { data: buckets, error: listError } =
-        await supabase.storage.listBuckets();
-      console.log("[upload] Supabase connection test:", {
-        canListBuckets: !listError,
-        bucketsFound: buckets?.length || 0,
-        hasExamMaterials: buckets?.some((b) => b.name === "exam-materials"),
-        listError: listError?.message,
-      });
-    } catch (testError) {
-      console.error("[upload] Supabase connection failed:", testError);
-    }
-
     // Get current user
     const user = await currentUser();
     if (!user) {
@@ -114,7 +71,6 @@ export async function POST(request: NextRequest) {
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
-    console.log("[upload] User:", { id: user.id, role: userRole });
 
     if (userRole !== "instructor") {
       return errorJson(
@@ -134,6 +90,23 @@ export async function POST(request: NextRequest) {
       return errorJson("NO_FILE", "파일이 존재하지 않습니다.", null, 400);
     }
 
+    // Validate file extension (whitelist, last extension only to prevent double-extension attacks)
+    const ALLOWED_EXTENSIONS = new Set([
+      ".pdf", ".ppt", ".pptx", ".doc", ".docx",
+      ".txt", ".hwp", ".hwpx", ".zip",
+      ".jpg", ".jpeg", ".png", ".gif", ".webp",
+    ]);
+    const extMatch = originalName.match(/\.([a-zA-Z0-9]+)$/);
+    const fileExtension = extMatch ? `.${extMatch[1].toLowerCase()}` : "";
+    if (!fileExtension || !ALLOWED_EXTENSIONS.has(fileExtension)) {
+      return errorJson(
+        "INVALID_FILE_EXTENSION",
+        "허용되지 않는 파일 확장자입니다.",
+        { fileName: originalName, extension: fileExtension, allowedExtensions: [...ALLOWED_EXTENSIONS] },
+        400
+      );
+    }
+
     // Validate file type (화이트리스트)
     const allowedTypes = [
       "application/pdf",
@@ -141,6 +114,14 @@ export async function POST(request: NextRequest) {
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "text/plain",
+      "application/x-hwp",
+      "application/haansofthwp",
+      "application/vnd.hancom.hwp",
+      "application/vnd.hancom.hwpx",
+      "application/zip",
+      "application/x-zip-compressed",
+      "application/octet-stream", // Some browsers send .hwp/.hwpx as octet-stream
       "image/jpeg",
       "image/png",
       "image/gif",
@@ -156,12 +137,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (25MB - Node.js Runtime 제한)
-    const maxSize = 25 * 1024 * 1024;
+    // Validate file size (4MB - Vercel serverless body 제한 4.5MB 대응)
+    // 4MB 초과 파일은 signed URL 방식(/api/upload/signed-url)으로 업로드
+    const maxSize = 4 * 1024 * 1024;
     if (file.size > maxSize) {
       return errorJson(
         "FILE_TOO_LARGE",
-        "파일 크기가 25MB를 초과합니다.",
+        "파일 크기가 4MB를 초과합니다. 큰 파일은 자동으로 다른 방식으로 업로드됩니다.",
         { fileSize: file.size, maxSize },
         413
       );
@@ -174,25 +156,9 @@ export async function POST(request: NextRequest) {
     // objectKey는 이미 날짜/uuid.ext 형식이므로 그대로 사용
     const storagePath = `instructor-${user.id}/${objectKey}`;
 
-    console.log("[upload] Storage path generated:", {
-      originalName,
-      objectKey,
-      storagePath,
-      fileSize: file.size,
-      fileType: file.type,
-      userId: user.id,
-    });
-
     // Convert file to buffer (no compression - direct upload)
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-
-    console.log("[upload] Uploading to Supabase:", {
-      bucket: "exam-materials",
-      path: storagePath,
-      bufferSize: buffer.length,
-      contentType: file.type,
-    });
 
     // Supabase Storage 업로드 시도
     const { data, error } = await supabase.storage
@@ -202,24 +168,7 @@ export async function POST(request: NextRequest) {
         upsert: true, // 임시로 덮어쓰기 허용 (중복 파일 에러 방지)
       });
 
-    console.log("[upload] Supabase response:", {
-      hasData: !!data,
-      hasError: !!error,
-      dataPath: data?.path,
-      errorMessage: error?.message,
-      errorDetails: error,
-    });
-
     if (error) {
-      console.error("[upload] Supabase storage error details:", {
-        message: error.message,
-        name: error.name,
-        statusCode: (error as { statusCode?: number }).statusCode,
-        error: JSON.stringify(error, null, 2),
-        storagePath: storagePath,
-        bucket: "exam-materials",
-      });
-
       // 에러 타입별 구체적인 메시지
       let userMessage = "파일 저장 중 오류가 발생했습니다.";
       let errorCode = "STORAGE_ERROR";
@@ -244,20 +193,19 @@ export async function POST(request: NextRequest) {
         errorCode = "INVALID_TOKEN";
       }
 
+      logError("Supabase storage upload failed", error, {
+        path: "/api/upload",
+        user_id: user.id,
+        additionalData: { storagePath, bucket: "exam-materials", errorCode },
+      });
+
       return errorJson(
         errorCode,
         userMessage,
-        {
-          originalError: error.message,
-          storagePath: storagePath,
-          bucket: "exam-materials",
-          hint: "서버 로그에서 [upload] Supabase storage error details를 확인하세요.",
-        },
+        undefined,
         500
       );
     }
-
-    console.log("[upload] Upload successful:", data.path);
 
     // Get public URL
     const { data: urlData } = supabase.storage
@@ -279,16 +227,15 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("[upload] Unexpected error:", error);
+    logError("Unexpected upload error", error, {
+      path: "/api/upload",
+      additionalData: { objectKey },
+    });
 
-    // 구조화된 에러 응답
     return errorJson(
       "UPLOAD_FAILED",
       "업로드 중 예상치 못한 오류가 발생했습니다.",
-      {
-        error: error instanceof Error ? error.message : String(error),
-        objectKey,
-      },
+      undefined,
       500
     );
   }

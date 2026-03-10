@@ -1,0 +1,37 @@
+flowchart TB
+  classDef center fill:#0f172a,stroke:#0f172a,color:#ffffff;
+  classDef group fill:#f8fafc,stroke:#94a3b8,color:#0f172a;
+  classDef pain fill:#fff1f2,stroke:#e11d48,stroke-width:2px,color:#111827;
+  classDef change fill:#fff7ed,stroke:#ea580c,stroke-width:2px,color:#111827;
+
+  product["Quest-On<br/>온라인 시험 운영 플랫폼"]:::center
+
+  subgraph purpose["Product Purpose"]
+    p1["강사<br/>시험 생성, 시작/종료, 모니터링, 채점"]:::group
+    p2["학생<br/>시험 코드 입장, 응시, AI 채팅, 리포트 확인"]:::group
+    p3["운영<br/>로그와 사용자 관리"]:::group
+  end
+
+  subgraph currentPain["Current Biggest Pain Point"]
+    pain1["시험 세션 상태 규칙이<br/>페이지, 훅, API, 핸들러에 분산"]:::pain
+    pain2["/api/supa 액션 API와<br/>리소스 API가 공존"]:::pain
+    pain3["채점, 요약, 임베딩이<br/>요청 경로 안에서 동기 처리"]:::pain
+  end
+
+  subgraph changeWhy["Why Change"]
+    why1["핵심 플로우를 한 경계에서 통제"]:::change
+    why2["변경 영향 범위와 회귀 위험 축소"]:::change
+    why3["비동기 작업과 운영 트랜잭션 분리"]:::change
+  end
+
+  product --> p1
+  product --> p2
+  product --> p3
+
+  product --> pain1
+  pain1 --> pain2
+  pain2 --> pain3
+
+  pain3 --> why1
+  why1 --> why2
+  why2 --> why3

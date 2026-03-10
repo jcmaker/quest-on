@@ -54,15 +54,15 @@ export function ExamCard({
   const iconSize = "w-3 h-3";
 
   return (
-    <div className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-      <div className="flex-1">
-        <div className="flex items-center space-x-3 mb-2">
-          <h4 className="font-semibold text-foreground">{exam.title}</h4>
-          <Badge variant={badgeProps.variant} className={badgeProps.className}>
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border rounded-lg hover:bg-muted/50 transition-colors">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-3 mb-2">
+          <h4 className="font-semibold text-foreground truncate">{exam.title}</h4>
+          <Badge variant={badgeProps.variant} className={`${badgeProps.className} shrink-0`}>
             {badgeProps.text}
           </Badge>
         </div>
-        <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+        <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
           <div className="flex items-center space-x-1">
             <Copy className={iconSize} />
             <span className="exam-code">{exam.code}</span>
@@ -83,27 +83,27 @@ export function ExamCard({
           </div>
         </div>
       </div>
-      <div className="flex items-center space-x-2">
+      <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
         {onCopyCode && (
           <Button
             variant="outline"
             size="sm"
             onClick={() => onCopyCode(exam.code)}
           >
-            <Copy className={`${iconSize} mr-1`} />
-            복사
+            <Copy className={`${iconSize} sm:mr-1`} />
+            <span className="hidden sm:inline">복사</span>
           </Button>
         )}
         <Link href={`/instructor/${exam.id}`}>
           <Button variant="outline" size="sm">
-            <Eye className={`${iconSize} mr-1`} />
-            보기
+            <Eye className={`${iconSize} sm:mr-1`} />
+            <span className="hidden sm:inline">보기</span>
           </Button>
         </Link>
         {onEdit && (
           <Button variant="outline" size="sm" onClick={() => onEdit(exam.id)}>
-            <Edit className={`${iconSize} mr-1`} />
-            편집
+            <Edit className={`${iconSize} sm:mr-1`} />
+            <span className="hidden sm:inline">편집</span>
           </Button>
         )}
         {onDelete && (
@@ -113,8 +113,8 @@ export function ExamCard({
             className="text-red-600 hover:text-red-700"
             onClick={() => onDelete(exam.id)}
           >
-            <Trash2 className={`${iconSize} mr-1`} />
-            삭제
+            <Trash2 className={`${iconSize} sm:mr-1`} />
+            <span className="hidden sm:inline">삭제</span>
           </Button>
         )}
       </div>

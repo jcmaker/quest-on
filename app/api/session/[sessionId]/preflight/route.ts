@@ -1,93 +1,127 @@
-import { NextRequest, NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { NextRequest } from "next/server";
+import { currentUser } from "@/lib/get-current-user";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { successJson, errorJson } from "@/lib/api-response";
+import { validateUUID } from "@/lib/validate-params";
+import { logError } from "@/lib/logger";
+import {
+  buildGateStatePayload,
+  isExamStarted,
+  isExamUnavailable,
+  promoteSessionToInProgress,
+} from "@/app/api/supa/handlers/session-handlers";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Missing Supabase environment variables");
-}
-
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = getSupabaseServer();
 
 /**
  * POST /api/session/[sessionId]/preflight
  * 
  * Preflight Modal 수락 처리
  * - preflight_accepted_at 설정
- * - 세션 상태를 "waiting"으로 변경
+ * - 시험 상태에 따라 waiting 또는 in_progress로 조정
  */
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const resolvedParams = await params;
     const sessionId = resolvedParams.sessionId;
 
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
+
     // 세션 확인 및 권한 검증
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, student_id, status")
+      .select(
+        "id, student_id, exam_id, status, started_at, attempt_timer_started_at, created_at, preflight_accepted_at, device_fingerprint"
+      )
       .eq("id", sessionId)
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json(
-        { error: "Session not found" },
-        { status: 404 }
-      );
+      return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
     if (session.student_id !== user.id) {
-      return NextResponse.json(
-        { error: "Unauthorized" },
-        { status: 403 }
-      );
+      return errorJson("FORBIDDEN", "Unauthorized", 403);
     }
 
     const now = new Date().toISOString();
+    const nowTime = Date.now();
 
-    // Preflight 수락 처리
-    const { error: updateError } = await supabase
-      .from("sessions")
-      .update({
-        preflight_accepted_at: now,
-        status: "waiting", // Preflight 수락 후 Waiting 상태로 전환
-      })
-      .eq("id", sessionId);
+    const { data: exam, error: examError } = await supabase
+      .from("exams")
+      .select("id, status, started_at, duration")
+      .eq("id", session.exam_id)
+      .single();
 
-    if (updateError) {
-      console.error("[PREFLIGHT] Failed to update session:", updateError);
-      return NextResponse.json(
-        { 
-          error: "Failed to accept preflight",
-          details: updateError.message || String(updateError),
-          code: updateError.code,
-        },
-        { status: 500 }
+    if (examError || !exam) {
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
+    }
+
+    if (isExamUnavailable(exam.status)) {
+      return errorJson(
+        "EXAM_NOT_AVAILABLE",
+        "Exam not available for joining",
+        403,
+        {
+          currentStatus: exam.status,
+          message: "This exam is closed or archived",
+        }
       );
     }
 
-    console.log(`[PREFLIGHT] ✅ Session ${sessionId} preflight accepted`);
+    let reconciledSession = session;
 
-    return NextResponse.json({
-      success: true,
+    // 시험이 이미 시작되었거나, 무제한(과제형) 시험인 경우 바로 in_progress로 전환
+    if (isExamStarted(exam.status, exam.started_at, nowTime) || exam.duration === 0) {
+      reconciledSession = await promoteSessionToInProgress(session, now, {
+        preflightAcceptedAt: now,
+      });
+    } else {
+      const { data: updatedSession, error: updateError } = await supabase
+        .from("sessions")
+        .update({
+          preflight_accepted_at: now,
+          status: "waiting",
+        })
+        .eq("id", sessionId)
+        .select(
+          "id, student_id, exam_id, status, started_at, attempt_timer_started_at, created_at, preflight_accepted_at, device_fingerprint"
+        )
+        .single();
+
+      if (updateError || !updatedSession) {
+        logError("Failed to update preflight status", updateError, {
+          path: "/api/session/preflight",
+          user_id: user.id,
+          additionalData: { sessionId },
+        });
+        return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500);
+      }
+
+      reconciledSession = updatedSession;
+    }
+
+    const gateState = buildGateStatePayload(reconciledSession, exam, nowTime);
+
+    return successJson({
       sessionId,
       preflightAcceptedAt: now,
-      status: "waiting",
+      status: gateState.status,
+      gateStarted: gateState.gateStarted,
+      sessionStartTime: gateState.sessionStartTime,
+      timeRemaining: gateState.timeRemaining,
     });
   } catch (error) {
-    console.error("[PREFLIGHT] ❌ Error:", error);
-    return NextResponse.json(
-      { error: "Failed to accept preflight" },
-      { status: 500 }
-    );
+    logError("Preflight acceptance failed", error, { path: "/api/session/preflight" });
+    return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500);
   }
 }

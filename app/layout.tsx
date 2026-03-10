@@ -1,13 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Roboto_Mono } from "next/font/google";
 import "./globals.css";
-import { ClerkProvider } from "@clerk/nextjs";
-import { ConditionalHeader } from "@/components/ConditionalHeader";
-import { Toaster } from "@/components/ui/sonner";
-import QueryProvider from "@/components/providers/QueryProvider";
-import { ThemeProvider } from "@/components/providers/ThemeProvider";
-import { Analytics } from "@vercel/analytics/next";
-import { clerkAppearance, clerkLocalization } from "@/lib/clerk-config";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -22,7 +15,8 @@ const geistMono = Geist_Mono({
 const robotoMono = Roboto_Mono({
   variable: "--font-roboto-mono",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["500"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -63,25 +57,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // suppressHydrationWarning on <html> is required by next-themes (class/style injection)
     <html lang="ko" suppressHydrationWarning={true}>
-      <ClerkProvider
-        appearance={clerkAppearance}
-        localization={clerkLocalization}
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} ${robotoMono.variable} antialiased`}
       >
-        <body
-          className={`${geistSans.variable} ${geistMono.variable} ${robotoMono.variable} antialiased`}
-          suppressHydrationWarning={true}
-        >
-          <ThemeProvider>
-            <QueryProvider>
-              <ConditionalHeader />
-              {children}
-              <Toaster />
-            </QueryProvider>
-            <Analytics />
-          </ThemeProvider>
-        </body>
-      </ClerkProvider>
+        {children}
+      </body>
     </html>
   );
 }

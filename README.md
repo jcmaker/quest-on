@@ -20,11 +20,12 @@ Quest-On는 강사와 학생을 연결하는 현대적인 학습 플랫폼입니
 
 ## 기술 스택
 
-- **Frontend**: Next.js 14, React, TypeScript
+- **Frontend**: Next.js 16, React 19, TypeScript
+- **상태 관리**: React Query (@tanstack/react-query)
 - **Styling**: Tailwind CSS, shadcn/ui
 - **Authentication**: Clerk
-- **Database**: Supabase (예정)
-- **AI**: OpenAI API (예정)
+- **Database**: Supabase + Prisma ORM
+- **AI**: OpenAI API (GPT-5.3)
 
 ## 시작하기
 
@@ -58,6 +59,12 @@ pnpm install
 ```env
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_key
 CLERK_SECRET_KEY=your_clerk_secret
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+OPENAI_API_KEY=your_openai_api_key
+ADMIN_USERNAME=your_admin_username
+ADMIN_PASSWORD=your_admin_password
 ```
 
 4. 개발 서버 실행
@@ -85,11 +92,15 @@ quest-on-mvp/
 │   └── onboarding/        # 온보딩 페이지
 ├── components/             # 재사용 가능한 컴포넌트
 │   ├── auth/              # 인증 관련 컴포넌트
-│   └── ui/                # UI 컴포넌트
-├── database/              # 데이터베이스 관련 파일
-│   ├── database-setup.sql # 데이터베이스 초기 설정
-│   ├── *.sql             # 기타 SQL 파일들
-├── lib/                    # 유틸리티 함수
+│   ├── exam/              # 시험 UI 컴포넌트
+│   ├── instructor/        # 강사 UI 컴포넌트
+│   ├── chat/              # 채팅 관련 컴포넌트
+│   ├── layout/            # 레이아웃 컴포넌트
+│   └── ui/                # UI 기본 컴포넌트
+├── hooks/                  # 커스텀 React 훅
+├── lib/                    # 유틸리티 및 비즈니스 로직
+│   └── types/             # 공유 타입 정의
+├── __tests__/              # 유닛 테스트
 └── public/                 # 정적 파일
 ```
 

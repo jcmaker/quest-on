@@ -1,0 +1,24 @@
+flowchart TB
+  classDef actor fill:#eff6ff,stroke:#2563eb,color:#111827;
+  classDef system fill:#0f172a,stroke:#0f172a,color:#ffffff;
+  classDef external fill:#eef2ff,stroke:#6366f1,color:#111827;
+
+  student["학생"]:::actor
+  instructor["강사"]:::actor
+  admin["운영자"]:::actor
+
+  platform["Quest-On<br/>시험 운영, AI 채팅, 자동 채점, 리포트"]:::system
+
+  clerk["Clerk<br/>인증과 역할 메타데이터"]:::external
+  supabase["Supabase<br/>Postgres, Storage, Realtime"]:::external
+  openai["OpenAI<br/>질의응답, 채점, 요약, 임베딩"]:::external
+  vercel["Vercel<br/>Next.js 배포"]:::external
+
+  student -->|"시험 입장, 응시, 리포트"| platform
+  instructor -->|"시험 생성, 시작/종료, 모니터링, 채점"| platform
+  admin -->|"관리자 로그인, 로그/유저 조회"| platform
+
+  platform -->|"인증, 사용자 확인"| clerk
+  platform -->|"데이터 저장, 파일 저장, 실시간 이벤트"| supabase
+  platform -->|"AI 채팅, 자동 채점, 요약, 벡터화"| openai
+  vercel -->|"웹/API 호스팅"| platform

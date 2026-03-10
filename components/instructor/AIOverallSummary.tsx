@@ -3,14 +3,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sparkles, Minus, Quote, Plus } from "lucide-react";
 import { LoadingMessage } from "@/components/ui/loading-message";
+import type { SummaryData } from "@/lib/types/grading";
 
-export interface SummaryData {
-  sentiment: "positive" | "negative" | "neutral";
-  summary: string;
-  strengths: string[];
-  weaknesses: string[];
-  keyQuotes?: string[];
-}
+export type { SummaryData } from "@/lib/types/grading";
 
 interface AIOverallSummaryProps {
   summary: SummaryData | null;
@@ -146,4 +141,3 @@ export function AIOverallSummary({
     </Card>
   );
 }
-

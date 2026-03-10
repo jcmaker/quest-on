@@ -1,0 +1,200 @@
+import { execSync } from "child_process";
+import { ChildProcess, spawn } from "child_process";
+import net from "net";
+import path from "path";
+import dotenv from "dotenv";
+import {
+  createTestSupabaseClient,
+  waitForTestSupabaseReady,
+} from "./helpers/supabase-test-client";
+
+// Load test env vars
+dotenv.config({ path: path.resolve(__dirname, "../.env.test") });
+
+let mockServer: ChildProcess | null = null;
+
+const MOCK_SERVER_PORT = 4010;
+
+/** Check if a port is already in use */
+function isPortInUse(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.once("error", () => resolve(true));
+    server.once("listening", () => {
+      server.close();
+      resolve(false);
+    });
+    server.listen(port);
+  });
+}
+
+/** Kill any process listening on the given port */
+function killProcessOnPort(port: number): void {
+  try {
+    const pid = execSync(`lsof -ti :${port}`, { encoding: "utf-8" }).trim();
+    if (pid) {
+      console.log(`[global-setup] Killing existing process on port ${port} (PID: ${pid})`);
+      execSync(`kill -9 ${pid}`, { stdio: "pipe" });
+    }
+  } catch {
+    // No process on port — that's fine
+  }
+}
+
+/**
+ * Apply pending schema migrations to local Supabase.
+ * Uses IF NOT EXISTS so it's safe to run repeatedly.
+ */
+async function applyMigrations() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    console.warn("[global-setup] Missing Supabase env vars, skipping migrations");
+    return;
+  }
+
+  console.log("[global-setup] Applying schema migrations...");
+  await waitForTestSupabaseReady();
+  const supabase = createTestSupabaseClient();
+
+  // Migration: add chat_weight column if missing (sql/005_add_chat_weight.sql)
+  try {
+    const { error } = await supabase
+      .from("exams")
+      .select("chat_weight")
+      .limit(0);
+
+    if (error && error.message.includes("does not exist")) {
+      console.log("[global-setup] Adding chat_weight column to exams table...");
+      execSync(
+        `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres -c "ALTER TABLE exams ADD COLUMN IF NOT EXISTS chat_weight INT DEFAULT 50;"`,
+        { stdio: "pipe" }
+      );
+      console.log("[global-setup] chat_weight column added.");
+    }
+  } catch (err) {
+    console.warn("[global-setup] chat_weight migration failed:", err);
+  }
+
+  // Migration: add updated_at column to grades table if missing
+  try {
+    const { error: gradeColErr } = await supabase
+      .from("grades")
+      .select("updated_at")
+      .limit(0);
+
+    if (gradeColErr && gradeColErr.message.includes("does not exist")) {
+      console.log("[global-setup] Adding updated_at column to grades table...");
+      execSync(
+        `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres -c "ALTER TABLE grades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;"`,
+        { stdio: "pipe" }
+      );
+      console.log("[global-setup] grades.updated_at column added.");
+    }
+  } catch (err) {
+    console.warn("[global-setup] grades.updated_at migration failed:", err);
+  }
+
+  // Migration: ensure submit_exam_atomic RPC exists (sql/006_submit_exam_atomic.sql)
+  try {
+    const { error: rpcCheckErr } = await supabase.rpc("submit_exam_atomic", {
+      p_session_id: "00000000-0000-0000-0000-000000000000",
+      p_student_id: "__check__",
+      p_exam_id: "00000000-0000-0000-0000-000000000000",
+      p_submitted_at: new Date().toISOString(),
+      p_compressed_data: "",
+      p_compression_metadata: {},
+      p_submissions: [],
+    });
+
+    // If error is "function does not exist", apply the migration
+    if (rpcCheckErr && rpcCheckErr.message.includes("does not exist")) {
+      console.log("[global-setup] Applying submit_exam_atomic RPC...");
+      execSync(
+        `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres < ${path.resolve(__dirname, "../sql/006_submit_exam_atomic.sql")}`,
+        { stdio: "pipe" }
+      );
+      console.log("[global-setup] submit_exam_atomic RPC applied.");
+    }
+    // If error is something else (like FK violation), the function exists — that's fine
+  } catch (err) {
+    console.warn("[global-setup] submit_exam_atomic migration check failed:", err);
+  }
+
+  // Ensure exam-materials storage bucket exists (for upload tests)
+  try {
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const bucketExists = buckets?.some((b) => b.name === "exam-materials");
+
+    if (!bucketExists) {
+      console.log("[global-setup] Creating exam-materials storage bucket...");
+      const { error } = await supabase.storage.createBucket("exam-materials", {
+        public: true,
+        fileSizeLimit: 26 * 1024 * 1024, // 26MB
+      });
+      if (error) {
+        console.warn("[global-setup] Failed to create bucket:", error.message);
+      } else {
+        console.log("[global-setup] exam-materials bucket created.");
+      }
+    }
+  } catch (err) {
+    console.warn("[global-setup] Bucket setup failed:", err);
+  }
+
+  console.log("[global-setup] Migrations complete.");
+}
+
+async function globalSetup() {
+  // Apply DB migrations first
+  await applyMigrations();
+
+  console.log("\n[global-setup] Starting mock server...");
+
+  // Kill any existing process on the mock server port
+  if (await isPortInUse(MOCK_SERVER_PORT)) {
+    console.log(`[global-setup] Port ${MOCK_SERVER_PORT} is in use, killing existing process...`);
+    killProcessOnPort(MOCK_SERVER_PORT);
+    // Brief wait for port to free up
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  // Start the OpenAI mock server
+  mockServer = spawn("npx", ["tsx", "scripts/start-mock-server.ts"], {
+    cwd: path.resolve(__dirname, ".."),
+    stdio: "pipe",
+    env: { ...process.env, NODE_ENV: "test" },
+  });
+
+  // Wait for mock server to be ready
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error("Mock server failed to start within 10s"));
+    }, 10_000);
+
+    mockServer!.stdout?.on("data", (data: Buffer) => {
+      const msg = data.toString();
+      if (msg.includes("Mock server listening")) {
+        clearTimeout(timeout);
+        resolve();
+      }
+    });
+
+    mockServer!.stderr?.on("data", (data: Buffer) => {
+      console.error(`[mock-server stderr] ${data.toString()}`);
+    });
+
+    mockServer!.on("error", (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
+  });
+
+  console.log("[global-setup] Mock server ready.");
+
+  // Store PID for teardown
+  process.env.__MOCK_SERVER_PID = String(mockServer.pid);
+}
+
+export default globalSetup;

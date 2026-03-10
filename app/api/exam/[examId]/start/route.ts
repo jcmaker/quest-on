@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { currentUser } from "@clerk/nextjs/server";
-import { createClient } from "@supabase/supabase-js";
+import { currentUser } from "@/lib/get-current-user";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { successJson, errorJson } from "@/lib/api-response";
+import { validateUUID } from "@/lib/validate-params";
+import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Missing Supabase environment variables");
+// P1-4: Supabase client created inside handler to avoid stale connections in serverless
+function getSupabase() {
+  return getSupabaseServer();
 }
-
-const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
  * POST /api/exam/[examId]/start
@@ -27,19 +27,26 @@ export async function POST(
   try {
     const user = await currentUser();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json(
-        { error: "Instructor access required" },
-        { status: 403 },
-      );
+      return errorJson("FORBIDDEN", "Instructor access required", 403);
+    }
+
+    const supabase = getSupabase();
+
+    const rl = await checkRateLimitAsync(`exam-start:${user.id}`, RATE_LIMITS.examControl);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests", 429);
     }
 
     const resolvedParams = await params;
     const examId = resolvedParams.examId;
+
+    const invalidId = validateUUID(examId, "examId");
+    if (invalidId) return invalidId;
 
     // 요청 본문에서 close_at 가져오기
     const body = await request.json().catch(() => ({}));
@@ -48,44 +55,38 @@ export async function POST(
     // 1. 시험 정보 확인 및 권한 검증
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, instructor_id, status, started_at")
+      .select("id, instructor_id, status, started_at, updated_at, close_at")
       .eq("id", examId)
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Access denied", 403);
     }
 
-    // 2. 상태 검증: Running이 아닌 모든 상태에서 Start 가능 (기본적으로 항상 시작 가능)
-    // Closed 상태는 제외 (이미 종료된 시험)
-    const invalidStatuses = ["running", "closed"];
-    if (invalidStatuses.includes(exam.status || "")) {
-      return NextResponse.json(
-        {
-          error: "Exam cannot be started",
-          currentStatus: exam.status,
-          message:
-            exam.status === "running"
-              ? "Exam is already running"
-              : "Exam is already closed",
-        },
-        { status: 400 },
+    // 2. 상태 검증: 화이트리스트 기반 — draft 또는 scheduled 상태에서만 Start 가능 (P1-6)
+    const allowedStatuses = ["draft", "scheduled", "joinable"];
+    if (!allowedStatuses.includes(exam.status || "")) {
+      return errorJson(
+        "BAD_REQUEST",
+        exam.status === "running"
+          ? "Exam is already running"
+          : exam.status === "closed"
+            ? "Exam is already closed"
+            : `Exam cannot be started from '${exam.status}' status`,
+        400,
+        { currentStatus: exam.status }
       );
     }
 
     // 3. 이미 시작된 경우 체크
     if (exam.started_at) {
-      return NextResponse.json(
-        {
-          error: "Exam already started",
-          startedAt: exam.started_at,
-        },
-        { status: 400 },
-      );
+      return errorJson("BAD_REQUEST", "Exam already started", 400, {
+        startedAt: exam.started_at,
+      });
     }
 
     const now = new Date().toISOString();
@@ -104,78 +105,118 @@ export async function POST(
 
     // close_at이 제공된 경우에만 업데이트
     if (closeAt) {
-      // datetime-local 형식을 ISO 형식으로 변환
-      const closeAtISO = new Date(closeAt).toISOString();
-      updateData.close_at = closeAtISO;
+      const closeAtDate = new Date(closeAt);
+      if (isNaN(closeAtDate.getTime())) {
+        return errorJson("BAD_REQUEST", "Invalid close_at date format", 400);
+      }
+      // close_at must be in the future
+      if (closeAtDate.getTime() <= Date.now()) {
+        return errorJson(
+          "BAD_REQUEST",
+          "close_at must be a future date",
+          400
+        );
+      }
+      updateData.close_at = closeAtDate.toISOString();
     }
 
-    const { error: updateExamError } = await supabase
-      .from("exams")
-      .update(updateData)
-      .eq("id", examId);
+    // 4-5. 시험 상태 + 세션 전환을 원자적으로 처리
+    // Try RPC-based atomic transaction first, fall back to sequential queries
+    let updatedSessionsCount = 0;
 
-    if (updateExamError) {
-      console.error("[START_EXAM] Failed to update exam:", updateExamError);
-      return NextResponse.json(
-        { error: "Failed to start exam" },
-        { status: 500 },
-      );
-    }
+    try {
+      const { data: rpcResult, error: rpcError } = await supabase.rpc("start_exam_atomic", {
+        p_exam_id: examId,
+        p_expected_status: exam.status || "draft",
+        p_started_at: now,
+        p_close_at: closeAt ? new Date(closeAt).toISOString() : null,
+      });
 
-    // 5. 모든 Waiting 세션을 InProgress로 전환
-    // Gate Start 신호를 받은 모든 세션의 상태를 업데이트
-    const { data: waitingSessions, error: sessionsError } = await supabase
-      .from("sessions")
-      .select("id")
-      .eq("exam_id", examId)
-      .eq("status", "waiting");
+      if (!rpcError && rpcResult !== null) {
+        updatedSessionsCount = typeof rpcResult === "number" ? rpcResult : 0;
+      } else {
+        throw new Error(rpcError?.message || "RPC not available");
+      }
+    } catch {
+      // Fallback: sequential queries with optimistic locking + manual rollback
+      const { data: updatedExam, error: updateExamError } = await supabase
+        .from("exams")
+        .update(updateData)
+        .eq("id", examId)
+        .eq("status", exam.status) // 낙관적 잠금: 상태가 변하지 않았을 때만 업데이트
+        .select("id")
+        .single();
 
-    if (sessionsError) {
-      console.error(
-        "[START_EXAM] Failed to fetch waiting sessions:",
-        sessionsError,
-      );
-      // 시험은 이미 시작되었으므로, 세션 업데이트 실패해도 계속 진행
-    } else if (waitingSessions && waitingSessions.length > 0) {
-      const sessionIds = waitingSessions.map((s) => s.id);
+      if (updateExamError || !updatedExam) {
+        return errorJson(
+          "CONFLICT",
+          "Exam state changed concurrently, please retry",
+          409
+        );
+      }
 
       // 모든 Waiting 세션을 InProgress로 전환
-      const { error: updateSessionsError } = await supabase
+      const { data: updatedSessions, error: sessionsError } = await supabase
         .from("sessions")
         .update({
           status: "in_progress",
-          started_at: now, // Gate Start 신호 수신 시간
-          attempt_timer_started_at: now, // 개별 타이머 시작 시간
-          updated_at: now,
+          started_at: now,
+          attempt_timer_started_at: now,
         })
-        .in("id", sessionIds);
+        .eq("exam_id", examId)
+        .eq("status", "waiting")
+        .select("id");
 
-      if (updateSessionsError) {
-        console.error(
-          "[START_EXAM] Failed to update sessions:",
-          updateSessionsError,
-        );
-        // 시험은 이미 시작되었으므로, 세션 업데이트 실패해도 계속 진행
-      } else {
-        console.error(
-          "[START_EXAM] Failed to update sessions:",
-          updateSessionsError,
-        );
+      if (sessionsError) {
+        // 세션 전환 실패 시 시험 상태를 원본 필드 값으로 정확히 롤백
+        const { error: rollbackError } = await supabase
+          .from("exams")
+          .update({
+            started_at: exam.started_at,
+            status: exam.status || "draft",
+            updated_at: exam.updated_at,
+            close_at: exam.close_at,
+          })
+          .eq("id", examId);
+
+        if (rollbackError) {
+          // P1-5: Rollback also failed — exam is in inconsistent state
+          logError("CRITICAL: Failed to rollback exam state after session update failure", rollbackError, {
+            path: "/api/exam/start",
+            additionalData: {
+              examId,
+              originalStatus: exam.status,
+              originalStartedAt: exam.started_at,
+              originalCloseAt: exam.close_at,
+            },
+          });
+          return errorJson(
+            "INCONSISTENT_STATE",
+            "시험 상태가 불일치합니다. 시험 상태를 확인하고 필요 시 관리자에게 문의하세요.",
+            500,
+            {
+              examId,
+              examStatus: "running",
+              sessionsUpdated: false,
+              requiresManualCheck: true,
+            }
+          );
+        }
+
+        return errorJson("INTERNAL_ERROR", "Failed to update sessions, exam state rolled back", 500);
       }
+
+      updatedSessionsCount = updatedSessions?.length || 0;
     }
 
-    return NextResponse.json({
-      success: true,
+    return successJson({
       examId,
       startedAt: now,
       status: "running",
-      sessionsUpdated: waitingSessions?.length || 0,
+      sessionsUpdated: updatedSessionsCount,
     });
   } catch (error) {
-    console.error("[START_EXAM] ❌ Error:", error);
-    return NextResponse.json(
-      { error: "Failed to start exam" },
-      { status: 500 },
-    );
+    logError("Failed to start exam", error, { path: "/api/exam/start" });
+    return errorJson("INTERNAL_ERROR", "Failed to start exam", 500);
   }
 }

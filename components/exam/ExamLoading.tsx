@@ -75,6 +75,8 @@ interface SubmissionOverlayProps {
 
 export function SubmissionOverlay({ isSubmitting }: SubmissionOverlayProps) {
   const [messageIndex, setMessageIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [isTimeout, setIsTimeout] = useState(false);
 
   const messages = [
     "답안을 안전하게 저장하고 있습니다...",
@@ -86,14 +88,33 @@ export function SubmissionOverlay({ isSubmitting }: SubmissionOverlayProps) {
   useEffect(() => {
     if (!isSubmitting) {
       setMessageIndex(0);
+      setProgress(0);
+      setIsTimeout(false);
       return;
     }
 
-    const interval = setInterval(() => {
+    const messageInterval = setInterval(() => {
       setMessageIndex((prev) => (prev + 1) % messages.length);
     }, 4000);
 
-    return () => clearInterval(interval);
+    // Simulated progress bar (eases out before 90%)
+    const progressInterval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + (90 - prev) * 0.05;
+      });
+    }, 500);
+
+    // Timeout after 60s
+    const timeout = setTimeout(() => {
+      setIsTimeout(true);
+    }, 60000);
+
+    return () => {
+      clearInterval(messageInterval);
+      clearInterval(progressInterval);
+      clearTimeout(timeout);
+    };
   }, [isSubmitting, messages.length]);
 
   if (!isSubmitting) return null;
@@ -104,12 +125,21 @@ export function SubmissionOverlay({ isSubmitting }: SubmissionOverlayProps) {
         <div className="relative">
           <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
         </div>
-        
-        <div className="space-y-2">
+
+        <div className="space-y-3 w-full">
           <h3 className="text-xl font-bold">답안 제출 중</h3>
           <p className="text-muted-foreground animate-pulse min-h-[24px]">
-            {messages[messageIndex]}
+            {isTimeout
+              ? "제출이 지연되고 있습니다. 잠시만 더 기다려주세요..."
+              : messages[messageIndex]}
           </p>
+          {/* Progress bar */}
+          <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+            <div
+              className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${Math.round(progress)}%` }}
+            />
+          </div>
         </div>
 
         <div className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-800 dark:text-yellow-200 px-4 py-3 rounded-md text-sm flex items-center gap-2">

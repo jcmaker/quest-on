@@ -1,355 +1,425 @@
-import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
-import { createClient } from "@supabase/supabase-js";
+export const maxDuration = 300;
+
+import { NextRequest } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { currentUser } from "@/lib/get-current-user";
 import { compressData } from "@/lib/compression";
-import { openai, AI_MODEL } from "@/lib/openai";
+import { enqueueGrading } from "@/lib/openai";
 import { autoGradeSession } from "@/lib/grading";
-import { buildFeedbackSystemPrompt, type RubricItem } from "@/lib/prompts";
+import { successJson, errorJson } from "@/lib/api-response";
+import { auditLog } from "@/lib/audit";
+import { logError } from "@/lib/logger";
 
-// Helper function to sanitize text for JSON storage
-function sanitizeText(text: string): string {
-  if (!text) return "";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-  try {
-    // First try to JSON.stringify to check if it's valid
-    JSON.stringify(text);
-    return text.trim();
-  } catch (error) {
-    console.warn("Text contains invalid JSON characters, sanitizing:", error);
-
-    // More conservative approach: only remove problematic lone surrogates
-    return text
-      .replace(/[\uD800-\uDFFF]/g, (match, offset, string) => {
-        // Check if it's a proper surrogate pair
-        const charCode = match.charCodeAt(0);
-        if (charCode >= 0xd800 && charCode <= 0xdbff) {
-          // High surrogate - check if followed by low surrogate
-          const nextChar = string[offset + 1];
-          if (
-            nextChar &&
-            nextChar.charCodeAt(0) >= 0xdc00 &&
-            nextChar.charCodeAt(0) <= 0xdfff
-          ) {
-            return match; // Keep valid surrogate pair
-          }
-        }
-        return ""; // Remove lone surrogate
-      })
-      .replace(/\u0000/g, "") // Remove null characters
-      .trim();
-  }
+// Lazy Supabase getter — avoids stale module-level singleton in serverless
+function getSupabase() {
+  return getSupabaseServer();
 }
-
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
 
 export async function POST(request: NextRequest) {
   try {
-    const { examCode, answers, examId, sessionId, chatHistory, studentId } =
+    // Authentication check
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const {
+      examCode,
+      answers,
+      examId: requestedExamId,
+      sessionId,
+      studentId,
+    } =
       await request.json();
 
     if (!examCode || !answers || !Array.isArray(answers)) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 },
-      );
+      return errorJson("BAD_REQUEST", "Missing required fields", 400);
+    }
+
+    if (studentId && studentId !== user.id) {
+      return errorJson("FORBIDDEN", "Student ID mismatch", 403);
+    }
+
+    const verifiedStudentId = user.id;
+
+    // Rate limit: submission triggers expensive auto-grading
+    const rl = await checkRateLimitAsync(`submission:${user.id}`, RATE_LIMITS.submission);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many submissions. Please wait.", 429);
+    }
+
+    // Validate answer count and individual answer length
+    const MAX_ANSWERS = 50;
+    const MAX_ANSWER_LENGTH = 100_000;
+    if (answers.length > MAX_ANSWERS) {
+      return errorJson("BAD_REQUEST", "Too many answers", 400);
+    }
+    for (const a of answers) {
+      const text = typeof a === "string" ? a : (a as Record<string, unknown>)?.text || "";
+      if (typeof text === "string" && text.length > MAX_ANSWER_LENGTH) {
+        return errorJson("BAD_REQUEST", "Answer too long", 400);
+      }
     }
 
     // Validate exam submission from Supabase
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = await getSupabase()
       .from("exams")
-      .select("*")
+      .select("id, code, status, duration")
       .eq("code", examCode)
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json({ error: "Exam not found" }, { status: 404 });
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
-    // Check if exam allows submission (draft, active, or running after instructor started)
-    const allowedStatuses = ["active", "draft", "running"];
-    if (!exam.status || !allowedStatuses.includes(exam.status)) {
-      return NextResponse.json(
-        { error: "Exam is no longer active" },
-        { status: 400 },
-      );
+    if (requestedExamId && requestedExamId !== exam.id) {
+      return errorJson("BAD_REQUEST", "Exam ID mismatch", 400);
+    }
+
+    // Allow submission for draft exams (assignment type) and running exams
+    // Note: exam status 체크를 session submitted_at 체크 이후로 지연하여
+    // 강제 종료 후 레이스 컨디션에서 409(성공 처리)가 먼저 반환되도록 함
+    const allowedStatuses = ["draft", "running"];
+    const examClosed = !exam.status || !allowedStatuses.includes(exam.status);
+
+    let ownedSession:
+      | {
+          id: string;
+          student_id: string;
+          exam_id: string;
+          submitted_at: string | null;
+          created_at: string;
+          attempt_timer_started_at: string | null;
+          started_at: string | null;
+        }
+      | null = null;
+
+    if (sessionId) {
+      const { data: existingSession, error: sessionError } = await getSupabase()
+        .from("sessions")
+        .select(
+          "id, student_id, exam_id, submitted_at, created_at, attempt_timer_started_at, started_at"
+        )
+        .eq("id", sessionId)
+        .single();
+
+      if (sessionError || !existingSession) {
+        return errorJson("NOT_FOUND", "Session not found", 404);
+      }
+
+      if (existingSession.student_id !== verifiedStudentId) {
+        return errorJson("FORBIDDEN", "Session access denied", 403);
+      }
+
+      if (existingSession.exam_id !== exam.id) {
+        return errorJson("BAD_REQUEST", "Session does not belong to this exam", 400);
+      }
+
+      if (existingSession.submitted_at) {
+        return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
+      }
+
+      ownedSession = existingSession;
+    }
+
+    // 시험이 종료된 경우 (session submitted_at 체크 이후에 수행하여 force-submit된 세션은 409로 즉시 반환)
+    if (examClosed) {
+      return errorJson("EXAM_CLOSED", "Exam is no longer active", 400);
     }
 
     // ✅ duration이 0이 아닐 때만 시간 만료 체크
     // duration === 0은 무제한(과제형)이므로 시간 체크를 건너뜀
-    if (exam.duration !== 0 && sessionId) {
-      const { data: session, error: sessionError } = await supabase
-        .from("sessions")
-        .select("created_at")
-        .eq("id", sessionId)
-        .single();
+    if (exam.duration !== 0 && ownedSession) {
+      // Use attempt_timer_started_at (set when exam actually starts) > started_at > created_at
+      const timerStart =
+        ownedSession.attempt_timer_started_at ||
+        ownedSession.started_at ||
+        ownedSession.created_at;
+      const sessionStartTime = new Date(timerStart).getTime();
+      const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
+      const gracePeriodMs = 30 * 1000; // 30초 grace period for network latency
+      const sessionEndTime = sessionStartTime + examDurationMs + gracePeriodMs;
+      const now = Date.now();
 
-      if (!sessionError && session) {
-        const sessionStartTime = new Date(session.created_at).getTime();
-        const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
-        const sessionEndTime = sessionStartTime + examDurationMs;
-        const now = Date.now();
-
-        // 시간이 지났으면 에러 반환 (단, duration이 0이 아닐 때만)
-        if (now > sessionEndTime) {
-          return NextResponse.json(
-            { error: "시험 시간이 종료되었습니다." },
-            { status: 400 },
-          );
-        }
+      // 시간이 지났으면 에러 반환 (단, duration이 0이 아닐 때만)
+      if (now > sessionEndTime) {
+        return errorJson("BAD_REQUEST", "시험 시간이 종료되었습니다.", 400);
       }
     }
 
-    // Prepare the feedback prompt
-    const answersText = answers
-      .map(
-        (answer: { text?: string }, index: number) =>
-          `문제 ${index + 1}: ${answer.text || "답안이 작성되지 않았습니다"}`,
-      )
-      .join("\n\n");
+    let actualSessionId = ownedSession?.id || null;
 
-    const systemPrompt = buildFeedbackSystemPrompt({
-      rubric: exam?.rubric as RubricItem[] | undefined,
-      examTitle: exam?.title,
-    });
+    try {
+      if (!actualSessionId) {
+        const { data: activeSession, error: activeSessionError } = await getSupabase()
+          .from("sessions")
+          .select("id")
+          .eq("exam_id", exam.id)
+          .eq("student_id", verifiedStudentId)
+          .is("submitted_at", null)
+          .maybeSingle();
 
-    const userPrompt = `다음 답안에 대해 심사위원 스타일의 피드백을 제공해주세요:
+        if (activeSessionError) {
+          throw activeSessionError;
+        }
 
-${answersText}
-
-심사위원처럼 2-3개의 핵심 질문을 제기하고, 학생의 답변을 유도하는 Q&A 형식으로 피드백해주세요.`;
-
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      max_completion_tokens: 1000,
-    });
-
-    const feedback =
-      completion.choices[0]?.message?.content ||
-      "Unable to generate feedback at this time.";
-
-    // Store submission data in database
-    if (studentId) {
-      try {
-        let actualSessionId = sessionId;
-
-        // If sessionId is provided, verify it exists and belongs to this student
-        if (sessionId) {
-          const { data: existingSession, error: sessionError } = await supabase
-            .from("sessions")
-            .select("id, student_id, exam_id")
-            .eq("id", sessionId)
-            .single();
-
-          if (sessionError || !existingSession) {
-            console.error("Session not found:", sessionError);
-            throw new Error("Invalid session ID");
-          }
-
-          if (
-            existingSession.student_id !== studentId ||
-            existingSession.exam_id !== examId
-          ) {
-            console.error("Session ownership mismatch");
-            throw new Error("Session does not belong to this student/exam");
-          }
-
-          actualSessionId = existingSession.id;
+        if (activeSession) {
+          actualSessionId = activeSession.id;
         } else {
-          // Fallback: Create or get session for this exam (legacy behavior)
-          const { data: session, error: sessionError } = await supabase
-            .from("sessions")
-            .select("id")
-            .eq("exam_id", examId)
-            .eq("student_id", studentId)
-            .single();
-
-          if (sessionError || !session) {
-            // Create new session
-            const { data: newSession, error: createError } = await supabase
+          const { data: submittedSession, error: submittedSessionError } =
+            await getSupabase()
               .from("sessions")
-              .insert([
-                {
-                  exam_id: examId,
-                  student_id: studentId,
-                  submitted_at: new Date().toISOString(),
-                },
-              ])
-              .select()
-              .single();
+              .select("id")
+              .eq("exam_id", exam.id)
+              .eq("student_id", verifiedStudentId)
+              .not("submitted_at", "is", null)
+              .maybeSingle();
 
-            if (createError) throw createError;
+          if (submittedSessionError) {
+            throw submittedSessionError;
+          }
+
+          if (submittedSession) {
+            return errorJson(
+              "ALREADY_SUBMITTED",
+              "This exam has already been submitted",
+              409
+            );
+          }
+
+          // Race-safe: upsert with ignoreDuplicates prevents duplicate sessions
+          const { data: newSession, error: createError } = await getSupabase()
+            .from("sessions")
+            .upsert(
+              {
+                exam_id: exam.id,
+                student_id: verifiedStudentId,
+              },
+              { onConflict: "exam_id,student_id", ignoreDuplicates: true }
+            )
+            .select()
+            .maybeSingle();
+
+          if (createError) {
+            throw createError;
+          }
+
+          if (newSession) {
             actualSessionId = newSession.id;
           } else {
-            actualSessionId = session.id;
+            // ignoreDuplicates skipped — fetch existing
+            const { data: existing, error: fetchError } = await getSupabase()
+              .from("sessions")
+              .select("id")
+              .eq("exam_id", exam.id)
+              .eq("student_id", verifiedStudentId)
+              .single();
+            if (fetchError) throw fetchError;
+            actualSessionId = existing.id;
           }
         }
+      }
 
-        // Compress session data
-        const sessionData = {
-          chatHistory: chatHistory || [],
-          answers: answers,
-          feedback: feedback,
-          feedbackResponses: [],
-        };
+      if (!actualSessionId) {
+        throw new Error("Failed to resolve submission session");
+      }
 
-        const compressedSessionData = compressData(sessionData);
-
-        // Update session with compressed data and deactivate
-        await supabase
+      // Cold-start path: if ownedSession was null (no sessionId provided),
+      // perform time check on the resolved session to prevent post-deadline submission
+      if (!ownedSession && exam.duration !== 0) {
+        const { data: resolvedSession } = await getSupabase()
           .from("sessions")
-          .update({
-            compressed_session_data: compressedSessionData.data,
-            compression_metadata: compressedSessionData.metadata,
-            submitted_at: new Date().toISOString(),
-            is_active: false, // Deactivate session on submission
-          })
-          .eq("id", actualSessionId);
-
-        // Store individual submissions
-        const submissionInserts = answers.map(
-          (answer: { text?: string } | string, index: number) => {
-            const rawAnswerText =
-              typeof answer === "string" ? answer : answer.text || "";
-
-            // Sanitize the answer text to prevent JSON encoding issues
-            const answerText = sanitizeText(rawAnswerText);
-            const sanitizedFeedback = sanitizeText(feedback);
-
-            const submissionData = {
-              answer: answerText,
-              feedback: sanitizedFeedback,
-              studentReply: null,
-            };
-
-            let compressedSubmissionData;
-            let compressionMetadata;
-
-            try {
-              const compressed = compressData(submissionData);
-              compressedSubmissionData = compressed.data;
-              compressionMetadata = compressed.metadata;
-
-              // Validate that compressed data is safe for JSON storage
-              JSON.stringify({ compressed_data: compressedSubmissionData });
-            } catch (compressionError) {
-              console.warn(
-                `Compression failed for answer ${index + 1}:`,
-                compressionError,
-              );
-              // Fallback: store without compression
-              compressedSubmissionData = null;
-              compressionMetadata = {
-                algorithm: "none",
-                version: "1.0.0",
-                originalSize: JSON.stringify(submissionData).length,
-                compressedSize: JSON.stringify(submissionData).length,
-                compressionRatio: 1.0,
-                timestamp: new Date().toISOString(),
-              };
-            }
-
-            return {
-              session_id: actualSessionId,
-              q_idx: index,
-              answer: answerText,
-              ai_feedback: sanitizedFeedback
-                ? { feedback: sanitizedFeedback }
-                : null,
-              student_reply: null,
-              compressed_answer_data: compressedSubmissionData,
-              compression_metadata: compressionMetadata,
-            };
-          },
-        );
-
-        const { data: insertedSubmissions, error: submissionsError } =
-          await supabase.from("submissions").insert(submissionInserts).select();
-
-        if (submissionsError) {
-          console.error("Submissions insert error:", submissionsError);
-          console.error(
-            "Failed submission data:",
-            JSON.stringify(submissionInserts, null, 2),
-          );
-          throw new Error(
-            `Database insert failed: ${submissionsError.message} (Code: ${submissionsError.code})`,
-          );
-        }
-
-        // Update exam student count
-        const { data: currentExam } = await supabase
-          .from("exams")
-          .select("student_count")
-          .eq("id", examId)
+          .select("attempt_timer_started_at, started_at, created_at")
+          .eq("id", actualSessionId)
           .single();
-
-        await supabase
-          .from("exams")
-          .update({
-            student_count: (currentExam?.student_count || 0) + 1,
-          })
-          .eq("id", examId);
-
-        // 백그라운드에서 자동 채점 시작 (비동기로 실행, 응답은 기다리지 않음)
-        if (actualSessionId) {
-          autoGradeSession(actualSessionId)
-            .then((result) => {})
-            .catch((error) => {
-              console.error(
-                `❌ [AUTO_GRADE] Background grading failed for session ${actualSessionId}:`,
-                {
-                  error: error instanceof Error ? error.message : String(error),
-                  stack: error instanceof Error ? error.stack : undefined,
-                },
-              );
-              // 채점 실패해도 제출은 완료된 것으로 처리
-              // TODO: 실패한 채점을 재시도할 수 있는 메커니즘 추가 고려
-            });
-        } else {
-          console.warn(
-            `⚠️ [AUTO_GRADE] Cannot start auto-grading: actualSessionId is missing`,
-          );
+        if (resolvedSession) {
+          const timerStart = resolvedSession.attempt_timer_started_at
+            || resolvedSession.started_at || resolvedSession.created_at;
+          const sessionStartTime = new Date(timerStart).getTime();
+          const examDurationMs = exam.duration * 60 * 1000;
+          const gracePeriodMs = 30 * 1000;
+          if (Date.now() > sessionStartTime + examDurationMs + gracePeriodMs) {
+            return errorJson("BAD_REQUEST", "시험 시간이 종료되었습니다.", 400);
+          }
         }
-      } catch (error) {
-        console.error("Error storing submission:", error);
-        return NextResponse.json(
-          {
-            error: "Failed to store submission in database",
-            details: error instanceof Error ? error.message : "Unknown error",
-          },
-          { status: 500 },
+      }
+
+      const finalSessionId = actualSessionId;
+
+      const submittedAt = new Date().toISOString();
+
+      // ★ 답안 먼저 저장 (세션 상태 변경 전) — 답안 손실 방지
+      // Store individual submissions BEFORE marking session as submitted
+      const submissionInserts = answers.map(
+        (answer: { text?: string } | string, index: number) => {
+          const rawAnswerText =
+            typeof answer === "string" ? answer : answer.text || "";
+
+          // Preserve rich text HTML — sanitization happens at render time (DOMPurify)
+          const answerText = rawAnswerText;
+
+          const submissionData = {
+            answer: answerText,
+          };
+
+          let compressedSubmissionData;
+          let compressionMetadata;
+
+          try {
+            const compressed = compressData(submissionData);
+            compressedSubmissionData = compressed.data;
+            compressionMetadata = compressed.metadata;
+
+            // Validate that compressed data is safe for JSON storage
+            JSON.stringify({ compressed_data: compressedSubmissionData });
+          } catch {
+            // Fallback: store without compression
+            compressedSubmissionData = null;
+            compressionMetadata = {
+              algorithm: "none",
+              version: "1.0.0",
+              originalSize: JSON.stringify(submissionData).length,
+              compressedSize: JSON.stringify(submissionData).length,
+              compressionRatio: 1.0,
+              timestamp: new Date().toISOString(),
+            };
+          }
+
+          return {
+            session_id: finalSessionId,
+            q_idx: index,
+            answer: answerText,
+            compressed_answer_data: compressedSubmissionData,
+            compression_metadata: compressionMetadata,
+          };
+        }
+      );
+
+      const { error: submissionsError } = await getSupabase()
+        .from("submissions")
+        .upsert(submissionInserts, { onConflict: "session_id,q_idx" })
+        .select();
+
+      if (submissionsError) {
+        throw new Error(
+          `Database insert failed: ${submissionsError.message} (Code: ${submissionsError.code})`
         );
       }
-    }
 
-    return NextResponse.json({
-      feedback,
-      timestamp: new Date().toISOString(),
-      examCode,
-      examId,
-      status: "submitted",
-    });
-  } catch (error) {
-    console.error("Feedback API error:", error);
+      // Server-side chat history: query messages table instead of trusting client data
+      // (same pattern as app/api/exam/[examId]/end/route.ts force-end)
+      const { data: serverMessages } = await getSupabase()
+        .from("messages")
+        .select("q_idx, role, content, created_at")
+        .eq("session_id", finalSessionId)
+        .order("created_at", { ascending: true });
 
-    if (error instanceof OpenAI.APIError) {
-      return NextResponse.json(
-        { error: "OpenAI API error", details: error.message },
-        { status: 500 },
+      const sessionData = {
+        chatHistory: (serverMessages || []).map((m) => ({
+          type: m.role === "user" ? "student" : "ai",
+          content: m.content,
+          timestamp: m.created_at,
+        })),
+        answers: answers,
+      };
+
+      const compressedSessionData = compressData(sessionData);
+
+      // ★ 세션 상태 변경은 답안 저장 성공 후에만 수행
+      // Guard: only update if not already submitted (prevents duplicate submissions)
+      const { data: updatedSession, error: updateSessionError } = await getSupabase()
+        .from("sessions")
+        .update({
+          compressed_session_data: compressedSessionData.data,
+          compression_metadata: compressedSessionData.metadata,
+          submitted_at: submittedAt,
+          status: "submitted",
+          is_active: false,
+        })
+        .eq("id", finalSessionId)
+        .eq("student_id", verifiedStudentId)
+        .eq("exam_id", exam.id)
+        .is("submitted_at", null)
+        .select("id")
+        .maybeSingle();
+
+      if (!updatedSession && !updateSessionError) {
+        return errorJson("ALREADY_SUBMITTED", "This session has already been submitted", 409);
+      }
+
+      // Atomic student_count increment (race-safe via RPC)
+      const { error: rpcError } = await getSupabase().rpc(
+        "increment_student_count",
+        { p_exam_id: exam.id }
+      );
+      if (rpcError) {
+        logError("Failed to increment student_count via RPC", rpcError, {
+          path: "/api/feedback",
+          additionalData: { examId: exam.id },
+        });
+      }
+
+      // 백그라운드에서 자동 채점 시작 (채점 큐로 동시에 최대 3명만 채점)
+      // 최대 2회 재시도 + exponential backoff (5s, 10s)
+      const MAX_GRADING_RETRIES = 2;
+      const gradeWithRetry = async () => {
+        for (let attempt = 0; attempt <= MAX_GRADING_RETRIES; attempt++) {
+          try {
+            return await autoGradeSession(finalSessionId);
+          } catch (error) {
+            const isLastAttempt = attempt === MAX_GRADING_RETRIES;
+            if (isLastAttempt) throw error;
+            const delay = 5000 * Math.pow(2, attempt); // 5s, 10s
+            logError(`Background grading attempt ${attempt + 1} failed, retrying in ${delay}ms`, error, {
+              additionalData: { sessionId: finalSessionId, attempt },
+            });
+            await new Promise((resolve) => setTimeout(resolve, delay));
+          }
+        }
+      };
+      enqueueGrading(gradeWithRetry)
+        .catch((error) => {
+          logError("Background grading failed after all retries", error, {
+            additionalData: { sessionId: finalSessionId },
+          });
+        });
+    } catch (error) {
+      logError("Failed to store submission in database", error, {
+        path: "/api/feedback",
+      });
+      return errorJson(
+        "INTERNAL_ERROR",
+        "Failed to store submission in database",
+        500
       );
     }
 
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    // Audit log: session submit via feedback
+    if (actualSessionId) {
+      auditLog({
+        action: "session_submit",
+        userId: user.id,
+        targetId: actualSessionId,
+        details: { examId: exam.id, examCode },
+      }).then((ok) => {
+        if (!ok) {
+          logError("[feedback] Audit log failed for session_submit", new Error("auditLog returned false"), {
+            path: "/api/feedback",
+            additionalData: { sessionId: actualSessionId, examId: exam.id },
+          });
+        }
+      });
+    }
+
+    return successJson({
+      timestamp: new Date().toISOString(),
+      examCode,
+      examId: exam.id,
+      status: "submitted",
+    });
+  } catch {
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
   }
 }

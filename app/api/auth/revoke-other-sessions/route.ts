@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { currentUser, auth } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
+import { auth } from "@clerk/nextjs/server";
+import { successJson, errorJson } from "@/lib/api-response";
 
 /**
  * NOTE: Temporarily disabled.
@@ -12,7 +14,7 @@ export async function POST(_request: NextRequest) {
     const authResult = await auth();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Get current session ID from auth result
@@ -20,25 +22,19 @@ export async function POST(_request: NextRequest) {
 
     if (!currentSessionId) {
       // If no current session, just return success (nothing to revoke)
-      return NextResponse.json({
-        success: true,
+      return successJson({
         revokedCount: 0,
         message: "No active session found, nothing to revoke",
       });
     }
 
-    return NextResponse.json({
-      success: true,
+    return successJson({
       revokedCount: 0,
       currentSessionId,
       message:
         "Session revocation is temporarily disabled. No sessions were revoked.",
     });
-  } catch (error) {
-    console.error("[REVOKE_SESSIONS] Error:", error);
-    return NextResponse.json(
-      { error: "Failed to revoke sessions" },
-      { status: 500 }
-    );
+  } catch {
+    return errorJson("INTERNAL_ERROR", "Failed to revoke sessions", 500);
   }
 }

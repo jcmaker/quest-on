@@ -1,14 +1,25 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServer } from "@/lib/supabase-server";
+import { currentUser } from "@/lib/get-current-user";
+import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+const supabase = getSupabaseServer();
 
 export async function POST(request: Request) {
   try {
+    // Authentication check
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    // Rate limit: prevent paste log spam
+    const rl = await checkRateLimitAsync(`paste-log:${user.id}`, RATE_LIMITS.general);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many paste log requests", 429);
+    }
+
     const body = await request.json();
     const {
       length,
@@ -23,39 +34,68 @@ export async function POST(request: Request) {
       sessionId,
     } = body;
 
+    if (!sessionId) {
+      return errorJson("BAD_REQUEST", "sessionId is required", 400);
+    }
+
+    // Verify session ownership
+    const { data: session } = await supabase
+      .from("sessions")
+      .select("id, student_id")
+      .eq("id", sessionId)
+      .single();
+
+    if (!session || session.student_id !== user.id) {
+      return errorJson("FORBIDDEN", "Access denied", 403);
+    }
+
     const suspicious = !isInternal;
     const timestamp = new Date(ts);
 
-    // Insert into database
-    if (sessionId) {
-      const { error: insertError } = await supabase.from("paste_logs").insert({
-        session_id: sessionId,
-        exam_code: examCode,
-        question_id: questionId,
-        length: length,
-        pasted_text: pasted_text || null,
-        paste_start: paste_start ?? null,
-        paste_end: paste_end ?? null,
-        answer_length_before: answer_length_before ?? null,
-        is_internal: isInternal,
-        suspicious: suspicious,
-        timestamp: timestamp.toISOString(),
-      });
+    // Truncate pasted text to prevent storing sensitive data (passwords, etc.)
+    const MAX_PASTE_TEXT_LENGTH = 200;
+    const truncatedText = pasted_text
+      ? pasted_text.length > MAX_PASTE_TEXT_LENGTH
+        ? pasted_text.slice(0, MAX_PASTE_TEXT_LENGTH) + "...[truncated]"
+        : pasted_text
+      : null;
 
-      if (insertError) {
-        console.error("Error inserting paste log:", insertError);
-        // Don't fail the request if logging fails
+    const { error: insertError } = await supabase.from("paste_logs").insert({
+      session_id: sessionId,
+      exam_code: examCode,
+      question_id: questionId,
+      length: length,
+      pasted_text: truncatedText,
+      paste_start: paste_start ?? null,
+      paste_end: paste_end ?? null,
+      answer_length_before: answer_length_before ?? null,
+      is_internal: isInternal,
+      suspicious: suspicious,
+      timestamp: timestamp.toISOString(),
+    });
+
+    if (insertError) {
+      logError("[paste-log] Failed to insert paste log — cheating detection data lost", insertError, {
+        path: "/api/log/paste",
+        additionalData: { sessionId, examCode, questionId },
+      });
+      // Fallback: attempt to record in error_logs so the failure is traceable
+      try {
+        await supabase.from("error_logs").insert({
+          error_type: "paste_log_failure",
+          message: insertError.message,
+          context: { sessionId, examCode, questionId, timestamp: timestamp.toISOString() },
+        });
+      } catch {
+        // Last resort already logged above
       }
-    } else {
-      console.warn("⚠️ No sessionId provided, skipping database insert");
     }
 
-    return NextResponse.json({ success: true });
+    return successJson();
   } catch (error) {
-    console.error("Error logging paste event:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to log event" },
-      { status: 500 },
-    );
+    logError("[paste-log] Unhandled error in paste log handler", error, {
+      path: "/api/log/paste",
+    });
+    return errorJson("INTERNAL_ERROR", "Failed to log event", 500);
   }
 }

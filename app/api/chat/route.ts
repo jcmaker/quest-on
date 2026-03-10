@@ -5,25 +5,25 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
-import { openai, AI_MODEL } from "@/lib/openai";
-import { createClient } from "@supabase/supabase-js";
+import { getOpenAI, AI_MODEL } from "@/lib/openai";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { searchRelevantMaterials } from "@/lib/material-search";
 import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
+import { handleCorsPreFlight } from "@/lib/cors";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { validateRequest, chatRequestSchema } from "@/lib/validations";
+import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
+import { currentUser } from "@/lib/get-current-user";
+import { classifyMessageType, type MessageType } from "@/lib/message-classification";
+import { extractResponseText } from "@/lib/parse-openai-response";
+import {
+  buildAiTextMetadata,
+  callTrackedResponse,
+} from "@/lib/ai-tracking";
 
-// Some environments may send OPTIONS (preflight) or GET accidentally.
-// If we don't handle them, Next can return a non-JSON 405 which breaks clients expecting JSON.
 export async function OPTIONS(request: NextRequest) {
-  const origin = request.headers.get("origin") ?? "*";
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-      "Access-Control-Max-Age": "86400",
-      Vary: "Origin",
-    },
-  });
+  return handleCorsPreFlight(request);
 }
 
 export async function GET() {
@@ -33,13 +33,11 @@ export async function GET() {
   );
 }
 
-// Supabase 서버 전용 클라이언트 (절대 클라이언트에 노출 금지)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!, // 서버 전용 env 사용 (NEXT_PUBLIC은 브라우저에서도 접근 가능하지만 서버에서는 안전하게 사용)
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
-
-type MessageType = "concept" | "calculation" | "strategy" | "other";
+// Lazy Supabase client getter — creates a fresh client per invocation
+// to avoid stale connections in serverless environments
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 type RagResult = {
   relevantMaterialsText: string;
@@ -47,59 +45,6 @@ type RagResult = {
   resultsCount: number;
   method: "vector" | "keyword" | "none";
 };
-
-type ChatRequestBody = {
-  message: string;
-  sessionId: string;
-  questionId?: string;
-  questionIdx?: number | string;
-  examTitle?: string;
-  examCode?: string;
-  examId?: string;
-  studentId?: string;
-  currentQuestionText?: string;
-  currentQuestionAiContext?: string;
-};
-
-// 메시지 타입 분류 함수 (개념/계산/전략/기타)
-async function classifyMessageType(message: string): Promise<MessageType> {
-  try {
-    // 간단한 키워드 기반 분류 (빠른 응답을 위해)
-    const lowerMessage = message.toLowerCase();
-
-    // 계산 관련 키워드
-    if (
-      /\d+|\+|\-|\*|\/|계산|연산|공식|수식|값|결과/.test(lowerMessage) ||
-      /how much|calculate|compute|solve|equation/.test(lowerMessage)
-    ) {
-      return "calculation";
-    }
-
-    // 전략/방법 관련 키워드
-    if (
-      /방법|전략|접근|절차|과정|어떻게|how to|way|method|strategy|approach/.test(
-        lowerMessage,
-      )
-    ) {
-      return "strategy";
-    }
-
-    // 개념 관련 키워드
-    if (
-      /무엇|뭐|의미|정의|개념|이유|왜|what|meaning|definition|concept|why/.test(
-        lowerMessage,
-      )
-    ) {
-      return "concept";
-    }
-
-    // 기본값: 기타
-    return "other";
-  } catch (error) {
-    console.error("Error classifying message type:", error);
-    return "other";
-  }
-}
 
 // 수업 자료 컨텍스트 정제 (노이즈 제거)
 function cleanContext(text: string): string {
@@ -123,8 +68,11 @@ async function getRagContext(params: {
   message: string;
   examId?: string;
   examMaterialsText?: Array<{ url: string; text: string; fileName: string }>;
+  userId?: string;
+  sessionId?: string;
+  qIdx?: number;
 }): Promise<RagResult> {
-  const { message, examId, examMaterialsText } = params;
+  const { message, examId, examMaterialsText, userId, sessionId, qIdx } = params;
   if (!examId) {
     return {
       relevantMaterialsText: "",
@@ -135,13 +83,21 @@ async function getRagContext(params: {
   }
 
   try {
-    const { searchMaterialChunks, formatSearchResultsAsContext } =
-      await import("@/lib/search-chunks");
+    const { searchMaterialChunks, formatSearchResultsAsContext } = await import(
+      "@/lib/search-chunks"
+    );
 
     const searchResults = await searchMaterialChunks(message, {
       examId,
       matchThreshold: 0.2, // 실제 유사도가 0.2~0.4 정도이므로 낮춤
       matchCount: 5,
+      route: "/api/chat",
+      userId,
+      sessionId,
+      qIdx,
+      metadata: {
+        source: "student_chat_rag",
+      },
     });
 
     const topSimilarityRaw = searchResults[0]?.similarity;
@@ -161,7 +117,7 @@ async function getRagContext(params: {
 
     let materials = examMaterialsText;
     if (!materials) {
-      const { data: examData } = await supabase
+      const { data: examData } = await getSupabase()
         .from("exams")
         .select("materials_text")
         .eq("id", examId)
@@ -194,6 +150,7 @@ async function getRagContext(params: {
       method: "keyword",
     };
   } catch (error) {
+    logError("[chat] RAG 검색 실패", error, { path: "/api/chat" });
     return {
       relevantMaterialsText: "",
       topSimilarity: null,
@@ -208,53 +165,82 @@ async function getAIResponse(
   systemPrompt: string,
   userMessage: string,
   previousResponseId: string | null = null,
-): Promise<{ response: string; responseId: string; tokensUsed?: number }> {
+  tracking?: {
+    userId?: string;
+    examId?: string;
+    sessionId?: string;
+    qIdx?: number;
+  }
+): Promise<{
+  response: string;
+  responseId: string;
+  tokensUsed?: number;
+  usage?: {
+    inputTokens: number | null;
+    outputTokens: number | null;
+    totalTokens: number | null;
+    cachedInputTokens: number | null;
+    reasoningTokens: number | null;
+  } | null;
+}> {
   try {
-    // Responses API 사용
-    const response = await openai.responses.create({
-      model: AI_MODEL,
-      instructions: systemPrompt,
-      input: userMessage,
-      previous_response_id: previousResponseId || undefined,
-      store: true, // 응답을 저장하여 나중에 참조 가능하도록
-    });
-
-    // output 배열에서 메시지 타입 찾기
-    let responseText = "";
-    const outputArray = response.output as any;
-    if (outputArray && Array.isArray(outputArray)) {
-      // type이 'message'인 항목 찾기
-      const messageOutput = outputArray.find(
-        (item: any) => item.type === "message" && item.content,
-      );
-
-      if (messageOutput && Array.isArray(messageOutput.content)) {
-        // content 배열에서 텍스트 추출
-        const textParts = messageOutput.content
-          .filter((part: any) => part.type === "output_text" && part.text)
-          .map((part: any) => part.text);
-        responseText = textParts.join("");
+    const tracked = await callTrackedResponse(
+      () =>
+        getOpenAI().responses.create({
+          model: AI_MODEL,
+          instructions: systemPrompt,
+          input: userMessage,
+          previous_response_id: previousResponseId || undefined,
+          store: true,
+        }),
+      {
+        feature: "student_chat",
+        route: "/api/chat",
+        model: AI_MODEL,
+        userId: tracking?.userId,
+        examId: tracking?.examId,
+        sessionId: tracking?.sessionId,
+        qIdx: tracking?.qIdx,
+        metadata: buildAiTextMetadata({
+          inputText: [systemPrompt, userMessage],
+          extra: previousResponseId
+            ? { previous_response_id: previousResponseId }
+            : undefined,
+        }),
+      },
+      {
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText: extractResponseText(
+              ((result as { output?: unknown[] }).output as
+                | Parameters<typeof extractResponseText>[0]
+                | undefined) ?? []
+            ),
+          }),
       }
-    }
+    );
+    const response = tracked.data;
+
+    // output 배열에서 텍스트 추출
+    const responseText = extractResponseText(response.output);
 
     if (!responseText || responseText.trim().length === 0) {
-      console.warn("OpenAI returned empty or null response");
       return {
         response:
           "I'm sorry, I couldn't process your question. Please try rephrasing it.",
         responseId: response.id,
+        usage: tracked.usage,
       };
     }
 
-    // Responses API는 토큰 사용량을 직접 반환하지 않으므로 null 반환
-    // 필요시 response_id로 나중에 조회 가능
     return {
       response: responseText,
       responseId: response.id,
-      tokensUsed: undefined, // Responses API는 usage 정보를 제공하지 않음
+      tokensUsed: tracked.usage?.totalTokens ?? undefined,
+      usage: tracked.usage,
     };
   } catch (openaiError) {
-    console.error("OpenAI Responses API error:", openaiError);
+    logError("OpenAI Responses API error", openaiError, { path: "/api/chat" });
     throw new Error(
       `OpenAI Responses API failed: ${(openaiError as Error).message}`,
     );
@@ -266,7 +252,7 @@ async function fetchPreviousResponseId(params: {
   qIdx: number;
 }): Promise<string | null> {
   const { sessionId, qIdx } = params;
-  const { data, error } = await supabase
+  const { data, error } = await getSupabase()
     .from("messages")
     .select("response_id")
     .eq("session_id", sessionId)
@@ -278,7 +264,7 @@ async function fetchPreviousResponseId(params: {
     .single();
 
   if (error && error.code !== "PGRST116") {
-    console.error("Error fetching previous response_id:", error);
+    logError("Error fetching previous response_id", error, { path: "/api/chat" });
   }
 
   return data?.response_id || null;
@@ -286,34 +272,19 @@ async function fetchPreviousResponseId(params: {
 
 async function incrementUsedClarifications(params: {
   sessionId: string;
-  fallbackValue?: number;
   skip?: boolean;
 }): Promise<void> {
-  const { sessionId, fallbackValue, skip } = params;
+  const { sessionId, skip } = params;
   if (skip) return;
 
-  // 가능하면 RPC로 원자적 증가(경쟁 상태 방지). 없으면 기존 update로 폴백.
-  try {
-    const { error } = await supabase.rpc("increment_used_clarifications", {
-      p_session_id: sessionId,
-      p_amount: 1,
-    });
-    if (!error) return;
-
-    // function 미존재 등은 폴백
-    console.warn("[chat] increment_used_clarifications rpc failed, fallback", {
-      code: (error as any)?.code,
-      message: (error as any)?.message,
-    });
-  } catch (e) {
-    console.warn("[chat] increment_used_clarifications rpc threw, fallback", e);
+  // Atomic increment via RPC (prevents race conditions with concurrent requests)
+  const { error } = await getSupabase().rpc("increment_used_clarifications", {
+    p_session_id: sessionId,
+    p_amount: 1,
+  });
+  if (error) {
+    throw new Error(`Failed to increment used_clarifications: ${error.message}`);
   }
-
-  // 폴백: 현재 값 기반 단일 update (동시성 완전 보장은 아니지만 왕복 최소화)
-  await supabase
-    .from("sessions")
-    .update({ used_clarifications: (fallbackValue ?? 0) + 1 })
-    .eq("id", sessionId);
 }
 
 async function resolveTempSession(params: {
@@ -338,7 +309,7 @@ async function resolveTempSession(params: {
     };
   }
 
-  const { data: existingSession } = await supabase
+  const { data: existingSession } = await getSupabase()
     .from("sessions")
     .select("id, used_clarifications")
     .eq("exam_id", examId)
@@ -356,7 +327,7 @@ async function resolveTempSession(params: {
   }
 
   // 새 세션은 첫 대화에서 used_clarifications가 1이 되도록 바로 세팅 (추가 update 왕복 제거)
-  const { data: newSession } = await supabase
+  const { data: newSession } = await getSupabase()
     .from("sessions")
     .insert([
       { exam_id: examId, student_id: studentId, used_clarifications: 1 },
@@ -389,12 +360,13 @@ async function handleChatLogic(params: {
   rubric?: RubricItem[];
   currentQuestionText?: string;
   currentQuestionAiContext?: string;
-  usedClarificationsFallback?: number;
   skipIncrementUsedClarifications?: boolean;
+  userId?: string;
 }): Promise<{
   aiResponse: string;
   responseId: string;
   topSimilarity: number | null;
+  warnings: string[];
 }> {
   const {
     sessionId,
@@ -408,14 +380,22 @@ async function handleChatLogic(params: {
     rubric,
     currentQuestionText,
     currentQuestionAiContext,
-    usedClarificationsFallback,
     skipIncrementUsedClarifications,
+    userId,
   } = params;
+  const warnings: string[] = [];
 
   const messageTypePromise = classifyMessageType(message).catch(
     () => "other" as MessageType,
   );
-  const ragPromise = getRagContext({ message, examId, examMaterialsText });
+  const ragPromise = getRagContext({
+    message,
+    examId,
+    examMaterialsText,
+    userId,
+    sessionId,
+    qIdx,
+  });
   const previousResponsePromise = fetchPreviousResponseId({ sessionId, qIdx });
 
   // 사용자 메시지 저장은 message_type / rag topSimilarity를 포함 (대기 최소화를 위해 병렬로 진행)
@@ -424,29 +404,45 @@ async function handleChatLogic(params: {
       messageTypePromise,
       ragPromise,
     ]);
-    const { error } = await supabase.from("messages").insert([
-      {
-        session_id: sessionId,
-        q_idx: qIdx,
-        role: "user",
-        content: message,
-        message_type: messageType,
-        metadata: {
-          rag: {
-            topSimilarity: rag.topSimilarity,
-            resultsCount: rag.resultsCount,
-            method: rag.method,
-          },
+    const userMsgPayload = {
+      session_id: sessionId,
+      q_idx: qIdx,
+      role: "user",
+      content: message,
+      message_type: messageType,
+      metadata: {
+        rag: {
+          topSimilarity: rag.topSimilarity,
+          resultsCount: rag.resultsCount,
+          method: rag.method,
         },
       },
-    ]);
-    if (error) console.error("Error saving user message:", error);
+    };
+    const { error } = await getSupabase().from("messages").insert([userMsgPayload]);
+    if (error) {
+      // P1-9: Retry once on user message insert failure (same pattern as AI message)
+      logError("Error saving user message — retrying once", error, { path: "/api/chat" });
+      const { error: retryError } = await getSupabase().from("messages").insert([
+        { ...userMsgPayload, metadata: { ...userMsgPayload.metadata, _retried: true } },
+      ]);
+      if (retryError) {
+        logError("Error saving user message — retry also failed", retryError, { path: "/api/chat" });
+      }
+    }
   })();
 
   // 세 작업은 동시에 시작되며, 응답 반환 전에는 반드시 모두 완료되도록 await
   const rag = await ragPromise;
   const previousResponseId = await previousResponsePromise;
   await insertUserPromise;
+
+  // RAG 검색 결과에 따라 주의문 추가
+  let ragWarning = "";
+  if (rag.resultsCount === 0) {
+    ragWarning = "\n\n[수업 자료 검색 결과 없음] 이 질문과 관련된 수업 자료를 찾지 못했습니다. 수업 자료에 없는 내용을 만들어내지 마세요. 모르면 모른다고 답하세요.";
+  } else if (rag.topSimilarity !== null && rag.topSimilarity < 0.3) {
+    ragWarning = "\n\n[관련성 낮음] 검색된 수업 자료의 관련성이 낮습니다. 답변 시 주의하고, 확신할 수 없는 내용은 추측하지 마세요.";
+  }
 
   const systemPrompt = buildStudentChatSystemPrompt({
     examTitle,
@@ -456,87 +452,158 @@ async function handleChatLogic(params: {
     currentQuestionAiContext,
     relevantMaterialsText: rag.relevantMaterialsText,
     rubric,
-  });
+  }) + ragWarning;
 
-  const { response: aiResponse, responseId } = await getAIResponse(
+  const { response: aiResponse, responseId, tokensUsed, usage } = await getAIResponse(
     systemPrompt,
     message,
     previousResponseId,
+    {
+      userId,
+      examId,
+      sessionId,
+      qIdx,
+    }
   );
 
   // AI 응답/세션 업데이트는 반드시 응답 전에 await (fetch failed 방지)
-  const insertAiPromise = supabase.from("messages").insert([
+  const insertAiPromise = getSupabase().from("messages").insert([
     {
       session_id: sessionId,
       q_idx: qIdx,
       role: "ai",
       content: aiResponse,
       response_id: responseId,
-      tokens_used: null,
+      tokens_used: tokensUsed ?? null,
       metadata: {
         rag: {
           topSimilarity: rag.topSimilarity,
           resultsCount: rag.resultsCount,
           method: rag.method,
         },
+        usage: usage
+          ? {
+              input_tokens: usage.inputTokens,
+              output_tokens: usage.outputTokens,
+              total_tokens: usage.totalTokens,
+              cached_input_tokens: usage.cachedInputTokens,
+              reasoning_tokens: usage.reasoningTokens,
+            }
+          : {},
       },
     },
   ]);
 
   const incrementPromise = incrementUsedClarifications({
     sessionId,
-    fallbackValue: usedClarificationsFallback,
     skip: !!skipIncrementUsedClarifications,
   });
 
-  const [aiInsertResult] = await Promise.all([
+  const [aiInsertSettled, incrementSettled] = await Promise.allSettled([
     insertAiPromise,
     incrementPromise,
   ]);
-  if (aiInsertResult.error)
-    console.error("Error saving AI message:", aiInsertResult.error);
 
-  return { aiResponse, responseId, topSimilarity: rag.topSimilarity };
+  // P0-2: Retry once on AI message insert failure to prevent grading evidence loss
+  const aiInsertFailed =
+    aiInsertSettled.status === "rejected" || aiInsertSettled.value?.error;
+  if (aiInsertFailed) {
+    const firstError =
+      aiInsertSettled.status === "rejected"
+        ? aiInsertSettled.reason
+        : aiInsertSettled.value?.error;
+    logError("Error saving AI message — retrying once", firstError, { path: "/api/chat" });
+
+    const { error: retryError } = await getSupabase().from("messages").insert([
+      {
+        session_id: sessionId,
+        q_idx: qIdx,
+        role: "ai",
+        content: aiResponse,
+        response_id: responseId,
+        tokens_used: tokensUsed ?? null,
+        metadata: {
+          rag: {
+            topSimilarity: rag.topSimilarity,
+            resultsCount: rag.resultsCount,
+            method: rag.method,
+          },
+          usage: usage
+            ? {
+                input_tokens: usage.inputTokens,
+                output_tokens: usage.outputTokens,
+                total_tokens: usage.totalTokens,
+                cached_input_tokens: usage.cachedInputTokens,
+                reasoning_tokens: usage.reasoningTokens,
+              }
+            : {},
+          _retried: true,
+        },
+      },
+    ]);
+
+    if (retryError) {
+      logError("Error saving AI message — retry also failed", retryError, { path: "/api/chat" });
+      warnings.push("message_save_failed_critical");
+    }
+  }
+  if (incrementSettled.status === "rejected") {
+    logError("Error incrementing clarifications", incrementSettled.reason, { path: "/api/chat" });
+    warnings.push("clarification_increment_failed");
+  }
+
+  return { aiResponse, responseId, topSimilarity: rag.topSimilarity, warnings };
 }
 
 export async function POST(request: NextRequest) {
-  const requestStartTime = Date.now();
   try {
-    const body = (await request.json()) as ChatRequestBody;
+    const body = await request.json();
 
-    // 📊 사용자 활동 로그
+    // Input validation
+    const validation = validateRequest(chatRequestSchema, body);
+    if (!validation.success) {
+      return errorJson("VALIDATION_ERROR", validation.error!, 400);
+    }
+
     const {
       message,
       sessionId,
       questionId,
-      questionIdx, // Preferred: use question index
+      questionIdx,
       examTitle: requestExamTitle,
       examCode: requestExamCode,
       examId,
       studentId,
       currentQuestionText,
       currentQuestionAiContext,
-    } = body;
+    } = validation.data;
 
-    if (!message) {
-      return NextResponse.json(
-        { error: "Missing message field" },
-        { status: 400 },
-      );
+    // Require authentication unconditionally
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Authentication required", 401);
     }
 
-    if (!sessionId) {
-      return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
+    // Verify student ownership: studentId from body must match authenticated user
+    if (studentId && user.id !== studentId) {
+      return errorJson("FORBIDDEN", "Student ID mismatch", 403);
+    }
+
+    // Rate limiting by authenticated user ID (falls back to sessionId for unauthenticated)
+    const rateLimitKey = `chat:${user?.id || sessionId}`;
+    const rl = await checkRateLimitAsync(rateLimitKey, RATE_LIMITS.chat);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     // 안전한 문제 인덱스 계산 (공통 로직)
     let safeQIdx: number;
     if (questionIdx !== undefined && questionIdx !== null) {
       const parsed = parseInt(String(questionIdx), 10);
-      safeQIdx = Number.isFinite(parsed) ? parsed : 0;
+      safeQIdx = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
     } else if (questionId) {
       const parsed = parseInt(String(questionId), 10);
-      safeQIdx = Number.isFinite(parsed) ? Math.abs(parsed % 2147483647) : 0;
+      safeQIdx = Number.isFinite(parsed) && parsed >= 0 ? Math.abs(parsed % 2147483647) : 0;
     } else {
       safeQIdx = 0;
     }
@@ -553,7 +620,22 @@ export async function POST(request: NextRequest) {
 
       // temp_로 남아있는 경우(DB 적재 불가): AI 응답은 하되 DB 저장은 생략
       if (!actualSessionId || actualSessionId.startsWith("temp_")) {
-        const rag = await getRagContext({ message, examId });
+        const rag = await getRagContext({
+          message,
+          examId,
+          userId: user?.id,
+          sessionId,
+          qIdx: safeQIdx,
+        });
+
+        // RAG 검색 결과에 따라 주의문 추가
+        let tempRagWarning = "";
+        if (rag.resultsCount === 0) {
+          tempRagWarning = "\n\n[수업 자료 검색 결과 없음] 이 질문과 관련된 수업 자료를 찾지 못했습니다. 수업 자료에 없는 내용을 만들어내지 마세요. 모르면 모른다고 답하세요.";
+        } else if (rag.topSimilarity !== null && rag.topSimilarity < 0.3) {
+          tempRagWarning = "\n\n[관련성 낮음] 검색된 수업 자료의 관련성이 낮습니다. 답변 시 주의하고, 확신할 수 없는 내용은 추측하지 마세요.";
+        }
+
         const prompt = buildStudentChatSystemPrompt({
           examTitle: requestExamTitle,
           examCode: requestExamCode || "TEMP",
@@ -561,16 +643,22 @@ export async function POST(request: NextRequest) {
           currentQuestionText,
           currentQuestionAiContext,
           relevantMaterialsText: rag.relevantMaterialsText,
-        });
+        }) + tempRagWarning;
 
         const previousResponseId = null;
         const { response: aiResponse } = await getAIResponse(
           prompt,
           message,
           previousResponseId,
+          {
+            userId: user?.id,
+            examId,
+            sessionId,
+            qIdx: safeQIdx,
+          }
         );
 
-        return NextResponse.json({
+        return successJson({
           response: aiResponse,
           timestamp: new Date().toISOString(),
           examCode: requestExamCode || "TEMP",
@@ -578,7 +666,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const { aiResponse } = await handleChatLogic({
+      const { aiResponse, warnings } = await handleChatLogic({
         sessionId: actualSessionId,
         message,
         qIdx: safeQIdx,
@@ -588,69 +676,77 @@ export async function POST(request: NextRequest) {
         examId,
         currentQuestionText,
         currentQuestionAiContext,
-        usedClarificationsFallback: usedClarifications,
         skipIncrementUsedClarifications,
+        userId: user?.id ?? studentId,
       });
 
-      return NextResponse.json({
+      return successJson({
         response: aiResponse,
         timestamp: new Date().toISOString(),
         examCode: requestExamCode || "TEMP",
         questionId: questionId || "temp",
+        ...(warnings?.length ? { warnings } : {}),
       });
     }
 
     // ✅ 정규 세션 처리 (컨텍스트 조회)
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
-      .select("id, exam_id, used_clarifications")
+      .select("id, exam_id, student_id, used_clarifications, submitted_at")
       .eq("id", sessionId)
       .single();
 
     if (sessionError || !session) {
-      console.error(
-        "Error fetching session:",
-        sessionError,
-        "SessionId:",
-        sessionId,
-      );
-      return NextResponse.json(
-        { error: "Invalid session", details: sessionError?.message },
-        { status: 400 },
-      );
+      if (sessionError) {
+        logError("[CHAT] Session lookup failed", sessionError, {
+          path: "api/chat/route.ts",
+          additionalData: { sessionId },
+        });
+      }
+      return errorJson("INVALID_SESSION", "Invalid session", 400);
+    }
+
+    // Verify session ownership: session must belong to authenticated user
+    if (user && session.student_id && session.student_id !== user.id) {
+      return errorJson("FORBIDDEN", "Session does not belong to this user", 403);
+    }
+
+    if (session.submitted_at) {
+      return errorJson("SESSION_SUBMITTED", "이미 제출된 세션입니다.", 403);
     }
 
     if (!session.exam_id) {
-      console.error("Session has no exam_id:", session);
-      return NextResponse.json(
-        { error: "Session is missing exam information" },
-        { status: 400 },
-      );
+      return errorJson("MISSING_EXAM_INFO", "Session is missing exam information", 400);
     }
 
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = await getSupabase()
       .from("exams")
-      .select("*")
+      .select("id, code, title, rubric, questions, materials_text, chat_weight, status")
       .eq("id", session.exam_id)
       .single();
 
     if (examError || !exam) {
-      console.error(
-        "Error fetching exam:",
-        examError,
-        "ExamId:",
-        session.exam_id,
-      );
-      return NextResponse.json(
-        { error: "Exam not found", details: examError?.message },
-        { status: 404 },
-      );
+      return errorJson("EXAM_NOT_FOUND", "Exam not found", 404, examError?.message);
+    }
+
+    if (exam.status === "closed") {
+      return errorJson("EXAM_CLOSED", "시험이 종료되었습니다.", 403);
+    }
+
+    const questionCount = Array.isArray(exam.questions) ? exam.questions.length : 0;
+    if (questionCount > 0 && safeQIdx >= questionCount) {
+      return errorJson("INVALID_QUESTION_INDEX", "Question index out of range", 400);
     }
 
     const effectiveExamId = examId || exam.id;
-    const rubric = Array.isArray(exam.rubric)
-      ? (exam.rubric as RubricItem[])
-      : undefined;
+
+    // Per-question rubric: look up current question's rubric, fall back to exam-level
+    let rubric: RubricItem[] | undefined;
+    if (Array.isArray(exam.questions) && exam.questions[safeQIdx]?.rubric?.length > 0) {
+      rubric = exam.questions[safeQIdx].rubric as RubricItem[];
+    } else if (Array.isArray(exam.rubric)) {
+      rubric = exam.rubric as RubricItem[];
+    }
     const materialsText = Array.isArray(exam.materials_text)
       ? (exam.materials_text as Array<{
           url: string;
@@ -659,7 +755,7 @@ export async function POST(request: NextRequest) {
         }>)
       : undefined;
 
-    const { aiResponse } = await handleChatLogic({
+    const { aiResponse, warnings } = await handleChatLogic({
       sessionId,
       message,
       qIdx: safeQIdx,
@@ -671,36 +767,25 @@ export async function POST(request: NextRequest) {
       rubric,
       currentQuestionText,
       currentQuestionAiContext,
-      usedClarificationsFallback: session.used_clarifications ?? 0,
+      userId: user?.id ?? session.student_id,
     });
 
-    const requestDuration = Date.now() - requestStartTime;
-    return NextResponse.json({
+    return successJson({
       response: aiResponse,
       timestamp: new Date().toISOString(),
       examCode: exam.code,
       questionId,
+      ...(warnings?.length ? { warnings } : {}),
     });
   } catch (error) {
-    console.error("Chat API error:", error);
+    logError("Chat API error", error, { path: "/api/chat" });
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
 
-    console.error("Chat API error details:", {
-      message: errorMessage,
-      stack: errorStack,
-      errorType: typeof error,
-    });
-
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        message:
-          "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.",
-        details:
-          process.env.NODE_ENV === "development" ? errorMessage : undefined,
-      },
-      { status: 500 },
+    return errorJson(
+      "INTERNAL_ERROR",
+      "죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다. 다시 시도해주세요.",
+      500,
+      process.env.NODE_ENV === "development" ? errorMessage : undefined
     );
   }
 }

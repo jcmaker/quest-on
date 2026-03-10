@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { BotMessageSquare } from "@/components/animate-ui/icons/bot-message-square";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
+import { CopyMessageButton } from "@/components/chat/CopyMessageButton";
 import { ArrowUp, X } from "lucide-react";
 
 type InstructorChatMessage = {
@@ -209,9 +210,6 @@ function ChatPanel({
 
       // 405 에러를 명시적으로 처리
       if (res.status === 405) {
-        console.error(
-          "405 Method Not Allowed - API route may not be properly configured"
-        );
         throw new Error(
           "API 메서드가 허용되지 않습니다. 서버 설정을 확인해주세요."
         );
@@ -219,12 +217,6 @@ function ChatPanel({
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        console.error("Chat API error:", {
-          status: res.status,
-          statusText: res.statusText,
-          error: data?.error,
-          details: data?.details,
-        });
         throw new Error(data?.error || `Chat request failed (${res.status})`);
       }
       return data as { response: string };
@@ -237,7 +229,6 @@ function ChatPanel({
       scrollToBottom();
     },
     onError: (err) => {
-      console.error("Chat mutation error:", err);
       const errorMessage =
         err instanceof Error
           ? err.message.includes("405") ||
@@ -310,8 +301,12 @@ function ChatPanel({
 
             return (
               <div key={`${m.ts}-${idx}`} className="flex justify-end">
-                <div className="max-w-[90%] rounded-2xl rounded-br-none bg-primary text-primary-foreground px-3 py-2 text-sm whitespace-pre-wrap">
+                <div className="group max-w-[90%] rounded-2xl rounded-br-none bg-primary text-primary-foreground px-3 py-2 text-sm whitespace-pre-wrap relative">
                   {m.content}
+                  <CopyMessageButton
+                    text={m.content}
+                    className="absolute -top-1 -left-1 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+                  />
                 </div>
               </div>
             );

@@ -1,65 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { NextRequest } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
-import { currentUser } from "@clerk/nextjs/server";
-import { createClerkClient } from "@clerk/nextjs/server";
-import { openai, AI_MODEL } from "@/lib/openai";
-import {
-  buildChatGradingSystemPrompt,
-  buildAnswerGradingSystemPrompt,
-} from "@/lib/prompts";
+import { currentUser } from "@/lib/get-current-user";
+import { autoGradeSession } from "@/lib/grading";
+import { successJson, errorJson } from "@/lib/api-response";
+import { auditLog } from "@/lib/audit";
+import { batchGetUserInfo } from "@/lib/clerk-users";
+import { logError } from "@/lib/logger";
+import { validateUUID } from "@/lib/validate-params";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { singleGradeUpdateSchema, validateRequest } from "@/lib/validations";
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Auto-grading (PUT) calls AI_MODEL_HEAVY multiple times — needs 300s
+export const maxDuration = 300;
 
-// Initialize Clerk client
-const clerk = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY!,
-});
-
-// Helper function to get user info from Clerk
-async function getUserInfo(clerkUserId: string): Promise<{
-  name: string;
-  email: string;
-} | null> {
-  try {
-    const user = await clerk.users.getUser(clerkUserId);
-
-    // Get user name from firstName/lastName or fullName
-    let name = "";
-    if (user.firstName && user.lastName) {
-      name = `${user.firstName} ${user.lastName}`;
-    } else if (user.firstName) {
-      name = user.firstName;
-    } else if (user.lastName) {
-      name = user.lastName;
-    } else if (user.fullName) {
-      name = user.fullName;
-    } else {
-      // Fallback to email or ID
-      name =
-        user.emailAddresses[0]?.emailAddress ||
-        `Student ${clerkUserId.slice(0, 8)}`;
-    }
-
-    const email =
-      user.emailAddresses[0]?.emailAddress || `${clerkUserId}@example.com`;
-
-    return {
-      name,
-      email,
-    };
-  } catch (error) {
-    console.error("Error fetching user info from Clerk:", error);
-    // Fallback to placeholder
-    return {
-      name: `Student ${clerkUserId.slice(0, 8)}`,
-      email: `${clerkUserId}@example.com`,
-    };
-  }
+// P1-4: Supabase client created inside each handler (not module-level)
+// to avoid stale connections in serverless cold starts.
+// Same lazy getter pattern as submission-handlers.ts.
+function getSupabase() {
+  return getSupabaseServer();
 }
 
 export async function GET(
@@ -70,38 +29,37 @@ export async function GET(
   try {
     const { sessionId } = await params;
 
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
+
     const user = await currentUser();
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
-
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get session data first (including ai_summary for auto-graded summary)
     // ai_summary가 없을 수 있으므로 안전하게 처리
+    const supabase = getSupabase();
+
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("*")
+      .select("id, exam_id, student_id, submitted_at, used_clarifications, created_at, compressed_session_data, compression_metadata, ai_summary, auto_submitted")
       .eq("id", sessionId)
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json(
-        {
-          error: "Session not found",
-          details: sessionError?.message,
-          sessionId,
-        },
-        { status: 404 }
-      );
+      return errorJson("NOT_FOUND", "Session not found", 404, {
+        details: sessionError?.message,
+        sessionId,
+      });
     }
-
 
     // Get exam data
     const { data: exam, error: examError } = await supabase
@@ -111,13 +69,9 @@ export async function GET(
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json(
-        {
-          error: "Exam not found",
-          details: examError?.message,
-        },
-        { status: 404 }
-      );
+      return errorJson("NOT_FOUND", "Exam not found", 404, {
+        details: examError?.message,
+      });
     }
 
     // Normalize questions format (text -> prompt)
@@ -141,10 +95,7 @@ export async function GET(
           id,
           q_idx,
           answer,
-          ai_feedback,
-          student_reply,
           compressed_answer_data,
-          compressed_feedback_data,
           compression_metadata,
           created_at
         `
@@ -173,6 +124,7 @@ export async function GET(
           score,
           comment,
           stage_grading,
+          grade_type,
           created_at
         `
           )
@@ -203,13 +155,20 @@ export async function GET(
     const { data: grades, error: gradesError } = gradesResult;
     const { data: pasteLogs, error: pasteLogsError } = pasteLogsResult;
 
+    const path = `/api/session/${sessionId}/grade`;
+    if (submissionsError) logError("Submissions query failed", submissionsError, { path, additionalData: { sessionId } });
+    if (messagesError) logError("Messages query failed", messagesError, { path, additionalData: { sessionId } });
+    if (gradesError) logError("Grades query failed", gradesError, { path, additionalData: { sessionId } });
+    if (pasteLogsError) logError("PasteLogs query failed", pasteLogsError, { path, additionalData: { sessionId } });
+
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
-    // Get student info from Clerk
-    const clerkStudentInfo = await getUserInfo(session.student_id);
+    // Get student info from Clerk (batch call for consistency)
+    const clerkUserMap = await batchGetUserInfo([session.student_id]);
+    const clerkStudentInfo = clerkUserMap.get(session.student_id) ?? null;
 
     // Get student profile from database
     const { data: studentProfile } = await supabase
@@ -229,7 +188,8 @@ export async function GET(
       school: studentProfile?.school,
     };
 
-    // Decompress session data if available
+    // Decompress session data if available — track errors for frontend warning
+    const decompressionErrors: Array<{ target: string; error: string }> = [];
     let decompressedSessionData = null;
     if (
       session.compressed_session_data &&
@@ -240,7 +200,11 @@ export async function GET(
           session.compressed_session_data
         );
       } catch (error) {
-        console.error("Error decompressing session data:", error);
+        const errMsg = error instanceof Error ? error.message : "Unknown decompression error";
+        decompressionErrors.push({ target: "sessionData", error: errMsg });
+        logError("Error decompressing session data", error, {
+          path: `/api/session/${sessionId}/grade`,
+        });
       }
     }
 
@@ -250,7 +214,6 @@ export async function GET(
       submissions.forEach((submission: Record<string, unknown>) => {
         const qIdx = submission.q_idx as number;
         let decompressedAnswerData = null;
-        let decompressedFeedbackData = null;
 
         if (
           submission.compressed_answer_data &&
@@ -261,20 +224,11 @@ export async function GET(
               submission.compressed_answer_data as string
             );
           } catch (error) {
-            console.error("Error decompressing answer data:", error);
-          }
-        }
-
-        if (
-          submission.compressed_feedback_data &&
-          typeof submission.compressed_feedback_data === "string"
-        ) {
-          try {
-            decompressedFeedbackData = decompressData(
-              submission.compressed_feedback_data as string
-            );
-          } catch (error) {
-            console.error("Error decompressing feedback data:", error);
+            const errMsg = error instanceof Error ? error.message : "Unknown decompression error";
+            decompressionErrors.push({ target: `submission_q${qIdx}`, error: errMsg });
+            logError("Error decompressing answer data", error, {
+              path: `/api/session/${sessionId}/grade`,
+            });
           }
         }
 
@@ -282,7 +236,6 @@ export async function GET(
           ...submission,
           decompressed: {
             answerData: decompressedAnswerData,
-            feedbackData: decompressedFeedbackData,
           },
         };
       });
@@ -304,7 +257,11 @@ export async function GET(
               message.compressed_content as string
             );
           } catch (error) {
-            console.error("Error decompressing message content:", error);
+            const errMsg = error instanceof Error ? error.message : "Unknown decompression error";
+            decompressionErrors.push({ target: `message_q${qIdx}_${message.id}`, error: errMsg });
+            logError("Error decompressing message content", error, {
+              path: `/api/session/${sessionId}/grade`,
+            });
           }
         }
 
@@ -403,6 +360,7 @@ export async function GET(
         created_at: session.created_at,
         decompressed: decompressedSessionData,
         ai_summary: session.ai_summary || null, // 서버 사이드 자동 채점 요약 평가
+        auto_submitted: session.auto_submitted || false, // 강제 종료로 자동 제출된 세션
       },
       exam: exam,
       student: studentInfo,
@@ -412,14 +370,22 @@ export async function GET(
       pasteLogs: pasteLogsByQuestion, // 부정행위 의심 로그 (question_id별로 그룹화)
       overallScore,
       aiSummary: session.ai_summary || null, // 하위 호환성을 위해 유지
+      ...(decompressionErrors.length > 0 && { decompressionErrors }),
     };
 
-    return NextResponse.json(responseData);
+    return successJson(responseData, {
+      headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=120" },
+    });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
+    logError("Grade GET handler error", error, {
+      path: `/api/session/grade`,
+    });
+    return errorJson(
+      "INTERNAL_ERROR",
+      process.env.NODE_ENV === "development"
+        ? (error as Error)?.message || "Internal server error"
+        : "Internal server error",
+      500
     );
   }
 }
@@ -432,18 +398,29 @@ export async function POST(
   const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
+
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
+
+    const supabase = getSupabase();
     const user = await currentUser();
     const body = await request.json();
-    const { questionIdx, score, comment, stageGrading } = body;
+
+    // Validate POST body with schema
+    const validation = validateRequest(singleGradeUpdateSchema, body);
+    if (!validation.success) {
+      return errorJson("VALIDATION_ERROR", validation.error, 400);
+    }
+    const { questionIdx, score, comment, stageGrading, expected_updated_at } = validation.data;
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
     // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
     // Get session to verify instructor owns the exam
@@ -454,149 +431,162 @@ export async function POST(
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json(
-        { error: "Session not found" },
-        { status: 404 },
-      );
+      return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
-    // Get exam to check instructor
+    // Get exam to check instructor and validate q_idx upper bound
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("instructor_id")
+      .select("instructor_id, questions")
       .eq("id", session.exam_id)
       .single();
 
     if (examError || !exam) {
-      return NextResponse.json(
-        { error: "Exam not found" },
-        { status: 404 },
-      );
+      return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
-    // Check if grade already exists for this question
-    const { data: existingGrade } = await supabase
-      .from("grades")
-      .select("id")
-      .eq("session_id", sessionId)
-      .eq("q_idx", questionIdx)
-      .single();
+    // Validate q_idx bounds against exam questions (P1-2: also reject negative)
+    if (questionIdx < 0) {
+      return errorJson("VALIDATION_ERROR", `Invalid question index: ${questionIdx}`, 400);
+    }
+    if (Array.isArray(exam.questions) && questionIdx >= exam.questions.length) {
+      return errorJson("VALIDATION_ERROR", `Invalid question index: ${questionIdx} (exam has ${exam.questions.length} questions)`, 400);
+    }
 
-    let result;
-    if (existingGrade) {
-      // Update existing grade
-      const { data, error } = await supabase
+    // Optimistic locking: if client sends expected_updated_at, verify no concurrent edit
+    if (expected_updated_at) {
+      const { data: existingGrade } = await supabase
         .from("grades")
-        .update({
+        .select("updated_at")
+        .eq("session_id", sessionId)
+        .eq("q_idx", questionIdx)
+        .single();
+
+      if (existingGrade && existingGrade.updated_at !== expected_updated_at) {
+        return errorJson("CONFLICT", "Grade was modified by another user. Please refresh and try again.", 409);
+      }
+    }
+
+    // Upsert grade (atomic: handles concurrent grading safely)
+    const { data: result, error: gradeError } = await supabase
+      .from("grades")
+      .upsert(
+        {
+          session_id: sessionId,
+          q_idx: questionIdx,
           score,
           comment,
           stage_grading: stageGrading || null,
-        })
-        .eq("id", existingGrade.id)
-        .select()
-        .single();
+          grade_type: "manual",
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "session_id,q_idx" }
+      )
+      .select()
+      .single();
 
-      if (error) throw error;
-      result = data;
-    } else {
-      // Insert new grade
-      const { data, error } = await supabase
-        .from("grades")
-        .insert([
-          {
-            session_id: sessionId,
-            q_idx: questionIdx,
-            score,
-            comment,
-            stage_grading: stageGrading || null,
-          },
-        ])
-        .select()
-        .single();
+    if (gradeError) throw gradeError;
 
-      if (error) throw error;
-      result = data;
+    // Audit log: fire-and-forget with error catching
+    try {
+      await auditLog({
+        action: "grade_update",
+        userId: user.id,
+        targetId: sessionId,
+        details: { questionIdx, score, comment: comment?.slice(0, 200) },
+      });
+    } catch (auditError) {
+      // Log but don't block the response
+      logError("[grade] Audit log failed", auditError, { path: `/api/session/${sessionId}/grade` });
     }
 
-    const requestDuration = Date.now() - requestStartTime;
-
-    return NextResponse.json({
-      success: true,
+    return successJson({
       grade: result,
     });
   } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+    logError("Grade POST handler error", error, {
+      path: `/api/session/grade`,
+    });
+    return errorJson(
+      "INTERNAL_ERROR",
+      process.env.NODE_ENV === "development"
+        ? (error as Error)?.message || "Internal server error"
+        : "Internal server error",
+      500
     );
   }
 }
 
-// Auto-grade all questions based on rubric
+// Auto-grade all questions based on rubric — delegates to autoGradeSession()
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
-  const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
+
+    const invalidId = validateUUID(sessionId, "sessionId");
+    if (invalidId) return invalidId;
+
+    const supabase = getSupabase();
     const user = await currentUser();
     const body = await request.json().catch(() => ({}));
     const { forceRegrade = false } = body;
 
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    // Check if user is instructor
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
-    // Get session
+    // Verify session exists and instructor owns the exam
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, exam_id, student_id")
+      .select("id, exam_id")
       .eq("id", sessionId)
       .single();
 
     if (sessionError || !session) {
-      return NextResponse.json(
-        { error: "Session not found" },
-        { status: 404 },
-      );
+      return errorJson("NOT_FOUND", "Session not found", 404);
     }
 
-    // Get exam with rubric
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, questions, rubric, instructor_id")
+      .select("instructor_id, rubric")
       .eq("id", session.exam_id)
       .single();
 
-    if (examError || !exam) {
-      return NextResponse.json(
-        { error: "Exam not found" },
-        { status: 404 },
-      );
+    if (examError || !exam || exam.instructor_id !== user.id) {
+      return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
-    // Check if instructor owns the exam
-    if (exam.instructor_id !== user.id) {
-      return NextResponse.json(
-        { error: "Forbidden" },
-        { status: 403 },
+    // Rate limit: expensive OpenAI auto-grading
+    const rl = await checkRateLimitAsync(`ai:auto-grade:${user.id}`, RATE_LIMITS.ai);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many grading requests. Please wait.", 429);
+    }
+
+    // Validate rubric exists before auto-grading
+    if (!exam.rubric || !Array.isArray(exam.rubric) || exam.rubric.length === 0) {
+      return errorJson(
+        "RUBRIC_REQUIRED",
+        "루브릭이 설정되지 않아 자동 채점을 할 수 없습니다. 시험 편집에서 루브릭을 먼저 추가해주세요.",
+        400
       );
     }
 
     // Check if already graded (unless force regrade)
+    // P0-1: forceRegrade no longer deletes existing grades first.
+    // autoGradeSession uses upsert(onConflict: "session_id,q_idx") which safely overwrites.
+    // This prevents permanent grade loss if AI grading fails mid-way.
     if (!forceRegrade) {
       const { data: existingGrades } = await supabase
         .from("grades")
@@ -604,384 +594,40 @@ export async function PUT(
         .eq("session_id", sessionId);
 
       if (existingGrades && existingGrades.length > 0) {
-        return NextResponse.json({
-          success: true,
-          message: "Already graded",
-          skipped: true,
-        });
-      }
-    } else {
-      // Delete existing grades if force regrade
-      await supabase.from("grades").delete().eq("session_id", sessionId);
-    }
-
-    // Get submissions
-    const { data: submissions, error: submissionsError } = await supabase
-      .from("submissions")
-      .select(
-        `
-        id,
-        q_idx,
-        answer,
-        ai_feedback,
-        student_reply,
-        compressed_answer_data,
-        compressed_feedback_data
-      `
-      )
-      .eq("session_id", sessionId);
-
-    if (submissionsError) {
-    }
-
-    // Get messages
-    const { data: messages, error: messagesError } = await supabase
-      .from("messages")
-      .select(
-        `
-        id,
-        q_idx,
-        role,
-        content,
-        compressed_content,
-        created_at
-      `
-      )
-      .eq("session_id", sessionId);
-
-    if (messagesError) {
-    }
-
-    // Decompress submissions
-    const submissionsByQuestion: Record<
-      number,
-      {
-        answer: string;
-        ai_feedback?: string;
-        student_reply?: string;
-      }
-    > = {};
-
-    if (submissions) {
-      submissions.forEach((submission: Record<string, unknown>) => {
-        const qIdx = submission.q_idx as number;
-        let answer = submission.answer as string;
-
-        if (
-          submission.compressed_answer_data &&
-          typeof submission.compressed_answer_data === "string"
-        ) {
-          try {
-            const decompressed = decompressData(
-              submission.compressed_answer_data as string
-            );
-            answer = (decompressed as { answer?: string })?.answer || answer;
-          } catch (error) {
-          }
-        }
-
-        submissionsByQuestion[qIdx] = {
-          answer: answer || "",
-          ai_feedback:
-            typeof submission.ai_feedback === "string"
-              ? submission.ai_feedback
-              : undefined,
-          student_reply:
-            typeof submission.student_reply === "string"
-              ? submission.student_reply
-              : undefined,
-        };
-      });
-
-    }
-
-    // Decompress and organize messages by question
-    const messagesByQuestion: Record<
-      number,
-      Array<{ role: string; content: string }>
-    > = {};
-
-    if (messages) {
-      messages.forEach((message: Record<string, unknown>) => {
-        const qIdx = message.q_idx as number;
-        let content = message.content as string;
-
-        if (
-          message.compressed_content &&
-          typeof message.compressed_content === "string"
-        ) {
-          try {
-            content =
-              (decompressData(
-                message.compressed_content as string
-              ) as string) || content;
-          } catch (error) {
-          }
-        }
-
-        if (!messagesByQuestion[qIdx]) {
-          messagesByQuestion[qIdx] = [];
-        }
-
-        messagesByQuestion[qIdx].push({
-          role: message.role as string,
-          content: content || "",
-        });
-      });
-    }
-
-    // Normalize questions
-    const questions = exam.questions
-      ? Array.isArray(exam.questions)
-        ? exam.questions.map((q: Record<string, unknown>, index: number) => ({
-            id: q.id,
-            idx: q.idx !== undefined ? (q.idx as number) : index,
-            type: q.type,
-            prompt: q.prompt || q.text,
-            ai_context: q.ai_context,
-          }))
-        : []
-      : [];
-
-    // Auto-grade each question
-    const grades: Array<{
-      q_idx: number;
-      score: number;
-      comment: string;
-      stage_grading?: {
-        chat?: { score: number; comment: string };
-        answer?: { score: number; comment: string };
-      };
-    }> = [];
-
-    for (const question of questions) {
-      const qIdx = question.idx as number;
-      // Try to find submission by q_idx, if not found try by question index
-      let submission = submissionsByQuestion[qIdx];
-      if (!submission && questions.indexOf(question) >= 0) {
-        const questionIndex = questions.indexOf(question);
-        submission = submissionsByQuestion[questionIndex];
-      }
-      const questionMessages = messagesByQuestion[qIdx] || [];
-
-      if (!submission) {
-        continue;
-      }
-
-      // Build rubric text
-      const rubricText =
-        exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
-          ? `
-**평가 루브릭 기준:**
-${exam.rubric
-  .map(
-    (
-      item: {
-        evaluationArea: string;
-        detailedCriteria: string;
-      },
-      index: number
-    ) =>
-      `${index + 1}. ${item.evaluationArea}
-           - 세부 기준: ${item.detailedCriteria}`
-  )
-  .join("\n")}
-`
-          : "";
-
-      const stageGrading: {
-        chat?: { score: number; comment: string };
-        answer?: { score: number; comment: string };
-      } = {};
-
-      // 1. Chat stage grading
-      if (questionMessages.length > 0) {
-        try {
-          const chatSystemPrompt = buildChatGradingSystemPrompt({
-            rubricText,
-            // rubricScoresSchema 없음 (이 엔드포인트는 루브릭별 점수를 반환하지 않음)
-          });
-
-          const chatUserPrompt = `다음 정보를 바탕으로 채팅 단계를 평가해주세요:
-
-**문제:**
-${question.prompt || ""}
-
-${question.ai_context ? `**문제 컨텍스트:**\n${question.ai_context}\n` : ""}
-
-**학생과 AI의 대화 기록:**
-${questionMessages
-  .map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`)
-  .join("\n\n")}
-
-위 정보를 바탕으로 루브릭 기준에 따라 채팅 단계의 점수와 피드백을 제공해주세요.`;
-
-          const chatCompletion = await openai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [
-              { role: "system", content: chatSystemPrompt },
-              { role: "user", content: chatUserPrompt },
-            ],
-            response_format: { type: "json_object" },
-          });
-
-          const chatResponseContent =
-            chatCompletion.choices[0]?.message?.content || "";
-          let chatParsedResponse;
-          try {
-            chatParsedResponse = JSON.parse(chatResponseContent);
-          } catch (parseError) {
-            console.error(
-              `❌ [AUTO_GRADE] JSON parse error for chat stage question ${qIdx}:`,
-              parseError
-            );
-            throw new Error(`JSON parse error: ${parseError}`);
-          }
-
-          stageGrading.chat = {
-            score: Math.max(
-              0,
-              Math.min(100, Math.round(chatParsedResponse.score || 0))
-            ),
-            comment: chatParsedResponse.comment || "채팅 단계 평가 완료",
-          };
-
-        } catch (error) {
-          console.error(
-            `❌ [AUTO_GRADE] Error grading chat stage for question ${qIdx}:`,
-            error
-          );
-        }
-      }
-
-      // 2. Answer stage grading
-      if (submission.answer) {
-        try {
-          const answerSystemPrompt = buildAnswerGradingSystemPrompt({
-            rubricText,
-            // rubricScoresSchema 없음 (이 엔드포인트는 루브릭별 점수를 반환하지 않음)
-          });
-
-          const answerUserPrompt = `다음 정보를 바탕으로 최종 답안을 평가해주세요:
-
-**문제:**
-${question.prompt || ""}
-
-${question.ai_context ? `**문제 컨텍스트:**\n${question.ai_context}\n` : ""}
-
-**학생의 최종 답안:**
-${submission.answer || "답안이 없습니다."}
-
-위 정보를 바탕으로 루브릭 기준에 따라 답안의 점수와 피드백을 제공해주세요.`;
-
-          const answerCompletion = await openai.chat.completions.create({
-            model: AI_MODEL,
-            messages: [
-              { role: "system", content: answerSystemPrompt },
-              { role: "user", content: answerUserPrompt },
-            ],
-            response_format: { type: "json_object" },
-          });
-
-          const answerResponseContent =
-            answerCompletion.choices[0]?.message?.content || "";
-          let answerParsedResponse;
-          try {
-            answerParsedResponse = JSON.parse(answerResponseContent);
-          } catch (parseError) {
-            console.error(
-              `❌ [AUTO_GRADE] JSON parse error for answer stage question ${qIdx}:`,
-              parseError
-            );
-            throw new Error(`JSON parse error: ${parseError}`);
-          }
-
-          stageGrading.answer = {
-            score: Math.max(
-              0,
-              Math.min(100, Math.round(answerParsedResponse.score || 0))
-            ),
-            comment: answerParsedResponse.comment || "답안 평가 완료",
-          };
-
-        } catch (error) {
-          // Continue with other stages even if one fails
-        }
-      }
-
-      // Calculate overall score from stage scores
-      let overallScore = 0;
-      let stageCount = 0;
-      if (stageGrading.chat) {
-        overallScore += stageGrading.chat.score;
-        stageCount++;
-      }
-      if (stageGrading.answer) {
-        overallScore += stageGrading.answer.score;
-        stageCount++;
-      }
-
-      const finalScore =
-        stageCount > 0 ? Math.round(overallScore / stageCount) : 0;
-      const overallComment = `채팅 단계: ${
-        stageGrading.chat?.score || "N/A"
-      }점, 답안 단계: ${stageGrading.answer?.score || "N/A"}점`;
-
-      // Only add grade if at least one stage was graded
-      if (Object.keys(stageGrading).length > 0) {
-        grades.push({
-          q_idx: qIdx,
-          score: finalScore,
-          comment: overallComment,
-          stage_grading: stageGrading,
-        });
-
-      } else {
+        return successJson({ message: "Already graded", skipped: true });
       }
     }
 
-    // Save all grades
-    if (grades.length > 0) {
-      const { error: insertError } = await supabase.from("grades").insert(
-        grades.map((grade) => ({
-          session_id: sessionId,
-          q_idx: grade.q_idx,
-          score: grade.score,
-          comment: grade.comment,
-          stage_grading: grade.stage_grading || null,
-        }))
-      );
+    // Delegate to centralized grading logic (parallel, retry, timeout)
+    const { grades, summary, failedQuestions, timedOut, decompressionWarnings } = await autoGradeSession(sessionId);
 
-      if (insertError) {
-        throw insertError;
-      }
-    }
-
-    const requestDuration = Date.now() - requestStartTime;
-
-    return NextResponse.json({
-      success: true,
+    const response: Record<string, unknown> = {
       gradesCount: grades.length,
       grades,
-    });
-  } catch (error) {
-    const requestDuration = Date.now() - requestStartTime;
-    console.error("Auto-grade error:", error);
-    console.error(
-      `❌ [ERROR] Auto-grade failed after ${requestDuration}ms | Error: ${
-        (error as Error)?.message
-      }`
-    );
-    console.error("Error stack:", (error as Error)?.stack);
-    console.error("Full error:", error);
+      summary,
+    };
 
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        details: (error as Error)?.message,
-        message: (error as Error)?.message || "Unknown error occurred",
-      },
-      { status: 500 }
+    if (failedQuestions.length > 0 || timedOut) {
+      response.warning = `${grades.length}/${grades.length + failedQuestions.length} 문항 채점 완료, ${failedQuestions.length}문항 수동 채점 필요`;
+      response.failedQuestions = failedQuestions;
+      response.timedOut = timedOut;
+    }
+
+    if (decompressionWarnings && decompressionWarnings.length > 0) {
+      response.decompressionWarnings = decompressionWarnings;
+    }
+
+    return successJson(response);
+  } catch (error) {
+    logError("Grade PUT handler error", error, {
+      path: `/api/session/grade`,
+    });
+    return errorJson(
+      "INTERNAL_ERROR",
+      process.env.NODE_ENV === "development"
+        ? (error as Error)?.message || "Unknown error occurred"
+        : "Internal server error",
+      500
     );
   }
 }

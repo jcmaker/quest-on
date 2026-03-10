@@ -1,0 +1,47 @@
+flowchart LR
+  classDef stable fill:#f8fafc,stroke:#94a3b8,color:#0f172a;
+  classDef changed fill:#fff7ed,stroke:#ea580c,stroke-width:3px,color:#111827;
+  classDef external fill:#eef2ff,stroke:#6366f1,color:#111827;
+
+  studentUi["Student UI"]:::stable
+  instructorUi["Instructor UI"]:::stable
+  adminUi["Admin UI"]:::stable
+
+  subgraph bff["Next.js BFF"]
+    lifecycle["Changed Boundary 1<br/>Exam Lifecycle API<br/>join, preflight, waiting, start, heartbeat, submit"]:::changed
+    assessment["Changed Boundary 2<br/>Assessment API<br/>grade trigger, report read, summary read"]:::changed
+    content["Changed Boundary 3<br/>Content API<br/>upload, extract, material registration"]:::changed
+    identity["Changed Boundary 4<br/>Identity/Auth Adapter<br/>Clerk + admin authorization"]:::changed
+  end
+
+  subgraph async["Async Workers"]
+    ragWorker["Changed Boundary 5<br/>RAG Worker<br/>chunk, embed, material indexing"]:::changed
+    gradingWorker["Changed Boundary 6<br/>Grading Worker<br/>auto-grade, summary, finalization"]:::changed
+  end
+
+  queue["Durable Queue / Event Bus"]:::changed
+  supabase["Supabase<br/>DB, Storage, Realtime"]:::stable
+  clerk["Clerk"]:::external
+  openai["OpenAI"]:::external
+
+  studentUi --> lifecycle
+  instructorUi --> lifecycle
+  instructorUi --> content
+  instructorUi --> assessment
+  adminUi --> identity
+
+  lifecycle --> supabase
+  lifecycle --> identity
+  assessment --> supabase
+  content --> supabase
+  identity --> clerk
+
+  content --> queue
+  assessment --> queue
+  queue --> ragWorker
+  queue --> gradingWorker
+
+  ragWorker --> supabase
+  gradingWorker --> supabase
+  ragWorker --> openai
+  gradingWorker --> openai
