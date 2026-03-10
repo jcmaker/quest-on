@@ -31,7 +31,7 @@ export function DashboardPageFallback({
 
         <div className="rounded-2xl border border-border bg-card p-6">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <p className="mt-2 text-sm text-muted-foreground/80">{description}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{description}</p>
         </div>
       </div>
     </div>

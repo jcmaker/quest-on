@@ -68,7 +68,7 @@ export async function POST(
     }
 
     // 2. 상태 검증: 화이트리스트 기반 — draft 또는 scheduled 상태에서만 Start 가능 (P1-6)
-    const allowedStatuses = ["draft", "scheduled"];
+    const allowedStatuses = ["draft", "scheduled", "joinable"];
     if (!allowedStatuses.includes(exam.status || "")) {
       return errorJson(
         "BAD_REQUEST",

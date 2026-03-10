@@ -38,6 +38,15 @@ export const proxy = clerkMiddleware(async (auth, req) => {
     return NextResponse.next();
   }
 
+  // Test bypass — skip Clerk auth when valid test token is provided
+  const bypassSecret = process.env.TEST_BYPASS_SECRET;
+  if (bypassSecret && process.env.NODE_ENV === "test") {
+    const bypassToken = req.headers.get("x-test-bypass-token");
+    if (bypassToken === bypassSecret) {
+      return NextResponse.next();
+    }
+  }
+
   // All other routes require Clerk authentication
   const { userId, sessionClaims } = await auth.protect();
 
