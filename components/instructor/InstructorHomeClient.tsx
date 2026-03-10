@@ -1573,12 +1573,12 @@ export default function InstructorHome() {
                               <div className="flex gap-4 min-w-max">
                                 {[...Array(4)].map((_, i) => (
                                   <div key={i} className="folder-card opacity-70">
-                                    <div className="folder-card__tab bg-muted" />
-                                    <div className="folder-card__fold !border-muted-foreground/30 !border-l !border-b bg-transparent" />
-                                    <div className="folder-card__body !bg-muted/50">
-                                      <Skeleton className="h-3 w-12 bg-muted-foreground/20" />
-                                      <Skeleton className="h-4 w-full mt-1.5 bg-muted-foreground/20" />
-                                      <Skeleton className="h-3 w-16 mt-1 bg-muted-foreground/20" />
+                                    <div className="folder-card__tab" />
+                                    <div className="folder-card__fold" />
+                                    <div className="folder-card__body">
+                                      <Skeleton className="h-3 w-12 bg-white/40" />
+                                      <Skeleton className="h-4 w-full mt-1.5 bg-white/40" />
+                                      <Skeleton className="h-3 w-16 mt-1 bg-white/40" />
                                     </div>
                                   </div>
                                 ))}
