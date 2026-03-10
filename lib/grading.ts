@@ -23,6 +23,7 @@ import {
   buildAiTextMetadata,
   callTrackedChatCompletion,
 } from "@/lib/ai-tracking";
+import { sanitizeUserInput } from "@/lib/sanitize";
 import type {
   StageGrading,
   SummaryData,
@@ -51,12 +52,10 @@ interface AutoGradeResult {
   decompressionWarnings?: DecompressionWarning[];
 }
 
-import DOMPurify from "isomorphic-dompurify";
-
-/** P0-4: Sanitize AI-generated comment using DOMPurify — strips ALL HTML tags to prevent XSS */
+/** P0-4: Sanitize AI-generated comment to plain text (server-safe, no jsdom). */
 function sanitizeComment(comment: string): string {
   if (!comment) return "";
-  return DOMPurify.sanitize(comment, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] }).slice(0, 10000);
+  return sanitizeUserInput(comment).slice(0, 10000);
 }
 
 /** Clamp a score to [0, 100] and log if clamping occurred */

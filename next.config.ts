@@ -35,7 +35,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https://*.clerk.com https://img.clerk.com",
               "font-src 'self' data:",
-              "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://*.supabase.co https://api.openai.com https://va.vercel-scripts.com https://clerk-telemetry.com",
+              "connect-src 'self' https://*.clerk.accounts.dev https://*.clerk.com https://*.supabase.co wss://*.supabase.co https://api.openai.com https://va.vercel-scripts.com https://clerk-telemetry.com",
               "frame-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com https://www.youtube.com",
               "worker-src 'self' blob:",
             ].join("; "),

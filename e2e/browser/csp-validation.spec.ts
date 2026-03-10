@@ -76,6 +76,16 @@ test.describe("CSP directive validation", () => {
     );
     expect(result.pass, result.message).toBe(true);
   });
+
+  test("connect-src includes supabase websocket", async () => {
+    const directives = parseCSP(cspHeader);
+    const result = assertDirectiveContains(
+      directives,
+      "connect-src",
+      "wss://*.supabase.co",
+    );
+    expect(result.pass, result.message).toBe(true);
+  });
 });
 
 test.describe("Security headers", () => {
