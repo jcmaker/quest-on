@@ -111,6 +111,28 @@ export async function getFolderContents(data: {
     const { data: folderNodes, error: folderError } = await folderQuery.order("updated_at", { ascending: false });
     if (folderError) throw folderError;
 
+    // Fetch child counts for each folder (to show "has files" indicator)
+    let foldersWithCounts = folderNodes || [];
+    const folderIds = foldersWithCounts.map((f) => f.id);
+    if (folderIds.length > 0) {
+      const { data: childCounts, error: childCountError } = await supabase
+        .from("exam_nodes")
+        .select("parent_id")
+        .in("parent_id", folderIds)
+        .eq("instructor_id", user.id);
+
+      if (!childCountError && childCounts) {
+        const countMap = new Map<string, number>();
+        for (const row of childCounts) {
+          countMap.set(row.parent_id, (countMap.get(row.parent_id) || 0) + 1);
+        }
+        foldersWithCounts = foldersWithCounts.map((f) => ({
+          ...f,
+          child_count: countMap.get(f.id) || 0,
+        }));
+      }
+    }
+
     // Fetch paginated exam nodes + total count
     let examQuery = supabase
       .from("exam_nodes")
@@ -164,7 +186,7 @@ export async function getFolderContents(data: {
     }
 
     return successJson({
-      folders: folderNodes || [],
+      folders: foldersWithCounts,
       exams: examNodesWithCounts,
       hasMoreExams,
       totalExamCount: total,

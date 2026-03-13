@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
@@ -11,10 +10,8 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import {
-  BookOpen,
   Plus,
   FileText,
-  Calendar,
   Loader2,
   Menu,
   LayoutDashboard,
@@ -96,6 +93,7 @@ interface ExamNode {
   created_at: string;
   updated_at: string;
   student_count?: number;
+  child_count?: number;
   exams?: {
     id: string;
     title: string;
@@ -614,40 +612,33 @@ export default function InstructorHome() {
 
   const getViewButtonClasses = (mode: "grid" | "list") =>
     cn(
-      "h-8 w-8 rounded-full border border-transparent transition-colors text-muted-foreground min-h-[44px] min-w-[44px]",
+      "p-1.5 rounded-md transition-colors",
       viewMode === mode
-        ? "bg-primary text-primary-foreground shadow-sm"
-        : "hover:bg-muted/70"
+        ? "bg-primary/10 text-primary"
+        : "text-muted-foreground hover:text-foreground"
     );
 
   // 그리드 뷰 스켈레톤 컴포넌트
   const GridCardSkeleton = () => (
-    <Card className="relative flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm">
-      <div className="flex flex-1 flex-col text-left">
-        {/* 아이콘 영역 */}
-        <div className="flex flex-1 items-center justify-center bg-gradient-to-b from-blue-100 to-blue-50 p-10">
-          <Skeleton className="h-16 w-16 rounded-lg" />
+    <div className="relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm">
+      {/* Icon area */}
+      <div className="flex items-center justify-center py-10 px-6">
+        <Skeleton className="h-14 w-14 rounded-lg" />
+      </div>
+      {/* Info area */}
+      <div className="flex flex-col gap-1.5 border-t bg-muted/40 px-4 py-3">
+        <Skeleton className="h-4 w-3/4" />
+        <Skeleton className="h-3 w-1/2" />
+        <div className="flex items-center justify-between mt-0.5">
+          <Skeleton className="h-5 w-12 rounded-full" />
+          <Skeleton className="h-3 w-16" />
         </div>
-        {/* 텍스트 영역 */}
-        <CardContent className="flex flex-col gap-2 border-t border-border/50 bg-background/80 px-5 py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1 space-y-2">
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-3 w-1/2" />
-              <Skeleton className="h-3 w-2/3" />
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-2">
-            <Skeleton className="h-5 w-16 rounded-full" />
-            <Skeleton className="h-3 w-20" />
-          </div>
-        </CardContent>
       </div>
-      {/* 액션 버튼 */}
+      {/* Menu button */}
       <div className="absolute right-2 top-2">
-        <Skeleton className="h-10 w-10 rounded-lg" />
+        <Skeleton className="h-8 w-8 rounded-lg" />
       </div>
-    </Card>
+    </div>
   );
 
   // 리스트 뷰 스켈레톤 컴포넌트
@@ -951,6 +942,7 @@ export default function InstructorHome() {
       const dragHandlers = getDragHandlers(node);
       const isDragSource = draggedNode?.id === node.id;
       const isDragTarget = dragOverNodeId === node.id;
+      const hasFiles = (node.child_count ?? 0) > 0;
 
       return (
         <div
@@ -969,6 +961,10 @@ export default function InstructorHome() {
         >
           <div className="folder-card__tab" aria-hidden />
           <div className="folder-card__fold" aria-hidden />
+          {/* Paper peeking out for non-empty folders */}
+          {hasFiles && (
+            <div className="folder-card__paper" aria-hidden />
+          )}
           <div className="folder-card__body relative">
             <div
               className="absolute right-1 top-1 z-10"
@@ -1003,79 +999,70 @@ export default function InstructorHome() {
   const renderGridNode = useCallback(
     (node: ExamNode) => {
       const isFolder = node.kind === "folder";
-      const iconWrapperClasses = isFolder
-        ? "from-blue-100 to-blue-50 text-blue-500"
-        : "from-slate-100 to-slate-50 text-slate-500";
       const dragHandlers = getDragHandlers(node);
       const isDragSource = draggedNode?.id === node.id;
       const isDragTarget = dragOverNodeId === node.id && node.kind === "folder";
 
       return (
-        <Card
+        <div
           key={node.id}
           {...dragHandlers}
-          className={`relative flex h-full flex-col overflow-hidden rounded-3xl border border-border/60 bg-card shadow-sm transition-all duration-200 group ${
-            isDragSource ? "opacity-50 scale-95 cursor-grabbing" : "cursor-grab"
-          } ${isDragTarget ? "ring-2 ring-primary ring-offset-2" : ""} ${
-            isMoving ? "pointer-events-none opacity-60" : ""
-          } ${
+          className={cn(
+            "relative flex flex-col overflow-hidden rounded-2xl border bg-card shadow-sm transition-all duration-200 group",
+            isDragSource ? "opacity-50 scale-95 cursor-grabbing" : "cursor-grab",
+            isDragTarget && "ring-2 ring-primary ring-offset-2",
+            isMoving && "pointer-events-none opacity-60",
             node.kind === "exam" && draggedNode
               ? "cursor-not-allowed"
               : "hover:shadow-md"
-          }`}
+          )}
           onClick={() => {
             if (isMoving) return;
             handleNodeClick(node);
           }}
           onMouseEnter={() => handleExamNodeHover(node)}
         >
-          <div className="flex flex-1 flex-col text-left">
+          {/* Icon area */}
+          <div className="relative flex items-center justify-center py-10 px-6">
+            {isFolder ? (
+              <Folder className="h-14 w-14 text-muted-foreground/60" strokeWidth={1.5} />
+            ) : (
+              <FileText className="h-14 w-14 text-muted-foreground/60" strokeWidth={1.5} />
+            )}
+            {/* Three-dot menu */}
             <div
-              className={`flex flex-1 items-center justify-center bg-gradient-to-b ${iconWrapperClasses} p-10`}
+              className="absolute right-2 top-2"
+              onClick={(e) => e.stopPropagation()}
             >
+              {renderNodeActions(node)}
+            </div>
+          </div>
+          {/* Info area */}
+          <div className="flex flex-col gap-1.5 border-t bg-muted/40 px-4 py-3">
+            <h3 className="text-sm font-medium text-foreground truncate">
+              {node.name}
+            </h3>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               {isFolder ? (
-                <Folder className="h-16 w-16" strokeWidth={1.5} />
+                <span>폴더 · {formatDate(node.updated_at)}</span>
               ) : (
-                <FileText className="h-16 w-16" strokeWidth={1.5} />
+                <>
+                  {node.exams?.code && (
+                    <span className="exam-code font-mono">{node.exams.code}</span>
+                  )}
+                  <span>·</span>
+                  <span>{formatDate(node.created_at)}</span>
+                </>
               )}
             </div>
-            <CardContent className="flex flex-col gap-2 border-t border-border/50 bg-background/80 px-5 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-medium text-foreground truncate">
-                    {node.name}
-                  </h3>
-                  <div className="mt-1 space-y-0.5">
-                    <p className="text-xs text-muted-foreground truncate">
-                      {isFolder ? (
-                        `폴더 · ${formatDate(node.updated_at)}`
-                      ) : (
-                        <span>{node.exams?.code || ""}</span>
-                      )}
-                    </p>
-                    {!isFolder && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        생성 {formatDate(node.created_at)}
-                      </p>
-                    )}
-                  </div>
-                </div>
+            {!isFolder && (
+              <div className="flex items-center justify-between mt-0.5">
+                <div>{renderNodeStatus(node)}</div>
+                {renderStudentCount(node)}
               </div>
-              {!isFolder && (
-                <div className="flex items-center justify-between">
-                  <div>{renderNodeStatus(node)}</div>
-                  {renderStudentCount(node)}
-                </div>
-              )}
-            </CardContent>
+            )}
           </div>
-          <div
-            className="absolute right-2 top-2"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {renderNodeActions(node)}
-          </div>
-        </Card>
+        </div>
       );
     },
     [
@@ -1085,6 +1072,10 @@ export default function InstructorHome() {
       renderNodeActions,
       renderNodeStatus,
       renderStudentCount,
+      getDragHandlers,
+      draggedNode,
+      dragOverNodeId,
+      isMoving,
     ]
   );
 
@@ -1465,98 +1456,61 @@ export default function InstructorHome() {
                   </p>
 
                   {/* 시험 관리 */}
-                  <Card className="border-0 shadow-xl">
-                    <CardHeader className="space-y-4">
-                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div className="min-w-0 flex-1">
-                          <CardTitle className="flex items-center space-x-2 text-lg sm:text-xl">
-                            <BookOpen
-                              className="w-5 h-5 text-primary shrink-0"
-                              aria-hidden="true"
-                            />
-                            <span>시험 관리</span>
-                          </CardTitle>
-                        </div>
-                        <div className="flex items-center gap-3 sm:gap-4 shrink-0 w-full sm:w-auto justify-between sm:justify-end">
-                          <div className="flex items-center space-x-2 text-xs sm:text-sm text-muted-foreground">
-                            <Calendar
-                              className="w-4 h-4 shrink-0"
-                              aria-hidden="true"
-                            />
-                            <span className="whitespace-nowrap">
-                              총 {folderNodes.length + examNodes.length}개
-                            </span>
-                          </div>
-                        </div>
+                  <section className="space-y-4">
+                    {/* Toolbar: new + search + view toggle — single row */}
+                    <div className="flex items-center gap-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button size="sm" className="gap-1.5 shrink-0">
+                            <Plus className="w-4 h-4" />
+                            <span className="hidden sm:inline">새 항목</span>
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-48">
+                          <DropdownMenuItem
+                            onSelect={() => setIsCreateFolderOpen(true)}
+                          >
+                            <FolderPlus className="w-4 h-4 mr-2" />새 폴더
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => router.push("/instructor/new")}
+                          >
+                            <FileText className="w-4 h-4 mr-2" />새 시험
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+
+                      <div className="relative flex-1 min-w-0">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                        <Input
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="시험 및 폴더 검색"
+                          className="pl-9 h-9"
+                        />
                       </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4 sm:space-y-6">
-                      {/* 액션 바: 새 항목 + 검색 + 그리드/리스트 토글 */}
-                      <div className="bg-card/80 border border-border rounded-2xl p-4 shadow-sm">
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                          <div className="flex items-center gap-2">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button className="gap-2 bg-primary text-primary-foreground min-h-[44px]">
-                                  <Plus className="w-4 h-4" />새 항목
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent
-                                align="start"
-                                className="w-48"
-                              >
-                                <DropdownMenuItem
-                                  onSelect={() => setIsCreateFolderOpen(true)}
-                                >
-                                  <FolderPlus className="w-4 h-4 mr-2" />새 폴더
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() =>
-                                    router.push("/instructor/new")
-                                  }
-                                >
-                                  <FileText className="w-4 h-4 mr-2" />새 시험
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                          <div className="flex flex-1 flex-wrap items-center gap-3 min-w-0 sm:min-w-[260px]">
-                            <div className="relative flex-1 min-w-0 sm:min-w-[220px]">
-                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                              <Input
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="시험 및 폴더 검색"
-                                className="pl-9 min-h-[44px]"
-                              />
-                            </div>
-                            <div className="flex items-center gap-1 rounded-full border border-border bg-background/90 p-1 shadow-sm">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className={getViewButtonClasses("grid")}
-                                onClick={() => setViewMode("grid")}
-                                aria-pressed={viewMode === "grid"}
-                                aria-label="그리드 보기"
-                              >
-                                <LayoutGrid className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className={getViewButtonClasses("list")}
-                                onClick={() => setViewMode("list")}
-                                aria-pressed={viewMode === "list"}
-                                aria-label="목록 보기"
-                              >
-                                <List className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
+
+                      <div className="flex items-center gap-0.5 border rounded-lg p-1 shrink-0">
+                        <button
+                          type="button"
+                          className={getViewButtonClasses("grid")}
+                          onClick={() => setViewMode("grid")}
+                          aria-pressed={viewMode === "grid"}
+                          aria-label="그리드 보기"
+                        >
+                          <LayoutGrid className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          className={getViewButtonClasses("list")}
+                          onClick={() => setViewMode("list")}
+                          aria-pressed={viewMode === "list"}
+                          aria-label="목록 보기"
+                        >
+                          <List className="w-4 h-4" />
+                        </button>
                       </div>
+                    </div>
 
                       {/* 브레드크럼 */}
                       {(currentFolderId || breadcrumb.length > 0) && (
@@ -1746,8 +1700,7 @@ export default function InstructorHome() {
                           </div>
                         </div>
                       )}
-                    </CardContent>
-                  </Card>
+                  </section>
                 </div>
 
       {/* 삭제 확인 다이얼로그 */}

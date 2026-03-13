@@ -113,12 +113,11 @@ export default function InstructorLayout({
             side="left"
             variant="sidebar"
             collapsible="icon"
-            className="border-r border-sidebar-border"
+            className="overflow-visible"
           >
             <DashboardSidebar
               homeHref="/instructor"
               navItems={navigationItems}
-              showToggle
             />
           </Sidebar>
 

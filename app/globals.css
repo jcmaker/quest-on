@@ -28,7 +28,7 @@
   --card-foreground: hsl(240 10% 3.9%);
   --popover: hsl(0 0% 100%);
   --popover-foreground: hsl(0 0% 20%);
-  --primary: hsl(217.22 91.22% 52.94%);
+  --primary: hsl(222 56% 49%);
   --primary-foreground: hsl(0 0% 100%);
   --secondary: hsl(240 5% 96%);
   --secondary-foreground: hsl(240 6% 10%);
@@ -40,20 +40,20 @@
   --destructive-foreground: hsl(0 0% 100%);
   --border: hsl(220 13.0435% 90.9804%);
   --input: hsl(220 13.0435% 90.9804%);
-  --ring: hsl(217.22 91.22% 52.94%);
-  --chart-1: hsl(217.22 91.22% 52.94%);
+  --ring: hsl(222 56% 49%);
+  --chart-1: hsl(222 56% 49%);
   --chart-2: hsl(221.2121 83.1933% 53.3333%);
   --chart-3: hsl(224.2781 76.3265% 48.0392%);
   --chart-4: hsl(225.931 70.7317% 40.1961%);
   --chart-5: hsl(224.4444 64.2857% 32.9412%);
   --sidebar: hsl(210 20% 98.0392%);
   --sidebar-foreground: hsl(0 0% 20%);
-  --sidebar-primary: hsl(217.22 91.22% 52.94%);
+  --sidebar-primary: hsl(222 56% 49%);
   --sidebar-primary-foreground: hsl(0 0% 100%);
   --sidebar-accent: hsl(204 93.75% 93.7255%);
   --sidebar-accent-foreground: hsl(224.4444 64.2857% 32.9412%);
   --sidebar-border: hsl(220 13.0435% 90.9804%);
-  --sidebar-ring: hsl(217.22 91.22% 52.94%);
+  --sidebar-ring: hsl(222 56% 49%);
   --font-sans: Inter, sans-serif;
   --font-serif: Source Serif 4, serif;
   --font-mono: JetBrains Mono, monospace;
@@ -89,7 +89,7 @@
   --card-foreground: hsl(0 0% 89.8039%);
   --popover: hsl(0 0% 14.902%);
   --popover-foreground: hsl(0 0% 89.8039%);
-  --primary: hsl(217.22 91.22% 52.94%);
+  --primary: hsl(222 56% 49%);
   --primary-foreground: hsl(0 0% 100%);
   --secondary: hsl(0 0% 20%);
   --secondary-foreground: hsl(0 0% 93%);
@@ -101,20 +101,20 @@
   --destructive-foreground: hsl(0 0% 100%);
   --border: hsl(0 0% 25.098%);
   --input: hsl(0 0% 25.098%);
-  --ring: hsl(217.22 91.22% 52.94%);
-  --chart-1: hsl(213.1169 93.9024% 67.8431%);
-  --chart-2: hsl(217.22 91.22% 52.94%);
+  --ring: hsl(222 56% 49%);
+  --chart-1: hsl(222 56% 62%);
+  --chart-2: hsl(222 56% 49%);
   --chart-3: hsl(221.2121 83.1933% 53.3333%);
   --chart-4: hsl(224.2781 76.3265% 48.0392%);
   --chart-5: hsl(225.931 70.7317% 40.1961%);
   --sidebar: hsl(0 0% 9.0196%);
   --sidebar-foreground: hsl(0 0% 89.8039%);
-  --sidebar-primary: hsl(217.22 91.22% 52.94%);
+  --sidebar-primary: hsl(222 56% 49%);
   --sidebar-primary-foreground: hsl(0 0% 100%);
   --sidebar-accent: hsl(224.4444 64.2857% 32.9412%);
   --sidebar-accent-foreground: hsl(213.3333 96.9231% 87.2549%);
   --sidebar-border: hsl(0 0% 25.098%);
-  --sidebar-ring: hsl(217.22 91.22% 52.94%);
+  --sidebar-ring: hsl(222 56% 49%);
   --font-sans: Inter, sans-serif;
   --font-serif: Source Serif 4, serif;
   --font-mono: JetBrains Mono, monospace;
@@ -220,13 +220,15 @@
 
 .folder-card > .folder-card__tab,
 .folder-card > .folder-card__fold,
-.folder-card > .folder-card__body {
+.folder-card > .folder-card__body,
+.folder-card > .folder-card__paper {
   position: absolute;
   display: block;
 }
 
-/* Tab (top-left) */
+/* Tab (top-left) — front cover, highest layer */
 .folder-card__tab {
+  z-index: 3;
   height: 15%;
   width: 50%;
   top: 0;
@@ -242,8 +244,9 @@
   border-color: hsl(221 83% 38%);
 }
 
-/* Fold (top-right corner) */
+/* Fold (top-right corner) — front cover, highest layer */
 .folder-card__fold {
+  z-index: 3;
   top: 12px;
   right: 12px;
   width: calc(50% - 6px);
@@ -259,8 +262,9 @@
   border-bottom-color: hsl(221 83% 40%);
 }
 
-/* Body (main area, contains content) */
+/* Body (main area, contains content) — back of folder, lowest layer */
 .folder-card__body {
+  z-index: 1;
   height: 85%;
   right: 0;
   bottom: 0;
@@ -279,6 +283,34 @@
 .dark .folder-card__body {
   background: hsl(221 83% 35%);
   border-color: hsl(221 83% 30%);
+}
+
+/* Paper tucked inside non-empty folders — between body and front tab */
+.folder-card__paper {
+  z-index: 2;
+  left: 12px;
+  right: 12px;
+  /* Anchor to body top, peek out a sliver */
+  top: calc(15% - 4px);
+  height: 14px;
+  background: hsl(0 0% 97%);
+  border-radius: 3px 3px 0 0;
+  border: 1px solid hsl(220 13% 82%);
+  border-bottom: none;
+  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.06);
+  transition: transform 0.25s ease;
+  transform: translateY(0);
+}
+
+.dark .folder-card__paper {
+  background: hsl(220 10% 78%);
+  border-color: hsl(220 10% 65%);
+  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.15);
+}
+
+/* Hover: paper peeks further up */
+.folder-card:hover .folder-card__paper {
+  transform: translateY(-7px);
 }
 
 /* Exam code font - Roboto Mono with slashed zero for better 0/O distinction */
