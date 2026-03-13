@@ -2,6 +2,10 @@
 
 import { useState, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
+import {
+  isSessionConfirmedSubmitted,
+  sanitizeSubmissionErrorMessage,
+} from "@/lib/exam-submission";
 
 interface DraftAnswer {
   questionId: string;
@@ -82,31 +86,124 @@ export function useExamSubmission({
   const [showPreflightCancelConfirm, setShowPreflightCancelConfirm] = useState(false);
   const timeExpiredCalledRef = useRef(false);
 
-  const parseErrorMessage = useCallback(async (response: Response): Promise<string> => {
+  const parseErrorResponse = useCallback(async (response: Response): Promise<{
+    message: string;
+    data: Record<string, unknown> | null;
+  }> => {
+    const contentType = response.headers.get("content-type");
+
     try {
-      const contentType = response.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
-        const data = await response.json();
-        return data.message || data.error || "답안 제출에 실패했습니다.";
+        const parsed = await response.json();
+        const data =
+          parsed && typeof parsed === "object"
+            ? (parsed as Record<string, unknown>)
+            : null;
+        const rawMessage =
+          typeof data?.message === "string"
+            ? data.message
+            : typeof data?.error === "string"
+            ? data.error
+            : null;
+
+        return {
+          message: sanitizeSubmissionErrorMessage(rawMessage, {
+            status: response.status,
+            contentType,
+          }),
+          data,
+        };
       }
+
       const text = await response.text();
-      return text || "답안 제출에 실패했습니다.";
+      return {
+        message: sanitizeSubmissionErrorMessage(text, {
+          status: response.status,
+          contentType,
+        }),
+        data: null,
+      };
     } catch {
-      return "답안 제출에 실패했습니다.";
+      return {
+        message: sanitizeSubmissionErrorMessage(null, {
+          status: response.status,
+          contentType,
+        }),
+        data: null,
+      };
     }
   }, []);
 
-  const checkSubmissionOnServer = useCallback(async (code: string): Promise<boolean> => {
-    try {
-      const res = await fetch(`/api/student/sessions?examCode=${encodeURIComponent(code)}`);
-      if (!res.ok) return false;
-      const data = await res.json();
-      const sessions = Array.isArray(data) ? data : data.sessions || [];
-      return sessions.some((s: { status?: string }) => s.status === "submitted" || s.status === "graded");
-    } catch {
+  const checkSubmissionOnServer = useCallback(
+    async (code: string, attempts: number = 1): Promise<boolean> => {
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          const res = await fetch(`/api/student/sessions?examCode=${encodeURIComponent(code)}`);
+          if (res.ok) {
+            const data = await res.json();
+            const sessions = Array.isArray(data) ? data : data.sessions || [];
+
+            if (
+              sessions.some(
+                (session: {
+                  status?: string | null;
+                  submittedAt?: string | null;
+                  submitted_at?: string | null;
+                  autoSubmitted?: boolean | null;
+                  auto_submitted?: boolean | null;
+                }) => isSessionConfirmedSubmitted(session)
+              )
+            ) {
+              return true;
+            }
+          }
+        } catch {
+          // Retry below
+        }
+
+        if (attempt < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+        }
+      }
+
       return false;
+    },
+    []
+  );
+
+  const recoverSubmissionFromServer = useCallback(async (): Promise<boolean> => {
+    if (!sessionId) {
+      return checkSubmissionOnServer(examCode, 3);
     }
-  }, []);
+
+    if (userId) {
+      try {
+        const heartbeatResponse = await fetch("/api/supa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "session_heartbeat",
+            data: { sessionId, studentId: userId },
+          }),
+        });
+
+        if (heartbeatResponse.ok) {
+          const heartbeatData = await heartbeatResponse.json().catch(() => null);
+          if (
+            heartbeatData?.submitted ||
+            heartbeatData?.autoSubmitted ||
+            heartbeatData?.timeExpired
+          ) {
+            return checkSubmissionOnServer(examCode, 4);
+          }
+        }
+      } catch {
+        // Fall through to direct status polling
+      }
+    }
+
+    return checkSubmissionOnServer(examCode, 4);
+  }, [sessionId, userId, examCode, checkSubmissionOnServer]);
 
   const handlePaste = useCallback(
     async (pasteData: {
@@ -209,43 +306,19 @@ export function useExamSubmission({
         // Already submitted — treat as success
         setIsSubmitted(true);
         setManualSubmitFailed(false);
-      } else if (response.status === 400) {
-        // Check if exam was force-closed — treat EXAM_CLOSED as success
-        try {
-          const errorData = await response.json();
-          if (errorData.code === "EXAM_CLOSED") {
-            const actuallySubmitted = await checkSubmissionOnServer(examCode);
-            if (actuallySubmitted) {
-              setIsSubmitted(true);
-              setManualSubmitFailed(false);
-            } else {
-              // Force-end already submitted the session server-side
-              setIsSubmitted(true);
-              setManualSubmitFailed(false);
-            }
-          } else {
-            setSubmitErrorMessage(errorData.message || "답안 제출에 실패했습니다.");
-            setManualSubmitFailed(true);
-          }
-        } catch {
-          setSubmitErrorMessage("답안 제출에 실패했습니다.");
-          setManualSubmitFailed(true);
-        }
       } else {
-        const errorMsg = await parseErrorMessage(response);
-        // Double-check: maybe the submission actually went through
-        const actuallySubmitted = await checkSubmissionOnServer(examCode);
+        const { message } = await parseErrorResponse(response);
+        const actuallySubmitted = await recoverSubmissionFromServer();
         if (actuallySubmitted) {
           setIsSubmitted(true);
           setManualSubmitFailed(false);
         } else {
-          setSubmitErrorMessage(errorMsg);
+          setSubmitErrorMessage(message);
           setManualSubmitFailed(true);
         }
       }
     } catch {
-      // Network error — check if submission actually went through
-      const actuallySubmitted = await checkSubmissionOnServer(examCode);
+      const actuallySubmitted = await recoverSubmissionFromServer();
       if (actuallySubmitted) {
         setIsSubmitted(true);
         setManualSubmitFailed(false);
@@ -256,7 +329,7 @@ export function useExamSubmission({
     } finally {
       setIsSubmitting(false);
     }
-  }, [exam, examCode, sessionId, userId, draftAnswers, chatHistory, manualSave, setIsSubmitted, parseErrorMessage, checkSubmissionOnServer]);
+  }, [exam, examCode, sessionId, userId, draftAnswers, chatHistory, manualSave, setIsSubmitted, parseErrorResponse, recoverSubmissionFromServer]);
 
   const handleTimeExpired = useCallback(async () => {
     if (timeExpiredCalledRef.current) return;
@@ -306,22 +379,21 @@ export function useExamSubmission({
           setIsSubmitted(true);
           submitted = true;
           break;
-        } else if (response.status === 400) {
-          // Check if exam was force-closed
-          try {
-            const errorData = await response.json();
-            if (errorData.code === "EXAM_CLOSED") {
-              // Force-end already submitted the session server-side
-              setIsSubmitted(true);
-              submitted = true;
-              break;
-            }
-          } catch {
-            // Parse error — continue retry
+        } else {
+          const recovered = await recoverSubmissionFromServer();
+          if (recovered) {
+            setIsSubmitted(true);
+            submitted = true;
+            break;
           }
         }
       } catch {
-        // Retry on network errors
+        const recovered = await recoverSubmissionFromServer();
+        if (recovered) {
+          setIsSubmitted(true);
+          submitted = true;
+          break;
+        }
       }
 
       if (attempt < MAX_RETRIES) {
@@ -330,8 +402,7 @@ export function useExamSubmission({
     }
 
     if (!submitted) {
-      // Final check: maybe it actually went through despite errors
-      const actuallySubmitted = await checkSubmissionOnServer(examCode);
+      const actuallySubmitted = await recoverSubmissionFromServer();
       if (actuallySubmitted) {
         setIsSubmitted(true);
       } else {
@@ -340,7 +411,7 @@ export function useExamSubmission({
       }
     }
     setIsSubmitting(false);
-  }, [sessionId, exam, examCode, userId, draftAnswers, chatHistory, manualSave, setIsSubmitted, checkSubmissionOnServer]);
+  }, [sessionId, exam, examCode, userId, draftAnswers, chatHistory, manualSave, setIsSubmitted, recoverSubmissionFromServer]);
 
   return {
     isSubmitting,

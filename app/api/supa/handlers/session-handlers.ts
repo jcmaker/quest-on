@@ -4,6 +4,8 @@ import { compressData } from "@/lib/compression";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
+import { enqueueGrading } from "@/lib/openai";
+import { autoGradeSession } from "@/lib/grading";
 
 /** 5-second grace period for network latency (shared across heartbeat/initExamSession/feedback) */
 const GRACE_PERIOD_MS = 5_000;
@@ -25,6 +27,111 @@ export function isSessionStale(lastHeartbeatAt: string | null | undefined): bool
 // to avoid stale connections in serverless environments
 function getSupabase() {
   return getSupabaseServer();
+}
+
+async function finalizeAutoSubmittedSession(sessionId: string) {
+  const supabase = getSupabase();
+
+  const [submissionsResult, messagesResult] = await Promise.all([
+    supabase
+      .from("submissions")
+      .select("id, q_idx, answer, compressed_answer_data")
+      .eq("session_id", sessionId)
+      .order("q_idx", { ascending: true }),
+    supabase
+      .from("messages")
+      .select("q_idx, role, content, created_at")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (submissionsResult.error) {
+    throw submissionsResult.error;
+  }
+  if (messagesResult.error) {
+    throw messagesResult.error;
+  }
+
+  const submissions = submissionsResult.data || [];
+  const messages = messagesResult.data || [];
+
+  for (const submission of submissions) {
+    if (submission.compressed_answer_data || !submission.answer) {
+      continue;
+    }
+
+    try {
+      const compressedAnswer = compressData({ answer: submission.answer });
+      const { error: submissionUpdateError } = await supabase
+        .from("submissions")
+        .update({
+          compressed_answer_data: compressedAnswer.data,
+          compression_metadata: compressedAnswer.metadata,
+        })
+        .eq("id", submission.id);
+
+      if (submissionUpdateError) {
+        throw submissionUpdateError;
+      }
+    } catch (error) {
+      logError("Failed to enrich auto-submitted answer data", error, {
+        path: "/api/supa/session-handlers",
+        additionalData: { sessionId, submissionId: submission.id },
+      });
+    }
+  }
+
+  const compressedSession = compressData({
+    chatHistory: messages.map((message) => ({
+      type: message.role === "user" ? "student" : "ai",
+      content: message.content,
+      timestamp: message.created_at,
+    })),
+    answers: submissions.map((submission) =>
+      typeof submission.answer === "string" ? submission.answer : ""
+    ),
+  });
+
+  const { error: sessionUpdateError } = await supabase
+    .from("sessions")
+    .update({
+      compressed_session_data: compressedSession.data,
+      compression_metadata: compressedSession.metadata,
+    })
+    .eq("id", sessionId);
+
+  if (sessionUpdateError) {
+    throw sessionUpdateError;
+  }
+
+  const MAX_GRADING_RETRIES = 2;
+  const gradeWithRetry = async () => {
+    for (let attempt = 0; attempt <= MAX_GRADING_RETRIES; attempt++) {
+      try {
+        return await autoGradeSession(sessionId);
+      } catch (error) {
+        if (attempt === MAX_GRADING_RETRIES) {
+          throw error;
+        }
+
+        const delay = 5000 * Math.pow(2, attempt);
+        logError(`Auto-submit grading attempt ${attempt + 1} failed`, error, {
+          path: "/api/supa/session-handlers",
+          additionalData: { sessionId, attempt },
+        });
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    throw new Error(`Failed to grade auto-submitted session ${sessionId}`);
+  };
+
+  enqueueGrading(gradeWithRetry).catch((error) => {
+    logError("Auto-submit grading failed after retries", error, {
+      path: "/api/supa/session-handlers",
+      additionalData: { sessionId },
+    });
+  });
 }
 
 /**
@@ -486,6 +593,14 @@ export async function initExamSession(data: {
           session = alreadySubmitted || existingSession;
         } else {
           session = updatedSession;
+          try {
+            await finalizeAutoSubmittedSession(updatedSession.id);
+          } catch (error) {
+            logError("Failed to finalize expired session during init", error, {
+              path: "/api/supa/session-handlers",
+              additionalData: { sessionId: updatedSession.id },
+            });
+          }
         }
 
         // 메시지 로드
@@ -895,9 +1010,19 @@ export async function sessionHeartbeat(data: {
 
           if (updateError) {
             logError("Failed to auto-submit session", updateError, { path: "/api/supa", additionalData: { sessionId: data.sessionId } });
+          } else if (autoSubmittedSession) {
+            try {
+              await finalizeAutoSubmittedSession(autoSubmittedSession.id);
+            } catch (error) {
+              logError("Failed to finalize auto-submitted heartbeat session", error, {
+                path: "/api/supa/session-handlers",
+                additionalData: { sessionId: autoSubmittedSession.id },
+              });
+            }
           }
 
           return successJson({
+            submitted: !!autoSubmittedSession,
             timeExpired: true,
             autoSubmitted: !!autoSubmittedSession,
           });
