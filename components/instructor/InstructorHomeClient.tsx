@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import {
   Plus,
   FileText,
+  Clock,
   Loader2,
   Menu,
   LayoutDashboard,
@@ -30,6 +31,7 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
+  Palette,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +49,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu";
 import {
   Collapsible,
@@ -92,6 +97,7 @@ interface ExamNode {
   exam_id: string | null;
   created_at: string;
   updated_at: string;
+  color?: string | null;
   student_count?: number;
   child_count?: number;
   exams?: {
@@ -105,6 +111,18 @@ interface ExamNode {
     updated_at: string;
   } | null;
 }
+
+const FOLDER_COLORS = [
+  { value: null,     label: "기본",  back: "hsl(222 45% 78%)", body: "" },
+  { value: "blue",   label: "파랑",  back: "hsl(215 60% 72%)", body: "hsl(214 80% 96%)" },
+  { value: "teal",   label: "청록",  back: "hsl(172 45% 60%)", body: "hsl(172 50% 95%)" },
+  { value: "green",  label: "초록",  back: "hsl(145 40% 62%)", body: "hsl(145 45% 95%)" },
+  { value: "yellow", label: "노랑",  back: "hsl(45 65% 65%)",  body: "hsl(45 75% 95%)" },
+  { value: "red",    label: "빨강",  back: "hsl(0 55% 68%)",   body: "hsl(0 65% 96%)" },
+  { value: "purple", label: "보라",  back: "hsl(270 40% 70%)", body: "hsl(270 50% 96%)" },
+  { value: "pink",   label: "핑크",  back: "hsl(330 50% 72%)", body: "hsl(330 55% 96%)" },
+  { value: "gray",   label: "회색",  back: "hsl(220 10% 72%)", body: "hsl(220 8% 96%)" },
+];
 
 export default function InstructorHome() {
   const router = useRouter();
@@ -551,6 +569,45 @@ export default function InstructorHome() {
     }
   };
 
+  const handleColorChange = async (nodeId: string, color: string | null) => {
+    const queryKey = qk.drive.folderContents(currentFolderId, user?.id);
+    const previousData = queryClient.getQueryData(queryKey);
+
+    // Optimistic update
+    queryClient.setQueryData(queryKey, (old: unknown) => {
+      if (!old || typeof old !== "object" || !("pages" in old)) return old;
+      const data = old as { pages: Array<{ folders: ExamNode[]; exams: ExamNode[]; hasMoreExams: boolean; totalExamCount: number }>; pageParams: number[] };
+      return {
+        ...data,
+        pages: data.pages.map((page) => ({
+          ...page,
+          folders: page.folders.map((f) =>
+            f.id === nodeId ? { ...f, color } : f
+          ),
+        })),
+      };
+    });
+
+    try {
+      const response = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_node",
+          data: { node_id: nodeId, color },
+        }),
+      });
+
+      if (!response.ok) {
+        queryClient.setQueryData(queryKey, previousData);
+        toast.error("색상 변경에 실패했습니다.");
+      }
+    } catch {
+      queryClient.setQueryData(queryKey, previousData);
+      toast.error("색상 변경에 실패했습니다.");
+    }
+  };
+
   const renderNodeActions = (node: ExamNode) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -574,6 +631,34 @@ export default function InstructorHome() {
           <Edit className="w-4 h-4 mr-2" aria-hidden="true" />
           편집하기
         </DropdownMenuItem>
+        {node.kind === "folder" && (
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Palette className="w-4 h-4 mr-2" aria-hidden="true" /> 색상 변경
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="p-2 min-w-0">
+              <div className="grid grid-cols-5 gap-1.5">
+                {FOLDER_COLORS.map((c) => (
+                  <button
+                    key={c.value ?? "default"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleColorChange(node.id, c.value);
+                    }}
+                    className={cn(
+                      "w-7 h-7 rounded-full border-2 transition-transform hover:scale-110",
+                      node.color === c.value || (!node.color && c.value === null)
+                        ? "border-foreground scale-110"
+                        : "border-transparent"
+                    )}
+                    style={{ background: c.back }}
+                    title={c.label}
+                  />
+                ))}
+              </div>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
         {node.kind === "exam" && node.exams?.code && (
           <>
             <DropdownMenuItem
@@ -943,6 +1028,7 @@ export default function InstructorHome() {
       const isDragSource = draggedNode?.id === node.id;
       const isDragTarget = dragOverNodeId === node.id;
       const hasFiles = (node.child_count ?? 0) > 0;
+      const colorDef = FOLDER_COLORS.find((c) => c.value === node.color) || FOLDER_COLORS[0];
 
       return (
         <div
@@ -959,28 +1045,48 @@ export default function InstructorHome() {
             handleNodeClick(node);
           }}
         >
-          <div className="folder-card__tab" aria-hidden />
-          <div className="folder-card__fold" aria-hidden />
-          {/* Paper peeking out for non-empty folders */}
-          {hasFiles && (
-            <div className="folder-card__paper" aria-hidden />
-          )}
-          <div className="folder-card__body relative">
+          <div
+            className="folder-card__back"
+            aria-hidden
+            style={{ "--folder-bg": colorDef.back } as React.CSSProperties}
+          />
+          {hasFiles && <div className="folder-card__paper" aria-hidden />}
+          <div
+            className="folder-card__body relative"
+            style={{ "--folder-body": colorDef.body || undefined } as React.CSSProperties}
+          >
             <div
               className="absolute right-1 top-1 z-10"
               onClick={(e) => e.stopPropagation()}
             >
               {renderNodeActions(node)}
             </div>
-            <p className="text-[10px] font-medium uppercase tracking-wide text-foreground/80">
-              폴더
-            </p>
-            <p className="font-medium text-foreground truncate text-sm mt-0.5">
-              {node.name}
-            </p>
-            <p className="text-xs text-foreground/85 mt-0.5">
-              {formatDate(node.updated_at)}
-            </p>
+            {/* Top: icon + name */}
+            <div className="flex items-center gap-2 pr-6">
+              <Folder className="w-4 h-4 text-primary/70 shrink-0" strokeWidth={1.5} />
+              <p className="font-semibold text-foreground truncate text-sm">
+                {node.name}
+              </p>
+            </div>
+            {/* Bottom: meta rows */}
+            <div className="space-y-1.5 mt-auto">
+              {hasFiles && (
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="w-3 h-3" />
+                    <span>파일</span>
+                  </div>
+                  <span className="font-medium text-foreground">{node.child_count}</span>
+                </div>
+              )}
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <Clock className="w-3 h-3" />
+                  <span>업데이트</span>
+                </div>
+                <span className="font-medium text-foreground">{formatDate(node.updated_at)}</span>
+              </div>
+            </div>
           </div>
         </div>
       );
@@ -1552,12 +1658,16 @@ export default function InstructorHome() {
                               <div className="flex gap-4 min-w-max">
                                 {[...Array(4)].map((_, i) => (
                                   <div key={i} className="folder-card opacity-70">
-                                    <div className="folder-card__tab" />
-                                    <div className="folder-card__fold" />
+                                    <div className="folder-card__back" />
                                     <div className="folder-card__body">
-                                      <Skeleton className="h-3 w-12 bg-white/40" />
-                                      <Skeleton className="h-4 w-full mt-1.5 bg-white/40" />
-                                      <Skeleton className="h-3 w-16 mt-1 bg-white/40" />
+                                      <div className="flex items-center gap-2">
+                                        <Skeleton className="h-4 w-4 rounded" />
+                                        <Skeleton className="h-4 w-20" />
+                                      </div>
+                                      <div className="space-y-2 mt-auto">
+                                        <Skeleton className="h-3 w-full" />
+                                        <Skeleton className="h-3 w-full" />
+                                      </div>
                                     </div>
                                   </div>
                                 ))}

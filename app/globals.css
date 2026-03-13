@@ -210,107 +210,105 @@
   }
 }
 
-/* Instructor dashboard: card IS the folder shape (three-part: tab, fold, body) */
+/* ── Instructor dashboard: folder card ──
+   Single-div folder back (::before = tab ear) + white front card overlay.
+   Layers: back(1) → paper(2) → front card(3)
+*/
 .folder-card {
-  width: 180px;
-  min-height: 140px;
+  width: 210px;
+  height: 180px;
   position: relative;
   flex-shrink: 0;
 }
 
-.folder-card > .folder-card__tab,
-.folder-card > .folder-card__fold,
-.folder-card > .folder-card__body,
-.folder-card > .folder-card__paper {
+/* ── Folder back ── */
+.folder-card__back {
   position: absolute;
-  display: block;
-}
-
-/* Tab (top-left) — front cover, highest layer */
-.folder-card__tab {
-  z-index: 3;
-  height: 15%;
-  width: 50%;
-  top: 0;
-  left: 0;
-  border-radius: 12px 12px 0 0;
-  background: hsl(221 83% 65%);
-  border: 1px solid hsl(221 83% 55%);
-  border-bottom: none;
-}
-
-.dark .folder-card__tab {
-  background: hsl(221 83% 45%);
-  border-color: hsl(221 83% 38%);
-}
-
-/* Fold (top-right corner) — front cover, highest layer */
-.folder-card__fold {
-  z-index: 3;
-  top: 12px;
-  right: 12px;
-  width: calc(50% - 6px);
-  height: calc(15% - 6px);
-  background: transparent;
-  border-left: 6px solid hsl(221 83% 55%);
-  border-bottom: 6px solid hsl(221 83% 55%);
-  border-radius: 0 0 0 18px;
-}
-
-.dark .folder-card__fold {
-  border-left-color: hsl(221 83% 40%);
-  border-bottom-color: hsl(221 83% 40%);
-}
-
-/* Body (main area, contains content) — back of folder, lowest layer */
-.folder-card__body {
+  inset: 0;
   z-index: 1;
-  height: 85%;
+}
+
+/* Main back panel — full-width rounded rect behind the front card */
+.folder-card__back::after {
+  content: "";
+  position: absolute;
+  top: 20px;
+  left: 0;
   right: 0;
   bottom: 0;
+  border-radius: 12px;
+  background: var(--folder-bg, hsl(222 45% 78%));
+}
+
+/* Tab ear — pokes above the back panel on the left */
+.folder-card__back::before {
+  content: "";
+  position: absolute;
+  top: 0;
   left: 0;
-  border-radius: 0 12px 12px 12px;
-  background: hsl(221 83% 72%);
-  border: 1px solid hsl(221 83% 60%);
-  border-top: none;
-  padding: 12px 10px 10px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  overflow: hidden;
+  width: 44%;
+  height: 28px;
+  border-radius: 10px 10px 0 0;
+  background: var(--folder-bg, hsl(222 45% 78%));
 }
 
-.dark .folder-card__body {
-  background: hsl(221 83% 35%);
-  border-color: hsl(221 83% 30%);
+.dark .folder-card__back::after {
+  background: var(--folder-bg, hsl(222 30% 38%));
+}
+.dark .folder-card__back::before {
+  background: var(--folder-bg, hsl(222 30% 38%));
 }
 
-/* Paper tucked inside non-empty folders — between body and front tab */
+/* ── Paper (non-empty folders) ── */
 .folder-card__paper {
+  position: absolute;
   z-index: 2;
-  left: 12px;
-  right: 12px;
-  /* Anchor to body top, peek out a sliver */
-  top: calc(15% - 4px);
-  height: 14px;
+  left: 6px;
+  right: 6px;
+  top: 22px;
+  height: 16px;
+  border-radius: 8px 8px 0 0;
   background: hsl(0 0% 97%);
-  border-radius: 3px 3px 0 0;
-  border: 1px solid hsl(220 13% 82%);
-  border-bottom: none;
-  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.04);
   transition: transform 0.25s ease;
   transform: translateY(0);
 }
 
 .dark .folder-card__paper {
-  background: hsl(220 10% 78%);
-  border-color: hsl(220 10% 65%);
-  box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.15);
+  background: hsl(220 8% 68%);
 }
 
-/* Hover: paper peeks further up */
 .folder-card:hover .folder-card__paper {
-  transform: translateY(-7px);
+  transform: translateY(-6px);
+}
+
+/* ── Front card (content) ── */
+.folder-card__body {
+  position: absolute;
+  z-index: 3;
+  top: 30px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 12px;
+  background: var(--folder-body, hsl(0 0% 100%));
+  border: 1px solid hsl(220 14% 92%);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.03);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+}
+
+.dark .folder-card__body {
+  background: var(--folder-body, hsl(0 0% 13%));
+  border-color: hsl(0 0% 20%);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 /* Exam code font - Roboto Mono with slashed zero for better 0/O distinction */

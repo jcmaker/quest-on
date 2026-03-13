@@ -284,7 +284,7 @@ export async function moveNode(data: {
   }
 }
 
-export async function updateNode(data: { node_id: string; name?: string }) {
+export async function updateNode(data: { node_id: string; name?: string; color?: string | null }) {
   try {
     const user = await currentUser();
     if (!user) {
@@ -299,6 +299,9 @@ export async function updateNode(data: { node_id: string; name?: string }) {
     const updateData: Record<string, unknown> = {};
     if (data.name !== undefined) {
       updateData.name = data.name;
+    }
+    if (data.color !== undefined) {
+      updateData.color = data.color;
     }
 
     const { data: node, error } = await supabase
