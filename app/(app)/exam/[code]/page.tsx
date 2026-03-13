@@ -407,9 +407,9 @@ export default function ExamPage() {
 
   return (
     <SidebarProvider
-      defaultOpen={false}
+      defaultOpen={true}
       className="flex-row-reverse"
-      style={{ "--sidebar-width": "min(40vw, 480px)", "--sidebar-width-icon": "3rem" } as React.CSSProperties & { [key: string]: string }}
+      style={{ "--sidebar-width": "40vw", "--sidebar-width-icon": "3rem" } as React.CSSProperties & { [key: string]: string }}
     >
       <ExamChatSidebar
         chatHistory={filteredChatHistory}

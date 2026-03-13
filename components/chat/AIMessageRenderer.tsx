@@ -34,7 +34,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
       className={
         isPlain
           ? "text-foreground w-full group relative"
-          : "group bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 max-w-[92%] sm:max-w-[82%] lg:max-w-[68%] xl:max-w-[55%] shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30"
+          : "group bg-muted/90 text-foreground border border-border/60 backdrop-blur-sm rounded-3xl rounded-tl-md px-4 py-3 w-full shadow-lg shadow-muted/20 transition-all duration-200 hover:shadow-xl hover:shadow-muted/30"
       }
     >
       <div
