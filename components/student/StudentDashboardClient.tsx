@@ -11,9 +11,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   User,
   Clock,
@@ -30,12 +29,10 @@ import {
   X,
   ListFilterIcon,
   Loader2,
-  Menu,
   LayoutDashboard,
   LayoutGrid,
   List,
 } from "lucide-react";
-import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
 import { UserMenu } from "@/components/auth/UserMenu";
 import {
   Sidebar,
@@ -47,14 +44,8 @@ import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import { useInView } from "react-intersection-observer";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
 import { usePathname } from "next/navigation";
+import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { useDebounce } from "@/hooks/useDebounce";
 import { cn } from "@/lib/utils";
 import { getScoreColor as getScoreColorUtil, getStatusColor as getStatusColorUtil, formatDateKo } from "@/lib/grading-utils";
@@ -86,6 +77,13 @@ interface SessionsResponse {
   };
 }
 
+function getGreeting(name: string) {
+  const h = new Date().getHours();
+  if (h < 12) return `좋은 아침이에요, ${name}님 ☀️`;
+  if (h < 18) return `오후도 열심히, ${name}님 💪`;
+  return `오늘 하루 수고했어요, ${name}님 🌙`;
+}
+
 export default function StudentDashboard() {
   const router = useRouter();
   const pathname = usePathname();
@@ -96,8 +94,10 @@ export default function StudentDashboard() {
   const [filter, setFilter] = useState<
     "all" | "graded" | "pending" | "in-progress"
   >("all");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [headerVisible, setHeaderVisible] = useState(true);
+  const lastScrollY = useRef(0);
+  const mainRef = useRef<HTMLElement>(null);
 
   // Intersection Observer hook
   const { ref: observerRef, inView } = useInView();
@@ -108,10 +108,26 @@ export default function StudentDashboard() {
 
   // Scroll to top on mount and when pathname changes
   useEffect(() => {
-    // Use requestAnimationFrame to ensure DOM is ready
     requestAnimationFrame(() => {
       window.scrollTo({ top: 0, left: 0, behavior: "auto" });
     });
+  }, []);
+
+  // Scroll-based header hide/show
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!main) return;
+    const handleScroll = () => {
+      const currentY = main.scrollTop;
+      if (currentY > lastScrollY.current && currentY > 60) {
+        setHeaderVisible(false);
+      } else {
+        setHeaderVisible(true);
+      }
+      lastScrollY.current = currentY;
+    };
+    main.addEventListener("scroll", handleScroll, { passive: true });
+    return () => main.removeEventListener("scroll", handleScroll);
   }, []);
 
   // Redirect non-students or users without role
@@ -498,99 +514,30 @@ export default function StudentDashboard() {
             <DashboardSidebar
               homeHref="/student"
               navItems={navigationItems}
-              onItemClick={() => setSidebarOpen(false)}
             />
           </Sidebar>
-
-          {/* Mobile Sidebar Sheet */}
-          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <SheetContent side="left" className="w-64 p-0">
-              <SheetHeader className="sr-only">
-                <SheetTitle>메뉴</SheetTitle>
-              </SheetHeader>
-              <div className="flex flex-col h-full bg-sidebar">
-                <div className="p-4 sm:p-5 border-b border-sidebar-border">
-                  <Link
-                    href="/student"
-                    className="flex items-center justify-center"
-                  >
-                    <Image
-                      src="/qstn_logo_svg.svg"
-                      alt="Quest-On Logo"
-                      width={40}
-                      height={40}
-                      className="w-10 h-10"
-                      priority
-                    />
-                    <span className="text-xl font-bold text-sidebar-foreground ml-2">
-                      Quest-On
-                    </span>
-                  </Link>
-                </div>
-                <nav
-                  className="flex-1 p-3 sm:p-4 space-y-1 overflow-y-auto"
-                  aria-label="주요 네비게이션"
-                >
-                  {navigationItems.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => setSidebarOpen(false)}
-                        className={cn(
-                          "flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-sidebar",
-                          item.active
-                            ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
-                            : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                        )}
-                        aria-current={item.active ? "page" : undefined}
-                      >
-                        <Icon className="w-5 h-5 shrink-0" aria-hidden="true" />
-                        <span>{item.title}</span>
-                      </Link>
-                    );
-                  })}
-                </nav>
-                <SidebarFooter />
-              </div>
-            </SheetContent>
-          </Sheet>
 
           <SidebarInset>
             {/* Main Content Area */}
             <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
               {/* Top Header — lightweight */}
-              <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-sm transition-all duration-200">
+              <header className={`sticky top-0 z-40 bg-background/80 backdrop-blur-sm border-b border-border transition-transform duration-300 ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}>
                 <div className="px-4 sm:px-6 lg:px-8 py-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
-                      {/* Mobile Menu Button */}
-                      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-                        <SheetTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="lg:hidden min-h-[44px] min-w-[44px] p-0"
-                            aria-label="메뉴 열기"
-                          >
-                            <Menu className="w-5 h-5" aria-hidden="true" />
-                          </Button>
-                        </SheetTrigger>
-                      </Sheet>
-
                       {/* Desktop Sidebar Toggle */}
-                      <SidebarTrigger />
+                      <SidebarTrigger className="hidden lg:flex" />
 
                       <div className="min-w-0">
                         <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
                           학생 대시보드
                         </h1>
                         <p className="text-xs text-muted-foreground truncate hidden sm:block">
-                          환영합니다,{" "}
-                          {user?.firstName ||
-                            user?.emailAddresses[0]?.emailAddress}
-                          님
+                          {getGreeting(
+                            user?.firstName ||
+                              user?.emailAddresses[0]?.emailAddress ||
+                              ""
+                          )}
                         </p>
                       </div>
                     </div>
@@ -604,14 +551,14 @@ export default function StudentDashboard() {
               </header>
 
               {/* Main Content */}
-              <main className="flex-1 overflow-y-auto bg-background">
+              <main ref={mainRef} className="flex-1 overflow-y-auto bg-background pb-20 lg:pb-0">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
                   {/* Welcome Section — minimal card */}
                   <div className="border bg-card rounded-xl p-6 sm:p-8">
                     <div className="flex items-center justify-between gap-4">
                       <div className="space-y-2 flex-1 min-w-0">
                         <h2 className="text-xl sm:text-2xl font-bold text-foreground">
-                          안녕하세요, {user?.firstName || user?.fullName || ""} 학생님!
+                          {getGreeting(user?.firstName || user?.fullName || "")}
                         </h2>
                         <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
                           시험 코드를 입력하여 시험을 시작하거나, 완료한 시험의
@@ -1129,6 +1076,8 @@ export default function StudentDashboard() {
               </main>
             </div>
           </SidebarInset>
+
+          <MobileBottomNav navItems={navigationItems} />
         </SidebarProvider>
       </SignedIn>
     </div>

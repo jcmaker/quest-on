@@ -61,6 +61,7 @@ export default function RootLayout({
     <html lang="ko" suppressHydrationWarning={true}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${robotoMono.variable} antialiased`}
+        suppressHydrationWarning={true}
       >
         {children}
       </body>

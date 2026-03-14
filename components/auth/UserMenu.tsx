@@ -11,8 +11,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { LogOut, User } from "lucide-react";
+import { LogOut, User, Settings } from "lucide-react";
 import Link from "next/link";
+import { ThemeTogglerButton } from "@/components/animate-ui/components/buttons/theme-toggler";
 
 export function UserMenu() {
   const { user, isLoaded } = useUser();
@@ -46,8 +47,8 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-          <Avatar className="h-8 w-8">
+        <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+          <Avatar className="h-9 w-9">
             <AvatarImage src={user.imageUrl} alt={user.fullName || "User"} />
             <AvatarFallback>{getUserInitials()}</AvatarFallback>
           </Avatar>
@@ -68,8 +69,21 @@ export function UserMenu() {
         <DropdownMenuItem asChild>
           <Link href="/profile" className="flex items-center">
             <User className="mr-2 h-4 w-4" />
-            Profile
+            프로필
           </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/settings" className="flex items-center">
+            <Settings className="mr-2 h-4 w-4" />
+            설정
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild onSelect={(e) => e.preventDefault()}>
+          <div className="flex items-center justify-between w-full cursor-default">
+            <span className="text-sm">테마</span>
+            <ThemeTogglerButton modes={["light", "dark"]} variant="outline" size="sm" />
+          </div>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -77,7 +91,7 @@ export function UserMenu() {
           className="flex items-center text-red-600 focus:text-red-600"
         >
           <LogOut className="mr-2 h-4 w-4" />
-          Log out
+          로그아웃
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

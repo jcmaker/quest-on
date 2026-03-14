@@ -132,6 +132,8 @@ export default function InstructorHome() {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [nodeToDelete, setNodeToDelete] = useState<ExamNode | null>(null);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [nodeToEdit, setNodeToEdit] = useState<ExamNode | null>(null);
   const [editName, setEditName] = useState("");
@@ -382,28 +384,13 @@ export default function InstructorHome() {
   };
 
   const handleDeleteClick = (node: ExamNode) => {
-    if (node.kind === "exam" && node.exams?.code) {
-      // 시험인 경우는 여전히 prompt 사용 (시험 코드 입력 필요)
-      const input = prompt(
-        `"${node.name}" 시험을 삭제하려면 시험 코드를 입력하세요.`
-      );
-      if (input === null) {
-        return;
-      }
-      if (input.trim() !== node.exams.code) {
-        toast.error("시험 코드가 일치하지 않습니다.");
-        return;
-      }
-      // 시험 코드가 맞으면 바로 삭제
-      handleDeleteNode(node);
-    } else {
-      // 폴더인 경우 AlertDialog 사용
-      setNodeToDelete(node);
-      setDeleteDialogOpen(true);
-    }
+    setNodeToDelete(node);
+    setDeleteConfirmInput("");
+    setDeleteDialogOpen(true);
   };
 
   const handleDeleteNode = async (node: ExamNode) => {
+    setIsDeleting(true);
     try {
       const response = await fetch("/api/supa", {
         method: "POST",
@@ -418,6 +405,9 @@ export default function InstructorHome() {
 
       if (response.ok) {
         toast.success("삭제되었습니다.");
+        setDeleteDialogOpen(false);
+        setNodeToDelete(null);
+        setDeleteConfirmInput("");
         refetchFolderContents(); // TanStack Query 캐시 무효화 및 재조회
       } else {
         const errorData = await response.json().catch(() => ({}));
@@ -453,6 +443,8 @@ export default function InstructorHome() {
           duration: 5000,
         }
       );
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1849,29 +1841,77 @@ export default function InstructorHome() {
                 </div>
 
       {/* 삭제 확인 다이얼로그 */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!isDeleting) {
+            setDeleteDialogOpen(open);
+            if (!open) setDeleteConfirmInput("");
+          }
+        }}
+      >
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>삭제 확인</AlertDialogTitle>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-4 w-4" />
+              {nodeToDelete?.kind === "exam" ? "시험 삭제" : "폴더 삭제"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {nodeToDelete
-                ? `"${nodeToDelete.name}"을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`
-                : ""}
+              이 작업은 되돌릴 수 없습니다.{" "}
+              {nodeToDelete?.kind === "exam" ? (
+                <>
+                  계속하려면 시험 제목{" "}
+                  <strong>&quot;{nodeToDelete.name}&quot;</strong>을(를) 아래에
+                  입력하세요.
+                </>
+              ) : (
+                <>
+                  <strong>&quot;{nodeToDelete?.name}&quot;</strong> 폴더를
+                  삭제하시겠습니까?
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {nodeToDelete?.kind === "exam" && (
+            <div className="py-2">
+              <Input
+                value={deleteConfirmInput}
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
+                placeholder={nodeToDelete.name}
+                disabled={isDeleting}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter" &&
+                    deleteConfirmInput === nodeToDelete.name
+                  ) {
+                    handleDeleteNode(nodeToDelete);
+                  }
+                }}
+              />
+            </div>
+          )}
+
           <AlertDialogFooter>
-            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeleting}>취소</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
-                if (nodeToDelete) {
-                  handleDeleteNode(nodeToDelete);
-                  setDeleteDialogOpen(false);
-                  setNodeToDelete(null);
-                }
-              }}
+              onClick={() => nodeToDelete && handleDeleteNode(nodeToDelete)}
+              disabled={
+                isDeleting ||
+                (nodeToDelete?.kind === "exam" &&
+                  deleteConfirmInput !== nodeToDelete.name)
+              }
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              삭제
+              {isDeleting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  삭제 중...
+                </>
+              ) : (
+                "삭제"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogPopup>
