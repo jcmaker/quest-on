@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ThemeTogglerButton } from "@/components/animate-ui/components/buttons/theme-toggler";
 
 export function SidebarFooter() {
   const { user } = useUser();
@@ -75,6 +76,11 @@ export function SidebarFooter() {
         <Settings className="mr-2 h-4 w-4" />
         설정
       </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <div className="flex items-center justify-between px-2 py-1.5 text-sm">
+        <span className="text-foreground/80">테마</span>
+        <ThemeTogglerButton modes={["light", "dark"]} variant="outline" size="sm" />
+      </div>
       <DropdownMenuSeparator />
       <DropdownMenuItem
         onClick={handleSignOut}

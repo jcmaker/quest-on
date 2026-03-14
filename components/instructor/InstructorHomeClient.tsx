@@ -113,15 +113,15 @@ interface ExamNode {
 }
 
 const FOLDER_COLORS = [
-  { value: null,     label: "기본",  back: "hsl(222 45% 78%)", body: "" },
-  { value: "blue",   label: "파랑",  back: "hsl(215 60% 72%)", body: "hsl(214 80% 96%)" },
-  { value: "teal",   label: "청록",  back: "hsl(172 45% 60%)", body: "hsl(172 50% 95%)" },
-  { value: "green",  label: "초록",  back: "hsl(145 40% 62%)", body: "hsl(145 45% 95%)" },
-  { value: "yellow", label: "노랑",  back: "hsl(45 65% 65%)",  body: "hsl(45 75% 95%)" },
-  { value: "red",    label: "빨강",  back: "hsl(0 55% 68%)",   body: "hsl(0 65% 96%)" },
-  { value: "purple", label: "보라",  back: "hsl(270 40% 70%)", body: "hsl(270 50% 96%)" },
-  { value: "pink",   label: "핑크",  back: "hsl(330 50% 72%)", body: "hsl(330 55% 96%)" },
-  { value: "gray",   label: "회색",  back: "hsl(220 10% 72%)", body: "hsl(220 8% 96%)" },
+  { value: null,     label: "기본",  back: "hsl(222 45% 78%)", body: "",                 darkBack: "hsl(222 35% 38%)", darkBody: "" },
+  { value: "blue",   label: "파랑",  back: "hsl(215 60% 72%)", body: "hsl(214 80% 96%)", darkBack: "hsl(215 50% 40%)", darkBody: "hsl(214 28% 19%)" },
+  { value: "teal",   label: "청록",  back: "hsl(172 45% 60%)", body: "hsl(172 50% 95%)", darkBack: "hsl(172 40% 32%)", darkBody: "hsl(172 22% 18%)" },
+  { value: "green",  label: "초록",  back: "hsl(145 40% 62%)", body: "hsl(145 45% 95%)", darkBack: "hsl(145 35% 32%)", darkBody: "hsl(145 20% 18%)" },
+  { value: "yellow", label: "노랑",  back: "hsl(45 65% 65%)",  body: "hsl(45 75% 95%)",  darkBack: "hsl(45 55% 36%)",  darkBody: "hsl(45 20% 18%)" },
+  { value: "red",    label: "빨강",  back: "hsl(0 55% 68%)",   body: "hsl(0 65% 96%)",   darkBack: "hsl(0 48% 38%)",   darkBody: "hsl(0 20% 18%)" },
+  { value: "purple", label: "보라",  back: "hsl(270 40% 70%)", body: "hsl(270 50% 96%)", darkBack: "hsl(270 35% 38%)", darkBody: "hsl(270 20% 18%)" },
+  { value: "pink",   label: "핑크",  back: "hsl(330 50% 72%)", body: "hsl(330 55% 96%)", darkBack: "hsl(330 42% 40%)", darkBody: "hsl(330 20% 18%)" },
+  { value: "gray",   label: "회색",  back: "hsl(220 10% 72%)", body: "hsl(220 8% 96%)",  darkBack: "hsl(220 8% 35%)",  darkBody: "hsl(220 8% 18%)" },
 ];
 
 export default function InstructorHome() {
@@ -474,8 +474,8 @@ export default function InstructorHome() {
 
     const badgeClasses =
       node.exams.status === "active"
-        ? "bg-emerald-100 text-emerald-700"
-        : "bg-slate-200 text-slate-700";
+        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+        : "bg-slate-200 text-slate-700 dark:bg-slate-700/40 dark:text-slate-300";
 
     return (
       <span
@@ -844,13 +844,48 @@ export default function InstructorHome() {
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", node.id);
     if (e.dataTransfer.setDragImage) {
-      const dragImage = document.createElement("div");
-      dragImage.innerHTML = node.name;
-      dragImage.style.position = "absolute";
-      dragImage.style.top = "-1000px";
-      document.body.appendChild(dragImage);
-      e.dataTransfer.setDragImage(dragImage, 0, 0);
-      setTimeout(() => document.body.removeChild(dragImage), 0);
+      const isDark = document.documentElement.classList.contains("dark");
+
+      const iconSvg =
+        node.kind === "exam"
+          ? `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+               style="flex-shrink:0">
+               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+               <polyline points="14 2 14 8 20 8"/>
+               <line x1="16" y1="13" x2="8" y2="13"/>
+               <line x1="16" y1="17" x2="8" y2="17"/>
+               <polyline points="10 9 9 9 8 9"/>
+             </svg>`
+          : `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+               style="flex-shrink:0">
+               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+             </svg>`;
+
+      const ghost = document.createElement("div");
+      ghost.innerHTML = `${iconSvg}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${node.name}</span>`;
+      Object.assign(ghost.style, {
+        position: "absolute",
+        top: "-1000px",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "6px 12px",
+        borderRadius: "8px",
+        border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)"}`,
+        background: isDark ? "#1e2130" : "#ffffff",
+        color: isDark ? "#e2e8f0" : "#1a202c",
+        fontSize: "13px",
+        fontWeight: "500",
+        maxWidth: "220px",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+        pointerEvents: "none",
+      });
+
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 16, 16);
+      setTimeout(() => document.body.removeChild(ghost), 0);
     }
   };
 
@@ -1048,12 +1083,12 @@ export default function InstructorHome() {
           <div
             className="folder-card__back"
             aria-hidden
-            style={{ "--folder-bg": colorDef.back } as React.CSSProperties}
+            style={{ "--folder-bg": colorDef.back, "--folder-bg-dark": colorDef.darkBack } as React.CSSProperties}
           />
           {hasFiles && <div className="folder-card__paper" aria-hidden />}
           <div
             className="folder-card__body relative"
-            style={{ "--folder-body": colorDef.body || undefined } as React.CSSProperties}
+            style={{ "--folder-body": colorDef.body || undefined, "--folder-body-dark": colorDef.darkBody || undefined } as React.CSSProperties}
           >
             <div
               className="absolute right-1 top-1 z-10"

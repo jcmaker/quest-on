@@ -253,10 +253,10 @@
 }
 
 .dark .folder-card__back::after {
-  background: var(--folder-bg, hsl(222 30% 38%));
+  background: var(--folder-bg-dark, hsl(222 35% 38%));
 }
 .dark .folder-card__back::before {
-  background: var(--folder-bg, hsl(222 30% 38%));
+  background: var(--folder-bg-dark, hsl(222 35% 38%));
 }
 
 /* ── Paper (non-empty folders) ── */
@@ -275,7 +275,7 @@
 }
 
 .dark .folder-card__paper {
-  background: hsl(220 8% 68%);
+  background: hsl(220 8% 26%);
 }
 
 .folder-card:hover .folder-card__paper {
@@ -304,7 +304,7 @@
 }
 
 .dark .folder-card__body {
-  background: var(--folder-body, hsl(0 0% 13%));
+  background: var(--folder-body-dark, hsl(222 15% 18%));
   border-color: hsl(0 0% 20%);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.2),
