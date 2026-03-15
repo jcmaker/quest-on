@@ -625,8 +625,9 @@ export default function InstructorHome() {
         </DropdownMenuItem>
         {node.kind === "folder" && (
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <Palette className="w-4 h-4 mr-2" aria-hidden="true" /> 색상 변경
+            <DropdownMenuSubTrigger className="[&>svg:last-child]:hidden">
+              <Palette className="w-4 h-4 mr-2" aria-hidden="true" />
+              색상 변경
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="p-2 min-w-0">
               <div className="grid grid-cols-5 gap-1.5">
@@ -1088,31 +1089,12 @@ export default function InstructorHome() {
             >
               {renderNodeActions(node)}
             </div>
-            {/* Top: icon + name */}
-            <div className="flex items-center gap-2 pr-6">
-              <Folder className="w-4 h-4 text-primary/70 shrink-0" strokeWidth={1.5} />
-              <p className="font-semibold text-foreground truncate text-sm">
+            {/* Folder name — centered where meta rows used to be */}
+            <div className="flex flex-col items-center justify-center gap-2 h-full">
+              <Folder className="w-6 h-6 text-primary/70 shrink-0" strokeWidth={1.5} />
+              <p className="font-semibold text-foreground truncate text-sm w-full text-center px-2">
                 {node.name}
               </p>
-            </div>
-            {/* Bottom: meta rows */}
-            <div className="space-y-1.5 mt-auto">
-              {hasFiles && (
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1.5">
-                    <FileText className="w-3 h-3" />
-                    <span>파일</span>
-                  </div>
-                  <span className="font-medium text-foreground">{node.child_count}</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <div className="flex items-center gap-1.5">
-                  <Clock className="w-3 h-3" />
-                  <span>업데이트</span>
-                </div>
-                <span className="font-medium text-foreground">{formatDate(node.updated_at)}</span>
-              </div>
             </div>
           </div>
         </div>
