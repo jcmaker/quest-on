@@ -381,9 +381,12 @@ export function CaseQuestionGenerator({
             {(generatedQuestions.length > 0 || skeletonCount > 0) && (
               <div className="space-y-3 pt-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-medium text-muted-foreground">
-                    생성된 문제
-                  </h3>
+                  <div>
+                    <h3 className="text-sm font-medium text-muted-foreground">
+                      AI 생성 미리보기
+                    </h3>
+                    <p className="text-xs text-muted-foreground mt-0.5">마음에 드는 문제를 선택해 시험에 추가하세요.</p>
+                  </div>
                   {generatedQuestions.length > 1 && !isGenerating && (
                     <Button
                       type="button"
@@ -392,7 +395,7 @@ export function CaseQuestionGenerator({
                       className="gap-1.5"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      전체 추가 ({generatedQuestions.length}개)
+                      전체 시험에 추가 ({generatedQuestions.length}개)
                     </Button>
                   )}
                 </div>
@@ -419,11 +422,12 @@ export function CaseQuestionGenerator({
                         }
                         onRemove={() => removeQuestion(q.id)}
                         onAdjust={async (instruction) => {
-                          await adjustQuestion(q.id, instruction, examTitle);
+                          return await adjustQuestion(q.id, instruction, examTitle);
                         }}
                         onApplyAdjustment={(newText) =>
                           applyAdjustment(q.id, newText)
                         }
+                        isAnyAdjusting={adjustingId !== null}
                       />
                     </motion.div>
                   ))}

@@ -25,7 +25,7 @@ interface QuestionAdjustSheetProps {
   questionText: string;
   history: ChatMessage[];
   isAdjusting: boolean;
-  onSendInstruction: (instruction: string) => Promise<void>;
+  onSendInstruction: (instruction: string) => Promise<unknown>;
   onApply: (newText: string) => void;
 }
 
