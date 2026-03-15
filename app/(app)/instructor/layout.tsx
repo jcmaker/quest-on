@@ -130,6 +130,7 @@ export default function InstructorLayout({
             <DashboardSidebar
               homeHref="/instructor"
               navItems={navigationItems}
+              userId={user?.id}
             />
           </Sidebar>
 

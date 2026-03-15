@@ -111,6 +111,18 @@ export const qk = {
      * 드라이브 브레드크럼
      * @param folderId - 폴더 ID
      */
+    /**
+     * 사이드바 폴더 트리 (useQuery 전용 — useInfiniteQuery 캐시와 분리)
+     * @param folderId - 폴더 ID (null이면 루트)
+     * @param userId - 사용자 ID (optional)
+     */
+    sidebarTree: (folderId: string | null, userId?: string) => {
+      if (userId) {
+        return ["drive-sidebar-tree", folderId, userId] as const;
+      }
+      return ["drive-sidebar-tree", folderId] as const;
+    },
+
     breadcrumb: (folderId: string) => ["drive-breadcrumb", folderId] as const,
   },
 

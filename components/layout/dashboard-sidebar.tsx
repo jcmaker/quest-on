@@ -15,6 +15,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
+import { SidebarFolderTree } from "@/components/instructor/SidebarFolderTree";
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
 import { type ComponentType } from "react";
 
@@ -29,12 +30,14 @@ interface DashboardSidebarProps {
   homeHref: string;
   navItems: NavItem[];
   onItemClick?: () => void;
+  userId?: string;
 }
 
 export function DashboardSidebar({
   homeHref,
   navItems,
   onItemClick,
+  userId,
 }: DashboardSidebarProps) {
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
@@ -93,6 +96,8 @@ export function DashboardSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {userId && <SidebarFolderTree userId={userId} />}
       </ShadcnSidebarContent>
 
       <SidebarFooter />
