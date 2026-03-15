@@ -7,6 +7,7 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { randomUUID } from "crypto";
 import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Initialize Supabase client with service role key for server-side operations
 const supabase = getSupabaseServer();
@@ -79,6 +80,11 @@ export async function POST(request: NextRequest) {
         { userRole, userId: user.id },
         403
       );
+    }
+
+    const rl = await checkRateLimitAsync(`upload:${user.id}`, RATE_LIMITS.upload);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "업로드 요청이 너무 많습니다. 잠시 후 다시 시도하세요.", undefined, 429);
     }
 
     // 반드시 form-data로만 받기 (쿼리에 파일명 넣지 않기)

@@ -6,6 +6,7 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { randomUUID } from "crypto";
 import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 const supabase = getSupabaseServer();
 
@@ -68,6 +69,11 @@ export async function POST(request: NextRequest) {
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "강사 권한이 필요합니다.", null, 403);
+    }
+
+    const rl = await checkRateLimitAsync(`upload:${user.id}`, RATE_LIMITS.upload);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "업로드 요청이 너무 많습니다. 잠시 후 다시 시도하세요.", undefined, 429);
     }
 
     const body = await request.json();

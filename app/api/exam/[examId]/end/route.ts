@@ -5,7 +5,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
-import { logError } from "@/lib/logger";
+import { logError, logWarn } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { compressData } from "@/lib/compression";
 import { enqueueGrading } from "@/lib/openai";
@@ -105,6 +105,11 @@ export async function POST(
     if (waitingCloseError) {
       logError("Failed to close waiting sessions", waitingCloseError, {
         path: "/api/exam/end",
+        additionalData: { examId },
+      });
+      logWarn("Waiting sessions may remain open after exam end — students could be stuck in waiting room", {
+        path: "/api/exam/end",
+        payload: { examId },
       });
     }
 

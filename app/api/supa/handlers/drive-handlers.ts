@@ -108,32 +108,6 @@ export async function getFolderContents(data: {
     } else {
       folderQuery = folderQuery.eq("parent_id", parentId);
     }
-    const { data: folderNodes, error: folderError } = await folderQuery.order("updated_at", { ascending: false });
-    if (folderError) throw folderError;
-
-    // Fetch child counts for each folder (to show "has files" indicator)
-    let foldersWithCounts = folderNodes || [];
-    const folderIds = foldersWithCounts.map((f) => f.id);
-    if (folderIds.length > 0) {
-      const { data: childCounts, error: childCountError } = await supabase
-        .from("exam_nodes")
-        .select("parent_id")
-        .in("parent_id", folderIds)
-        .eq("instructor_id", user.id);
-
-      if (!childCountError && childCounts) {
-        const countMap = new Map<string, number>();
-        for (const row of childCounts) {
-          countMap.set(row.parent_id, (countMap.get(row.parent_id) || 0) + 1);
-        }
-        foldersWithCounts = foldersWithCounts.map((f) => ({
-          ...f,
-          child_count: countMap.get(f.id) || 0,
-        }));
-      }
-    }
-
-    // Fetch paginated exam nodes + total count
     let examQuery = supabase
       .from("exam_nodes")
       .select(selectFields, { count: "exact" })
@@ -144,45 +118,64 @@ export async function getFolderContents(data: {
     } else {
       examQuery = examQuery.eq("parent_id", parentId);
     }
-    const { data: examNodesRaw, count: totalExamCount, error: examError } = await examQuery
-      .order("updated_at", { ascending: false })
-      .range(examOffset, examOffset + examLimit - 1);
-    if (examError) throw examError;
 
-    const total = totalExamCount ?? 0;
+    // Stage A: folders + exams 병렬 (둘 다 독립적)
+    const [folderResult, examResult] = await Promise.all([
+      folderQuery.order("updated_at", { ascending: false }),
+      examQuery.order("updated_at", { ascending: false }).range(examOffset, examOffset + examLimit - 1),
+    ]);
+    if (folderResult.error) throw folderResult.error;
+    if (examResult.error) throw examResult.error;
+
+    const folderNodes = folderResult.data || [];
+    const examNodesRaw = examResult.data || [];
+    const total = examResult.count ?? 0;
     const hasMoreExams = examOffset + examLimit < total;
 
-    // Fetch student counts for the paginated exam nodes
-    let examNodesWithCounts = examNodesRaw || [];
-    const examIds = examNodesWithCounts
-      .map((node) => node.exam_id)
-      .filter(Boolean) as string[];
+    const folderIds = folderNodes.map((f) => f.id);
+    const examIds = examNodesRaw.map((node) => node.exam_id).filter(Boolean) as string[];
 
-    if (examIds.length > 0) {
-      const { data: sessionsData, error: sessionsError } = await supabase
-        .from("sessions")
-        .select("exam_id, student_id")
-        .in("exam_id", examIds);
+    // Stage B: childCounts + sessions 병렬 (각각 Stage A 결과에 의존, 서로는 독립)
+    const [childCountResult, sessionResult] = await Promise.all([
+      folderIds.length > 0
+        ? supabase.from("exam_nodes").select("parent_id").in("parent_id", folderIds).eq("instructor_id", user.id)
+        : Promise.resolve({ data: null, error: null }),
+      examIds.length > 0
+        ? supabase.from("sessions").select("exam_id, student_id").in("exam_id", examIds)
+        : Promise.resolve({ data: null, error: null }),
+    ]);
 
-      if (sessionsError) {
-        logError("Session count query error", sessionsError, { path: "/api/supa" });
-      } else if (sessionsData) {
-        const studentCountMap = new Map<string, Set<string>>();
-        for (const session of sessionsData) {
-          if (!session.exam_id || !session.student_id) continue;
-          if (!studentCountMap.has(session.exam_id)) {
-            studentCountMap.set(session.exam_id, new Set());
-          }
-          studentCountMap.get(session.exam_id)!.add(session.student_id);
-        }
-        examNodesWithCounts = examNodesWithCounts.map((node) => {
-          if (node.exam_id) {
-            const countSet = studentCountMap.get(node.exam_id);
-            return { ...node, student_count: countSet ? countSet.size : 0 };
-          }
-          return node;
-        });
+    let foldersWithCounts = folderNodes;
+    if (!childCountResult.error && childCountResult.data) {
+      const countMap = new Map<string, number>();
+      for (const row of childCountResult.data) {
+        countMap.set(row.parent_id, (countMap.get(row.parent_id) || 0) + 1);
       }
+      foldersWithCounts = foldersWithCounts.map((f) => ({
+        ...f,
+        child_count: countMap.get(f.id) || 0,
+      }));
+    }
+
+    let examNodesWithCounts = examNodesRaw;
+    if (sessionResult.error) {
+      logError("Session count query error", sessionResult.error, { path: "/api/supa" });
+    } else if (sessionResult.data) {
+      const studentCountMap = new Map<string, Set<string>>();
+      for (const session of sessionResult.data) {
+        if (!session.exam_id || !session.student_id) continue;
+        if (!studentCountMap.has(session.exam_id)) {
+          studentCountMap.set(session.exam_id, new Set());
+        }
+        studentCountMap.get(session.exam_id)!.add(session.student_id);
+      }
+      examNodesWithCounts = examNodesWithCounts.map((node) => {
+        if (node.exam_id) {
+          const countSet = studentCountMap.get(node.exam_id);
+          return { ...node, student_count: countSet ? countSet.size : 0 };
+        }
+        return node;
+      });
     }
 
     return successJson({

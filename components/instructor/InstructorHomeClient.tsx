@@ -247,10 +247,14 @@ export default function InstructorHome() {
     () => infiniteData?.pages[0]?.folders ?? [],
     [infiniteData]
   );
-  const allExamNodes = useMemo<ExamNode[]>(
-    () => infiniteData?.pages.flatMap((p) => p.exams) ?? [],
-    [infiniteData]
-  );
+  const allExamNodes = useMemo<ExamNode[]>(() => {
+    const seen = new Set<string>();
+    return (infiniteData?.pages.flatMap((p) => p.exams) ?? []).filter((node) => {
+      if (seen.has(node.id)) return false;
+      seen.add(node.id);
+      return true;
+    });
+  }, [infiniteData]);
 
   const folderNodes = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();

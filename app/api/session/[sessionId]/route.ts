@@ -5,6 +5,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { logWarn } from "@/lib/logger";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -86,7 +87,9 @@ export async function GET(
           session.compressed_session_data,
         );
       } catch (error) {
-        // Decompression failed, continue with null
+        logWarn("Decompression failed for session data", {
+          payload: { sessionId, field: "compressed_session_data" },
+        });
       }
     }
 
@@ -104,7 +107,9 @@ export async function GET(
               submission.compressed_answer_data,
             );
           } catch (error) {
-            // Decompression failed, continue with null
+            logWarn("Decompression failed for submission answer data", {
+              payload: { sessionId, field: "compressed_answer_data", submissionId: submission.id },
+            });
           }
         }
 
@@ -128,7 +133,9 @@ export async function GET(
           try {
             decompressedContent = decompressData(message.compressed_content);
           } catch (error) {
-            // Decompression failed, continue with null
+            logWarn("Decompression failed for message content", {
+              payload: { sessionId, field: "compressed_content", messageId: message.id },
+            });
           }
         }
 

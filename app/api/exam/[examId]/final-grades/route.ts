@@ -35,30 +35,25 @@ export async function GET(
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
-    // Get exam to verify instructor owns it
-    const { data: exam, error: examError } = await supabase
-      .from("exams")
-      .select("instructor_id")
-      .eq("id", examId)
-      .single();
+    // Get exam and sessions in parallel (both only need examId param)
+    const [examResult, sessionsResult] = await Promise.all([
+      supabase.from("exams").select("instructor_id").eq("id", examId).single(),
+      supabase.from("sessions").select("id").eq("exam_id", examId),
+    ]);
 
-    if (examError || !exam) {
+    if (examResult.error || !examResult.data) {
       return errorJson("NOT_FOUND", "Exam not found", 404);
     }
 
-    if (exam.instructor_id !== user.id) {
+    if (examResult.data.instructor_id !== user.id) {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
-    // Get all sessions for this exam
-    const { data: sessions, error: sessionsError } = await supabase
-      .from("sessions")
-      .select("id")
-      .eq("exam_id", examId);
-
-    if (sessionsError) {
+    if (sessionsResult.error) {
       return errorJson("INTERNAL_ERROR", "Failed to fetch sessions", 500);
     }
+
+    const sessions = sessionsResult.data;
 
     if (!sessions || sessions.length === 0) {
       return successJson({ grades: [] });

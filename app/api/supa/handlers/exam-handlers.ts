@@ -65,7 +65,7 @@ export async function createExam(data: {
       .single();
 
     if (existingExam) {
-      // 중복 시 새 코드 생성 (copyExam 패턴 적용)
+      // 중복 시 새 코드 생성
       const generateExamCode = () => {
         const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         let result = "";
@@ -75,7 +75,9 @@ export async function createExam(data: {
         return result;
       };
 
+      const MAX_CODE_ATTEMPTS = 10;
       let newCode = generateExamCode();
+      let attempts = 0;
       let codeCheck = await getSupabase()
         .from("exams")
         .select("code")
@@ -83,6 +85,9 @@ export async function createExam(data: {
         .maybeSingle();
 
       while (codeCheck.data !== null) {
+        if (++attempts >= MAX_CODE_ATTEMPTS) {
+          throw new Error("Failed to generate unique exam code after maximum attempts");
+        }
         newCode = generateExamCode();
         codeCheck = await getSupabase()
           .from("exams")
@@ -119,26 +124,42 @@ export async function createExam(data: {
       updated_at: data.updated_at,
     };
 
-    // INSERT with UNIQUE violation retry (handles TOCTOU race between code check and insert)
+    // exams + exam_nodes를 단일 트랜잭션으로 생성 (RPC)
+    // sort_order 계산도 RPC 내부에서 처리하므로 레이스 컨디션 없음
+    const parentId = data.parent_folder_id || null;
+
     const MAX_INSERT_RETRIES = 3;
-    let exam = null;
+    let rpcResult: { exam: Record<string, unknown> & { id: string }; exam_node: Record<string, unknown> } | null = null;
     let lastInsertError = null;
 
     for (let attempt = 0; attempt < MAX_INSERT_RETRIES; attempt++) {
-      const { data: inserted, error: insertErr } = await getSupabase()
-        .from("exams")
-        .insert([examData])
-        .select()
-        .single();
+      const { data: rpcData, error: rpcError } = await getSupabase()
+        .rpc("create_exam_with_node", {
+          p_title: examData.title,
+          p_code: examData.code,
+          p_description: examData.description,
+          p_duration: examData.duration,
+          p_questions: examData.questions,
+          p_materials: examData.materials,
+          p_materials_text: examData.materials_text,
+          p_rubric: examData.rubric,
+          p_rubric_public: examData.rubric_public,
+          p_chat_weight: examData.chat_weight,
+          p_status: examData.status,
+          p_instructor_id: examData.instructor_id,
+          p_created_at: examData.created_at,
+          p_updated_at: examData.updated_at,
+          p_parent_folder_id: parentId,
+        });
 
-      if (!insertErr) {
-        exam = inserted;
+      if (!rpcError) {
+        rpcResult = rpcData as { exam: Record<string, unknown> & { id: string }; exam_node: Record<string, unknown> };
         lastInsertError = null;
         break;
       }
 
-      // Postgres UNIQUE violation = code 23505
-      if (insertErr.code === "23505" && attempt < MAX_INSERT_RETRIES - 1) {
+      // Postgres UNIQUE violation = code 23505 → 코드 재생성 후 재시도
+      if (rpcError.code === "23505" && attempt < MAX_INSERT_RETRIES - 1) {
         const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         let retryCode = "";
         for (let i = 0; i < 6; i++) {
@@ -149,66 +170,17 @@ export async function createExam(data: {
         continue;
       }
 
-      lastInsertError = insertErr;
+      lastInsertError = rpcError;
       break;
     }
 
-    if (lastInsertError || !exam) {
+    if (lastInsertError || !rpcResult) {
       logError("[createExam] Database error during exam insert", lastInsertError, { path: "/api/supa/exam-handlers" });
       return errorJson("DATABASE_ERROR", "Database error", 500);
     }
 
-    // Create exam node in exam_nodes table
-    // parent_id는 data에서 받거나 null (루트에 배치)
-    const parentId = data.parent_folder_id || null;
-
-    // Get the maximum sort_order for this parent folder
-    let sortQuery = getSupabase()
-      .from("exam_nodes")
-      .select("sort_order")
-      .eq("instructor_id", user.id);
-
-    // Handle null parent_id (root level)
-    if (parentId === null) {
-      sortQuery = sortQuery.is("parent_id", null);
-    } else {
-      sortQuery = sortQuery.eq("parent_id", parentId);
-    }
-
-    const { data: existingNodes } = await sortQuery
-      .order("sort_order", { ascending: false })
-      .limit(1);
-
-    const nextSortOrder =
-      existingNodes && existingNodes.length > 0
-        ? existingNodes[0].sort_order + 1
-        : 0;
-
-    // Create exam node
-    const { data: examNode, error: nodeError } = await getSupabase()
-      .from("exam_nodes")
-      .insert([
-        {
-          instructor_id: user.id,
-          parent_id: parentId,
-          kind: "exam",
-          name: data.title,
-          exam_id: exam.id,
-          sort_order: nextSortOrder,
-        },
-      ])
-      .select()
-      .single();
-
-    if (nodeError) {
-      logError("Failed to create exam node, rolling back exam", nodeError, { path: "/api/supa", user_id: user.id, additionalData: { examId: exam.id } });
-      // Rollback: delete the orphaned exam and any material chunks
-      await Promise.all([
-        getSupabase().from("exams").delete().eq("id", exam.id),
-        getSupabase().from("exam_material_chunks").delete().eq("exam_id", exam.id),
-      ]);
-      return errorJson("DATABASE_ERROR", "Failed to create exam", 500);
-    }
+    const exam = rpcResult.exam;
+    const examNode = rpcResult.exam_node;
 
     // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
     if (
@@ -568,21 +540,25 @@ export async function copyExam(data: { exam_id: string }) {
       return result;
     };
 
+    const MAX_CODE_ATTEMPTS = 10;
     let newCode = generateExamCode();
-    // Ensure code is unique
+    let attempts = 0;
     let codeCheck = await getSupabase()
       .from("exams")
       .select("code")
       .eq("code", newCode)
-      .single();
+      .maybeSingle();
 
-    while (!codeCheck.error) {
+    while (codeCheck.data !== null) {
+      if (++attempts >= MAX_CODE_ATTEMPTS) {
+        throw new Error("Failed to generate unique exam code after maximum attempts");
+      }
       newCode = generateExamCode();
       codeCheck = await getSupabase()
         .from("exams")
         .select("code")
         .eq("code", newCode)
-        .single();
+        .maybeSingle();
     }
 
     // Prepare copied exam data
