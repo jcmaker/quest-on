@@ -4,6 +4,7 @@
 
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { createEmbedding } from "./embedding";
+import { decompressChunkContent } from "./save-chunks";
 
 const supabase = getSupabaseServer();
 
@@ -144,7 +145,7 @@ export async function searchMaterialChunks(
 
     const mapToSearchResult = (item: MatchExamMaterialsRow): SearchResult => ({
       id: item.id,
-      content: item.content,
+      content: decompressChunkContent(item.content),
       fileUrl: item.file_url,
       similarity: item.similarity,
       metadata: {

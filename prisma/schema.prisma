@@ -57,6 +57,7 @@ model exams {
   chat_weight            Int?                   @default(50) // 채팅 단계 가중치 (0-100), answer_weight = 100 - chat_weight
   rubric_public          Boolean?               @default(false) // 루브릭 공개 여부
   materials_text         Json?                  @default("[]") // 추출된 텍스트 저장
+  rag_status             String?                @default("none") // 'none' | 'pending' | 'processing' | 'completed' | 'failed'
   ai_events              ai_events[]
   exam_nodes             exam_nodes[]
   exam_material_chunks   exam_material_chunks[]

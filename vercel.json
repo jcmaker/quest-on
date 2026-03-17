@@ -28,7 +28,10 @@
       "maxDuration": 120
     },
     "app/api/supa/route.ts": {
-      "maxDuration": 30
+      "maxDuration": 60
+    },
+    "app/api/internal/process-rag/route.ts": {
+      "maxDuration": 300
     }
   },
   "regions": ["iad1"]

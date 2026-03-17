@@ -1,4 +1,6 @@
 import { NextRequest } from "next/server";
+
+export const maxDuration = 60;
 import { errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { currentUser } from "@/lib/get-current-user";

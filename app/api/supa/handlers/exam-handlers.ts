@@ -1,8 +1,5 @@
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
-import { chunkText, formatChunkMetadata } from "@/lib/chunking";
-import { createEmbeddings } from "@/lib/embedding";
-import { saveChunksToDB, deleteChunksByFileUrl } from "@/lib/save-chunks";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
@@ -11,6 +8,27 @@ import { logError } from "@/lib/logger";
 // to avoid stale connections in serverless environments
 function getSupabase() {
   return getSupabaseServer();
+}
+
+/** Fire-and-forget: dispatch RAG processing to the internal async route. */
+function dispatchRAG(
+  examId: string,
+  materialsText: Array<{ url: string; text: string; fileName: string }>,
+  userId: string,
+  source: string
+) {
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "http://localhost:3000";
+
+  fetch(`${baseUrl}/api/internal/process-rag`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-internal-secret": process.env.INTERNAL_API_SECRET || "",
+    },
+    body: JSON.stringify({ examId, materialsText, userId, source }),
+  }).catch((err) => logError("Failed to dispatch RAG", err));
 }
 
 export interface QuestionData {
@@ -182,75 +200,23 @@ export async function createExam(data: {
     const exam = rpcResult.exam;
     const examNode = rpcResult.exam_node;
 
-    // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
+    // RAG: materials_text가 있으면 비동기 RAG 처리 디스패치
     if (
       examData.materials_text &&
       Array.isArray(examData.materials_text) &&
       examData.materials_text.length > 0
     ) {
-      try {
-        let totalChunksSaved = 0;
+      await getSupabase()
+        .from("exams")
+        .update({ rag_status: "pending" })
+        .eq("id", exam.id);
 
-        for (let idx = 0; idx < examData.materials_text.length; idx++) {
-          const material = examData.materials_text[idx];
-          const materialData = material as {
-            url: string;
-            text: string;
-            fileName: string;
-          };
-
-          if (!materialData.text || materialData.text.trim().length === 0) {
-            continue;
-          }
-
-          // 1. 텍스트 청킹
-          const chunks = chunkText(materialData.text, {
-            chunkSize: 800,
-            chunkOverlap: 200,
-          });
-
-          if (chunks.length === 0) {
-            continue;
-          }
-
-          // 2. 기존 청크 삭제 (파일 재처리 시)
-          await deleteChunksByFileUrl(exam.id, materialData.url);
-
-          // 3. 청크 포맷팅
-          const formattedChunks = chunks.map((chunk) =>
-            formatChunkMetadata(chunk, materialData.fileName, materialData.url)
-          );
-
-          // 4. 임베딩 생성 (배치)
-          const chunkTexts = formattedChunks.map((c) => c.content);
-          const embeddings = await createEmbeddings(chunkTexts, {
-            route: "/api/supa",
-            userId: user.id,
-            examId: exam.id,
-            metadata: {
-              source: "create_exam_materials",
-              material_index: idx,
-            },
-          });
-
-          // 5. DB에 저장
-          const chunksToSave = formattedChunks.map((chunk, index) => ({
-            content: chunk.content,
-            embedding: embeddings[index],
-            metadata: chunk.metadata,
-          }));
-
-          await saveChunksToDB(exam.id, chunksToSave);
-          totalChunksSaved += chunksToSave.length;
-        }
-      } catch (ragError) {
-        // RAG 처리 실패해도 시험 생성은 성공으로 처리
-        logError("[createExam] RAG processing failed (exam creation succeeded)", ragError, {
-          path: "/api/supa",
-          user_id: user.id,
-          additionalData: { examId: exam.id },
-        });
-      }
+      dispatchRAG(
+        exam.id,
+        examData.materials_text as Array<{ url: string; text: string; fileName: string }>,
+        user.id,
+        "create_exam_materials"
+      );
     }
 
     return successJson({ exam, examNode });
@@ -645,75 +611,23 @@ export async function copyExam(data: { exam_id: string }) {
       logError("Failed to create exam node for copy", nodeCreateError, { path: "/api/supa", user_id: user.id, additionalData: { examId: newExam.id } });
     }
 
-    // RAG: materials_text가 있으면 청킹 및 임베딩 생성 후 저장
+    // RAG: materials_text가 있으면 비동기 RAG 처리 디스패치
     if (
       examData.materials_text &&
       Array.isArray(examData.materials_text) &&
       examData.materials_text.length > 0
     ) {
-      try {
-        let totalChunksSaved = 0;
+      await getSupabase()
+        .from("exams")
+        .update({ rag_status: "pending" })
+        .eq("id", newExam.id);
 
-        for (let idx = 0; idx < examData.materials_text.length; idx++) {
-          const material = examData.materials_text[idx];
-          const materialData = material as {
-            url: string;
-            text: string;
-            fileName: string;
-          };
-
-          if (!materialData.text || materialData.text.trim().length === 0) {
-            continue;
-          }
-
-          // 1. 텍스트 청킹
-          const chunks = chunkText(materialData.text, {
-            chunkSize: 800,
-            chunkOverlap: 200,
-          });
-
-          if (chunks.length === 0) {
-            continue;
-          }
-
-          // 2. 기존 청크 삭제 (이미 새 시험이므로 없을 것이지만 안전을 위해)
-          await deleteChunksByFileUrl(newExam.id, materialData.url);
-
-          // 3. 청크 포맷팅
-          const formattedChunks = chunks.map((chunk) =>
-            formatChunkMetadata(chunk, materialData.fileName, materialData.url)
-          );
-
-          // 4. 임베딩 생성 (배치)
-          const chunkTexts = formattedChunks.map((c) => c.content);
-          const embeddings = await createEmbeddings(chunkTexts, {
-            route: "/api/supa",
-            userId: user.id,
-            examId: newExam.id,
-            metadata: {
-              source: "copy_exam_materials",
-              material_index: idx,
-            },
-          });
-
-          // 5. DB에 저장
-          const chunksToSave = formattedChunks.map((chunk, index) => ({
-            content: chunk.content,
-            embedding: embeddings[index],
-            metadata: chunk.metadata,
-          }));
-
-          await saveChunksToDB(newExam.id, chunksToSave);
-          totalChunksSaved += chunksToSave.length;
-        }
-      } catch (ragError) {
-        // RAG 처리 실패해도 시험 복사는 성공으로 처리
-        logError("[copyExam] RAG processing failed (exam copy succeeded)", ragError, {
-          path: "/api/supa",
-          user_id: user.id,
-          additionalData: { examId: newExam.id },
-        });
-      }
+      dispatchRAG(
+        newExam.id,
+        examData.materials_text as Array<{ url: string; text: string; fileName: string }>,
+        user.id,
+        "copy_exam_materials"
+      );
     }
 
     return successJson({ exam: newExam, examNode });

@@ -3,8 +3,22 @@
  */
 
 import { getSupabaseServer } from "@/lib/supabase-server";
+import LZString from "lz-string";
 
 const supabase = getSupabaseServer();
+
+const LZ_PREFIX = "LZ:";
+
+export function compressChunkContent(content: string): string {
+  return LZ_PREFIX + LZString.compressToBase64(content);
+}
+
+export function decompressChunkContent(content: string): string {
+  if (content.startsWith(LZ_PREFIX)) {
+    return LZString.decompressFromBase64(content.slice(LZ_PREFIX.length)) || content;
+  }
+  return content; // backward compatible: 기존 비압축 데이터
+}
 
 export interface ChunkToSave {
   content: string;
@@ -43,7 +57,7 @@ export async function saveChunksToDB(
         return {
           exam_id: examId,
           file_url: chunk.metadata.fileUrl,
-          content: chunk.content,
+          content: compressChunkContent(chunk.content),
           embedding: chunk.embedding, // Supabase가 자동으로 vector 타입으로 변환
           metadata: chunk.metadata,
         };
