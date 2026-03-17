@@ -1,8 +1,18 @@
 import { test, expect } from "../fixtures/auth.fixture";
-import { seedExam, seedSession, cleanupTestData } from "../helpers/seed";
+import { seedExam, seedSession, cleanupTestData, getGrades } from "../helpers/seed";
 import { getTestSupabase } from "../helpers/supabase-test-client";
 
 const supabase = getTestSupabase();
+
+async function waitForGrades(sessionId: string, timeoutMs = 15_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const grades = await getGrades(sessionId);
+    if (grades.length > 0) return grades;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return [];
+}
 
 test.describe("POST /api/feedback — Student Answer Submission", () => {
   test.afterEach(async () => {
@@ -82,6 +92,10 @@ test.describe("POST /api/feedback — Student Answer Submission", () => {
       .select("*")
       .eq("session_id", session.id);
     expect(submissions!.length).toBeGreaterThanOrEqual(1);
+
+    // Regression: submission path must also trigger grading
+    const grades = await waitForGrades(session.id);
+    expect(grades.length).toBeGreaterThan(0);
   });
 
   test("closed exam → 400", async ({ studentRequest }) => {

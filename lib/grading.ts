@@ -24,6 +24,7 @@ import {
   callTrackedChatCompletion,
 } from "@/lib/ai-tracking";
 import { sanitizeUserInput } from "@/lib/sanitize";
+import { upsertGradesBySessionQuestion } from "@/lib/grades-upsert";
 import type {
   StageGrading,
   SummaryData,
@@ -536,11 +537,9 @@ export async function autoGradeSession(
       grade_type: "ai_failed",
     }));
 
-    const { error: failedInsertError } = await supabase
-      .from("grades")
-      .upsert(failedGradeRecords, { onConflict: "session_id,q_idx" });
-
-    if (failedInsertError) {
+    try {
+      await upsertGradesBySessionQuestion(supabase as never, failedGradeRecords, "auto_grade_failed_records");
+    } catch (failedInsertError) {
       logError("[AUTO_GRADE] Failed to insert ai_failed grade records", failedInsertError, {
         path: "lib/grading.ts",
         additionalData: { sessionId, failedQIdxes: failedGradeResults.map((f) => f.q_idx) },
@@ -550,33 +549,29 @@ export async function autoGradeSession(
 
   // 9b. 채점 결과 저장 (partial 결과라도 저장) + insert 반환값으로 직접 검증
   if (grades.length > 0) {
-    const { data: insertedRows, error: insertError } = await supabase.from("grades").upsert(
-      grades.map((grade) => ({
-        session_id: sessionId,
-        q_idx: grade.q_idx,
-        score: grade.score,
-        comment: grade.comment,
-        stage_grading: grade.stage_grading || null,
-        grade_type: "auto",
-      })),
-      { onConflict: "session_id,q_idx" }
-    ).select("q_idx");
-
-    if (insertError) {
-      throw insertError;
-    }
+    const gradeRows = grades.map((grade) => ({
+      session_id: sessionId,
+      q_idx: grade.q_idx,
+      score: grade.score,
+      comment: grade.comment,
+      stage_grading: grade.stage_grading || null,
+      grade_type: "auto",
+    }));
+    const insertedQIdxs = await upsertGradesBySessionQuestion(
+      supabase as never,
+      gradeRows,
+      "auto_grade_results"
+    );
 
     // Verify via insert return — no separate SELECT needed
-    if (insertedRows) {
-      const insertedQIdxSet = new Set(insertedRows.map((g) => g.q_idx));
-      for (const grade of grades) {
-        if (!insertedQIdxSet.has(grade.q_idx)) {
-          failedQuestions.push(grade.q_idx);
-          logError("[AUTO_GRADE] Grade not returned after insert", new Error("Grade verification failed"), {
-            path: "lib/grading.ts",
-            additionalData: { sessionId, q_idx: grade.q_idx },
-          });
-        }
+    const insertedQIdxSet = new Set(insertedQIdxs);
+    for (const grade of grades) {
+      if (!insertedQIdxSet.has(grade.q_idx)) {
+        failedQuestions.push(grade.q_idx);
+        logError("[AUTO_GRADE] Grade not returned after insert", new Error("Grade verification failed"), {
+          path: "lib/grading.ts",
+          additionalData: { sessionId, q_idx: grade.q_idx },
+        });
       }
     }
   }

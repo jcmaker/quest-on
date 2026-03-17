@@ -10,6 +10,7 @@ interface ChatLoadingIndicatorProps {
 export function ChatLoadingIndicator({ isTyping }: ChatLoadingIndicatorProps) {
   const [messageIndex, setMessageIndex] = useState(0);
   const [isLongLoading, setIsLongLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   const messages = [
     "AI가 질문을 분석하고 있습니다...",
@@ -22,6 +23,7 @@ export function ChatLoadingIndicator({ isTyping }: ChatLoadingIndicatorProps) {
     if (!isTyping) {
       setMessageIndex(0);
       setIsLongLoading(false);
+      setProgress(0);
       return;
     }
 
@@ -30,6 +32,14 @@ export function ChatLoadingIndicator({ isTyping }: ChatLoadingIndicatorProps) {
       setMessageIndex((prev) => (prev + 1) % messages.length);
     }, 3000);
 
+    // Simulated progress bar (eases out before 90%)
+    const progressInterval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + (90 - prev) * 0.05;
+      });
+    }, 500);
+
     // Timeout warning after 30 seconds
     const timeoutTimer = setTimeout(() => {
       setIsLongLoading(true);
@@ -37,6 +47,7 @@ export function ChatLoadingIndicator({ isTyping }: ChatLoadingIndicatorProps) {
 
     return () => {
       clearInterval(messageInterval);
+      clearInterval(progressInterval);
       clearTimeout(timeoutTimer);
     };
   }, [isTyping, messages.length]);
@@ -57,6 +68,12 @@ export function ChatLoadingIndicator({ isTyping }: ChatLoadingIndicatorProps) {
               ? "답변 생성이 지연되고 있습니다. 잠시만 더 기다려주세요..."
               : messages[messageIndex]}
           </span>
+        </div>
+        <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden mt-2">
+          <div
+            className="h-full bg-primary rounded-full transition-all duration-500"
+            style={{ width: `${Math.round(progress)}%` }}
+          />
         </div>
       </div>
       {isLongLoading && (

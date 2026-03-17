@@ -4,11 +4,10 @@ import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { compressData } from "@/lib/compression";
-import { enqueueGrading } from "@/lib/openai";
-import { autoGradeSession } from "@/lib/grading";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
+import { triggerGradingIfNeeded } from "@/lib/grading-trigger";
 
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
@@ -361,30 +360,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // 백그라운드에서 자동 채점 시작 (채점 큐로 동시에 최대 3명만 채점)
-      // 최대 2회 재시도 + exponential backoff (5s, 10s)
-      const MAX_GRADING_RETRIES = 2;
-      const gradeWithRetry = async () => {
-        for (let attempt = 0; attempt <= MAX_GRADING_RETRIES; attempt++) {
-          try {
-            return await autoGradeSession(finalSessionId);
-          } catch (error) {
-            const isLastAttempt = attempt === MAX_GRADING_RETRIES;
-            if (isLastAttempt) throw error;
-            const delay = 5000 * Math.pow(2, attempt); // 5s, 10s
-            logError(`Background grading attempt ${attempt + 1} failed, retrying in ${delay}ms`, error, {
-              additionalData: { sessionId: finalSessionId, attempt },
-            });
-            await new Promise((resolve) => setTimeout(resolve, delay));
-          }
-        }
-      };
-      enqueueGrading(gradeWithRetry)
-        .catch((error) => {
-          logError("Background grading failed after all retries", error, {
-            additionalData: { sessionId: finalSessionId },
-          });
-        });
+      await triggerGradingIfNeeded(finalSessionId, "feedback");
     } catch (error) {
       logError("Failed to store submission in database", error, {
         path: "/api/feedback",

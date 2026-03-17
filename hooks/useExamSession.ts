@@ -93,6 +93,8 @@ export function useExamSession({
   const saveViaBeaconRef = useRef(saveViaBeacon);
   saveViaBeaconRef.current = saveViaBeacon;
 
+  const autoSubmitHandledRef = useRef(false);
+
   // Profile gate
   const [profileGateChecked, setProfileGateChecked] = useState(false);
   const { data: profileGateData } = useQuery({
@@ -284,7 +286,7 @@ export function useExamSession({
       return response.json();
     },
     enabled: !!heartbeatSessionId && !!user && !isSubmitted,
-    refetchInterval: timeRemaining !== null && timeRemaining <= 300 ? 30000 : 60000,
+    refetchInterval: 15000,
     refetchIntervalInBackground: true,
     staleTime: 0,
     retry: false,
@@ -293,15 +295,20 @@ export function useExamSession({
   useEffect(() => {
     if (!heartbeatData) return;
     if (heartbeatData.submitted || heartbeatData.timeExpired || heartbeatData.autoSubmitted) {
-      saveViaBeaconRef.current(); // 미저장 답안 최종 저장 시도
-      setIsSubmitted(true);
+      if (!autoSubmitHandledRef.current) {
+        autoSubmitHandledRef.current = true;
+        saveViaBeaconRef.current(); // 미저장 답안 최종 저장 시도
+        setIsSubmitted(true);
 
-      // 강사 강제 종료 시 토스트 알림
-      if (heartbeatData.submitted && heartbeatData.autoSubmitted) {
-        toast("교수님이 시험을 종료했습니다. 답안이 자동으로 제출되었습니다.", {
-          duration: 6000,
-          icon: "📋",
-        });
+        // 강사 강제 종료 시 토스트 알림
+        if (heartbeatData.submitted && heartbeatData.autoSubmitted) {
+          toast("교수님이 시험을 종료했습니다. 답안이 자동으로 제출되었습니다.", {
+            duration: 6000,
+            icon: "📋",
+          });
+        }
+      } else {
+        setIsSubmitted(true);
       }
     }
     if (heartbeatData.timeRemaining !== undefined) {
@@ -326,6 +333,8 @@ export function useExamSession({
         },
         (payload) => {
           if (payload.new?.status === "closed") {
+            if (autoSubmitHandledRef.current) return;
+            autoSubmitHandledRef.current = true;
             saveViaBeaconRef.current();
             setIsSubmitted(true);
             toast("교수님이 시험을 종료했습니다. 답안이 자동으로 제출되었습니다.", {
@@ -341,6 +350,41 @@ export function useExamSession({
       supabase.removeChannel(channel);
     };
   }, [examId, isSubmitted]);
+
+  // sessions 테이블 Realtime 구독 — exam end 즉시 감지 (신뢰성 높음)
+  useEffect(() => {
+    if (!heartbeatSessionId || isSubmitted) return;
+
+    const supabase = createSupabaseClient();
+    const channel = supabase
+      .channel(`session_end_${heartbeatSessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "sessions",
+          filter: `id=eq.${heartbeatSessionId}`,
+        },
+        (payload) => {
+          if (payload.new?.auto_submitted === true && payload.new?.submitted_at) {
+            if (autoSubmitHandledRef.current) return;
+            autoSubmitHandledRef.current = true;
+            saveViaBeaconRef.current();
+            setIsSubmitted(true);
+            toast("교수님이 시험을 종료했습니다. 답안이 자동으로 제출되었습니다.", {
+              duration: 6000,
+              icon: "📋",
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [heartbeatSessionId, isSubmitted]);
 
   // Session deactivation on unload/unmount
   // Fix 2A: Read sessionIdRef.current inside handlers to avoid stale closure

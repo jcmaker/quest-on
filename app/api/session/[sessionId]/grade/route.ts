@@ -10,6 +10,7 @@ import { logError } from "@/lib/logger";
 import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { singleGradeUpdateSchema, validateRequest } from "@/lib/validations";
+import { upsertGradesBySessionQuestion } from "@/lib/grades-upsert";
 
 // Auto-grading (PUT) calls AI_MODEL_HEAVY multiple times — needs 300s
 export const maxDuration = 300;
@@ -472,10 +473,10 @@ export async function POST(
       }
     }
 
-    // Upsert grade (atomic: handles concurrent grading safely)
-    const { data: result, error: gradeError } = await supabase
-      .from("grades")
-      .upsert(
+    // Upsert grade with fallback for environments missing UNIQUE(session_id, q_idx)
+    await upsertGradesBySessionQuestion(
+      supabase as never,
+      [
         {
           session_id: sessionId,
           q_idx: questionIdx,
@@ -485,12 +486,20 @@ export async function POST(
           grade_type: "manual",
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "session_id,q_idx" }
-      )
-      .select()
-      .single();
+      ],
+      "manual_grade_post"
+    );
 
-    if (gradeError) throw gradeError;
+    const { data: result, error: fetchGradeError } = await supabase
+      .from("grades")
+      .select("*")
+      .eq("session_id", sessionId)
+      .eq("q_idx", questionIdx)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (fetchGradeError) throw fetchGradeError;
 
     // Audit log: fire-and-forget with error catching
     try {

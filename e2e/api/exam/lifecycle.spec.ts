@@ -2,13 +2,25 @@ import { test, expect, BYPASS_SECRET } from "../../fixtures/auth.fixture";
 import {
   seedExam,
   seedSession,
+  seedSubmission,
   cleanupTestData,
   getExam,
   getSession,
   getSessionsByExam,
+  getGrades,
 } from "../../helpers/seed";
 
 test.describe("Exam Lifecycle — start / end / sessions", () => {
+  async function waitForGrades(sessionId: string, timeoutMs = 15_000) {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const grades = await getGrades(sessionId);
+      if (grades.length > 0) return grades;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    return [];
+  }
+
   test.afterEach(async () => {
     await cleanupTestData();
   });
@@ -203,6 +215,28 @@ test.describe("Exam Lifecycle — start / end / sessions", () => {
     const sessions = await getSessionsByExam(exam.id);
     const waitingSession = sessions.find((s: any) => s.student_id === "student-2");
     expect(waitingSession.status).toBe("closed");
+  });
+
+  test("end exam force-submitted sessions are queued for grading", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({
+      status: "running",
+      started_at: new Date().toISOString(),
+    });
+    const inProgressSession = await seedSession(exam.id, "student-1", {
+      status: "in_progress",
+    });
+    await seedSubmission(inProgressSession.id, 0, { answer: "Force end answer" });
+
+    const res = await instructorRequest.post(
+      `/api/exam/${exam.id}/end`,
+      { data: {} }
+    );
+
+    expect(res.status()).toBe(200);
+    const grades = await waitForGrades(inProgressSession.id);
+    expect(grades.length).toBeGreaterThan(0);
   });
 
   // ── GET /api/exam/[examId]/sessions ──

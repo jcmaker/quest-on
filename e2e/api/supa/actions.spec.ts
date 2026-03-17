@@ -6,10 +6,21 @@ import {
   cleanupTestData,
   getExam,
   getSession,
+  getGrades,
 } from "../../helpers/seed";
 import { getTestSupabase } from "../../helpers/supabase-test-client";
 
 const supabase = getTestSupabase();
+
+async function waitForGrades(sessionId: string, timeoutMs = 15_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const grades = await getGrades(sessionId);
+    if (grades.length > 0) return grades;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return [];
+}
 
 test.describe("Supa — POST /api/supa (core actions)", () => {
   test.afterEach(async () => {
@@ -288,6 +299,36 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
     const dbSession = await getSession(session.id);
     expect(dbSession.status).toBe("submitted");
     expect(dbSession.submitted_at).toBeTruthy();
+
+    // Regression: submit_exam path must enqueue grading
+    const grades = await waitForGrades(session.id);
+    expect(grades.length).toBeGreaterThan(0);
+  });
+
+  test("session_heartbeat auto-submit triggers grading when time expired", async ({
+    studentRequest,
+  }) => {
+    const exam = await seedExam({ status: "running", duration: 1 });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "in_progress",
+      started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      attempt_timer_started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+    });
+    await seedSubmission(session.id, 0, { answer: "Timed-out answer draft" });
+
+    const res = await studentRequest.post("/api/supa", {
+      data: {
+        action: "session_heartbeat",
+        data: { sessionId: session.id, studentId: "test-student-id" },
+      },
+    });
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.timeExpired).toBe(true);
+
+    const grades = await waitForGrades(session.id);
+    expect(grades.length).toBeGreaterThan(0);
   });
 
   test("anon cannot submit exam → 401", async ({ anonRequest }) => {

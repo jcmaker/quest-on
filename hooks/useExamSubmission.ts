@@ -102,7 +102,12 @@ export function useExamSubmission({
       if (!res.ok) return false;
       const data = await res.json();
       const sessions = Array.isArray(data) ? data : data.sessions || [];
-      return sessions.some((s: { status?: string }) => s.status === "submitted" || s.status === "graded");
+      return sessions.some(
+        (s: { status?: string }) =>
+          s.status === "submitted" ||
+          s.status === "graded" ||
+          s.status === "completed"
+      );
     } catch {
       return false;
     }

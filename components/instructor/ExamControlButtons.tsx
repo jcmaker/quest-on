@@ -42,7 +42,7 @@ export function ExamControlButtons({
   const [closeAt, setCloseAt] = useState<string>("");
   const router = useRouter();
   const queryClient = useQueryClient();
-  const queryKey = qk.instructor.waitingStudents(examId);
+  const queryKey = useMemo(() => qk.instructor.waitingStudents(examId), [examId]);
 
   // 대기 중인 학생 목록을 가져오는 함수
   const fetchWaitingStudents = async () => {
@@ -95,8 +95,8 @@ export function ExamControlButtons({
     queryKey,
     queryFn: fetchWaitingStudents,
     enabled: showStartDialog, // 모달이 열렸을 때만 쿼리 활성화
-    refetchInterval: 30000, // 30초마다 한 번씩 강제 동기화 (하트비트 만료 체크용)
-    staleTime: 10000, // 10초간 fresh 상태 유지
+    refetchInterval: 5000, // 5초마다 강제 동기화 (Realtime 누락 안전망)
+    staleTime: 0, // invalidation 즉시 refetch 보장
   });
 
   // Supabase Realtime 구독 설정

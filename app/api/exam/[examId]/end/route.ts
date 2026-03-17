@@ -1,6 +1,6 @@
 export const maxDuration = 300;
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
@@ -8,8 +8,7 @@ import { validateUUID } from "@/lib/validate-params";
 import { logError, logWarn } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { compressData } from "@/lib/compression";
-import { enqueueGrading } from "@/lib/openai";
-import { autoGradeSession } from "@/lib/grading";
+import { triggerGradingIfNeeded } from "@/lib/grading-trigger";
 
 // P1-4: Supabase client created inside handler, not module-level
 function getSupabase() {
@@ -121,7 +120,7 @@ export async function POST(
       .is("submitted_at", null);
 
     let sessionsForceSubmitted = 0;
-    let forceSubmitFailed: string[] = [];
+    const forceSubmitFailed: string[] = [];
 
     if (!sessionsError && activeSessions && activeSessions.length > 0) {
       const sessionIds = activeSessions.map((s) => s.id);
@@ -254,27 +253,8 @@ export async function POST(
       }
 
       // 6. 강제 종료된 세션들의 자동 채점
-      const MAX_GRADING_RETRIES = 2;
       for (const sessionId of enrichedSessionIds) {
-        const gradeWithRetry = async () => {
-          for (let attempt = 0; attempt <= MAX_GRADING_RETRIES; attempt++) {
-            try {
-              return await autoGradeSession(sessionId);
-            } catch (error) {
-              if (attempt === MAX_GRADING_RETRIES) throw error;
-              const delay = 5000 * Math.pow(2, attempt);
-              logError(`Force-end grading attempt ${attempt + 1} failed`, error, {
-                additionalData: { sessionId, attempt },
-              });
-              await new Promise((r) => setTimeout(r, delay));
-            }
-          }
-        };
-        enqueueGrading(gradeWithRetry).catch((error) => {
-          logError("Force-end grading failed after retries", error, {
-            additionalData: { sessionId },
-          });
-        });
+        await triggerGradingIfNeeded(sessionId, "force_end");
       }
     }
 

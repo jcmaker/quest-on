@@ -4,6 +4,7 @@ import { compressData } from "@/lib/compression";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
+import { triggerGradingIfNeeded } from "@/lib/grading-trigger";
 
 /** 5-second grace period for network latency (shared across heartbeat/initExamSession/feedback) */
 const GRACE_PERIOD_MS = 5_000;
@@ -813,6 +814,8 @@ export async function submitExam(data: {
       });
     }
 
+    await triggerGradingIfNeeded(data.sessionId, "submit_exam");
+
     return successJson({
       session: { id: data.sessionId, submitted_at: submittedAt, status: "submitted" },
       submissions: submissionsPayload,
@@ -895,6 +898,10 @@ export async function sessionHeartbeat(data: {
 
           if (updateError) {
             logError("Failed to auto-submit session", updateError, { path: "/api/supa", additionalData: { sessionId: data.sessionId } });
+          }
+
+          if (autoSubmittedSession?.id) {
+            await triggerGradingIfNeeded(autoSubmittedSession.id, "heartbeat");
           }
 
           return successJson({
