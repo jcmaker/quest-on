@@ -94,7 +94,7 @@ export async function GET(
       `,
       )
       .eq("exam_id", examId)
-      .order("submitted_at", { ascending: false })
+      .order("submitted_at", { ascending: false, nullsFirst: true })
       .range(from, to);
 
     if (sessionsError) {

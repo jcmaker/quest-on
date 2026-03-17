@@ -91,7 +91,7 @@ export function ExamControlButtons({
   };
 
   // TanStack Query로 대기 중인 학생 목록 가져오기
-  const { data: waitingStudents = [], isLoading: loadingWaitingStudents } = useQuery({
+  const { data: waitingStudents = [], isLoading: loadingWaitingStudents, isError: isWaitingError } = useQuery({
     queryKey,
     queryFn: fetchWaitingStudents,
     enabled: showStartDialog, // 모달이 열렸을 때만 쿼리 활성화
@@ -356,6 +356,10 @@ export function ExamControlButtons({
                     <span className="ml-2 text-sm text-muted-foreground">
                       학생 목록 불러오는 중...
                     </span>
+                  </div>
+                ) : isWaitingError ? (
+                  <div className="text-sm text-destructive py-2 px-3 border border-destructive/20 rounded-md bg-destructive/5">
+                    학생 목록을 불러오지 못했습니다. 새로고침해주세요.
                   </div>
                 ) : (waitingStudents?.length ?? 0) > 0 ? (
                   <div className="max-h-48 overflow-y-auto border rounded-md p-3 bg-muted/30">

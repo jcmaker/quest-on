@@ -108,6 +108,44 @@ export function WaitingRoom({
     };
   }, [examId, isWaiting, checkExamStatus]);
 
+  // Supabase Realtime subscription for session status changes (direct detection)
+  useEffect(() => {
+    if (!sessionId || !isWaiting) return;
+
+    const supabase = createSupabaseClient();
+    const channel = supabase
+      .channel(`session_gate_${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "sessions",
+          filter: `id=eq.${sessionId}`,
+        },
+        (payload) => {
+          const newStatus = payload.new?.status;
+          if (newStatus === "in_progress") {
+            const startedAt =
+              payload.new?.attempt_timer_started_at ||
+              payload.new?.started_at ||
+              null;
+            setIsWaiting(false);
+            onGateStartRef.current?.({
+              sessionStatus: "in_progress",
+              sessionStartTime: startedAt,
+              timeRemaining: null,
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId, isWaiting]);
+
   // Fallback polling: 10-second interval for faster exam start detection
   useEffect(() => {
     if (!sessionId || !examId || !isWaiting) return;
