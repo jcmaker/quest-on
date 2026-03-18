@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Clock, Users, Loader2 } from "lucide-react";
 import { createSupabaseClient } from "@/lib/supabase-client";
+import { CenteredViewportShell } from "@/components/layout/CenteredViewportShell";
 
 interface WaitingRoomProps {
   examTitle?: string;
@@ -160,8 +161,11 @@ export function WaitingRoom({
   }, [sessionId, examId, isWaiting, checkExamStatus]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl" data-testid="waiting-room">
+    <CenteredViewportShell
+      className="bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900"
+      contentClassName="max-w-2xl"
+    >
+      <Card className="w-full" data-testid="waiting-room">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
             <div className="relative">
@@ -255,6 +259,6 @@ export function WaitingRoom({
           </div>
         </CardContent>
       </Card>
-    </div>
+    </CenteredViewportShell>
   );
 }

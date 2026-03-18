@@ -1,4 +1,4 @@
-import { Page } from "@playwright/test";
+import { Locator, Page } from "@playwright/test";
 import { test, expect } from "../fixtures/auth-browser.fixture";
 import { cleanupTestData } from "../helpers/test-data-builder";
 import { OnboardingPage, ProfileSetupPage } from "../pages";
@@ -23,6 +23,21 @@ async function setupProfileApiMock(page: Page) {
     }
     return route.continue();
   });
+}
+
+async function expectReachableByPageScroll(page: Page, locator: Locator) {
+  const viewport = page.viewportSize();
+  expect(viewport).not.toBeNull();
+
+  const initialBox = await locator.boundingBox();
+  expect(initialBox).not.toBeNull();
+  expect(initialBox!.y + initialBox!.height).toBeGreaterThan(viewport!.height);
+
+  await locator.scrollIntoViewIfNeeded();
+  await expect(locator).toBeInViewport();
+
+  const scrollY = await page.evaluate(() => window.scrollY);
+  expect(scrollY).toBeGreaterThan(0);
 }
 
 test.describe("Onboarding — Role Selection", () => {
@@ -137,5 +152,20 @@ test.describe("Profile Setup — /student/profile-setup", () => {
     // Should redirect to student dashboard
     await studentPage.waitForURL(/\/student/, { timeout: TIMEOUTS.PAGE_LOAD });
     expect(studentPage.url()).toContain("/student");
+  });
+
+  test("short viewport still lets students reach the submit button", async ({
+    studentPage,
+  }) => {
+    await setupProfileApiMock(studentPage);
+    await studentPage.setViewportSize({ width: 390, height: 420 });
+
+    const profile = new ProfileSetupPage(studentPage);
+    await profile.goto();
+
+    await expect(profile.nameInput).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
+    await expect(profile.submitBtn).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
+
+    await expectReachableByPageScroll(studentPage, profile.submitBtn);
   });
 });

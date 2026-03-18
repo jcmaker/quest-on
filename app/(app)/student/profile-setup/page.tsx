@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { User, GraduationCap, Hash, Loader2 } from "lucide-react";
 import { ErrorAlert } from "@/components/ui/error-alert";
+import { CenteredViewportShell } from "@/components/layout/CenteredViewportShell";
 
 interface University {
   name: string;
@@ -200,15 +201,18 @@ export default function ProfileSetupPage() {
 
   if (!isLoaded || isLoadingProfile) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex min-h-screen min-h-dvh items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl shadow-xl border-0">
+    <CenteredViewportShell
+      className="bg-background"
+      contentClassName="max-w-2xl"
+    >
+      <Card className="w-full shadow-xl border-0">
         <CardHeader className="text-center space-y-4">
           <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto">
             <User className="w-8 h-8 text-primary-foreground" />
@@ -336,6 +340,6 @@ export default function ProfileSetupPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </CenteredViewportShell>
   );
 }
