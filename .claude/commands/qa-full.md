@@ -43,7 +43,7 @@ curl -sf http://localhost:4010/health > /dev/null 2>&1
 
 ## 1. Phase 1 — 병렬 정적 분석 (Subagent)
 
-3개의 Subagent를 **동시에** 디스패치:
+4개의 Subagent를 **동시에** 디스패치:
 
 ### Agent 1: 커버리지 갭 분석
 ```
@@ -71,6 +71,17 @@ Agent(description="QA regression analysis"):
   2. 변경 파일 → 영향받는 테스트 매핑
   3. 최소 테스트 셋 도출
   4. 실행 명령어 반환
+```
+
+### Agent 4: 코드 감사 (v2 — 2단계 오케스트레이션)
+```
+Agent(description="QA code audit v2 — 2-stage fan-out: data map + invariants, then sibling comparison"):
+  Stage A (병렬):
+    A-1. 변경 파일 시드 → .from("테이블") Grep → 전체 reader/writer 데이터 맵 구축
+    A-2. 불변량 발견: 공유 유틸 채택, 패턴 전파, 에러 처리 일관성 전수 검사
+  Stage B (데이터 맵 기반, 데이터 그룹별 병렬):
+    B-*. 각 테이블 그룹의 형제 코드 1:1 비교 (상태 변경, 계산 공식, 데이터 형식)
+  통합: 중복 제거 + 교차 그룹 분석 + 심각도 판정 → CRITICAL/HIGH/MEDIUM/LOW 분류 반환
 ```
 
 ---
@@ -172,7 +183,15 @@ Agent(description="QA failure analysis"):
 
 ---
 
-### 5. 탐색적 테스팅 요약 (실행된 경우)
+### 5. 코드 감사 요약
+
+- 감사 파일: N개
+- 발견 사항: CRITICAL N건 / HIGH N건 / MEDIUM N건 / LOW N건
+- 주요 발견: [CRITICAL/HIGH 이슈 요약]
+
+---
+
+### 6. 탐색적 테스팅 요약 (실행된 경우)
 
 - 탐색 영역: [영역명]
 - 발견된 이슈: N건
@@ -187,6 +206,7 @@ Agent(description="QA failure analysis"):
 | 테스트 품질 | ✅ 양호 / ⚠️ 개선 필요 / ❌ 위험 |
 | 테스트 통과율 | ✅ 100% / ⚠️ 일부 실패 / ❌ 다수 실패 |
 | 회귀 위험 | ✅ 낮음 / ⚠️ 중간 / ❌ 높음 |
+| 코드 감사 | ✅ 이상 없음 / ⚠️ MEDIUM 이하 / ❌ CRITICAL/HIGH 발견 |
 
 ### 권장 액션
 
@@ -217,7 +237,7 @@ Agent(description="QA failure analysis"):
 
 ## 6. 규칙
 
-- Phase 1의 3개 Agent는 반드시 병렬로 실행한다 (순차 실행 금지).
+- Phase 1의 4개 Agent는 반드시 병렬로 실행한다 (순차 실행 금지).
 - 테스트 실행은 순차로 한다 (리소스 충돌 방지).
 - 서버가 없으면 자동으로 시작한다. Phase 0에서 서버 자동 시작에 실패한 경우에만 Phase 2-3를 스킵하고 안내한다.
 - 전체 실행 시간이 길어도 중간에 중단하지 않는다.

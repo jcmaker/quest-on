@@ -10,7 +10,7 @@ export function getScoreColor(score: number): string {
 
 /** Returns Tailwind color class based on score relative to maxScore */
 export function getScoreColorRelative(score: number | null, maxScore: number | null): string {
-  if (score === null || maxScore === null) return "text-muted-foreground";
+  if (score === null || maxScore === null || maxScore === 0) return "text-muted-foreground";
   const percentage = (score / maxScore) * 100;
   return getScoreColor(percentage);
 }

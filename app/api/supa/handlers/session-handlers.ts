@@ -901,6 +901,44 @@ export async function sessionHeartbeat(data: {
           }
 
           if (autoSubmittedSession?.id) {
+            // Build compressed_session_data for auto-submitted sessions (same as force-end)
+            try {
+              const [{ data: hbSubmissions }, { data: hbMessages }] = await Promise.all([
+                getSupabase()
+                  .from("submissions")
+                  .select("q_idx, answer, compressed_answer_data, compression_metadata")
+                  .eq("session_id", autoSubmittedSession.id),
+                getSupabase()
+                  .from("messages")
+                  .select("q_idx, role, content, created_at")
+                  .eq("session_id", autoSubmittedSession.id)
+                  .order("created_at", { ascending: true }),
+              ]);
+
+              const sessionData = {
+                answers: (hbSubmissions || []).map((s) => typeof s.answer === "string" ? s.answer : ""),
+                chatHistory: (hbMessages || []).map((m) => ({
+                  type: m.role === "user" ? "student" : "ai",
+                  content: m.content,
+                  timestamp: m.created_at,
+                })),
+              };
+
+              const compressedSessionData = compressData(sessionData);
+              await getSupabase()
+                .from("sessions")
+                .update({
+                  compressed_session_data: compressedSessionData.data,
+                  compression_metadata: compressedSessionData.metadata,
+                })
+                .eq("id", autoSubmittedSession.id);
+            } catch (enrichErr) {
+              logError("[sessionHeartbeat] Failed to enrich auto-submitted session with compressed data", enrichErr, {
+                path: "/api/supa/session-handlers",
+                additionalData: { sessionId: autoSubmittedSession.id },
+              });
+            }
+
             await triggerGradingIfNeeded(autoSubmittedSession.id, "heartbeat");
           }
 

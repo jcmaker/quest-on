@@ -4,8 +4,12 @@ import { currentUser } from "@/lib/get-current-user";
 import { decompressData } from "@/lib/compression";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
+import { deduplicateGrades, calculateOverallScore } from "@/lib/grade-utils";
 
-const supabase = getSupabaseServer();
+// P1-4: Lazy Supabase getter to avoid stale connections in serverless
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 export async function GET(
   request: NextRequest,
@@ -29,7 +33,7 @@ export async function GET(
     if (invalidId) return invalidId;
 
     // 1. 시험 정보 가져오기 (루브릭 정보 포함)
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = await getSupabase()
       .from("exams")
       .select("id, title, code, rubric, questions, instructor_id")
       .eq("id", examId)
@@ -65,14 +69,14 @@ export async function GET(
       submitted_at: string | null;
     }>;
 
-    const { data: rpcSessions, error: rpcError } = await supabase
+    const { data: rpcSessions, error: rpcError } = await getSupabase()
       .rpc("get_best_sessions_for_exam", { p_exam_id: examId });
 
     if (!rpcError && rpcSessions) {
       filteredSessions = rpcSessions;
     } else {
       // Fallback: 기존 JS 로직 (RPC 함수 미배포 시)
-      const { data: sessions, error: sessionsError } = await supabase
+      const { data: sessions, error: sessionsError } = await getSupabase()
         .from("sessions")
         .select("id, student_id, used_clarifications, created_at, submitted_at")
         .eq("exam_id", examId)
@@ -118,7 +122,7 @@ export async function GET(
     >();
 
     if (studentIds.length > 0) {
-      const { data: studentProfiles } = await supabase
+      const { data: studentProfiles } = await getSupabase()
         .from("student_profiles")
         .select("student_id, name, student_number, school")
         .in("student_id", studentIds);
@@ -173,16 +177,16 @@ export async function GET(
     // Batch fetch all grades, messages, and submissions
     const [gradesResult, messagesResult, submissionsResult] = await Promise.all(
       [
-        supabase
+        getSupabase()
           .from("grades")
-          .select("session_id, score, q_idx, stage_grading")
+          .select("session_id, score, q_idx, stage_grading, grade_type")
           .in("session_id", sessionIds),
-        supabase
+        getSupabase()
           .from("messages")
           .select("session_id, id, role, q_idx, message_type")
           .in("session_id", sessionIds)
           .eq("role", "user"),
-        supabase
+        getSupabase()
           .from("submissions")
           .select("session_id, answer, compressed_answer_data")
           .in("session_id", sessionIds),
@@ -233,12 +237,12 @@ export async function GET(
       const messages = messagesBySession.get(sessionId) || [];
       const submissions = submissionsBySession.get(sessionId) || [];
 
-      const averageScore =
+      // Use shared grade-utils for consistent scoring (dedup + ai_failed exclusion)
+      const { overallScore: averageScore, gradedCount: _gradedCount } =
         grades.length > 0
-          ? Math.round(
-              grades.reduce((sum, g) => sum + (g.score || 0), 0) / grades.length
-            )
-          : null;
+          ? calculateOverallScore(grades as Array<{ q_idx: number; score: number; grade_type?: string }>)
+          : { overallScore: 0, gradedCount: 0 };
+      const scoreForDisplay = grades.length > 0 && _gradedCount > 0 ? averageScore : null;
 
       const questionCount = messages.length;
 
@@ -296,12 +300,12 @@ export async function GET(
               answer?: { score: number };
               feedback?: { score: number };
             };
-            if (stageGrading.chat?.score)
+            if (stageGrading.chat?.score != null)
               stageScoresList.chat.push(stageGrading.chat.score);
-            if (stageGrading.answer?.score)
+            if (stageGrading.answer?.score != null)
               stageScoresList.answer.push(stageGrading.answer.score);
             // essay 타입 시험에는 피드백 단계가 없음
-            if (!isEssayTypeOnly && stageGrading.feedback?.score)
+            if (!isEssayTypeOnly && stageGrading.feedback?.score != null)
               stageScoresList.feedback.push(stageGrading.feedback.score);
           }
         });
@@ -397,7 +401,7 @@ export async function GET(
           studentProfile?.name || `Student ${session.student_id.slice(0, 8)}`,
         studentNumber: studentProfile?.student_number || null,
         school: studentProfile?.school || null,
-        score: averageScore,
+        score: scoreForDisplay,
         questionCount,
         answerLength: averageAnswerLength,
         submittedAt: session.submitted_at,

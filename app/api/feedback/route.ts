@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
         ownedSession.created_at;
       const sessionStartTime = new Date(timerStart).getTime();
       const examDurationMs = exam.duration * 60 * 1000; // 분을 밀리초로 변환
-      const gracePeriodMs = 30 * 1000; // 30초 grace period for network latency
+      const gracePeriodMs = 5 * 1000; // 5초 grace period — aligned with session-handlers GRACE_PERIOD_MS
       const sessionEndTime = sessionStartTime + examDurationMs + gracePeriodMs;
       const now = Date.now();
 
