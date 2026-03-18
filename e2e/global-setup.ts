@@ -122,6 +122,54 @@ async function applyMigrations() {
     console.warn("[global-setup] submit_exam_atomic migration check failed:", err);
   }
 
+  // Migration: ensure create_exam_with_node RPC exists (sql/012_create_exam_with_node.sql)
+  try {
+    const { error: rpcCheckErr2 } = await supabase.rpc("create_exam_with_node", {
+      p_title: "__check__",
+      p_code: "__check__",
+      p_description: null,
+      p_duration: 1,
+      p_questions: [],
+      p_materials: [],
+      p_materials_text: [],
+      p_rubric: [],
+      p_rubric_public: false,
+      p_chat_weight: 50,
+      p_status: "draft",
+      p_instructor_id: "__check__",
+      p_created_at: new Date().toISOString(),
+      p_updated_at: new Date().toISOString(),
+      p_parent_folder_id: null,
+    });
+
+    if (rpcCheckErr2 && rpcCheckErr2.message.includes("does not exist")) {
+      console.log("[global-setup] Applying create_exam_with_node RPC...");
+      execSync(
+        `docker exec -i supabase_db_quest-on psql -U postgres -d postgres < ${path.resolve(__dirname, "../sql/012_create_exam_with_node.sql")}`,
+        { stdio: "pipe" }
+      );
+      // Reload PostgREST schema cache
+      execSync("docker kill --signal=SIGUSR1 supabase_rest_quest-on", { stdio: "pipe" });
+      console.log("[global-setup] create_exam_with_node RPC applied.");
+    } else if (rpcCheckErr2) {
+      // Clean up the test row if the function exists but insert failed (expected unique violation)
+      // The function exists - that's all we care about
+    }
+  } catch (err) {
+    console.warn("[global-setup] create_exam_with_node migration check failed:", err);
+  }
+
+  // Migration: ensure error_logs has payload and user_id columns
+  try {
+    execSync(
+      `docker exec supabase_db_quest-on psql -U postgres -d postgres -c "ALTER TABLE IF EXISTS error_logs ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}'; ALTER TABLE IF EXISTS error_logs ADD COLUMN IF NOT EXISTS user_id TEXT;"`,
+      { stdio: "pipe" }
+    );
+    execSync("docker kill --signal=SIGUSR1 supabase_rest_quest-on", { stdio: "pipe" });
+  } catch (err) {
+    console.warn("[global-setup] error_logs migration failed:", err);
+  }
+
   // Ensure exam-materials storage bucket exists (for upload tests)
   try {
     const { data: buckets } = await supabase.storage.listBuckets();
