@@ -23,6 +23,7 @@ import {
   buildAiTextMetadata,
   callTrackedChatCompletion,
 } from "@/lib/ai-tracking";
+import { persistGrades } from "@/lib/grade-persistence";
 import type {
   StageGrading,
   SummaryData,
@@ -537,11 +538,9 @@ export async function autoGradeSession(
       grade_type: "ai_failed",
     }));
 
-    const { error: failedInsertError } = await supabase
-      .from("grades")
-      .upsert(failedGradeRecords, { onConflict: "session_id,q_idx" });
-
-    if (failedInsertError) {
+    try {
+      await persistGrades(supabase, failedGradeRecords);
+    } catch (failedInsertError) {
       logError("[AUTO_GRADE] Failed to insert ai_failed grade records", failedInsertError, {
         path: "lib/grading.ts",
         additionalData: { sessionId, failedQIdxes: failedGradeResults.map((f) => f.q_idx) },
@@ -551,7 +550,8 @@ export async function autoGradeSession(
 
   // 9b. 채점 결과 저장 (partial 결과라도 저장) + insert 반환값으로 직접 검증
   if (grades.length > 0) {
-    const { data: insertedRows, error: insertError } = await supabase.from("grades").upsert(
+    const insertedRows = await persistGrades(
+      supabase,
       grades.map((grade) => ({
         session_id: sessionId,
         q_idx: grade.q_idx,
@@ -560,12 +560,8 @@ export async function autoGradeSession(
         stage_grading: grade.stage_grading || null,
         grade_type: "auto",
       })),
-      { onConflict: "session_id,q_idx" }
-    ).select("q_idx");
-
-    if (insertError) {
-      throw insertError;
-    }
+      { select: "q_idx" }
+    );
 
     // Verify via insert return — no separate SELECT needed
     if (insertedRows) {
