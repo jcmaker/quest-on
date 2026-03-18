@@ -14,7 +14,54 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { HelpCircle, Upload, FolderOpen, X } from "lucide-react";
+import { HelpCircle, Upload, FolderOpen, X, Loader2, CheckCircle2, XCircle } from "lucide-react";
+
+type ExtractionStatus = "uploading" | "extracting" | "done" | "failed";
+
+interface StatusConfig {
+  label: string;
+  barWidth: string;
+  barColor: string;
+  textColor: string;
+  pulse: boolean;
+}
+
+function getStatusConfig(status: ExtractionStatus): StatusConfig {
+  switch (status) {
+    case "uploading":
+      return {
+        label: "업로드 중...",
+        barWidth: "w-2/5",
+        barColor: "bg-amber-400",
+        textColor: "text-amber-600 dark:text-amber-400",
+        pulse: true,
+      };
+    case "extracting":
+      return {
+        label: "AI 분석 중...",
+        barWidth: "w-3/4",
+        barColor: "bg-blue-500",
+        textColor: "text-blue-600 dark:text-blue-400",
+        pulse: true,
+      };
+    case "done":
+      return {
+        label: "완료",
+        barWidth: "w-full",
+        barColor: "bg-emerald-500",
+        textColor: "text-emerald-600 dark:text-emerald-400",
+        pulse: false,
+      };
+    case "failed":
+      return {
+        label: "실패",
+        barWidth: "w-full",
+        barColor: "bg-red-500",
+        textColor: "text-red-600 dark:text-red-400",
+        pulse: false,
+      };
+  }
+}
 
 interface FileUploadProps {
   files: File[];
@@ -31,7 +78,7 @@ interface FileUploadProps {
   getFileIcon: (fileName: string) => ReactNode;
   existingFiles?: Array<{ url: string; name: string; index: number }>;
   onRemoveExistingFile?: (index: number) => void;
-  extractionStatus?: Map<string, "uploading" | "extracting" | "done" | "failed">;
+  extractionStatus?: Map<string, ExtractionStatus>;
 }
 
 export function FileUpload({
@@ -77,146 +124,169 @@ export function FileUpload({
       <CardContent className="space-y-2">
         <div>
           <Input
-              id="materials"
-              type="file"
-              multiple
-              accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.csv,.hwp,.hwpx,.jpg,.jpeg,.png,.gif,.webp"
-              onChange={onFileSelect}
-              className="hidden"
-              disabled={!canAddMoreFiles}
-            />
-            <div
-              className={`text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200 ${
-                isDragOver
-                  ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400"
-                  : canAddMoreFiles
-                  ? "border-border cursor-pointer hover:border-muted-foreground hover:bg-muted/50"
-                  : "border-muted cursor-not-allowed bg-muted/50 text-muted-foreground"
-              }`}
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
-              onClick={onDragAreaClick}
-            >
-              <div className="flex flex-col items-center gap-2">
-                {isDragOver ? (
-                  <FolderOpen className="w-8 h-8 text-blue-500" />
-                ) : (
-                  <Upload className="w-8 h-8 text-muted-foreground" />
-                )}
-                <div className="text-sm font-medium">
-                  {isDragOver
-                    ? "파일을 여기에 놓으세요"
-                    : "파일을 드래그하거나 클릭하여 선택"}
-                </div>
+            id="materials"
+            type="file"
+            multiple
+            accept=".pdf,.ppt,.pptx,.doc,.docx,.xls,.xlsx,.csv,.hwp,.hwpx,.jpg,.jpeg,.png,.gif,.webp"
+            onChange={onFileSelect}
+            className="hidden"
+            disabled={!canAddMoreFiles}
+          />
+          <div
+            className={`text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg transition-all duration-200 ${
+              isDragOver
+                ? "border-blue-400 bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400"
+                : canAddMoreFiles
+                ? "border-border cursor-pointer hover:border-muted-foreground hover:bg-muted/50"
+                : "border-muted cursor-not-allowed bg-muted/50 text-muted-foreground"
+            }`}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            onClick={onDragAreaClick}
+          >
+            <div className="flex flex-col items-center gap-2">
+              {isDragOver ? (
+                <FolderOpen className="w-8 h-8 text-blue-500" />
+              ) : (
+                <Upload className="w-8 h-8 text-muted-foreground" />
+              )}
+              <div className="text-sm font-medium">
+                {isDragOver
+                  ? "파일을 여기에 놓으세요"
+                  : "파일을 드래그하거나 클릭하여 선택"}
               </div>
             </div>
           </div>
+        </div>
 
-          {(existingFiles.length > 0 || files.length > 0) && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium">업로드된 파일:</Label>
-                <span className="text-xs text-muted-foreground">
-                  총 용량: {(totalSize / 1024 / 1024).toFixed(1)}MB / 50MB
-                </span>
-              </div>
-              <div className="space-y-1">
-                {/* 기존 파일들 */}
-                {existingFiles.map((file) => (
-                  <div
-                    key={file.index}
-                    className="flex items-center justify-between p-2 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
-                  >
-                    <div className="flex items-center gap-2">
-                      {getFileIcon(file.name)}
-                      <span className="text-sm font-medium">{file.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        (기존 파일)
-                      </span>
-                    </div>
-                    {onRemoveExistingFile && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-8"
-                        onClick={() => onRemoveExistingFile(file.index)}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    )}
+        {(existingFiles.length > 0 || files.length > 0) && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">업로드된 파일:</Label>
+              <span className="text-xs text-muted-foreground">
+                총 용량: {(totalSize / 1024 / 1024).toFixed(1)}MB / 50MB
+              </span>
+            </div>
+            <div className="space-y-1">
+              {/* 기존 파일들 */}
+              {existingFiles.map((file) => (
+                <div
+                  key={file.index}
+                  className="flex items-center justify-between p-2 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800"
+                >
+                  <div className="flex items-center gap-2">
+                    {getFileIcon(file.name)}
+                    <span className="text-sm font-medium">{file.name}</span>
+                    <span className="text-xs text-muted-foreground">
+                      (기존 파일)
+                    </span>
                   </div>
-                ))}
-                {/* 새로 추가된 파일들 */}
-                {files.map((file, index) => {
-                  const isDisabled = disabledFiles.has(index);
-                  return (
-                    <div
-                      key={index}
-                      className={`flex items-center justify-between p-2 rounded-md ${
-                        isDisabled
-                          ? "bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800"
-                          : "bg-muted/50"
-                      }`}
+                  {onRemoveExistingFile && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="size-8"
+                      onClick={() => onRemoveExistingFile(file.index)}
                     >
-                      <div className="flex items-center gap-2">
-                        {getFileIcon(file.name)}
-                        <span
-                          className={`text-sm font-medium ${
-                            isDisabled ? "text-red-600 dark:text-red-400" : ""
-                          }`}
-                        >
-                          {file.name}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          ({(file.size / 1024 / 1024).toFixed(1)}MB)
-                        </span>
-                        {isDisabled && (
-                          <span className="text-xs text-red-500 font-medium">
-                            (용량 초과로 비활성화)
+                      <X className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+              {/* 새로 추가된 파일들 */}
+              {files.map((file, index) => {
+                const isDisabled = disabledFiles.has(index);
+                const status = extractionStatus?.get(file.name);
+                const cfg = status ? getStatusConfig(status) : null;
+                const isInProgress = status === "uploading" || status === "extracting";
+
+                return (
+                  <div
+                    key={index}
+                    className={`rounded-md overflow-hidden border transition-colors duration-300 ${
+                      isDisabled
+                        ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
+                        : status === "done"
+                        ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800"
+                        : status === "failed"
+                        ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
+                        : isInProgress
+                        ? "bg-muted/30 border-border"
+                        : "bg-muted/50 border-transparent"
+                    }`}
+                  >
+                    {/* Main row */}
+                    <div className="flex items-center justify-between px-2 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {/* Icon area: spinner while in-progress, file icon otherwise */}
+                        <div className="shrink-0 w-5 h-5 flex items-center justify-center">
+                          {isInProgress ? (
+                            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                          ) : status === "done" ? (
+                            <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                          ) : status === "failed" ? (
+                            <XCircle className="w-5 h-5 text-red-500" />
+                          ) : (
+                            getFileIcon(file.name)
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                          <span
+                            className={`text-sm font-medium truncate ${
+                              isDisabled ? "text-red-600 dark:text-red-400" : ""
+                            }`}
+                          >
+                            {file.name}
+                          </span>
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            ({(file.size / 1024 / 1024).toFixed(1)}MB)
+                          </span>
+                          {isDisabled && (
+                            <span className="text-xs text-red-500 font-medium shrink-0">
+                              (용량 초과로 비활성화)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        {/* Status label */}
+                        {cfg && (
+                          <span className={`text-xs font-medium ${cfg.textColor}`}>
+                            {cfg.label}
                           </span>
                         )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="size-8"
+                          onClick={() => onRemoveFile(index)}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-8"
-                        onClick={() => onRemoveFile(index)}
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
-          {extractionStatus && extractionStatus.size > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {Array.from(extractionStatus.entries()).map(([fileName, status]) => (
-                <span
-                  key={fileName}
-                  className={`text-xs px-2 py-1 rounded-full ${
-                    status === "uploading"
-                      ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
-                      : status === "extracting"
-                      ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                      : status === "done"
-                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
-                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
-                  }`}
-                >
-                  {status === "uploading" ? "⬆" : status === "extracting" ? "⏳" : status === "done" ? "✓" : "✗"}{" "}
-                  {fileName.length > 20 ? fileName.slice(0, 17) + "..." : fileName}
-                  {status === "uploading" && " 업로드 중"}
-                  {status === "extracting" && " 분석 중"}
-                </span>
-              ))}
+                    {/* Progress bar */}
+                    {cfg && (
+                      <div className="h-1 w-full bg-muted">
+                        <div
+                          className={`h-full transition-all duration-700 ease-in-out ${cfg.barWidth} ${cfg.barColor} ${
+                            cfg.pulse ? "animate-pulse" : ""
+                          }`}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
