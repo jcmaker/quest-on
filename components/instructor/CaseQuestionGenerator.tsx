@@ -134,7 +134,7 @@ export function CaseQuestionGenerator({
     if (suggestedRubric.length > 0 && !rubricSuggestedRef.current) {
       onRubricSuggested(suggestedRubric);
       rubricSuggestedRef.current = true;
-      toast.success("루브릭이 자동으로 제안되었습니다.", { icon: "📋" });
+      toast("AI 루브릭 제안을 확인하세요.", { icon: "📋" });
     }
   };
 

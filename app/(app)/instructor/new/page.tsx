@@ -70,6 +70,7 @@ export default function CreateExam() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [rubric, setRubric] = useState<RubricItem[]>([]);
+  const [pendingRubricSuggestions, setPendingRubricSuggestions] = useState<RubricItem[]>([]);
   const [isRubricPublic, setIsRubricPublic] = useState(false);
   const [chatWeight, setChatWeight] = useState<number | null>(null);
   // 파일 업로드 + 텍스트 추출 통합 hook
@@ -460,7 +461,7 @@ export default function CreateExam() {
     setRubric(newRubric);
   };
 
-  const handleAIGenerateRubric = useCallback(async () => {
+  const handleAIGenerateRubric = useCallback(async (params?: { topics?: string; customInstructions?: string }) => {
     if (questions.length === 0 || questions.every((q) => isQuestionContentEmpty(q.text))) {
       toast.error("AI 루브릭을 생성하려면 문제를 먼저 작성해주세요.");
       return;
@@ -480,6 +481,8 @@ export default function CreateExam() {
           questions: questions
             .filter((q) => !isQuestionContentEmpty(q.text))
             .map((q) => ({ text: q.text, type: q.type })),
+          ...(params?.topics ? { topics: params.topics } : {}),
+          ...(params?.customInstructions ? { customInstructions: params.customInstructions } : {}),
         }),
       });
 
@@ -490,20 +493,14 @@ export default function CreateExam() {
 
       const result = await response.json();
       if (result.rubric && Array.isArray(result.rubric)) {
-        setRubric((prev) => {
-          const nonEmpty = prev.filter(
-            (r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== ""
-          );
-          return [
-            ...nonEmpty,
-            ...result.rubric.map((r: { evaluationArea: string; detailedCriteria: string }) => ({
-              id: Date.now().toString() + Math.random().toString(36).slice(2),
-              evaluationArea: r.evaluationArea,
-              detailedCriteria: r.detailedCriteria,
-            })),
-          ];
-        });
-        toast.success("AI 평가 기준이 생성되었습니다.");
+        setPendingRubricSuggestions(
+          result.rubric.map((r: { evaluationArea: string; detailedCriteria: string }) => ({
+            id: Date.now().toString() + Math.random().toString(36).slice(2),
+            evaluationArea: r.evaluationArea,
+            detailedCriteria: r.detailedCriteria,
+          }))
+        );
+        toast.success("AI 평가 기준이 제안되었습니다. 확인 후 적용해주세요.");
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "루브릭 생성 중 오류가 발생했습니다.";
@@ -806,20 +803,13 @@ export default function CreateExam() {
                 }, 100);
               }}
               onRubricSuggested={(newRubric) => {
-                setRubric((prev) => {
-                  // 빈 초기 루브릭 자동 제거
-                  const nonEmpty = prev.filter(
-                    (r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== ""
-                  );
-                  return [
-                    ...nonEmpty,
-                    ...newRubric.map((r) => ({
-                      id: Date.now().toString() + Math.random().toString(36).slice(2),
-                      evaluationArea: r.evaluationArea,
-                      detailedCriteria: r.detailedCriteria,
-                    })),
-                  ];
-                });
+                setPendingRubricSuggestions(
+                  newRubric.map((r) => ({
+                    id: Date.now().toString() + Math.random().toString(36).slice(2),
+                    evaluationArea: r.evaluationArea,
+                    detailedCriteria: r.detailedCriteria,
+                  }))
+                );
               }}
             />
 
@@ -848,6 +838,20 @@ export default function CreateExam() {
               onChatWeightChange={setChatWeight}
               onAIGenerate={handleAIGenerateRubric}
               isAIGenerating={isAIGeneratingRubric}
+              pendingAISuggestions={pendingRubricSuggestions}
+              onAcceptAISuggestions={() => {
+                setRubric((prev) => {
+                  const nonEmpty = prev.filter(
+                    (r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== ""
+                  );
+                  return [...nonEmpty, ...pendingRubricSuggestions];
+                });
+                setPendingRubricSuggestions([]);
+                toast.success("AI 루브릭이 적용되었습니다.");
+              }}
+              onDismissAISuggestions={() => {
+                setPendingRubricSuggestions([]);
+              }}
             />
 
             {/* Submit */}

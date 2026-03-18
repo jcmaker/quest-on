@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -19,7 +21,7 @@ import {
   CardAction,
   CardContent,
 } from "@/components/ui/card";
-import { Plus, Trash2, HelpCircle, Settings, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Trash2, HelpCircle, Settings, Sparkles, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -41,8 +43,11 @@ interface RubricTableProps {
   onPublicChange?: (isPublic: boolean) => void;
   chatWeight?: number | null;
   onChatWeightChange?: (weight: number | null) => void;
-  onAIGenerate?: () => void;
+  onAIGenerate?: (params?: { topics?: string; customInstructions?: string }) => void;
   isAIGenerating?: boolean;
+  pendingAISuggestions?: RubricItem[];
+  onAcceptAISuggestions?: () => void;
+  onDismissAISuggestions?: () => void;
 }
 
 export function RubricTable({
@@ -56,9 +61,17 @@ export function RubricTable({
   onChatWeightChange,
   onAIGenerate,
   isAIGenerating = false,
+  pendingAISuggestions,
+  onAcceptAISuggestions,
+  onDismissAISuggestions,
 }: RubricTableProps) {
   const isCustomWeight = chatWeight !== null && chatWeight !== undefined;
   const effectiveWeight = chatWeight ?? 50;
+
+  const [showAIInput, setShowAIInput] = useState(false);
+  const [topics, setTopics] = useState("");
+  const [customInstructions, setCustomInstructions] = useState("");
+
   return (
     <Card>
       <CardHeader>
@@ -131,7 +144,7 @@ export function RubricTable({
               type="button"
               onClick={(e) => {
                 e.preventDefault();
-                onAIGenerate();
+                if (!isAIGenerating) setShowAIInput((prev) => !prev);
               }}
               disabled={isAIGenerating}
               className="gap-2"
@@ -142,9 +155,96 @@ export function RubricTable({
                 <Sparkles className="w-4 h-4" />
               )}
               {isAIGenerating ? "생성 중..." : "AI로 생성"}
+              {!isAIGenerating && (showAIInput ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
             </Button>
           )}
         </div>
+
+        {showAIInput && !isAIGenerating && (
+          <div className="border border-primary/20 rounded-lg p-4 space-y-3 bg-muted/30">
+            <div className="space-y-2">
+              <Label htmlFor="rubric-topics" className="text-sm font-medium">
+                주제 / 키워드
+              </Label>
+              <Input
+                id="rubric-topics"
+                value={topics}
+                onChange={(e) => setTopics(e.target.value)}
+                placeholder="예: 주요 개념, 특정 주제, 응용 사례"
+                maxLength={500}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="rubric-instructions" className="text-sm font-medium">
+                추가 지시사항 <span className="text-muted-foreground font-normal">(선택)</span>
+              </Label>
+              <Textarea
+                id="rubric-instructions"
+                value={customInstructions}
+                onChange={(e) => setCustomInstructions(e.target.value)}
+                placeholder="예: 한국 기업 사례를 활용해주세요"
+                maxLength={2000}
+                rows={3}
+                className="resize-none"
+              />
+            </div>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                className="gap-2"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onAIGenerate?.({ topics: topics.trim() || undefined, customInstructions: customInstructions.trim() || undefined });
+                  setShowAIInput(false);
+                }}
+              >
+                <Sparkles className="w-4 h-4" />
+                생성
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {pendingAISuggestions && pendingAISuggestions.length > 0 && (
+          <div className="border border-primary/30 bg-primary/5 rounded-lg p-4 space-y-3">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI가 루브릭 {pendingAISuggestions.length}개를 제안했습니다
+            </div>
+            <ul className="space-y-1.5 text-sm text-muted-foreground">
+              {pendingAISuggestions.map((item) => (
+                <li key={item.id} className="flex gap-2">
+                  <span className="font-medium text-foreground shrink-0">{item.evaluationArea}</span>
+                  <span className="truncate">— {item.detailedCriteria}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onDismissAISuggestions?.();
+                }}
+              >
+                무시
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onAcceptAISuggestions?.();
+                }}
+              >
+                적용
+              </Button>
+            </div>
+          </div>
+        )}
 
         {rubric.length === 0 ? (
           <div className="text-center py-8">
