@@ -7,6 +7,7 @@ const {
   compressDataMock,
   enqueueGradingMock,
   autoGradeSessionMock,
+  triggerGradingIfNeededMock,
   auditLogMock,
   logErrorMock,
   supabaseMock,
@@ -16,6 +17,7 @@ const {
   compressDataMock: vi.fn(),
   enqueueGradingMock: vi.fn(),
   autoGradeSessionMock: vi.fn(),
+  triggerGradingIfNeededMock: vi.fn(),
   auditLogMock: vi.fn(),
   logErrorMock: vi.fn(),
   supabaseMock: {
@@ -57,6 +59,10 @@ vi.mock("@/lib/audit", () => ({
 
 vi.mock("@/lib/logger", () => ({
   logError: logErrorMock,
+}));
+
+vi.mock("@/lib/grading-trigger", () => ({
+  triggerGradingIfNeeded: triggerGradingIfNeededMock,
 }));
 
 import { POST } from "@/app/api/feedback/route";
@@ -143,6 +149,7 @@ describe("POST /api/feedback", () => {
     });
     enqueueGradingMock.mockReturnValue(Promise.resolve(undefined));
     autoGradeSessionMock.mockResolvedValue(undefined);
+    triggerGradingIfNeededMock.mockResolvedValue({ queued: true });
     supabaseMock.rpc.mockResolvedValue({ error: null });
     auditLogMock.mockResolvedValue(true);
   });
