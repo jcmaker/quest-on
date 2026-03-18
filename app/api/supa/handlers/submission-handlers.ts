@@ -231,7 +231,13 @@ export async function saveAllDrafts(data: {
     );
 
     const now = new Date().toISOString();
-    const upsertPayloads: Array<Record<string, unknown>> = [];
+    const insertPayloads: Array<Record<string, unknown>> = [];
+    const updateTargets: Array<{
+      id: string;
+      currentEditCount: number;
+      qIdx: number;
+      payload: Record<string, unknown>;
+    }> = [];
     const failedDrafts: Array<{ questionId: string; error: string }> = [];
 
     for (const draft of data.drafts) {
@@ -246,23 +252,27 @@ export async function saveAllDrafts(data: {
       const existing = existingByQIdx.get(qIdx);
       if (existing) {
         const answerChanged = existing.answer !== draft.text;
-        let answerHistory: Array<{ text: string; timestamp: string }> = Array.isArray(existing.answer_history) ? existing.answer_history : [];
+        if (!answerChanged) continue; // Skip unchanged — no write needed
 
-        if (answerChanged && existing.answer) {
+        let answerHistory: Array<{ text: string; timestamp: string }> = Array.isArray(existing.answer_history) ? existing.answer_history : [];
+        if (existing.answer) {
           answerHistory = trimAnswerHistory([...answerHistory, { text: existing.answer, timestamp: existing.updated_at || existing.created_at }]);
         }
 
-        upsertPayloads.push({
-          session_id: data.sessionId,
-          q_idx: qIdx,
-          answer: draft.text,
-          created_at: existing.created_at,
-          updated_at: now,
-          answer_history: answerHistory.length > 0 ? answerHistory : null,
-          edit_count: answerChanged ? (existing.edit_count || 0) + 1 : existing.edit_count || 0,
+        const currentEditCount = existing.edit_count || 0;
+        updateTargets.push({
+          id: existing.id,
+          currentEditCount,
+          qIdx,
+          payload: {
+            answer: draft.text,
+            updated_at: now,
+            answer_history: answerHistory.length > 0 ? answerHistory : null,
+            edit_count: currentEditCount + 1,
+          },
         });
       } else {
-        upsertPayloads.push({
+        insertPayloads.push({
           session_id: data.sessionId,
           q_idx: qIdx,
           answer: draft.text,
@@ -274,34 +284,58 @@ export async function saveAllDrafts(data: {
       }
     }
 
-    let results: unknown[] = [];
-    if (upsertPayloads.length > 0) {
-      const { data: upsertedData, error: upsertError } = await getSupabase()
+    const results: unknown[] = [];
+
+    // Phase 1: Batch insert new rows (race-safe via UNIQUE constraint)
+    if (insertPayloads.length > 0) {
+      const { data: insertedData, error: insertError } = await getSupabase()
         .from("submissions")
-        .upsert(upsertPayloads, { onConflict: "session_id,q_idx" })
+        .upsert(insertPayloads, { onConflict: "session_id,q_idx" })
         .select();
 
-      if (upsertError) throw upsertError;
-      results = upsertedData || [];
+      if (insertError) throw insertError;
+      results.push(...(insertedData || []));
 
-      // P0-2: Post-upsert verification — detect partial write failures
-      // Return HTTP 207 Multi-Status so client can detect and retry
-      if (results.length !== upsertPayloads.length) {
-        logError("[saveAllDrafts] Upsert count mismatch — possible partial write", null, {
+      // P0-2: Post-insert verification — detect partial write failures
+      if (insertedData && insertedData.length !== insertPayloads.length) {
+        logError("[saveAllDrafts] Insert count mismatch — possible partial write", null, {
           path: "/api/supa/submission-handlers",
           additionalData: {
             sessionId: data.sessionId,
-            expected: upsertPayloads.length,
-            actual: results.length,
+            expected: insertPayloads.length,
+            actual: insertedData.length,
           },
         });
-        return successJson({
-          submissions: results,
-          warning: `${results.length}/${upsertPayloads.length} drafts saved — some may need retry`,
-          partialFailure: true,
-          ...(failedDrafts.length > 0 && { failedDrafts }),
-        }, 207);
       }
+    }
+
+    // Phase 2: CAS-protected updates for changed existing rows
+    // Uses edit_count guard to prevent overwriting concurrent saveDraft writes
+    for (const target of updateTargets) {
+      const { data: updated, error: updateError } = await getSupabase()
+        .from("submissions")
+        .update(target.payload)
+        .eq("id", target.id)
+        .eq("edit_count", target.currentEditCount)
+        .select()
+        .maybeSingle();
+
+      if (updated) {
+        results.push(updated);
+      } else if (updateError) {
+        failedDrafts.push({ questionId: String(target.qIdx), error: "Update failed" });
+      }
+      // CAS miss (updated===null, no error): concurrent saveDraft wrote newer data — skip silently
+    }
+
+    const totalAttempted = insertPayloads.length + updateTargets.length;
+    if (failedDrafts.some(f => f.error === "Update failed")) {
+      return successJson({
+        submissions: results,
+        warning: `${results.length}/${totalAttempted} drafts saved — some may need retry`,
+        partialFailure: true,
+        failedDrafts,
+      }, 207);
     }
 
     return successJson({
@@ -357,9 +391,15 @@ export async function saveDraftAnswers(data: {
       (existingSubmissions || []).map((s) => [s.q_idx as number, s])
     );
 
-    // 4. Build batch upsert payloads
+    // 4. Build payloads — split into inserts (new) and CAS updates (existing changed)
     const now = new Date().toISOString();
-    const upsertPayloads: Array<Record<string, unknown>> = [];
+    const insertPayloads: Array<Record<string, unknown>> = [];
+    const updateTargets: Array<{
+      id: string;
+      currentEditCount: number;
+      questionId: string;
+      payload: Record<string, unknown>;
+    }> = [];
     const failedDrafts: Array<{ questionId: string; error: string }> = [];
 
     for (const answer of data.answers) {
@@ -374,23 +414,27 @@ export async function saveDraftAnswers(data: {
       const existing = existingByQIdx.get(qIdx);
       if (existing) {
         const answerChanged = existing.answer !== answer.text;
-        let answerHistory: Array<{ text: string; timestamp: string }> = Array.isArray(existing.answer_history) ? existing.answer_history : [];
+        if (!answerChanged) continue; // Skip unchanged — no write needed
 
-        if (answerChanged && existing.answer) {
+        let answerHistory: Array<{ text: string; timestamp: string }> = Array.isArray(existing.answer_history) ? existing.answer_history : [];
+        if (existing.answer) {
           answerHistory = trimAnswerHistory([...answerHistory, { text: existing.answer, timestamp: existing.updated_at || existing.created_at }]);
         }
 
-        upsertPayloads.push({
-          session_id: data.sessionId,
-          q_idx: qIdx,
-          answer: answer.text,
-          created_at: existing.created_at,
-          updated_at: now,
-          answer_history: answerHistory.length > 0 ? answerHistory : null,
-          edit_count: answerChanged ? (existing.edit_count || 0) + 1 : existing.edit_count || 0,
+        const currentEditCount = existing.edit_count || 0;
+        updateTargets.push({
+          id: existing.id,
+          currentEditCount,
+          questionId: answer.questionId,
+          payload: {
+            answer: answer.text,
+            updated_at: now,
+            answer_history: answerHistory.length > 0 ? answerHistory : null,
+            edit_count: currentEditCount + 1,
+          },
         });
       } else {
-        upsertPayloads.push({
+        insertPayloads.push({
           session_id: data.sessionId,
           q_idx: qIdx,
           answer: answer.text,
@@ -402,35 +446,58 @@ export async function saveDraftAnswers(data: {
       }
     }
 
-    // 5. Single batch upsert (1 query)
-    let results: unknown[] = [];
-    if (upsertPayloads.length > 0) {
-      const { data: upsertedData, error: upsertError } = await getSupabase()
+    const results: unknown[] = [];
+
+    // 5a. Batch insert new rows (race-safe via UNIQUE constraint)
+    if (insertPayloads.length > 0) {
+      const { data: insertedData, error: insertError } = await getSupabase()
         .from("submissions")
-        .upsert(upsertPayloads, { onConflict: "session_id,q_idx" })
+        .upsert(insertPayloads, { onConflict: "session_id,q_idx" })
         .select();
 
-      if (upsertError) throw upsertError;
-      results = upsertedData || [];
+      if (insertError) throw insertError;
+      results.push(...(insertedData || []));
 
-      // P0-2: Post-upsert verification — detect partial write failures
-      // Return HTTP 207 Multi-Status so client can detect and retry
-      if (results.length !== upsertPayloads.length) {
-        logError("[saveDraftAnswers] Upsert count mismatch — possible partial write", null, {
+      // P0-2: Post-insert verification — detect partial write failures
+      if (insertedData && insertedData.length !== insertPayloads.length) {
+        logError("[saveDraftAnswers] Insert count mismatch — possible partial write", null, {
           path: "/api/supa/submission-handlers",
           additionalData: {
             sessionId: data.sessionId,
-            expected: upsertPayloads.length,
-            actual: results.length,
+            expected: insertPayloads.length,
+            actual: insertedData.length,
           },
         });
-        return successJson({
-          submissions: results,
-          warning: `${results.length}/${upsertPayloads.length} answers saved — some may need retry`,
-          partialFailure: true,
-          ...(failedDrafts.length > 0 && { failedDrafts }),
-        }, 207);
       }
+    }
+
+    // 5b. CAS-protected updates for changed existing rows
+    // Uses edit_count guard to prevent overwriting concurrent saveDraft writes
+    for (const target of updateTargets) {
+      const { data: updated, error: updateError } = await getSupabase()
+        .from("submissions")
+        .update(target.payload)
+        .eq("id", target.id)
+        .eq("edit_count", target.currentEditCount)
+        .select()
+        .maybeSingle();
+
+      if (updated) {
+        results.push(updated);
+      } else if (updateError) {
+        failedDrafts.push({ questionId: target.questionId, error: "Update failed" });
+      }
+      // CAS miss (updated===null, no error): concurrent saveDraft wrote newer data — skip silently
+    }
+
+    const totalAttempted = insertPayloads.length + updateTargets.length;
+    if (failedDrafts.some(f => f.error === "Update failed")) {
+      return successJson({
+        submissions: results,
+        warning: `${results.length}/${totalAttempted} answers saved — some may need retry`,
+        partialFailure: true,
+        failedDrafts,
+      }, 207);
     }
 
     return successJson({
