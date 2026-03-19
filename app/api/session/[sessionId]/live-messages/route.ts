@@ -78,7 +78,7 @@ export async function GET(
       .select("id, q_idx, role, content, compressed_content, created_at")
       .eq("session_id", sessionId)
       .in("role", ["user", "ai"]) // Include both user questions and AI responses
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: true })
       .limit(100); // Limit to latest 100 messages (increased to include pairs)
 
     // If since parameter is provided, only get messages after that time

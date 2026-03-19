@@ -54,6 +54,7 @@ export function StudentLiveMonitoring({
   const scrollRef = useRef<HTMLDivElement>(null);
   const subscriptionRef = useRef<RealtimeChannel | null>(null);
   const messagesMapRef = useRef<Map<string, LiveMessage>>(new Map());
+  const isUserScrolledRef = useRef(false);
 
   // localStorage에서 메시지 복원
   const storageKey = `live_messages_${sessionId}`;
@@ -90,15 +91,22 @@ export function StudentLiveMonitoring({
         });
 
         const allMessages = Array.from(messagesMapRef.current.values())
-          .sort((a, b) => 
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          .sort((a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
           )
-          .slice(0, 100);
+          .slice(-100);
 
         setMessages(allMessages);
-        
+
         // localStorage에 저장
         localStorage.setItem(storageKey, JSON.stringify(allMessages));
+
+        // 초기 로드 후 하단으로 스크롤
+        setTimeout(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          }
+        }, 0);
       }
     } catch (error) {
       // Ignore load errors
@@ -174,21 +182,25 @@ export function StudentLiveMonitoring({
           messagesMapRef.current.set(liveMessage.id, liveMessage);
           
           setMessages((prev) => {
-            const updated = [liveMessage, ...prev]
-              .filter((msg, index, self) => 
+            const updated = [...prev, liveMessage]
+              .filter((msg, index, self) =>
                 index === self.findIndex((m) => m.id === msg.id)
               )
-              .slice(0, 100);
-            
+              .slice(-100);
+
             // localStorage에 저장
             localStorage.setItem(storageKey, JSON.stringify(updated));
-            
+
             return updated;
           });
 
-          // 스크롤을 맨 위로
-          if (scrollRef.current) {
-            scrollRef.current.scrollTop = 0;
+          // 사용자가 스크롤을 올리지 않았으면 하단으로 자동 스크롤
+          if (scrollRef.current && !isUserScrolledRef.current) {
+            setTimeout(() => {
+              if (scrollRef.current) {
+                scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+              }
+            }, 0);
           }
         }
       )
@@ -223,6 +235,12 @@ export function StudentLiveMonitoring({
           <div
             className="h-[600px] overflow-y-auto pr-2"
             ref={scrollRef}
+            onScroll={() => {
+              if (!scrollRef.current) return;
+              const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+              const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+              isUserScrolledRef.current = !isAtBottom;
+            }}
           >
             {isLoading && messages.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">

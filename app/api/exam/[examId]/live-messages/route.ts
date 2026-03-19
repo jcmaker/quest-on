@@ -85,7 +85,7 @@ export async function GET(
       )
       .in("session_id", sessionIds)
       .in("role", ["user", "ai"]) // Include both user questions and AI responses
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: true })
       .limit(100); // Limit to latest 100 messages (increased to include pairs)
 
     // If since parameter is provided, only get messages after that time
@@ -176,9 +176,9 @@ export async function GET(
       };
     });
 
-    // Sort by created_at descending (newest first)
+    // Sort by created_at ascending (oldest first)
     processedMessages.sort((a, b) => {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     });
 
     return successJson({
