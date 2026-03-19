@@ -11,6 +11,7 @@ import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { singleGradeUpdateSchema, validateRequest } from "@/lib/validations";
 import { upsertGradesBySessionQuestion } from "@/lib/grades-upsert";
+import { deduplicateGrades, calculateOverallScore } from "@/lib/grade-utils";
 
 // Auto-grading (PUT) calls AI_MODEL_HEAVY multiple times — needs 300s
 export const maxDuration = 300;
@@ -339,16 +340,18 @@ export async function GET(
       });
     }
 
-    // Calculate overall score if grades exist
+    // Calculate overall score using shared utility (deduplicate + divide by graded count)
     let overallScore = null;
+    let gradedCount = 0;
+    const totalQuestionCount = exam.questions?.length || 0;
     if (grades && grades.length > 0) {
-      const totalScore = (grades as Array<Record<string, unknown>>).reduce(
-        (sum: number, grade: Record<string, unknown>) =>
-          sum + ((grade.score as number) || 0),
-        0
+      const result = calculateOverallScore(
+        grades as Array<{ q_idx: number; score: number; grade_type?: string }>,
+        totalQuestionCount
       );
-      const questionCount = exam.questions?.length || 1;
-      overallScore = Math.round(totalScore / questionCount);
+      gradedCount = result.gradedCount;
+      // Only set overallScore when there are real grades (not just ai_failed)
+      overallScore = gradedCount > 0 ? result.overallScore : null;
     }
 
     const responseData = {
@@ -370,6 +373,8 @@ export async function GET(
       grades: gradesByQuestion, // 서버 사이드 자동 채점 점수
       pasteLogs: pasteLogsByQuestion, // 부정행위 의심 로그 (question_id별로 그룹화)
       overallScore,
+      gradedCount,
+      totalQuestionCount,
       aiSummary: session.ai_summary || null, // 하위 호환성을 위해 유지
       ...(decompressionErrors.length > 0 && { decompressionErrors }),
     };
@@ -607,8 +612,68 @@ export async function PUT(
       }
     }
 
-    // Delegate to centralized grading logic (parallel, retry, timeout)
-    const { grades, summary, failedQuestions, timedOut, decompressionWarnings } = await autoGradeSession(sessionId);
+    // CAS concurrency guard: prevent duplicate auto-grading on rapid double-click.
+    // Reuses the same CAS pattern as triggerGradingIfNeeded in grading-trigger.ts.
+    const { data: sessionForCas } = await supabase
+      .from("sessions")
+      .select("ai_summary")
+      .eq("id", sessionId)
+      .maybeSingle();
+
+    const existingSummary = (sessionForCas?.ai_summary as Record<string, unknown> | null) || {};
+
+    // Atomically set grading_status to "in_progress" — only succeeds when no grading is running.
+    // forceRegrade additionally allows terminal states "completed" and "partial".
+    const casFilter = forceRegrade
+      ? "ai_summary.is.null,ai_summary->grading_status.is.null,ai_summary->>grading_status.eq.failed,ai_summary->>grading_status.eq.completed,ai_summary->>grading_status.eq.partial"
+      : "ai_summary.is.null,ai_summary->grading_status.is.null,ai_summary->>grading_status.eq.failed";
+
+    const { data: casResult, error: casError } = await supabase
+      .from("sessions")
+      .update({ ai_summary: { ...existingSummary, grading_status: "in_progress" } })
+      .eq("id", sessionId)
+      .or(casFilter)
+      .select("id")
+      .maybeSingle();
+
+    if (casError) {
+      logError("Grade PUT CAS update failed", casError, {
+        path: `/api/session/${sessionId}/grade`,
+      });
+    } else if (!casResult) {
+      return errorJson(
+        "CONFLICT",
+        "이미 채점이 진행 중입니다. 잠시 후 다시 시도해주세요.",
+        409
+      );
+    }
+
+    // Delegate to centralized grading logic — reset status on failure so retries work
+    let gradingResult;
+    try {
+      gradingResult = await autoGradeSession(sessionId);
+    } catch (gradingError) {
+      // Mark grading_status as "failed" so future triggers are unblocked
+      try {
+        const { data: current } = await supabase
+          .from("sessions")
+          .select("ai_summary")
+          .eq("id", sessionId)
+          .maybeSingle();
+        const curSummary = (current?.ai_summary as Record<string, unknown> | null) || {};
+        await supabase
+          .from("sessions")
+          .update({ ai_summary: { ...curSummary, grading_status: "failed" } })
+          .eq("id", sessionId);
+      } catch (statusErr) {
+        logError("Failed to set grading_status=failed after PUT error", statusErr, {
+          path: `/api/session/${sessionId}/grade`,
+        });
+      }
+      throw gradingError;
+    }
+
+    const { grades, summary, failedQuestions, timedOut, decompressionWarnings } = gradingResult;
 
     const response: Record<string, unknown> = {
       gradesCount: grades.length,

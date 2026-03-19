@@ -565,13 +565,48 @@ export async function autoGradeSession(
 
     // Verify via insert return — no separate SELECT needed
     const insertedQIdxSet = new Set(insertedQIdxs);
+    const missingAfterInsert: number[] = [];
     for (const grade of grades) {
       if (!insertedQIdxSet.has(grade.q_idx)) {
-        failedQuestions.push(grade.q_idx);
+        missingAfterInsert.push(grade.q_idx);
         logError("[AUTO_GRADE] Grade not returned after insert", new Error("Grade verification failed"), {
           path: "lib/grading.ts",
           additionalData: { sessionId, q_idx: grade.q_idx },
         });
+      }
+    }
+
+    // Retry once for grades that failed to upsert
+    if (missingAfterInsert.length > 0) {
+      const retryRows = grades
+        .filter((g) => missingAfterInsert.includes(g.q_idx))
+        .map((grade) => ({
+          session_id: sessionId,
+          q_idx: grade.q_idx,
+          score: grade.score,
+          comment: grade.comment,
+          stage_grading: grade.stage_grading || null,
+          grade_type: "auto",
+        }));
+
+      try {
+        const retryQIdxs = await upsertGradesBySessionQuestion(
+          supabase as never,
+          retryRows,
+          "auto_grade_retry"
+        );
+        const retrySet = new Set(retryQIdxs);
+        for (const qIdx of missingAfterInsert) {
+          if (!retrySet.has(qIdx)) {
+            failedQuestions.push(qIdx);
+          }
+        }
+      } catch (retryErr) {
+        logError("[AUTO_GRADE] Grade retry upsert failed", retryErr, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId, retryQIdxes: missingAfterInsert },
+        });
+        failedQuestions.push(...missingAfterInsert);
       }
     }
   }

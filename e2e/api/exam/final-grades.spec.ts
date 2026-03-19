@@ -47,7 +47,7 @@ test.describe("GET /api/exam/[examId]/final-grades", () => {
     expect(body.grades).toEqual([]);
   });
 
-  test("returns empty when only auto grades exist", async ({
+  test("returns auto grades when only auto grades exist", async ({
     instructorRequest,
   }) => {
     const exam = await seedExam({ status: "running" });
@@ -63,7 +63,57 @@ test.describe("GET /api/exam/[examId]/final-grades", () => {
 
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.grades).toEqual([]);
+    expect(body.grades).toHaveLength(1);
+    expect(body.grades[0].session_id).toBe(session.id);
+    expect(body.grades[0].score).toBe(90);
+    expect(body.grades[0].gradedCount).toBe(1);
+  });
+
+  test("mixed auto and manual grades across questions calculate correctly", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({ status: "running" });
+    const session = await seedSession(exam.id, "student-1", {
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+    });
+    // q_idx=0: auto-graded, q_idx=1: manual-graded
+    await seedGrade(session.id, 0, 70, "Auto graded", "auto");
+    await seedGrade(session.id, 1, 90, "Manual grade", "manual");
+
+    const res = await instructorRequest.get(
+      `/api/exam/${exam.id}/final-grades`
+    );
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.grades).toHaveLength(1);
+    // (70 + 90) / 2 = 80
+    expect(body.grades[0].score).toBe(80);
+    expect(body.grades[0].gradedCount).toBe(2);
+  });
+
+  test("excludes ai_failed grades from score calculation", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({ status: "running" });
+    const session = await seedSession(exam.id, "student-1", {
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+    });
+    await seedGrade(session.id, 0, 90, "Good", "auto");
+    await seedGrade(session.id, 1, 0, "AI failed", "ai_failed");
+
+    const res = await instructorRequest.get(
+      `/api/exam/${exam.id}/final-grades`
+    );
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.grades).toHaveLength(1);
+    // Only q_idx=0 (score 90) counts; q_idx=1 (ai_failed) is excluded
+    expect(body.grades[0].score).toBe(90);
+    expect(body.grades[0].gradedCount).toBe(1);
   });
 
   test("computes correct average across questions", async ({

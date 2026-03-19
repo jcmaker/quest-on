@@ -32,11 +32,30 @@ vi.mock("@/lib/supabase-server", () => ({
 
 import { triggerGradingIfNeeded } from "@/lib/grading-trigger";
 
+/**
+ * Build a chainable mock builder that resolves to the given result.
+ * Supports: .from().select().eq().or().update().maybeSingle()
+ */
+function chainBuilder(resolveValue: unknown) {
+  const builder: Record<string, unknown> = {};
+  const methods = ["select", "eq", "or", "update", "maybeSingle", "single"];
+  for (const m of methods) {
+    builder[m] = vi.fn(() => builder);
+  }
+  // maybeSingle resolves
+  (builder.maybeSingle as ReturnType<typeof vi.fn>).mockResolvedValue(resolveValue);
+  // Also make it thenable for Promise.all with count-based queries
+  builder.then = undefined;
+  return builder;
+}
+
 function mockGradesAndSession(
   gradesCount: number | null,
   gradesError: unknown,
   sessionData: { ai_summary?: unknown } | null,
-  sessionError: unknown
+  sessionError: unknown,
+  casResult: { id: string } | null = { id: "session-1" },
+  casError: unknown = null
 ) {
   const gradesBuilder = {
     select: vi.fn(() => gradesBuilder),
@@ -53,10 +72,22 @@ function mockGradesAndSession(
     then: undefined as unknown,
   };
 
+  // CAS update builder
+  const casBuilder: Record<string, unknown> = {};
+  for (const m of ["update", "eq", "or", "select", "maybeSingle"]) {
+    casBuilder[m] = vi.fn(() => casBuilder);
+  }
+  (casBuilder.maybeSingle as ReturnType<typeof vi.fn>).mockResolvedValue({
+    data: casResult,
+    error: casError,
+  });
+
   let callIdx = 0;
   supabaseMock.from.mockImplementation(() => {
-    if (callIdx++ === 0) return gradesBuilder;
-    return sessionBuilder;
+    const idx = callIdx++;
+    if (idx === 0) return gradesBuilder;  // grades check
+    if (idx === 1) return sessionBuilder; // session meta check
+    return casBuilder;                     // CAS update (and any subsequent calls)
   });
 }
 
@@ -64,7 +95,6 @@ describe("triggerGradingIfNeeded", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     enqueueGradingMock.mockImplementation((fn: () => Promise<void>) => {
-      // Don't actually call fn in tests, just resolve
       return Promise.resolve();
     });
   });
@@ -78,13 +108,35 @@ describe("triggerGradingIfNeeded", () => {
     expect(enqueueGradingMock).not.toHaveBeenCalled();
   });
 
-  it("skips grading when ai_summary has grading_status", async () => {
+  it("skips grading when ai_summary has grading_status (non-failed)", async () => {
     mockGradesAndSession(0, null, { ai_summary: { grading_status: "completed" } }, null);
 
     const result = await triggerGradingIfNeeded("session-1", "feedback");
 
     expect(result).toEqual({ queued: false, reason: "already_marked" });
     expect(enqueueGradingMock).not.toHaveBeenCalled();
+  });
+
+  it("skips grading when grading_status is 'queued'", async () => {
+    mockGradesAndSession(0, null, { ai_summary: { grading_status: "queued" } }, null);
+
+    const result = await triggerGradingIfNeeded("session-1", "feedback");
+
+    expect(result).toEqual({ queued: false, reason: "already_marked" });
+    expect(enqueueGradingMock).not.toHaveBeenCalled();
+  });
+
+  it("allows re-trigger when grading_status is 'failed'", async () => {
+    mockGradesAndSession(
+      0, null,
+      { ai_summary: { grading_status: "failed" } }, null,
+      { id: "session-1" }, null
+    );
+
+    const result = await triggerGradingIfNeeded("session-1", "feedback");
+
+    expect(result).toEqual({ queued: true });
+    expect(enqueueGradingMock).toHaveBeenCalledTimes(1);
   });
 
   it("queues grading when no grades and no grading_status", async () => {
@@ -94,6 +146,34 @@ describe("triggerGradingIfNeeded", () => {
 
     expect(result).toEqual({ queued: true });
     expect(enqueueGradingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns cas_conflict when CAS update fails (another trigger claimed)", async () => {
+    mockGradesAndSession(
+      0, null, null, null,
+      null, null // CAS returns null data (no row matched)
+    );
+
+    const result = await triggerGradingIfNeeded("session-1", "feedback");
+
+    expect(result).toEqual({ queued: false, reason: "cas_conflict" });
+    expect(enqueueGradingMock).not.toHaveBeenCalled();
+  });
+
+  it("proceeds even if CAS has error (worst case: duplicate grading is safe)", async () => {
+    mockGradesAndSession(
+      0, null, null, null,
+      null, { message: "CAS error" } // CAS error but non-null
+    );
+
+    const result = await triggerGradingIfNeeded("session-1", "feedback");
+
+    expect(result).toEqual({ queued: true });
+    expect(logErrorMock).toHaveBeenCalledWith(
+      expect.stringContaining("CAS update failed"),
+      expect.anything(),
+      expect.anything()
+    );
   });
 
   it("queues grading when ai_summary exists but has no grading_status", async () => {
