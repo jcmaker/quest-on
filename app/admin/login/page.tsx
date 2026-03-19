@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Shield, Eye, EyeOff } from "lucide-react";
 import { ErrorAlert } from "@/components/ui/error-alert";
+import { CenteredViewportShell } from "@/components/layout/CenteredViewportShell";
 
 export default function AdminLoginPage() {
   const [username, setUsername] = useState("");
@@ -52,8 +53,11 @@ export default function AdminLoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md shadow-xl border-0">
+    <CenteredViewportShell
+      className="bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900"
+      contentClassName="max-w-md"
+    >
+      <Card className="w-full shadow-xl border-0">
         <CardHeader className="text-center pb-6">
           <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
             <Shield className="w-8 h-8 text-primary-foreground" />
@@ -116,6 +120,6 @@ export default function AdminLoginPage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </CenteredViewportShell>
   );
 }

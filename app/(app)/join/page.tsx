@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { FileText } from "lucide-react";
 import { ErrorAlert } from "@/components/ui/error-alert";
+import { CenteredViewportShell } from "@/components/layout/CenteredViewportShell";
 
 export default function ExamCodeEntry() {
   const [examCode, setExamCode] = useState("");
@@ -61,8 +62,11 @@ export default function ExamCodeEntry() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl">
+    <CenteredViewportShell
+      className="bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900"
+      contentClassName="max-w-4xl"
+    >
+      <div className="w-full">
         <div className="max-w-md mx-auto">
           <Card className="shadow-xl border-0">
             <CardHeader className="text-center pb-6">
@@ -135,7 +139,6 @@ export default function ExamCodeEntry() {
           </Link>
         </div>
       </div>
-
-    </div>
+    </CenteredViewportShell>
   );
 }

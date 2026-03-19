@@ -86,9 +86,9 @@ test.describe("Supa — Drive / Folder API", () => {
 
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.nodes).toBeDefined();
-    expect(Array.isArray(body.nodes)).toBe(true);
-    const folderNames = body.nodes.map((n: { name: string }) => n.name);
+    expect(body.folders).toBeDefined();
+    expect(Array.isArray(body.folders)).toBe(true);
+    const folderNames = body.folders.map((n: { name: string }) => n.name);
     expect(folderNames).toContain("Root Folder");
   });
 
@@ -116,8 +116,8 @@ test.describe("Supa — Drive / Folder API", () => {
 
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.nodes.length).toBe(2);
-    const names = body.nodes.map((n: { name: string }) => n.name);
+    expect(body.folders.length).toBe(2);
+    const names = body.folders.map((n: { name: string }) => n.name);
     expect(names).toContain("Child 1");
     expect(names).toContain("Child 2");
   });
@@ -146,8 +146,8 @@ test.describe("Supa — Drive / Folder API", () => {
 
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.nodes).toBeDefined();
-    const names = body.nodes.map((n: { name: string }) => n.name);
+    expect(body.folders).toBeDefined();
+    const names = body.folders.map((n: { name: string }) => n.name);
     expect(names).toContain("Drive Item");
   });
 

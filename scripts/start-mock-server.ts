@@ -95,6 +95,7 @@ app.post("/v1/chat/completions", (req, res) => {
 
   if (sysPrompt.includes("전문 평가위원")) {
     // auto-grade (unified grading expects chat_score/answer_score fields)
+    // Must be checked BEFORE the rubric handler because grading prompts also contain "루브릭"
     return res.json(chatCompletionResponse(JSON.stringify({
       chat_score: 70,
       chat_comment: "Adequate conversation quality with good questions asked.",
@@ -107,6 +108,58 @@ app.post("/v1/chat/completions", (req, res) => {
       strengths: ["개념 이해도가 높음", "논리적 전개력이 우수함"],
       weaknesses: ["일부 세부사항 누락"],
       keyQuotes: ["다형성은 OOP의 핵심 원칙입니다", "상속보다 합성을 선호해야 합니다"],
+    })));
+  }
+
+  if (sysPrompt.includes("출제 전문가")) {
+    // generate-questions (case question generation)
+    // Must be checked BEFORE the rubric handler because question generation prompts also contain "루브릭"
+    return res.json(chatCompletionResponse(JSON.stringify({
+      questions: [
+        {
+          text: "Explain the concept of polymorphism in Object-Oriented Programming with examples.",
+          type: "essay",
+        },
+        {
+          text: "Compare and contrast inheritance and composition. When would you use each?",
+          type: "essay",
+        },
+      ],
+      suggestedRubric: [
+        {
+          evaluationArea: "Conceptual Understanding",
+          detailedCriteria: "Demonstrates clear understanding of core OOP concepts.",
+        },
+        {
+          evaluationArea: "Practical Application",
+          detailedCriteria: "Provides relevant real-world examples.",
+        },
+      ],
+    })));
+  }
+
+  if (sysPrompt.includes("설계 전문가")) {
+    // generate-rubric (standalone rubric generation)
+    // Uses "설계 전문가" which is unique to buildRubricGenerationPrompt
+    return res.json(chatCompletionResponse(JSON.stringify({
+      rubric: [
+        {
+          evaluationArea: "개념 이해도",
+          detailedCriteria: "핵심 개념에 대한 정확한 이해와 설명 능력을 평가합니다.",
+        },
+        {
+          evaluationArea: "논리적 전개력",
+          detailedCriteria: "논리적이고 체계적인 답변 구성 능력을 평가합니다.",
+        },
+        {
+          evaluationArea: "실용적 적용",
+          detailedCriteria: "이론을 실제 사례에 적용하는 능력을 평가합니다.",
+        },
+        {
+          evaluationArea: "AI 활용 및 자기주도 탐구",
+          detailedCriteria: "AI를 정보 탐색 도구로 활용하면서도 독립적인 분석과 판단을 수행했는가를 평가합니다.",
+        },
+      ],
     })));
   }
 

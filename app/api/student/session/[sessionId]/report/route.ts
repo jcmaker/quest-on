@@ -5,9 +5,12 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { validateUUID } from "@/lib/validate-params";
+import { deduplicateGrades, calculateOverallScore } from "@/lib/grade-utils";
 
-// Initialize Supabase client
-const supabase = getSupabaseServer();
+// P1-4: Lazy Supabase getter to avoid stale connections in serverless
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 export async function GET(
   request: NextRequest,
@@ -32,7 +35,7 @@ export async function GET(
     }
 
     // Get session data
-    const { data: session, error: sessionError } = await supabase
+    const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
       .select("*")
       .eq("id", sessionId)
@@ -53,7 +56,7 @@ export async function GET(
     }
 
     // Get exam data
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = await getSupabase()
       .from("exams")
       .select("id, title, code, description, duration, questions")
       .eq("id", session.exam_id)
@@ -75,7 +78,7 @@ export async function GET(
     }
 
     // Get submissions
-    const { data: submissions, error: submissionsError } = await supabase
+    const { data: submissions, error: submissionsError } = await getSupabase()
       .from("submissions")
       .select(
         `
@@ -95,7 +98,7 @@ export async function GET(
     }
 
     // Get messages
-    const { data: messages, error: messagesError } = await supabase
+    const { data: messages, error: messagesError } = await getSupabase()
       .from("messages")
       .select(
         `
@@ -115,8 +118,8 @@ export async function GET(
       logError("Error fetching messages", messagesError);
     }
 
-    // Get grades
-    const { data: grades, error: gradesError } = await supabase
+    // Get grades (include grade_type for deduplication)
+    const { data: grades, error: gradesError } = await getSupabase()
       .from("grades")
       .select(
         `
@@ -125,6 +128,7 @@ export async function GET(
         score,
         comment,
         stage_grading,
+        grade_type,
         created_at
       `
       )
@@ -225,7 +229,7 @@ export async function GET(
       });
     }
 
-    // Organize grades by question index
+    // Deduplicate grades (manual > auto > ai_failed) and organize by question index
     const gradesByQuestion: Record<
       number,
       {
@@ -237,8 +241,13 @@ export async function GET(
       }
     > = {};
 
-    if (grades) {
-      grades.forEach((grade) => {
+    let overallScore = null;
+    let gradedCount = 0;
+    const totalQuestionCount = exam.questions?.length || 0;
+
+    if (grades && grades.length > 0) {
+      const deduped = deduplicateGrades(grades);
+      deduped.forEach((grade) => {
         gradesByQuestion[grade.q_idx] = {
           id: grade.id,
           q_idx: grade.q_idx,
@@ -247,17 +256,11 @@ export async function GET(
           stage_grading: grade.stage_grading || undefined,
         };
       });
-    }
 
-    // Calculate overall score
-    let overallScore = null;
-    if (grades && grades.length > 0) {
-      const totalScore = grades.reduce(
-        (sum, grade) => sum + (grade.score || 0),
-        0
-      );
-      const questionCount = exam.questions?.length || 1;
-      overallScore = Math.round(totalScore / questionCount);
+      const result = calculateOverallScore(grades, totalQuestionCount);
+      gradedCount = result.gradedCount;
+      // Only set overallScore when there are real grades (not just ai_failed)
+      overallScore = gradedCount > 0 ? result.overallScore : null;
     }
 
     return successJson({
@@ -275,6 +278,8 @@ export async function GET(
       messages: messagesByQuestion,
       grades: gradesByQuestion,
       overallScore,
+      gradedCount,
+      totalQuestionCount,
       aiSummary: session.ai_summary || null,
     });
   } catch {

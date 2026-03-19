@@ -23,6 +23,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { CenteredViewportShell } from "@/components/layout/CenteredViewportShell";
 
 export default function OnboardingPage() {
   const { user, isLoaded } = useUser();
@@ -87,8 +88,11 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-4 bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
-      <Card className="w-full max-w-md shadow-xl border-0">
+    <CenteredViewportShell
+      className="bg-gradient-to-br from-slate-50 to-white dark:from-slate-950 dark:to-slate-900"
+      contentClassName="max-w-md"
+    >
+      <Card className="w-full shadow-xl border-0">
         <CardHeader className="text-center pb-6">
           <CardTitle className="text-2xl">
             Quest-On에 오신 것을 환영합니다!
@@ -153,6 +157,6 @@ export default function OnboardingPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </CenteredViewportShell>
   );
 }

@@ -1,6 +1,5 @@
 import { test, expect } from "../../fixtures/auth.fixture";
 import { seedExam, seedSession, cleanupTestData } from "../../helpers/seed";
-import { parseSSEEvents } from "../../helpers/sse";
 import { TEST_IDS, TIMEOUTS } from "../../constants";
 import { getTestSupabase } from "../../helpers/supabase-test-client";
 
@@ -8,9 +7,9 @@ test.afterEach(async () => {
   await cleanupTestData();
 });
 
-test.describe("POST /api/chat/stream", () => {
+test.describe("POST /api/chat", () => {
   test("unauthenticated returns 401", async ({ anonRequest }) => {
-    const res = await anonRequest.post("/api/chat/stream", {
+    const res = await anonRequest.post("/api/chat", {
       data: { message: "hello", sessionId: "test-session" },
     });
 
@@ -20,7 +19,7 @@ test.describe("POST /api/chat/stream", () => {
   });
 
   test("empty body returns 400", async ({ studentRequest }) => {
-    const res = await studentRequest.post("/api/chat/stream", {
+    const res = await studentRequest.post("/api/chat", {
       data: {},
     });
 
@@ -30,7 +29,7 @@ test.describe("POST /api/chat/stream", () => {
   });
 
   test("missing sessionId returns 400", async ({ studentRequest }) => {
-    const res = await studentRequest.post("/api/chat/stream", {
+    const res = await studentRequest.post("/api/chat", {
       data: { message: "hello" },
     });
 
@@ -41,7 +40,7 @@ test.describe("POST /api/chat/stream", () => {
 
   test("non-existent session returns 400 INVALID_SESSION", async ({ studentRequest }) => {
     // Need a valid-looking but non-existent UUID for sessionId
-    const res = await studentRequest.post("/api/chat/stream", {
+    const res = await studentRequest.post("/api/chat", {
       data: {
         message: "hello",
         sessionId: "00000000-0000-0000-0000-000000000099",
@@ -53,14 +52,14 @@ test.describe("POST /api/chat/stream", () => {
     expect(body.error).toBe("INVALID_SESSION");
   });
 
-  test("valid session returns SSE stream", async ({ studentRequest }) => {
+  test("valid session returns JSON response", async ({ studentRequest }) => {
     const exam = await seedExam({ status: "running", started_at: new Date().toISOString() });
     const session = await seedSession(exam.id, TEST_IDS.STUDENT, {
       status: "in_progress",
       started_at: new Date().toISOString(),
     });
 
-    const res = await studentRequest.post("/api/chat/stream", {
+    const res = await studentRequest.post("/api/chat", {
       data: {
         message: "What is polymorphism?",
         sessionId: session.id,
@@ -73,27 +72,20 @@ test.describe("POST /api/chat/stream", () => {
     });
 
     expect(res.status()).toBe(200);
-    const contentType = res.headers()["content-type"] || "";
-    expect(contentType).toContain("text/event-stream");
-
-    const body = await res.text();
-    const events = parseSSEEvents(body);
-    // Should have at least one data chunk + [DONE]
-    expect(events.length).toBeGreaterThanOrEqual(2);
-
-    // Last event should be [DONE]
-    const lastEvent = events[events.length - 1];
-    expect(lastEvent.data).toBe("[DONE]");
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.response).toBeTruthy();
+    expect(body.examCode).toBe(exam.code);
   });
 
-  test("messages saved to DB after stream", async ({ studentRequest }) => {
+  test("messages saved to DB after response", async ({ studentRequest }) => {
     const exam = await seedExam({ status: "running", started_at: new Date().toISOString() });
     const session = await seedSession(exam.id, TEST_IDS.STUDENT, {
       status: "in_progress",
       started_at: new Date().toISOString(),
     });
 
-    const res = await studentRequest.post("/api/chat/stream", {
+    const res = await studentRequest.post("/api/chat", {
       data: {
         message: "Explain stack vs queue",
         sessionId: session.id,
@@ -106,8 +98,8 @@ test.describe("POST /api/chat/stream", () => {
     });
 
     expect(res.status()).toBe(200);
-    // Consume the full response to ensure DB writes complete
-    await res.text();
+    const body = await res.json();
+    expect(body.success).toBe(true);
 
     // Check messages table
     const supabase = getTestSupabase();

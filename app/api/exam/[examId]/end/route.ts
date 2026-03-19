@@ -140,9 +140,10 @@ export async function POST(
       const { error: batchError } = await getSupabase()
         .from("sessions")
         .update({
-          status: "submitted",
+          status: "auto_submitted",
           submitted_at: now,
           auto_submitted: true,
+          is_active: false,
         })
         .in("id", sessionIds)
         .is("submitted_at", null);
@@ -155,9 +156,10 @@ export async function POST(
           const { error: individualError } = await getSupabase()
             .from("sessions")
             .update({
-              status: "submitted",
+              status: "auto_submitted",
               submitted_at: now,
               auto_submitted: true,
+              is_active: false,
             })
             .eq("id", sid)
             .is("submitted_at", null);

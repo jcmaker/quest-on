@@ -4,8 +4,12 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { deduplicateGrades, calculateOverallScore } from "@/lib/grade-utils";
 
-const supabase = getSupabaseServer();
+// P1-4: Lazy Supabase getter to avoid stale connections in serverless
+function getSupabase() {
+  return getSupabaseServer();
+}
 
 export async function GET(
   request: NextRequest,
@@ -37,8 +41,8 @@ export async function GET(
 
     // Get exam and sessions in parallel (both only need examId param)
     const [examResult, sessionsResult] = await Promise.all([
-      supabase.from("exams").select("instructor_id").eq("id", examId).single(),
-      supabase.from("sessions").select("id").eq("exam_id", examId),
+      getSupabase().from("exams").select("instructor_id").eq("id", examId).single(),
+      getSupabase().from("sessions").select("id").eq("exam_id", examId),
     ]);
 
     if (examResult.error || !examResult.data) {
@@ -59,13 +63,12 @@ export async function GET(
       return successJson({ grades: [] });
     }
 
-    // Get manual grades only (grade_type='manual') for these sessions
+    // Get all grades (manual + auto) for these sessions
     const sessionIds = sessions.map((s) => s.id);
-    const { data: grades, error: gradesError } = await supabase
+    const { data: grades, error: gradesError } = await getSupabase()
       .from("grades")
       .select("session_id, score, q_idx, created_at, grade_type")
-      .in("session_id", sessionIds)
-      .eq("grade_type", "manual");
+      .in("session_id", sessionIds);
 
     if (gradesError) {
       return errorJson("INTERNAL_ERROR", "Failed to fetch grades", 500);
@@ -75,7 +78,7 @@ export async function GET(
       return successJson({ grades: [] });
     }
 
-    // 세션별로 수동 채점 grades 그룹화 후 평균 점수 계산
+    // Group grades by session, then deduplicate (manual > auto > ai_failed)
     const gradesBySession = new Map<string, typeof grades>();
     grades.forEach((grade) => {
       if (!gradesBySession.has(grade.session_id)) {
@@ -84,20 +87,21 @@ export async function GET(
       gradesBySession.get(grade.session_id)?.push(grade);
     });
 
-    const finalGrades: Array<{ session_id: string; score: number }> = [];
+    const finalGrades: Array<{
+      session_id: string;
+      score: number;
+      gradedCount: number;
+    }> = [];
 
     gradesBySession.forEach((sessionGrades, sessionId) => {
-      const averageScore =
-        sessionGrades.length > 0
-          ? Math.round(
-              sessionGrades.reduce((sum, g) => sum + g.score, 0) /
-                sessionGrades.length
-            )
-          : 0;
-      finalGrades.push({
-        session_id: sessionId,
-        score: averageScore,
-      });
+      const { overallScore, gradedCount } = calculateOverallScore(sessionGrades);
+      if (gradedCount > 0) {
+        finalGrades.push({
+          session_id: sessionId,
+          score: overallScore,
+          gradedCount,
+        });
+      }
     });
 
     return successJson({ grades: finalGrades });
