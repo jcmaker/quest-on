@@ -545,6 +545,16 @@ export async function initExamSession(data: {
         } else {
           session = updatedSession;
         }
+      } else if (currentStatus === "late_pending") {
+        // 지각 학생: 강사 승인 대기 중 — heartbeat만 업데이트, 상태 전환 없음
+        const { data: updatedSession } = await getSupabase()
+          .from("sessions")
+          .update({ is_active: true, last_heartbeat_at: now })
+          .eq("id", existingSession.id)
+          .eq("status", "late_pending")
+          .select()
+          .maybeSingle();
+        session = updatedSession || existingSession;
       } else if (
         (examStarted || exam.duration === 0) &&
         ["waiting", "joined", "not_joined"].includes(currentStatus)
@@ -606,8 +616,16 @@ export async function initExamSession(data: {
       const examStarted = isExamStarted(examStatus, exam.started_at, nowTime);
 
       // 시작 전: waiting 상태 (Join만 가능, 응시 불가)
-      // 시작 후 또는 무제한(과제형): in_progress 상태 (실제 응시 가능)
-      const initialStatus = (examStarted || exam.duration === 0) ? "in_progress" : "waiting";
+      // 시작 후 + 무제한(과제형): in_progress (바로 응시 가능)
+      // 시작 후 + 제한시간 있음: late_pending (강사 승인 필요)
+      let initialStatus: string;
+      if (exam.duration === 0) {
+        initialStatus = "in_progress"; // 무제한(과제형)은 지각 없음
+      } else if (examStarted) {
+        initialStatus = "late_pending"; // 지각 학생: 강사 승인 필요
+      } else {
+        initialStatus = "waiting"; // 정상 대기
+      }
 
       // Upsert session (race-safe: uses UNIQUE(exam_id, student_id) constraint)
       // ignoreDuplicates: true prevents overwriting existing session data (timer, status)

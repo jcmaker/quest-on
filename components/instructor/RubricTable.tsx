@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -71,6 +71,28 @@ export function RubricTable({
   const [showAIInput, setShowAIInput] = useState(false);
   const [topics, setTopics] = useState("");
   const [customInstructions, setCustomInstructions] = useState("");
+  const fallbackKeyMapRef = useRef(new WeakMap<RubricItem, string>());
+  const fallbackKeyCounterRef = useRef(0);
+
+  const getFallbackKey = useCallback((item: RubricItem) => {
+    const existing = fallbackKeyMapRef.current.get(item);
+    if (existing) return existing;
+
+    const generated = `rubric-fallback-${fallbackKeyCounterRef.current++}`;
+    fallbackKeyMapRef.current.set(item, generated);
+    return generated;
+  }, []);
+
+  const rubricRowKeys = useMemo(() => {
+    const duplicateCount = new Map<string, number>();
+
+    return rubric.map((item) => {
+      const baseKey = item.id?.trim() ? item.id : getFallbackKey(item);
+      const currentCount = duplicateCount.get(baseKey) ?? 0;
+      duplicateCount.set(baseKey, currentCount + 1);
+      return currentCount === 0 ? baseKey : `${baseKey}__dup_${currentCount}`;
+    });
+  }, [getFallbackKey, rubric]);
 
   return (
     <Card>
@@ -297,9 +319,9 @@ export function RubricTable({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rubric.map((item) => (
+                {rubric.map((item, index) => (
                   <TableRow
-                    key={item.id}
+                    key={rubricRowKeys[index]}
                     className="align-top hover:bg-muted/50"
                   >
                     <TableCell className="py-4 align-top">

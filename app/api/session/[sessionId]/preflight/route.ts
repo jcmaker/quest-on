@@ -80,8 +80,28 @@ export async function POST(
 
     let reconciledSession = session;
 
-    // 시험이 이미 시작되었거나, 무제한(과제형) 시험인 경우 바로 in_progress로 전환
-    if (isExamStarted(exam.status, exam.started_at, nowTime) || exam.duration === 0) {
+    // 지각 학생: 강사 승인 대기 — preflight만 기록하고 상태 유지
+    if (session.status === "late_pending") {
+      const { data: updatedSession, error: updateError } = await supabase
+        .from("sessions")
+        .update({ preflight_accepted_at: now })
+        .eq("id", sessionId)
+        .eq("status", "late_pending")
+        .select(
+          "id, student_id, exam_id, status, started_at, attempt_timer_started_at, created_at, preflight_accepted_at, device_fingerprint"
+        )
+        .single();
+
+      if (updateError || !updatedSession) {
+        logError("Failed to update preflight for late_pending", updateError, {
+          path: "/api/session/[sessionId]/preflight",
+          additionalData: { sessionId },
+        });
+        return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500);
+      }
+      reconciledSession = updatedSession;
+    } else if (isExamStarted(exam.status, exam.started_at, nowTime) || exam.duration === 0) {
+      // 시험이 이미 시작되었거나, 무제한(과제형) 시험인 경우 바로 in_progress로 전환
       reconciledSession = await promoteSessionToInProgress(session, now, {
         preflightAcceptedAt: now,
       });

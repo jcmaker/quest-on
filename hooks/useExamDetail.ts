@@ -54,7 +54,13 @@ export function useExamDetail({
         const sessionsResult = await sessionsResponse.json();
         const sessionsByStudent = new Map<string, Array<Record<string, unknown>>>();
 
-        sessionsResult.sessions.forEach((session: Record<string, unknown>) => {
+        const ACTIVE_STATUSES = ['in_progress', 'submitted', 'auto_submitted'];
+        sessionsResult.sessions
+          .filter((session: Record<string, unknown>) => {
+            const status = typeof session.status === 'string' ? session.status : '';
+            return ACTIVE_STATUSES.includes(status);
+          })
+          .forEach((session: Record<string, unknown>) => {
           const studentId =
             typeof session.student_id === "string" ? session.student_id : "";
           if (!sessionsByStudent.has(studentId)) {
@@ -171,10 +177,11 @@ export function useExamDetail({
   }, [examId]);
 
   useEffect(() => {
-    if (examDetailData?.exam && !exam) {
-      setExam(examDetailData.exam);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit `exam` to avoid infinite loop (setExam triggers re-render)
+    if (!examDetailData?.exam) return;
+    setExam((prev) => {
+      if (!prev) return examDetailData.exam;               // 최초 로드
+      return { ...prev, students: examDetailData.exam.students }; // refetch: students만 갱신
+    });
   }, [examDetailData]);
 
   // Final grades

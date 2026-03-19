@@ -82,6 +82,7 @@ export function useExamSession({
   const [examInitialized, setExamInitialized] = useState(false);
   const [showPreflight, setShowPreflight] = useState(false);
   const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
+  const [isLateEntry, setIsLateEntry] = useState(false);
   const [sessionError, setSessionError] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<string | null>(null);
   // Internal refs for beforeunload (track latest values)
@@ -225,13 +226,18 @@ export function useExamSession({
         (!initData.session.preflight_accepted_at &&
           currentSessionStatus !== "in_progress" &&
           currentSessionStatus !== "submitted" &&
-          currentSessionStatus !== "auto_submitted")
+          currentSessionStatus !== "auto_submitted" &&
+          currentSessionStatus !== "late_pending")
       ) {
         setShowPreflight(true);
       }
 
       if (currentSessionStatus === "waiting") {
         setIsInWaitingRoom(true);
+      }
+
+      if (currentSessionStatus === "late_pending") {
+        setIsLateEntry(true);
       }
 
       if (initData.sessionStartTime) {
@@ -446,6 +452,8 @@ export function useExamSession({
     setShowPreflight,
     isInWaitingRoom,
     setIsInWaitingRoom,
+    isLateEntry,
+    setIsLateEntry,
     sessionError,
     setSessionError,
     examInitialized,

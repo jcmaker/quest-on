@@ -49,6 +49,13 @@ export const qk = {
      */
     waitingStudents: (examId: string) =>
       ["instructor-waiting-students", examId] as const,
+
+    /**
+     * 지각 학생 목록 (late_pending 상태)
+     * @param examId - 시험 ID
+     */
+    lateStudents: (examId: string) =>
+      ["instructor-late-students", examId] as const,
   },
 
   student: {

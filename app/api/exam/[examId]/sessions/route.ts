@@ -66,12 +66,17 @@ export async function GET(
     const pageSize = Math.max(1, Math.min(100, parseInt(url.searchParams.get("pageSize") || "50", 10)));
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
+    const statusFilter = url.searchParams.get("status");
 
     // Get total count for pagination metadata
-    const { count: totalCount, error: countError } = await supabase
+    let countQuery = supabase
       .from("sessions")
       .select("id", { count: "exact", head: true })
       .eq("exam_id", examId);
+    if (statusFilter) {
+      countQuery = countQuery.eq("status", statusFilter);
+    }
+    const { count: totalCount, error: countError } = await countQuery;
 
     if (countError) {
       throw countError;
@@ -79,7 +84,7 @@ export async function GET(
 
     // Optimized: Only fetch minimal session data needed for student list
     // Don't fetch submissions/messages as they're not needed for the list view
-    const { data: sessions, error: sessionsError } = await supabase
+    let sessionsQuery = supabase
       .from("sessions")
       .select(
         `
@@ -93,7 +98,11 @@ export async function GET(
         last_heartbeat_at
       `,
       )
-      .eq("exam_id", examId)
+      .eq("exam_id", examId);
+    if (statusFilter) {
+      sessionsQuery = sessionsQuery.eq("status", statusFilter);
+    }
+    const { data: sessions, error: sessionsError } = await sessionsQuery
       .order("submitted_at", { ascending: false, nullsFirst: true })
       .range(from, to);
 

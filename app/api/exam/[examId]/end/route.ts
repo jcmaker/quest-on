@@ -101,6 +101,17 @@ export async function POST(
       .eq("exam_id", examId)
       .eq("status", "waiting");
 
+    // Deny late_pending sessions that never got approved
+    await getSupabase()
+      .from("sessions")
+      .update({
+        status: "denied",
+        is_active: false,
+        late_entry_denied_at: now,
+      })
+      .eq("exam_id", examId)
+      .eq("status", "late_pending");
+
     if (waitingCloseError) {
       logError("Failed to close waiting sessions", waitingCloseError, {
         path: "/api/exam/end",

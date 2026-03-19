@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import React, { useState, useEffect, use, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ExamDetailHeader } from "@/components/instructor/ExamDetailHeader";
@@ -10,6 +11,7 @@ import { ExamDetailsCard } from "@/components/instructor/ExamDetailsCard";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
 import { ExamAnalyticsCard } from "@/components/instructor/ExamAnalyticsCard";
 import { ExamControlButtons } from "@/components/instructor/ExamControlButtons";
+import { LateEntryPanel } from "@/components/instructor/LateEntryPanel";
 import {
   Collapsible,
   CollapsibleContent,
@@ -24,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { StudentLiveMonitoring } from "@/components/instructor/StudentLiveMonitoring";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
@@ -33,6 +35,7 @@ import { StudentListItemSkeleton } from "@/components/instructor/StudentListItem
 import { useExamDetail } from "@/hooks/useExamDetail";
 import { useStudentFiltering } from "@/hooks/useStudentFiltering";
 import { buildInstructorExamContext } from "@/lib/instructor-utils";
+import { qk } from "@/lib/query-keys";
 import type { InstructorExam, InstructorStudent, SortOption } from "@/lib/types/exam";
 
 export default function ExamDetail({
@@ -74,6 +77,8 @@ export default function ExamDetail({
     gradedStudents,
     nonGradedStudents,
   } = useStudentFiltering({ students: exam?.students ?? [] });
+
+  const queryClient = useQueryClient();
 
   // Redirect non-instructors
   useEffect(() => {
@@ -285,6 +290,11 @@ export default function ExamDetail({
 
             {/* Student List */}
             <div className="space-y-4">
+              {/* 지각 학생 패널 — 시험 진행 중에만 */}
+              {exam.status === "running" && (
+                <LateEntryPanel examId={exam.id} examStatus={exam.status} />
+              )}
+
               {/* Search & Sort */}
               <div className="flex flex-col sm:flex-row gap-4">
                 <div className="relative flex-1">
@@ -348,26 +358,40 @@ export default function ExamDetail({
 
               {/* Non-graded students */}
               <div className="border rounded-lg flex flex-col h-[calc(100vh-400px)] min-h-[600px]">
-                <div className="p-4 border-b bg-muted/50 flex-shrink-0">
-                  <h3 className="font-semibold">
+                <div className="p-4 border-b bg-muted/50 flex-shrink-0 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">
+                      {loading || analyticsLoading || !exam ? (
+                        <Skeleton className="h-6 w-32" />
+                      ) : (
+                        `학생 목록 (${nonGradedStudents.length}명)`
+                      )}
+                    </h3>
                     {loading || analyticsLoading || !exam ? (
-                      <Skeleton className="h-6 w-32" />
+                      <div className="text-sm text-muted-foreground">
+                        <Skeleton className="h-4 w-24 mt-2" />
+                      </div>
                     ) : (
-                      `학생 목록 (${nonGradedStudents.length}명)`
+                      <p className="text-sm text-muted-foreground">
+                        {sortOption === "score" && "가채점 점수 순"}
+                        {sortOption === "questionCount" && "질문 갯수 순"}
+                        {sortOption === "answerLength" && "답안 길이 순"}
+                        {sortOption === "submittedAt" && "제출 빠른 순"}
+                      </p>
                     )}
-                  </h3>
-                  {loading || analyticsLoading || !exam ? (
-                    <div className="text-sm text-muted-foreground">
-                      <Skeleton className="h-4 w-24 mt-2" />
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      {sortOption === "score" && "가채점 점수 순"}
-                      {sortOption === "questionCount" && "질문 갯수 순"}
-                      {sortOption === "answerLength" && "답안 길이 순"}
-                      {sortOption === "submittedAt" && "제출 빠른 순"}
-                    </p>
-                  )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      queryClient.invalidateQueries({ queryKey: qk.instructor.lateStudents(resolvedParams.examId) });
+                      queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
+                    }}
+                    title="새로고침"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
                 </div>
                 <div className="divide-y overflow-y-auto flex-1">
                   {loading || analyticsLoading || !exam ? (

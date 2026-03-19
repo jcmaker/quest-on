@@ -54,6 +54,7 @@ import { ExamHeader } from "@/components/ExamHeader";
 import { SubmissionOverlay } from "@/components/exam/ExamLoading";
 import { PreflightModal } from "@/components/exam/PreflightModal";
 import { WaitingRoom } from "@/components/exam/WaitingRoom";
+import { LateEntryWaiting } from "@/components/exam/LateEntryWaiting";
 import { cn } from "@/lib/utils";
 
 interface Question {
@@ -301,6 +302,7 @@ export default function ExamPage() {
     timeRemaining?: number | null;
   }) => {
     session.setIsInWaitingRoom(false);
+    session.setIsLateEntry(false);
 
     if (gateState.sessionStatus) {
       session.setSessionStatus(gateState.sessionStatus);
@@ -383,6 +385,20 @@ export default function ExamPage() {
           </AlertDialogContent>
         </AlertDialog>
       </>
+    );
+  }
+
+  if (session.isLateEntry || session.sessionStatus === "late_pending") {
+    return (
+      <LateEntryWaiting
+        examTitle={exam.title}
+        examCode={examCode}
+        sessionId={sessionId || undefined}
+        examId={exam.id}
+        examDuration={exam.duration}
+        questionCount={exam.questions?.length}
+        onGateStart={handleGateStart}
+      />
     );
   }
 
