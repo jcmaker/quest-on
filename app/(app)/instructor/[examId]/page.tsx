@@ -203,6 +203,8 @@ export default function ExamDetail({
                         started_at: startedAt || prev.started_at,
                       };
                     });
+                    queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
+                    queryClient.invalidateQueries({ queryKey: qk.instructor.examAnalytics(resolvedParams.examId) });
                   }}
                 />
               </>
