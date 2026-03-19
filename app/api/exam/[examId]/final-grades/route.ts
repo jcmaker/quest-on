@@ -41,8 +41,8 @@ export async function GET(
 
     // Get exam and sessions in parallel (both only need examId param)
     const [examResult, sessionsResult] = await Promise.all([
-      supabase.from("exams").select("instructor_id").eq("id", examId).single(),
-      supabase.from("sessions").select("id").eq("exam_id", examId),
+      getSupabase().from("exams").select("instructor_id").eq("id", examId).single(),
+      getSupabase().from("sessions").select("id").eq("exam_id", examId),
     ]);
 
     if (examResult.error || !examResult.data) {
