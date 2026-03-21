@@ -28,6 +28,7 @@ import {
   FolderPlus,
   Edit,
   Home,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -114,8 +115,30 @@ interface ExamNode {
   } | null;
 }
 
+type ExamFilterType =
+  | "all"
+  | "exam"
+  | "assignment"
+  | "deadline"
+  | "in-progress";
+
+const EXAM_FILTER_OPTIONS: Array<{ value: ExamFilterType; label: string }> = [
+  { value: "all", label: "전체" },
+  { value: "exam", label: "시험" },
+  { value: "assignment", label: "과제" },
+  { value: "deadline", label: "마감" },
+  { value: "in-progress", label: "진행 중" },
+];
+
+const FOLDER_CARD_STEP_PX = 226; // folder card width (210) + gap (16)
+
+function getFolderCardsPerStep(viewportWidth: number) {
+  if (viewportWidth < 640) return 1;
+  if (viewportWidth < 1100) return 2;
+  return 3;
+}
+
 const FOLDER_COLORS = [
-  { value: null,     label: "기본",  back: "hsl(222 45% 78%)", body: "",                 darkBack: "hsl(222 35% 38%)", darkBody: "" },
   { value: "blue",   label: "파랑",  back: "hsl(215 60% 72%)", body: "hsl(214 80% 96%)", darkBack: "hsl(215 50% 40%)", darkBody: "hsl(214 28% 19%)" },
   { value: "teal",   label: "청록",  back: "hsl(172 45% 60%)", body: "hsl(172 50% 95%)", darkBack: "hsl(172 40% 32%)", darkBody: "hsl(172 22% 18%)" },
   { value: "green",  label: "초록",  back: "hsl(145 40% 62%)", body: "hsl(145 45% 95%)", darkBack: "hsl(145 35% 32%)", darkBody: "hsl(145 20% 18%)" },
@@ -141,15 +164,17 @@ export default function InstructorHome() {
   const [editName, setEditName] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [examFilter, setExamFilter] = useState<ExamFilterType>("all");
   const [draggedNode, setDraggedNode] = useState<ExamNode | null>(null);
   const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
-  const [isCreateFolderOpen, setIsCreateFolderOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     new Set()
   );
+  const folderScrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollFoldersLeft, setCanScrollFoldersLeft] = useState(false);
+  const [canScrollFoldersRight, setCanScrollFoldersRight] = useState(false);
 
 
   // TanStack Query로 폴더 내용 가져오기 (무한 스크롤 페이지네이션)
@@ -278,8 +303,43 @@ export default function InstructorHome() {
     );
   }, [allExamNodes, searchQuery]);
 
+  const filteredExamNodes = useMemo(() => {
+    if (examFilter === "all") {
+      return examNodes;
+    }
+
+    const now = Date.now();
+
+    return examNodes.filter((node) => {
+      const examType = node.exams?.type;
+      const status = node.exams?.status;
+      const hasDeadline = Boolean(node.exams?.deadline);
+      const deadlineTime = node.exams?.deadline
+        ? new Date(node.exams.deadline).getTime()
+        : Number.NaN;
+      const isDeadlinePassed = hasDeadline && !Number.isNaN(deadlineTime) && deadlineTime < now;
+      const isInProgress =
+        status === "active" ||
+        (hasDeadline && !Number.isNaN(deadlineTime) && deadlineTime >= now);
+
+      switch (examFilter) {
+        case "exam":
+          return examType !== "assignment";
+        case "assignment":
+          return examType === "assignment";
+        case "deadline":
+          return status === "completed" || isDeadlinePassed;
+        case "in-progress":
+          return isInProgress;
+        default:
+          return true;
+      }
+    });
+  }, [examNodes, examFilter]);
+
   const isFiltering = searchQuery.trim().length > 0;
-  const hasResults = folderNodes.length > 0 || examNodes.length > 0;
+  const isExamFilterActive = examFilter !== "all";
+  const hasResults = folderNodes.length > 0 || filteredExamNodes.length > 0;
 
   // Intersection Observer sentinel for infinite scroll
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -643,14 +703,14 @@ export default function InstructorHome() {
               <div className="grid grid-cols-5 gap-1.5">
                 {FOLDER_COLORS.map((c) => (
                   <button
-                    key={c.value ?? "default"}
+                    key={c.value}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleColorChange(node.id, c.value);
                     }}
                     className={cn(
                       "w-7 h-7 rounded-full border-2 transition-transform hover:scale-110",
-                      node.color === c.value || (!node.color && c.value === null)
+                      node.color === c.value || (!node.color && c.value === "blue")
                         ? "border-foreground scale-110"
                         : "border-transparent"
                     )}
@@ -796,11 +856,6 @@ export default function InstructorHome() {
   }, []);
 
   const handleCreateFolder = async () => {
-    if (!newFolderName.trim()) {
-      toast.error("폴더 이름을 입력해주세요.");
-      return;
-    }
-
     try {
       setIsCreatingFolder(true);
       const response = await fetch("/api/supa", {
@@ -811,7 +866,7 @@ export default function InstructorHome() {
         body: JSON.stringify({
           action: "create_folder",
           data: {
-            name: newFolderName.trim(),
+            name: "새 폴더",
             parent_id: currentFolderId,
           },
         }),
@@ -819,8 +874,6 @@ export default function InstructorHome() {
 
       if (response.ok) {
         toast.success("폴더가 생성되었습니다.");
-        setNewFolderName("");
-        setIsCreateFolderOpen(false);
         // Invalidate folder contents query
         queryClient.invalidateQueries({
           queryKey: qk.drive.folderContents(currentFolderId, user?.id),
@@ -845,6 +898,76 @@ export default function InstructorHome() {
       setIsCreatingFolder(false);
     }
   };
+
+  const renderCreateFolderCard = useCallback(
+    () => (
+      <button
+        type="button"
+        onClick={handleCreateFolder}
+        disabled={isCreatingFolder}
+        className={cn(
+          "folder-card folder-card--empty group cursor-pointer transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.01]",
+          "disabled:cursor-not-allowed disabled:opacity-70"
+        )}
+        aria-label="새 폴더 만들기"
+      >
+        <div className="folder-card__back" aria-hidden />
+        <div className="folder-card__body">
+          <div className="flex h-full flex-col items-center justify-center gap-2">
+            {isCreatingFolder ? (
+              <Loader2 className="h-6 w-6 text-primary/80 animate-spin" strokeWidth={1.75} />
+            ) : (
+              <Plus className="h-6 w-6 text-primary/80" strokeWidth={1.75} />
+            )}
+            <p className="text-sm font-semibold text-primary/85">+ 새 폴더</p>
+          </div>
+        </div>
+      </button>
+    ),
+    [handleCreateFolder, isCreatingFolder]
+  );
+
+  const updateFolderScrollButtons = useCallback(() => {
+    const container = folderScrollRef.current;
+    if (!container) {
+      setCanScrollFoldersLeft(false);
+      setCanScrollFoldersRight(false);
+      return;
+    }
+
+    const maxScrollLeft = container.scrollWidth - container.clientWidth;
+    setCanScrollFoldersLeft(container.scrollLeft > 2);
+    setCanScrollFoldersRight(container.scrollLeft < maxScrollLeft - 2);
+  }, []);
+
+  const handleFolderRowSlide = useCallback((direction: "left" | "right") => {
+    const container = folderScrollRef.current;
+    if (!container) return;
+
+    const viewportWidth =
+      typeof window !== "undefined" ? window.innerWidth : container.clientWidth;
+    const cardsPerStep = getFolderCardsPerStep(viewportWidth);
+    const distance =
+      FOLDER_CARD_STEP_PX * cardsPerStep * (direction === "right" ? 1 : -1);
+
+    container.scrollBy({ left: distance, behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    const container = folderScrollRef.current;
+    if (!container) return;
+
+    const syncButtons = () => updateFolderScrollButtons();
+
+    syncButtons();
+    container.addEventListener("scroll", syncButtons, { passive: true });
+    window.addEventListener("resize", syncButtons);
+
+    return () => {
+      container.removeEventListener("scroll", syncButtons);
+      window.removeEventListener("resize", syncButtons);
+    };
+  }, [folderNodes.length, updateFolderScrollButtons]);
 
   const handleDragStart = (e: React.DragEvent, node: ExamNode) => {
     setDraggedNode(node);
@@ -1604,16 +1727,16 @@ export default function InstructorHome() {
 
   return (
     <>
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
+    <div className="w-full max-w-7xl mx-auto overflow-x-hidden px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
                   {/* Simple greeting */}
                   <p className="text-lg font-medium text-foreground">
                     안녕하세요, {user?.firstName || user?.fullName || "강사"}님
                   </p>
 
                   {/* 시험 관리 */}
-                  <section className="space-y-4">
+                  <section className="space-y-4 min-w-0 overflow-x-hidden">
                     {/* Toolbar: new + search + view toggle — single row */}
-                    <div className="flex items-center gap-2">
+                    <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button size="sm" className="gap-1.5 shrink-0">
@@ -1623,7 +1746,9 @@ export default function InstructorHome() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="start" className="w-48">
                           <DropdownMenuItem
-                            onSelect={() => setIsCreateFolderOpen(true)}
+                            onSelect={() => {
+                              void handleCreateFolder();
+                            }}
                           >
                             <FolderPlus className="w-4 h-4 mr-2" />새 폴더
                           </DropdownMenuItem>
@@ -1640,7 +1765,7 @@ export default function InstructorHome() {
                         </DropdownMenuContent>
                       </DropdownMenu>
 
-                      <div className="relative flex-1 min-w-0">
+                      <div className="relative order-3 min-w-0 basis-full sm:order-none sm:basis-auto sm:flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                         <Input
                           value={searchQuery}
@@ -1766,10 +1891,17 @@ export default function InstructorHome() {
                                 variant="outline"
                                 size="sm"
                                 className="min-h-[44px]"
-                                onClick={() => setIsCreateFolderOpen(true)}
+                                onClick={() => {
+                                  void handleCreateFolder();
+                                }}
+                                disabled={isCreatingFolder}
                               >
-                                <FolderPlus className="w-4 h-4 mr-2" />
-                                폴더 만들기
+                                {isCreatingFolder ? (
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : (
+                                  <FolderPlus className="w-4 h-4 mr-2" />
+                                )}
+                                새 폴더
                               </Button>
                               <Link href="/instructor/new">
                                 <Button size="sm" className="min-h-[44px]">
@@ -1802,19 +1934,35 @@ export default function InstructorHome() {
                                 {folderNodes.length}개
                               </span>
                             </div>
-                            {folderNodes.length > 0 ? (
-                              <div className="overflow-x-auto pb-2 scrollbar-thin">
-                                <div className="flex gap-4 min-w-max">
+                            <div className="relative w-full max-w-full min-w-0 overflow-x-hidden group/folder-carousel">
+                              <button
+                                type="button"
+                                onClick={() => handleFolderRowSlide("left")}
+                                disabled={!canScrollFoldersLeft}
+                                className="absolute left-2 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border/80 bg-background/95 p-2 text-foreground shadow-sm backdrop-blur transition hover:bg-accent opacity-0 pointer-events-none group-hover/folder-carousel:opacity-100 group-hover/folder-carousel:pointer-events-auto disabled:opacity-40 disabled:pointer-events-none"
+                                aria-label="이전 폴더 보기"
+                              >
+                                <ChevronLeft className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleFolderRowSlide("right")}
+                                disabled={!canScrollFoldersRight}
+                                className="absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border/80 bg-background/95 p-2 text-foreground shadow-sm backdrop-blur transition hover:bg-accent opacity-0 pointer-events-none group-hover/folder-carousel:opacity-100 group-hover/folder-carousel:pointer-events-auto disabled:opacity-40 disabled:pointer-events-none"
+                                aria-label="다음 폴더 보기"
+                              >
+                                <ChevronRight className="h-4 w-4" />
+                              </button>
+                              <div
+                                ref={folderScrollRef}
+                                className="w-full min-w-0 max-w-full overflow-x-auto overflow-y-visible overscroll-x-contain pb-2 pl-12 pr-12 scrollbar-thin"
+                              >
+                                <div className="inline-flex min-w-max gap-4 pr-2">
                                   {folderNodes.map((node) => renderFolderCard(node))}
+                                  {renderCreateFolderCard()}
                                 </div>
                               </div>
-                            ) : (
-                              <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-card/40 py-6 text-center text-sm text-muted-foreground">
-                                {isFiltering
-                                  ? "검색 조건에 맞는 폴더가 없습니다."
-                                  : "폴더가 없습니다."}
-                              </div>
-                            )}
+                            </div>
                           </div>
 
                           {/* 시험/과제: 그리드/리스트 선택 */}
@@ -1824,14 +1972,32 @@ export default function InstructorHome() {
                                 시험 / 과제
                               </p>
                               <span className="text-xs text-muted-foreground">
-                                {examNodes.length}개
+                                {filteredExamNodes.length}개
                               </span>
                             </div>
-                            {examNodes.length > 0 ? (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {EXAM_FILTER_OPTIONS.map((option) => (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  onClick={() => setExamFilter(option.value)}
+                                  className={cn(
+                                    "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                                    examFilter === option.value
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                                  )}
+                                  aria-pressed={examFilter === option.value}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                            {filteredExamNodes.length > 0 ? (
                               viewMode === "grid" ? (
                                 <>
                                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                    {examNodes.map((node) => renderGridNode(node))}
+                                    {filteredExamNodes.map((node) => renderGridNode(node))}
                                   </div>
                                   <div ref={sentinelRef} />
                                   {isFetchingNextPage && (
@@ -1845,7 +2011,7 @@ export default function InstructorHome() {
                               ) : (
                                 <>
                                   <div className="space-y-2">
-                                    {examNodes.map((node) => renderListNode(node))}
+                                    {filteredExamNodes.map((node) => renderListNode(node))}
                                   </div>
                                   <div ref={sentinelRef} />
                                   {isFetchingNextPage && (
@@ -1861,9 +2027,9 @@ export default function InstructorHome() {
                               <>
                                 <div ref={sentinelRef} />
                                 <div className="rounded-xl border border-dashed border-muted-foreground/30 bg-card/40 py-6 text-center text-sm text-muted-foreground">
-                                  {isFiltering
-                                    ? "검색 조건에 맞는 시험이 없습니다."
-                                    : "시험이 없습니다."}
+                                  {isFiltering || isExamFilterActive
+                                    ? "선택한 조건에 맞는 시험/과제가 없습니다."
+                                    : "시험/과제가 없습니다."}
                                 </div>
                               </>
                             )}
@@ -2004,48 +2170,6 @@ export default function InstructorHome() {
         </DialogContent>
       </Dialog>
 
-      {/* 폴더 생성 다이얼로그 */}
-      <Dialog open={isCreateFolderOpen} onOpenChange={setIsCreateFolderOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>새 폴더 만들기</DialogTitle>
-            <DialogDescription>폴더 이름을 입력해주세요.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="folder-name">폴더 이름</Label>
-              <Input
-                id="folder-name"
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                placeholder="예: 2025-1학기"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handleCreateFolder();
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setIsCreateFolderOpen(false);
-                setNewFolderName("");
-              }}
-            >
-              취소
-            </Button>
-            <Button
-              onClick={handleCreateFolder}
-              disabled={isCreatingFolder || !newFolderName.trim()}
-            >
-              {isCreatingFolder ? "생성 중..." : "생성"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

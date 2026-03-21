@@ -245,7 +245,7 @@
   right: 0;
   bottom: 0;
   border-radius: 12px;
-  background: var(--folder-bg, hsl(222 45% 78%));
+  background: var(--folder-bg, hsl(215 60% 72%));
 }
 
 /* Tab ear — pokes above the back panel on the left */
@@ -257,14 +257,14 @@
   width: 44%;
   height: 28px;
   border-radius: 10px 10px 0 0;
-  background: var(--folder-bg, hsl(222 45% 78%));
+  background: var(--folder-bg, hsl(215 60% 72%));
 }
 
 .dark .folder-card__back::after {
-  background: var(--folder-bg-dark, hsl(222 35% 38%));
+  background: var(--folder-bg-dark, hsl(215 50% 40%));
 }
 .dark .folder-card__back::before {
-  background: var(--folder-bg-dark, hsl(222 35% 38%));
+  background: var(--folder-bg-dark, hsl(215 50% 40%));
 }
 
 /* ── Paper (non-empty folders) ── */
@@ -299,7 +299,7 @@
   right: 0;
   bottom: 0;
   border-radius: 12px;
-  background: var(--folder-body, hsl(0 0% 100%));
+  background: var(--folder-body, hsl(214 80% 96%));
   border: 1px solid hsl(220 14% 92%);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.05),
@@ -312,11 +312,54 @@
 }
 
 .dark .folder-card__body {
-  background: var(--folder-body-dark, hsl(222 15% 18%));
+  background: var(--folder-body-dark, hsl(214 28% 19%));
   border-color: hsl(0 0% 20%);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.2),
     0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* Empty new-folder card variant */
+.folder-card--empty .folder-card__back::after {
+  background: transparent;
+  border: 1.5px dashed hsl(215 60% 72%);
+}
+
+.folder-card--empty .folder-card__back::before {
+  background: transparent;
+  border: 1.5px dashed hsl(215 60% 72%);
+  border-bottom: 0;
+}
+
+.folder-card--empty .folder-card__body {
+  background: transparent;
+  border: 1.5px dashed hsl(215 60% 72%);
+  box-shadow: none;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.dark .folder-card--empty .folder-card__back::after,
+.dark .folder-card--empty .folder-card__back::before,
+.dark .folder-card--empty .folder-card__body {
+  border-color: hsl(215 50% 40%);
+}
+
+.folder-card--empty:hover .folder-card__back::after,
+.folder-card--empty:hover .folder-card__back::before,
+.folder-card--empty:hover .folder-card__body {
+  border-color: hsl(215 74% 58%);
+}
+
+.folder-card--empty:hover .folder-card__body {
+  background: hsl(214 100% 97%);
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.16);
+}
+
+.dark .folder-card--empty:hover .folder-card__body {
+  background: hsl(214 35% 22%);
 }
 
 /* Exam code font - Roboto Mono with slashed zero for better 0/O distinction */

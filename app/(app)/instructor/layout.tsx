@@ -120,6 +120,7 @@ export default function InstructorLayout({
       <SignedIn>
         <SidebarProvider
           defaultOpen={true}
+          className="overflow-x-hidden"
           style={
             {
               "--sidebar-width": "16rem",
@@ -140,14 +141,17 @@ export default function InstructorLayout({
             />
           </Sidebar>
 
-          <SidebarInset>
+          <SidebarInset className="min-w-0 overflow-x-hidden">
             <header className={`sticky top-0 z-40 lg:hidden bg-background/80 backdrop-blur-sm border-b border-border transition-transform duration-300 ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}>
               <div className="px-4 py-3 flex items-center justify-between">
                 <Image src="/qlogo_icon.png" alt="Quest-On" width={28} height={28} />
                 <UserMenu />
               </div>
             </header>
-            <main ref={mainRef} className="flex-1 overflow-y-auto bg-background pb-20 lg:pb-0">
+            <main
+              ref={mainRef}
+              className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto bg-background pb-20 lg:pb-0"
+            >
               {children}
             </main>
           </SidebarInset>
