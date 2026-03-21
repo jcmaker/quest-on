@@ -421,9 +421,12 @@ export default function StudentDashboard() {
   // Session action/CTA renderer (shared between grid and list views)
   const renderSessionAction = (session: ExamSession) => {
     if (session.status === "in-progress") {
+      const resumePath = session.duration === 0
+        ? `/assignment/${session.examCode}`
+        : `/exam/${session.examCode}`;
       return (
         <Link
-          href={`/exam/${session.examCode}`}
+          href={resumePath}
           className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
         >
           <Button size="sm" className="min-h-[36px] px-4">
@@ -688,7 +691,7 @@ export default function StudentDashboard() {
                             className="w-5 h-5 text-primary shrink-0"
                             aria-hidden="true"
                           />
-                          <span>시험 기록</span>
+                          <span>기록</span>
                         </h3>
                         <p className="mt-1 text-sm text-muted-foreground">
                           시험에서의 성과 및 진행 상황
@@ -924,7 +927,11 @@ export default function StudentDashboard() {
                               </span>
                               <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" aria-hidden="true" />
-                                {session.duration}분
+                                {session.duration === 0 ? (
+                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">과제</Badge>
+                                ) : (
+                                  `${session.duration}분`
+                                )}
                               </span>
                               <span className="flex items-center gap-1">
                                 <Calendar className="w-3 h-3" aria-hidden="true" />
@@ -988,7 +995,11 @@ export default function StudentDashboard() {
                                     className="w-3.5 h-3.5 shrink-0"
                                     aria-hidden="true"
                                   />
-                                  <span>{session.duration}분</span>
+                                  {session.duration === 0 ? (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">과제</Badge>
+                                  ) : (
+                                    <span>{session.duration}분</span>
+                                  )}
                                 </div>
                                 <div className="flex items-center space-x-1.5">
                                   <Calendar

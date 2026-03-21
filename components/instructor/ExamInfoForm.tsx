@@ -26,6 +26,9 @@ interface ExamInfoFormProps {
   onCodeChange: (value: string) => void;
   onDurationChange: (value: number) => void;
   onGenerateCode: () => void;
+  mode?: "exam" | "assignment";
+  deadline?: string;
+  onDeadlineChange?: (value: string) => void;
 }
 
 export function ExamInfoForm({
@@ -36,6 +39,9 @@ export function ExamInfoForm({
   onCodeChange,
   onDurationChange,
   onGenerateCode,
+  mode = "exam",
+  deadline,
+  onDeadlineChange,
 }: ExamInfoFormProps) {
   const [durationInput, setDurationInput] = useState<string>(
     duration === 0 ? "" : duration.toString()
@@ -119,14 +125,14 @@ export function ExamInfoForm({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>시험 정보</CardTitle>
-        <CardDescription>시험의 기본 세부사항</CardDescription>
+        <CardTitle>{mode === "assignment" ? "과제 정보" : "시험 정보"}</CardTitle>
+        <CardDescription>{mode === "assignment" ? "과제의 기본 세부사항" : "시험의 기본 세부사항"}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid md:grid-cols-2 gap-4">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Label htmlFor="title">시험 제목</Label>
+              <Label htmlFor="title">{mode === "assignment" ? "과제 제목" : "시험 제목"}</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
@@ -150,7 +156,7 @@ export function ExamInfoForm({
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Label htmlFor="code">시험 코드</Label>
+              <Label htmlFor="code">{mode === "assignment" ? "과제 코드" : "시험 코드"}</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
@@ -180,6 +186,33 @@ export function ExamInfoForm({
           </div>
         </div>
 
+        {mode === "assignment" ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="deadline">제출 기한</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    학생들이 과제를 제출해야 하는 마감 기한을 설정하세요.
+                    선택한 날짜 23:59:59까지 제출 가능합니다.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <Input
+              type="date"
+              id="deadline"
+              value={deadline || ""}
+              onChange={(e) => onDeadlineChange?.(e.target.value)}
+              min={new Date().toISOString().slice(0, 10)}
+              className="w-full max-w-xs"
+              required
+            />
+          </div>
+        ) : (
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <Label htmlFor="duration">시험 시간</Label>
@@ -276,6 +309,7 @@ export function ExamInfoForm({
             )}
           </div>
         </div>
+        )}
       </CardContent>
     </Card>
   );

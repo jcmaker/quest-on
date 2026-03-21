@@ -15,6 +15,7 @@ export function ConditionalHeader() {
   if (
     pathname === "/onboarding" ||
     pathname.startsWith("/exam/") ||
+    pathname.startsWith("/assignment/") ||
     pathname.startsWith("/sign-in") ||
     pathname.startsWith("/sign-up")
   ) {

@@ -65,6 +65,8 @@ export interface InstructorExam extends Exam {
   open_at?: string | null;
   close_at?: string | null;
   started_at?: string | null;
+  deadline?: string | null;
+  assignment_prompt?: string | null;
 }
 
 export interface InstructorStudent {

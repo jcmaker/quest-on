@@ -92,6 +92,8 @@ export async function getFolderContents(data: {
         description,
         duration,
         status,
+        type,
+        deadline,
         created_at,
         updated_at
       )

@@ -58,6 +58,9 @@ model exams {
   rubric_public          Boolean?               @default(false) // 루브릭 공개 여부
   materials_text         Json?                  @default("[]") // 추출된 텍스트 저장
   rag_status             String?                @default("none") // 'none' | 'pending' | 'processing' | 'completed' | 'failed'
+  type                   String?                @default("exam") // 'exam' | 'assignment'
+  deadline               DateTime?              @db.Timestamptz(6) // 과제 제출 기한
+  assignment_prompt       String? // 과제 설명/프롬프트
   ai_events              ai_events[]
   exam_nodes             exam_nodes[]
   exam_material_chunks   exam_material_chunks[]
@@ -69,6 +72,7 @@ model exams {
   @@index([open_at], map: "idx_exams_open_at")
   @@index([close_at], map: "idx_exams_close_at")
   @@index([status], map: "idx_exams_status")
+  @@index([type], map: "idx_exams_type")
 }
 
 model grades {

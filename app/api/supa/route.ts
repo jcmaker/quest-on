@@ -20,6 +20,9 @@ import {
   moveNodeSchema,
   deleteNodeSchema,
   copyExamSchema,
+  createAssignmentSchema,
+  saveCanvasSchema,
+  submitAssignmentSchema,
   validateRequest,
 } from "@/lib/validations";
 import type { z } from "zod";
@@ -60,6 +63,12 @@ import {
   getInstructorDrive,
 } from "./handlers/drive-handlers";
 
+import {
+  createAssignment,
+  saveCanvas,
+  submitAssignment,
+} from "./handlers/assignment-handlers";
+
 // Default-deny: all actions require auth unless explicitly listed as public.
 // Add to this set only for truly unauthenticated use cases.
 const publicActions = new Set<string>(["get_exam"]);
@@ -90,6 +99,9 @@ export async function POST(request: NextRequest) {
 
     // Rate limit sensitive actions at handler level
     const rateLimitedActions: Record<string, { limit: number; windowSec: number }> = {
+      create_assignment: RATE_LIMITS.examControl,
+      submit_assignment: RATE_LIMITS.examControl,
+      save_canvas: RATE_LIMITS.general,
       create_exam: RATE_LIMITS.examControl,
       submit_exam: RATE_LIMITS.examControl,
       save_draft: RATE_LIMITS.general,
@@ -110,6 +122,9 @@ export async function POST(request: NextRequest) {
     // Validate input data against action-specific schemas
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const actionSchemas: Record<string, z.ZodSchema<any>> = {
+      create_assignment: createAssignmentSchema,
+      save_canvas: saveCanvasSchema,
+      submit_assignment: submitAssignmentSchema,
       create_exam: createExamSchema,
       update_exam: updateExamSchema,
       init_exam_session: initExamSessionSchema,
@@ -137,6 +152,12 @@ export async function POST(request: NextRequest) {
     }
 
     switch (action) {
+      case "create_assignment":
+        return await createAssignment(data);
+      case "save_canvas":
+        return await saveCanvas(data);
+      case "submit_assignment":
+        return await submitAssignment(data);
       case "create_exam":
         return await createExam(data);
       case "update_exam":

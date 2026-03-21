@@ -255,6 +255,48 @@ export const submitExamSchema = z.object({
   feedbackResponses: z.array(z.unknown()).optional(),
 });
 
+// Assignment operations
+export const createAssignmentSchema = z.object({
+  title: sanitizedString(z.string().min(1, "Title is required").max(500)),
+  code: z.string().min(1).max(20),
+  deadline: z.string().min(1, "Deadline is required"), // ISO datetime string
+  chat_weight: z.number().min(0).max(100).nullable().optional(),
+  questions: z.array(z.object({
+    id: z.string(),
+    text: z.string(),
+    type: z.enum(["multiple-choice", "essay", "short-answer"]),
+    options: z.array(z.string()).optional(),
+  }).passthrough()),
+  materials: z.array(z.string()).optional(),
+  materials_text: z.array(z.object({
+    url: z.string(),
+    text: z.string(),
+    fileName: z.string(),
+  })).optional(),
+  rubric: z.array(z.object({
+    evaluationArea: z.string(),
+    detailedCriteria: z.string(),
+  })).optional(),
+  rubric_public: z.boolean().optional(),
+  status: z.string().min(1),
+  created_at: z.string(),
+  updated_at: z.string(),
+  parent_folder_id: z.string().nullable().optional(),
+  assignment_prompt: z.string().max(10000).optional(),
+});
+
+export const saveCanvasSchema = z.object({
+  sessionId: z.string().uuid("Invalid session ID"),
+  content: z.string().max(500000, "Canvas content too long"),
+});
+
+export const submitAssignmentSchema = z.object({
+  sessionId: z.string().uuid("Invalid session ID"),
+  examId: z.string().uuid("Invalid exam ID"),
+  studentId: z.string().min(1),
+  canvasContent: z.string().max(500000).optional(),
+});
+
 // Drive operations
 export const createFolderSchema = z.object({
   name: z.string().min(1, "Folder name is required").max(255),

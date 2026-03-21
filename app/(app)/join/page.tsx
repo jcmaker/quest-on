@@ -53,12 +53,36 @@ export default function ExamCodeEntry() {
     );
   }, []);
 
+  const navigateToCode = async (code: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/supa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "get_exam", data: { code } }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "코드를 확인할 수 없습니다.");
+      }
+      const data = await res.json();
+      const examType = data.exam?.type;
+      if (examType === "assignment") {
+        router.push(`/assignment/${code}`);
+      } else {
+        router.push(`/exam/${code}`);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (examCode.length !== 6) return;
-
-    setIsLoading(true);
-    router.push(`/exam/${examCode}`);
+    navigateToCode(examCode);
   };
 
   return (
@@ -73,9 +97,9 @@ export default function ExamCodeEntry() {
               <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto mb-4">
                 <FileText className="w-8 h-8 text-primary-foreground" />
               </div>
-              <CardTitle className="text-2xl">시험 코드 입력</CardTitle>
+              <CardTitle className="text-2xl">코드 입력</CardTitle>
               <CardDescription className="text-base">
-                강사가 제공한 시험 코드를 입력하여 시험을 시작하세요
+                강사가 제공한 코드를 입력하여 시험 또는 과제를 시작하세요
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -98,8 +122,7 @@ export default function ExamCodeEntry() {
                         setError(null);
                         // Auto-submit on 6 character completion
                         if (upper.length === 6 && !isLoading) {
-                          setIsLoading(true);
-                          router.push(`/exam/${upper}`);
+                          navigateToCode(upper);
                         }
                       }}
                       className="gap-1"
@@ -123,7 +146,7 @@ export default function ExamCodeEntry() {
                   className="w-full"
                   disabled={isLoading || examCode.length !== 6}
                 >
-                  {isLoading ? "입력 중..." : "시험 입장"}
+                  {isLoading ? "입력 중..." : "입장"}
                 </Button>
               </form>
             </CardContent>

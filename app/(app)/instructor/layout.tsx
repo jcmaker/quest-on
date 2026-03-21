@@ -6,7 +6,7 @@ import Image from "next/image";
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { GraduationCap, LayoutDashboard, Plus } from "lucide-react";
+import { GraduationCap, LayoutDashboard, Plus, FileEdit } from "lucide-react";
 import {
   Sidebar,
   SidebarInset,
@@ -37,6 +37,12 @@ export default function InstructorLayout({
       href: "/instructor/new",
       icon: Plus,
       active: pathname === "/instructor/new",
+    },
+    {
+      title: "과제 만들기",
+      href: "/instructor/assignment/new",
+      icon: FileEdit,
+      active: pathname === "/instructor/assignment/new",
     },
   ];
 

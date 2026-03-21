@@ -157,6 +157,8 @@ export function useExamDetail({
           open_at: examResult.exam.open_at || null,
           close_at: examResult.exam.close_at || null,
           started_at: examResult.exam.started_at || null,
+          deadline: examResult.exam.deadline || null,
+          assignment_prompt: examResult.exam.assignment_prompt || null,
         } as InstructorExam,
         questionsCount: questionsArray.length,
         questionsRaw: questionsArray as Question[],

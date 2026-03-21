@@ -56,6 +56,12 @@ export const qk = {
      */
     lateStudents: (examId: string) =>
       ["instructor-late-students", examId] as const,
+
+    /**
+     * 과제 상세 데이터
+     * @param assignmentId - 과제 ID (exams 테이블의 type='assignment')
+     */
+    assignmentDetail: (assignmentId: string) => ["instructor-assignment-detail", assignmentId] as const,
   },
 
   student: {

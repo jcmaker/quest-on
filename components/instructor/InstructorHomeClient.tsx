@@ -107,6 +107,8 @@ interface ExamNode {
     description: string;
     duration: number;
     status: string;
+    type?: string | null;
+    deadline?: string | null;
     created_at: string;
     updated_at: string;
   } | null;
@@ -496,9 +498,13 @@ export default function InstructorHome() {
 
   const handleEditClick = (node: ExamNode) => {
     if (node.kind === "exam") {
-      // 시험인 경우 편집 페이지로 이동
+      // 시험/과제인 경우 편집 페이지로 이동
       if (node.exam_id) {
-        router.push(`/instructor/${node.exam_id}/edit`);
+        if (node.exams?.type === "assignment") {
+          router.push(`/instructor/assignment/${node.exam_id}/edit`);
+        } else {
+          router.push(`/instructor/${node.exam_id}/edit`);
+        }
       }
     } else {
       // 폴더인 경우 이름 편집 다이얼로그 열기
@@ -775,7 +781,11 @@ export default function InstructorHome() {
         // 폴더 클릭 시 하위 내용 표시 (부분 렌더링)
         setCurrentFolderId(node.id);
       } else if (node.exam_id) {
-        router.push(`/instructor/${node.exam_id}`);
+        if (node.exams?.type === "assignment") {
+          router.push(`/instructor/assignment/${node.exam_id}`);
+        } else {
+          router.push(`/instructor/${node.exam_id}`);
+        }
       }
     },
     [router]
@@ -1148,6 +1158,12 @@ export default function InstructorHome() {
             ) : (
               <FileText className="h-14 w-14 text-muted-foreground/60" strokeWidth={1.5} />
             )}
+            {/* Type badge for exams/assignments */}
+            {!isFolder && node.exams?.type === "assignment" && (
+              <span className="absolute left-2 top-2 inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
+                과제
+              </span>
+            )}
             {/* Three-dot menu */}
             <div
               className="absolute right-2 top-2"
@@ -1170,7 +1186,14 @@ export default function InstructorHome() {
                     <span className="exam-code font-mono">{node.exams.code}</span>
                   )}
                   <span>·</span>
-                  <span>{formatDate(node.created_at)}</span>
+                  {node.exams?.type === "assignment" && node.exams?.deadline ? (
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      마감: {formatDate(node.exams.deadline)}
+                    </span>
+                  ) : (
+                    <span>{formatDate(node.created_at)}</span>
+                  )}
                 </>
               )}
             </div>
@@ -1530,12 +1553,25 @@ export default function InstructorHome() {
               <FileText className="w-5 h-5 text-blue-500" />
             </div>
             <div className="min-w-0">
-              <p className="font-medium text-sm text-foreground truncate">
-                {node.name}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="font-medium text-sm text-foreground truncate">
+                  {node.name}
+                </p>
+                {node.exams?.type === "assignment" && (
+                  <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 shrink-0">
+                    과제
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 {node.exams?.code && <span>{node.exams.code}</span>}
-                <span>· 생성 {formatDate(node.created_at)}</span>
+                {node.exams?.type === "assignment" && node.exams?.deadline ? (
+                  <span className="flex items-center gap-1">
+                    · <Clock className="w-3 h-3" /> 마감: {formatDate(node.exams.deadline)}
+                  </span>
+                ) : (
+                  <span>· 생성 {formatDate(node.created_at)}</span>
+                )}
               </div>
             </div>
           </div>
@@ -1595,6 +1631,11 @@ export default function InstructorHome() {
                             onSelect={() => router.push("/instructor/new")}
                           >
                             <FileText className="w-4 h-4 mr-2" />새 시험
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => router.push("/instructor/assignment/new")}
+                          >
+                            <FileText className="w-4 h-4 mr-2" />새 과제
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -1736,6 +1777,12 @@ export default function InstructorHome() {
                                   시험 만들기
                                 </Button>
                               </Link>
+                              <Link href="/instructor/assignment/new">
+                                <Button size="sm" variant="outline" className="min-h-[44px]">
+                                  <Plus className="w-4 h-4 mr-2" />
+                                  과제 만들기
+                                </Button>
+                              </Link>
                             </div>
                           )}
                         </div>
@@ -1770,11 +1817,11 @@ export default function InstructorHome() {
                             )}
                           </div>
 
-                          {/* 시험: 그리드/리스트 선택 */}
+                          {/* 시험/과제: 그리드/리스트 선택 */}
                           <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                시험
+                                시험 / 과제
                               </p>
                               <span className="text-xs text-muted-foreground">
                                 {examNodes.length}개

@@ -5,6 +5,7 @@ import {
   buildUnifiedGradingSystemPrompt,
   buildUnifiedGradingUserPrompt,
   buildSummaryEvaluationSystemPrompt,
+  buildAssignmentGradingPrompt,
 } from "@/lib/prompts";
 import { logError } from "@/lib/logger";
 import {
@@ -112,7 +113,7 @@ export async function autoGradeSession(
   // 2. 시험 정보 가져오기 (루브릭 포함)
   const { data: exam, error: examError } = await supabase
     .from("exams")
-    .select("id, title, questions, rubric, chat_weight")
+    .select("id, title, questions, rubric, chat_weight, type")
     .eq("id", session.exam_id)
     .single();
 
@@ -187,9 +188,15 @@ export async function autoGradeSession(
   // 루브릭은 문제별로 resolveQuestionRubric을 사용하여 해결
   const chatWeight = Math.max(0, Math.min(100, exam.chat_weight ?? 50));
 
+  const isAssignment = exam.type === "assignment";
   const failedGradeResults: FailedGradeResult[] = [];
 
-  const gradePromises = questions.map(async (question): Promise<GradeResult | null> => {
+  // For assignments, only grade q_idx=0 (single document)
+  const questionsToGrade = isAssignment
+    ? questions.filter((q) => q.idx === 0)
+    : questions;
+
+  const gradePromises = questionsToGrade.map(async (question): Promise<GradeResult | null> => {
     // Per-question rubric resolution (resolveQuestionRubric returns DEFAULT_RUBRIC when empty)
     const rubricItems = resolveQuestionRubric(question, exam.rubric);
     if (rubricItems.length === 1 && rubricItems[0].evaluationArea === "전반적 답변 품질") {
@@ -218,20 +225,37 @@ export async function autoGradeSession(
       return null;
     }
 
-    // Unified grading: single call evaluates both chat + answer together
-    const systemPrompt = buildUnifiedGradingSystemPrompt({
-      rubricText,
-      rubricScoresSchema,
-      chatWeightPercent: chatWeight,
-    });
+    // Build prompts: assignment uses dedicated grading prompt, exam uses unified grading
+    let systemPrompt: string;
+    let userPrompt: string;
 
-    const userPrompt = buildUnifiedGradingUserPrompt({
-      questionPrompt: question.prompt || "",
-      questionAiContext: question.ai_context,
-      messages: questionMessages,
-      answer: submission.answer || "",
-      aiDependencyAssessment,
-    });
+    if (isAssignment) {
+      systemPrompt = buildAssignmentGradingPrompt({
+        examTitle: exam.title,
+        assignmentPrompt: question.prompt || null,
+        rubricText,
+      });
+
+      const chatHistoryText = questionMessages.length > 0
+        ? `\n\n[학생과 AI의 대화 기록]\n${questionMessages.map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`).join("\n\n")}`
+        : "";
+
+      userPrompt = `[학생이 작성한 문서]\n${submission.answer || "(문서 없음)"}${chatHistoryText}`;
+    } else {
+      systemPrompt = buildUnifiedGradingSystemPrompt({
+        rubricText,
+        rubricScoresSchema,
+        chatWeightPercent: chatWeight,
+      });
+
+      userPrompt = buildUnifiedGradingUserPrompt({
+        questionPrompt: question.prompt || "",
+        questionAiContext: question.ai_context,
+        messages: questionMessages,
+        answer: submission.answer || "",
+        aiDependencyAssessment,
+      });
+    }
 
     const tracked = await callTrackedChatCompletion(
       () =>
@@ -363,6 +387,57 @@ export async function autoGradeSession(
       }
     }
 
+    // Assignment grading: different response schema and scoring
+    if (isAssignment) {
+      const assignmentResponseSchema = z.object({
+        rubric_scores: z.array(z.object({
+          area: z.string(),
+          score: z.number().finite().min(0).max(100),
+          comment: z.string(),
+        })).optional(),
+        overall_score: z.number().finite().min(0).max(100),
+        overall_comment: z.string(),
+      });
+
+      const assignmentResult = assignmentResponseSchema.safeParse(rawParsed);
+      if (!assignmentResult.success) {
+        logError("[AUTO_GRADE] Assignment response schema validation failed", assignmentResult.error, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId, qIdx, rawContent: JSON.stringify(rawParsed).slice(0, 500) },
+        });
+        failedGradeResults.push({ q_idx: qIdx, failureReason: "Assignment schema validation failure" });
+        return null;
+      }
+
+      const assignmentParsed = assignmentResult.data;
+      const scoreClamp = clampAndLog(assignmentParsed.overall_score, { sessionId, qIdx, field: "overall_score" });
+
+      const assignmentRubricScores: Record<string, number> = {};
+      if (assignmentParsed.rubric_scores) {
+        for (const rs of assignmentParsed.rubric_scores) {
+          assignmentRubricScores[rs.area] = Math.max(0, Math.min(100, Math.round(rs.score)));
+        }
+      }
+
+      const stageGrading: StageGrading = {
+        answer: {
+          score: scoreClamp.value,
+          comment: sanitizeComment(assignmentParsed.overall_comment || "과제 평가 완료"),
+          rubric_scores: Object.keys(assignmentRubricScores).length > 0 ? assignmentRubricScores : undefined,
+        },
+      };
+
+      return {
+        q_idx: qIdx,
+        score: scoreClamp.value,
+        comment: sanitizeComment(assignmentParsed.overall_comment || "과제 평가 완료"),
+        stage_grading: scoreClamp.clamped
+          ? { ...stageGrading, _score_clamped: true }
+          : stageGrading,
+      };
+    }
+
+    // Exam grading: unified response schema
     const schemaResult = aiGradingResponseSchema.safeParse(rawParsed);
     if (!schemaResult.success) {
       logError("[AUTO_GRADE] AI response schema validation failed", schemaResult.error, {
