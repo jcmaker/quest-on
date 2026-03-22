@@ -228,6 +228,7 @@ export default function InstructorHome() {
     enabled: !!(isLoaded && isSignedIn),
     staleTime: 1000 * 60 * 1,
     gcTime: 1000 * 60 * 5,
+    refetchOnMount: "always",
   });
 
   // 브레드크럼 쿼리

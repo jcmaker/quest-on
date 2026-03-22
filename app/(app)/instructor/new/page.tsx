@@ -549,6 +549,7 @@ export default function CreateExam() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.instructor.exams() });
+      queryClient.invalidateQueries({ queryKey: ["drive-folder-contents"] });
     },
   });
 
@@ -911,55 +912,55 @@ export default function CreateExam() {
           {/* 출제 완료 Dialog */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogContent>
-              <DialogHeader>
-                <DialogTitle>출제 완료</DialogTitle>
-                <DialogDescription>
-                  시험이 성공적으로 출제되었습니다.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="py-4">
-                <div className="space-y-3">
-                  <div>
-                    <Label className="text-sm font-medium">시험 코드</Label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <code className="px-4 py-2 bg-muted rounded-md exam-code text-lg font-semibold">
-                        {createdExamCode}
-                      </code>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(createdExamCode);
-                          toast.success("시험 코드가 복사되었습니다.", {
-                            id: "copy-exam-code",
-                          });
-                        }}
-                      >
-                        복사
-                      </Button>
+                  <DialogHeader>
+                    <DialogTitle>출제 완료</DialogTitle>
+                    <DialogDescription>
+                      시험이 성공적으로 출제되었습니다.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="py-4">
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-sm font-medium">시험 코드</Label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <code className="px-4 py-2 bg-muted rounded-md exam-code text-lg font-semibold">
+                            {createdExamCode}
+                          </code>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(createdExamCode);
+                              toast.success("시험 코드가 복사되었습니다.", {
+                                id: "copy-exam-code",
+                              });
+                            }}
+                          >
+                            복사
+                          </Button>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          이 코드를 학생들에게 공유하세요.
+                        </p>
+                      </div>
+                      {/* P2-5: Summary */}
+                      <div className="text-sm text-muted-foreground space-y-1 border-t pt-3">
+                        <p>문제 {questions.length}개{examData.materials.length > 0 && ` · 자료 ${examData.materials.length}개`}{rubric.some(r => r.evaluationArea.trim()) && " · 루브릭 포함"}</p>
+                        <p>시험 시간: {examData.duration === 0 ? "무제한 (과제형)" : `${examData.duration}분`}</p>
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      이 코드를 학생들에게 공유하세요.
-                    </p>
                   </div>
-                  {/* P2-5: Summary */}
-                  <div className="text-sm text-muted-foreground space-y-1 border-t pt-3">
-                    <p>문제 {questions.length}개{examData.materials.length > 0 && ` · 자료 ${examData.materials.length}개`}{rubric.some(r => r.evaluationArea.trim()) && " · 루브릭 포함"}</p>
-                    <p>시험 시간: {examData.duration === 0 ? "무제한 (과제형)" : `${examData.duration}분`}</p>
-                  </div>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  onClick={() => {
-                    setIsDialogOpen(false);
-                    router.push("/instructor");
-                  }}
-                >
-                  확인
-                </Button>
-              </DialogFooter>
+                  <DialogFooter>
+                    <Button
+                      onClick={() => {
+                        setIsDialogOpen(false);
+                        router.push("/instructor");
+                      }}
+                    >
+                      확인
+                    </Button>
+                  </DialogFooter>
             </DialogContent>
           </Dialog>
 
