@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Loader2 } from "lucide-react";
 import { Radio } from "@/components/animate-ui/icons/radio";
 import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
@@ -27,6 +28,7 @@ interface StudentListItemProps {
   getStudentStatusColor: (status: string) => string;
   showFinalScore: boolean;
   analyticsData?: AnalyticsData | null;
+  examStatus?: string;
 }
 
 export function StudentListItem({
@@ -36,6 +38,7 @@ export function StudentListItem({
   getStudentStatusColor,
   showFinalScore,
   analyticsData,
+  examStatus,
 }: StudentListItemProps) {
   const router = useRouter();
   return (
@@ -94,7 +97,7 @@ export function StudentListItem({
               </span>
               <span className="text-xs text-muted-foreground">최종 점수</span>
             </div>
-          ) : student.score !== undefined && student.score !== null ? (
+          ) : examStatus === "closed" && student.score !== undefined && student.score !== null ? (
             <div className="flex flex-col items-end">
               <span className="font-semibold text-lg">{student.score}점</span>
               <span className="text-xs text-muted-foreground">가채점</span>
@@ -103,6 +106,13 @@ export function StudentListItem({
                   {new Date(student.submittedAt).toLocaleDateString("ko-KR")}
                 </span>
               )}
+            </div>
+          ) : examStatus === "closed" && student.status === "completed" ? (
+            <div className="flex flex-col items-end">
+              <div className="flex items-center gap-1.5">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">가채점 중...</span>
+              </div>
             </div>
           ) : null}
         </div>

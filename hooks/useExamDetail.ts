@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import type { InstructorExam, InstructorStudent } from "@/lib/types/exam";
@@ -227,6 +227,14 @@ export function useExamDetail({
     });
   }, [finalGradesData]);
 
+  // 시험 종료 후 아직 가채점 안 된 학생이 있으면 폴링
+  const hasUngradedStudents = useMemo(() => {
+    if (!exam || exam.status !== "closed") return false;
+    return exam.students.some(
+      (s) => s.status === "completed" && (s.score === undefined || s.score === null)
+    );
+  }, [exam]);
+
   // Analytics
   const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
     queryKey: qk.instructor.examAnalytics(examId),
@@ -236,10 +244,11 @@ export function useExamDetail({
       return response.json();
     },
     enabled: !!examId && isLoaded && isSignedIn && !!exam && exam.students.length > 0,
-    staleTime: 30000,
+    staleTime: hasUngradedStudents ? 0 : 30000,
     gcTime: 5 * 60 * 1000,
     refetchOnMount: true,
     refetchOnWindowFocus: true,
+    refetchInterval: hasUngradedStudents ? 10000 : false,
   });
 
   // Update student scores from analytics

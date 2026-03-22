@@ -351,6 +351,7 @@ export default function ExamDetail({
                           getStudentStatusColor={getStudentStatusColor}
                           showFinalScore={true}
                           analyticsData={analyticsData}
+                          examStatus={exam.status}
                         />
                       ))}
                     </div>
@@ -416,6 +417,7 @@ export default function ExamDetail({
                         getStudentStatusColor={getStudentStatusColor}
                         showFinalScore={false}
                         analyticsData={analyticsData}
+                        examStatus={exam.status}
                       />
                     ))
                   )}

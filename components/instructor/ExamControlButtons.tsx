@@ -171,13 +171,9 @@ export function ExamControlButtons({
       });
 
       if (response.ok) {
-        toast.success("시험이 종료되었습니다.");
         setShowEndDialog(false);
-        if (onStatusChange) {
-          onStatusChange("closed");
-        } else {
-          router.refresh();
-        }
+        toast.success("시험을 종료합니다. 백그라운드에서 AI 가채점이 곧 진행됩니다");
+        router.push("/instructor");
       } else {
         const errorData = await response.json().catch(() => ({}));
         toast.error(
