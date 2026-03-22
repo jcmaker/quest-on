@@ -1,9 +1,9 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { useUser } from "@clerk/nextjs";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo, useCallback, memo, useRef } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,8 +14,6 @@ import {
   FileText,
   Clock,
   Loader2,
-  Menu,
-  LayoutDashboard,
   FolderOpen,
   List,
   Folder,
@@ -87,6 +85,7 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "@/components/animate-ui/components/base/alert-dialog";
+import { getEmoji3dPath } from "@/lib/emoji-3d";
 
 interface ExamNode {
   id: string;
@@ -1727,14 +1726,61 @@ export default function InstructorHome() {
 
   return (
     <>
-    <div className="w-full max-w-7xl mx-auto overflow-x-hidden px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
-                  {/* Simple greeting */}
-                  <p className="text-lg font-medium text-foreground">
-                    안녕하세요, {user?.firstName || user?.fullName || "강사"}님
-                  </p>
+    <div className="mx-auto w-full max-w-7xl space-y-6 overflow-x-hidden px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8 lg:px-8">
+                  <section className="dashboard-surface-glow relative overflow-hidden rounded-[2rem] border border-border/70 bg-gradient-to-r from-[#4e7dff] via-[#4a74f5] to-[#4f79ff] p-5 text-white shadow-sm sm:p-6">
+                    <div className="relative z-10 grid gap-4 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+                      <div className="space-y-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/70">
+                          Instructor Workspace
+                        </p>
+                        <p className="text-3xl font-extrabold leading-tight text-white sm:text-4xl">
+                          시험을 편리하게 생성하고
+                          <br />
+                          채점까지 해보세요
+                        </p>
+                        <p className="max-w-xl text-sm text-white/85 sm:text-base">
+                          안녕하세요, {user?.firstName || user?.fullName || "강사"}님. 폴더 구조와 시험 흐름을 한 번에 관리해보세요.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            className="min-h-[40px]"
+                            onClick={() => {
+                              void handleCreateFolder();
+                            }}
+                            disabled={isCreatingFolder}
+                          >
+                            <FolderPlus className="mr-2 h-4 w-4" />
+                            폴더 만들기
+                          </Button>
+                          <Link href="/instructor/new">
+                            <Button size="sm" variant="outline" className="min-h-[40px] border-white/45 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+                              <FileText className="mr-2 h-4 w-4" />
+                              시험 만들기
+                            </Button>
+                          </Link>
+                          <Link href="/instructor/assignment/new">
+                            <Button size="sm" variant="outline" className="min-h-[40px] border-white/45 bg-white/10 text-white hover:bg-white/20 hover:text-white">
+                              <FileText className="mr-2 h-4 w-4" />
+                              과제 만들기
+                            </Button>
+                          </Link>
+                        </div>
+                      </div>
+                      <div className="relative h-full min-h-[140px]">
+                        <Image
+                          src={getEmoji3dPath("board")}
+                          alt="강사 대시보드 메인 오브젝트"
+                          width={360}
+                          height={360}
+                          className="absolute -right-6 -top-12 h-40 w-40 object-contain sm:-right-10 sm:-top-16 sm:h-52 sm:w-52 lg:h-56 lg:w-56"
+                        />
+                      </div>
+                    </div>
+                  </section>
 
                   {/* 시험 관리 */}
-                  <section className="space-y-4 min-w-0 overflow-x-hidden">
+                  <section className="min-w-0 space-y-4 overflow-x-hidden rounded-2xl border border-border/70 bg-card/70 p-4 shadow-sm backdrop-blur-sm sm:p-5">
                     {/* Toolbar: new + search + view toggle — single row */}
                     <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
                       <DropdownMenu>
@@ -1873,8 +1919,14 @@ export default function InstructorHome() {
                           </div>
                         </>
                       ) : !hasResults ? (
-                        <div className="text-center py-16 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-card/40">
-                          <Folder className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                        <div className="rounded-2xl border-2 border-dashed border-muted-foreground/20 bg-card/40 py-16 text-center">
+                          <Image
+                            src={getEmoji3dPath("school-building")}
+                            alt="비어있는 상태"
+                            width={64}
+                            height={64}
+                            className="mx-auto mb-4 h-14 w-14 object-contain"
+                          />
                           <p className="text-muted-foreground mb-2">
                             {isFiltering
                               ? "검색 결과가 없습니다."
