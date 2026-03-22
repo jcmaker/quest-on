@@ -52,11 +52,11 @@ export function AssignmentChatPanel({
     setInput("");
   };
 
+  const QUICK_DOCUMENT_MESSAGE = "대화 내용 기반 문서 작성";
+
   const handleMakeDocument = () => {
     if (isLoading || isSubmitted) return;
-    onSendMessage(
-      "[문서로 만들기] 위 대화 내용을 바탕으로 과제 문서를 작성해주세요."
-    );
+    onSendMessage(QUICK_DOCUMENT_MESSAGE);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -135,7 +135,17 @@ export function AssignmentChatPanel({
               />
               <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
                 <div className="flex items-center gap-1">
-                  {/* placeholder for future action chips */}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleMakeDocument}
+                    disabled={isLoading}
+                    className="h-8 px-2 text-xs"
+                  >
+                    <FileEdit className="w-3.5 h-3.5 mr-1" />
+                    대화 내용 기반 문서 작성
+                  </Button>
                 </div>
                 <Button
                   onClick={handleSend}
@@ -280,6 +290,19 @@ export function AssignmentChatPanel({
       {!isSubmitted && (
         <div className="border-t p-3">
           <div className={`mx-auto space-y-2 ${maxW}`}>
+            <div className="flex items-center">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleMakeDocument}
+                disabled={isLoading}
+                className="h-8 text-xs"
+              >
+                <FileEdit className="w-3.5 h-3.5 mr-1" />
+                대화 내용 기반 문서 작성
+              </Button>
+            </div>
             <div className="relative rounded-2xl border border-border bg-muted/30 focus-within:border-primary/50 transition-colors">
               <Textarea
                 ref={textareaRef}

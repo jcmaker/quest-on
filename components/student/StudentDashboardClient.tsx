@@ -56,7 +56,9 @@ interface ExamSession {
   examId: string;
   examTitle: string;
   examCode: string;
+  examType: string | null;
   duration: number;
+  deadline: string | null;
   status: "completed" | "in-progress";
   submittedAt: string | null;
   createdAt: string;
@@ -77,6 +79,22 @@ interface SessionsResponse {
   };
 }
 
+interface StudentStatsResponse {
+  totalSessions: number;
+  completedSessions: number;
+  inProgressSessions: number;
+  unsubmittedAssignments: number;
+  unsubmittedAssignmentItems: Array<{
+    sessionId: string;
+    examId: string;
+    examTitle: string;
+    examCode: string;
+    deadline: string | null;
+    createdAt: string;
+  }>;
+  overallAverageScore: number | null;
+}
+
 function getGreeting(name: string) {
   const h = new Date().getHours();
   if (h < 12) return `좋은 아침이에요, ${name}님 ☀️`;
@@ -92,7 +110,7 @@ export default function StudentDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
   const [filter, setFilter] = useState<
-    "all" | "graded" | "pending" | "in-progress"
+    "all" | "graded" | "pending" | "in-progress" | "unsubmitted"
   >("all");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [headerVisible, setHeaderVisible] = useState(true);
@@ -230,7 +248,7 @@ export default function StudentDashboard() {
         signal, // AbortSignal 연결
       });
       if (!response.ok) throw new Error("Failed to fetch stats");
-      return response.json();
+      return response.json() as Promise<StudentStatsResponse>;
     },
     enabled: !!(
       isLoaded &&
@@ -249,6 +267,10 @@ export default function StudentDashboard() {
   );
   const inProgressSessions = allSessions.filter(
     (session) => session.status === "in-progress"
+  );
+  const unsubmittedAssignments = allSessions.filter(
+    (session) =>
+      session.status === "in-progress" && session.examType === "assignment"
   );
 
   // ✅ 같은 시험 코드에 제출된 세션이 있으면 미제출 세션 제외
@@ -275,6 +297,13 @@ export default function StudentDashboard() {
       if (session.status !== "completed" || session.isGraded) return false;
     } else if (filter === "in-progress") {
       if (session.status !== "in-progress") return false;
+    } else if (filter === "unsubmitted") {
+      if (
+        session.status !== "in-progress" ||
+        session.examType !== "assignment"
+      ) {
+        return false;
+      }
     }
 
     // Apply search query (debounced to avoid re-render storms)
@@ -291,7 +320,35 @@ export default function StudentDashboard() {
     overallStats?.completedSessions || completedSessions.length;
   const displayInProgressCount =
     overallStats?.inProgressSessions || inProgressSessions.length;
+  const displayTodoCount =
+    overallStats?.unsubmittedAssignments ?? unsubmittedAssignments.length;
   const overallAverageScore = overallStats?.overallAverageScore ?? null;
+  const sidebarTodoItems = (
+    overallStats?.unsubmittedAssignmentItems ??
+    unsubmittedAssignments.map((session) => ({
+      sessionId: session.id,
+      examId: session.examId,
+      examTitle: session.examTitle,
+      examCode: session.examCode,
+      deadline: session.deadline,
+      createdAt: session.createdAt,
+    }))
+  )
+    .slice()
+    .sort((a, b) => {
+      const aDeadline = a.deadline ? new Date(a.deadline).getTime() : Number.POSITIVE_INFINITY;
+      const bDeadline = b.deadline ? new Date(b.deadline).getTime() : Number.POSITIVE_INFINITY;
+      if (aDeadline !== bDeadline) return aDeadline - bDeadline;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    })
+    .map((item) => ({
+      id: item.sessionId,
+      title: item.examTitle,
+      examCode: item.examCode,
+      deadline: item.deadline,
+      href: `/assignment/${item.examCode}`,
+    }))
+    .filter((item) => Boolean(item.examCode));
 
   // 완료율 계산
   const completionRate =
@@ -517,6 +574,7 @@ export default function StudentDashboard() {
             <DashboardSidebar
               homeHref="/student"
               navItems={navigationItems}
+              todoItems={sidebarTodoItems}
             />
           </Sidebar>
 
@@ -580,7 +638,7 @@ export default function StudentDashboard() {
                   </div>
 
                   {/* Statistics Cards — clean */}
-                  <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
                     {isSessionsLoading && !overallStats ? (
                       <>
                         <StatCardSkeleton />
@@ -621,6 +679,27 @@ export default function StudentDashboard() {
                           <p className="text-xs text-muted-foreground mt-1">
                             {displayCompletedCount}개 완료,{" "}
                             {displayInProgressCount}개 진행 중
+                          </p>
+                        </div>
+
+                        {/* ToDo 카드 */}
+                        <div className="border bg-card rounded-xl shadow-sm p-5">
+                          <div className="flex items-center justify-between mb-3">
+                            <span className="text-sm font-medium text-muted-foreground">
+                              ToDo
+                            </span>
+                            <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                              <Clock
+                                className="w-4 h-4 text-amber-600"
+                                aria-hidden="true"
+                              />
+                            </div>
+                          </div>
+                          <div className="text-2xl sm:text-3xl font-bold">
+                            {displayTodoCount}
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            미제출 과제 {displayTodoCount}개
                           </p>
                         </div>
 
@@ -748,6 +827,14 @@ export default function StudentDashboard() {
                           aria-label="진행 중 필터"
                         >
                           진행 중
+                        </button>
+                        <button
+                          onClick={() => setFilter("unsubmitted")}
+                          className={filterButtonClass(filter === "unsubmitted")}
+                          aria-pressed={filter === "unsubmitted"}
+                          aria-label="미제출 필터"
+                        >
+                          미제출
                         </button>
                       </div>
                       <div className="flex items-center gap-2">

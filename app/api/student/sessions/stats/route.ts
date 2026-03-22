@@ -23,7 +23,7 @@ export async function GET() {
     // Get all sessions for this student (for stats only, no pagination)
     const { data: sessions, error: sessionsError } = await supabase
       .from("sessions")
-      .select("id, submitted_at")
+      .select("id, exam_id, submitted_at, created_at")
       .eq("student_id", user.id);
 
     if (sessionsError) {
@@ -35,12 +35,64 @@ export async function GET() {
         totalSessions: 0,
         completedSessions: 0,
         inProgressSessions: 0,
+        unsubmittedAssignments: 0,
+        unsubmittedAssignmentItems: [],
         overallAverageScore: null,
       });
     }
 
     const completedSessions = sessions.filter((s) => s.submitted_at !== null);
     const inProgressSessions = sessions.filter((s) => s.submitted_at === null);
+    const inProgressExamIds = [
+      ...new Set(inProgressSessions.map((s) => s.exam_id).filter(Boolean)),
+    ];
+
+    let unsubmittedAssignments = 0;
+    let unsubmittedAssignmentItems: Array<{
+      sessionId: string;
+      examId: string;
+      examTitle: string;
+      examCode: string;
+      deadline: string | null;
+      createdAt: string;
+    }> = [];
+    if (inProgressExamIds.length > 0) {
+      const { data: exams, error: examsError } = await supabase
+        .from("exams")
+        .select("id, title, code, type, duration, deadline")
+        .in("id", inProgressExamIds);
+
+      if (examsError) {
+        throw examsError;
+      }
+
+      const typeByExamId = new Map(
+        (exams || []).map((exam) => [exam.id, exam.type || null])
+      );
+      unsubmittedAssignments = inProgressSessions.filter(
+        (session) => typeByExamId.get(session.exam_id) === "assignment"
+      ).length;
+
+      const assignmentExamById = new Map(
+        (exams || [])
+          .filter((exam) => exam.type === "assignment")
+          .map((exam) => [exam.id, exam])
+      );
+      unsubmittedAssignmentItems = inProgressSessions
+        .map((session) => {
+          const exam = assignmentExamById.get(session.exam_id);
+          if (!exam) return null;
+          return {
+            sessionId: session.id,
+            examId: session.exam_id,
+            examTitle: exam.title || "제목 없음",
+            examCode: exam.code || "",
+            deadline: exam.deadline || null,
+            createdAt: session.created_at,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+    }
 
     // Get all grades for completed sessions to calculate overall average
     const sessionIds = completedSessions.map((s) => s.id);
@@ -50,6 +102,8 @@ export async function GET() {
         totalSessions: sessions.length,
         completedSessions: completedSessions.length,
         inProgressSessions: inProgressSessions.length,
+        unsubmittedAssignments,
+        unsubmittedAssignmentItems,
         overallAverageScore: null,
       });
     }
@@ -93,6 +147,8 @@ export async function GET() {
       totalSessions: sessions.length,
       completedSessions: completedSessions.length,
       inProgressSessions: inProgressSessions.length,
+      unsubmittedAssignments,
+      unsubmittedAssignmentItems,
       overallAverageScore,
     });
   } catch (error) {

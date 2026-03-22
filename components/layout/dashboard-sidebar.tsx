@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/sidebar";
 import { SidebarFooter } from "@/components/dashboard/SidebarFooter";
 import { SidebarFolderTree } from "@/components/instructor/SidebarFolderTree";
-import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, CircleAlert, type LucideIcon } from "lucide-react";
 import { type ComponentType } from "react";
 
 export interface NavItem {
@@ -26,9 +26,18 @@ export interface NavItem {
   active: boolean;
 }
 
+export interface SidebarTodoItem {
+  id: string;
+  title: string;
+  examCode: string;
+  href: string;
+  deadline: string | null;
+}
+
 interface DashboardSidebarProps {
   homeHref: string;
   navItems: NavItem[];
+  todoItems?: SidebarTodoItem[];
   onItemClick?: () => void;
   userId?: string;
 }
@@ -36,11 +45,51 @@ interface DashboardSidebarProps {
 export function DashboardSidebar({
   homeHref,
   navItems,
+  todoItems,
   onItemClick,
   userId,
 }: DashboardSidebarProps) {
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
+  const hasTodoSection = Array.isArray(todoItems);
+  const safeTodoItems = todoItems || [];
+
+  const getTodoStyle = (deadline: string | null) => {
+    if (!deadline) {
+      return {
+        rowClass: "text-sidebar-foreground/80",
+        badgeClass: "text-blue-600 bg-blue-500/10 border-blue-500/30",
+        label: "기한 없음",
+        icon: CircleAlert,
+      };
+    }
+
+    const diffMs = new Date(deadline).getTime() - Date.now();
+    const daysLeft = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    if (daysLeft <= 1) {
+      return {
+        rowClass: "text-red-600 dark:text-red-400",
+        badgeClass: "text-red-600 bg-red-500/10 border-red-500/30",
+        label: daysLeft <= 0 ? "D-DAY" : `D-${daysLeft}`,
+        icon: AlertTriangle,
+      };
+    }
+    if (daysLeft <= 3) {
+      return {
+        rowClass: "text-amber-600 dark:text-amber-400",
+        badgeClass: "text-amber-600 bg-amber-500/10 border-amber-500/30",
+        label: `D-${daysLeft}`,
+        icon: CircleAlert,
+      };
+    }
+    return {
+      rowClass: "text-blue-600 dark:text-blue-400",
+      badgeClass: "text-blue-600 bg-blue-500/10 border-blue-500/30",
+      label: `D-${daysLeft}`,
+      icon: CircleAlert,
+    };
+  };
 
   return (
     <>
@@ -96,6 +145,44 @@ export function DashboardSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {hasTodoSection && (
+          <SidebarGroup>
+            <SidebarGroupLabel>TODO</SidebarGroupLabel>
+            <SidebarGroupContent>
+              {safeTodoItems.length === 0 ? (
+                <div className="px-2 py-2 text-xs text-sidebar-foreground/60 group-data-[collapsible=icon]:hidden">
+                  미제출 과제 없음
+                </div>
+              ) : (
+                <SidebarMenu className="group-data-[collapsible=icon]:items-center">
+                  {safeTodoItems.map((item) => {
+                    const style = getTodoStyle(item.deadline);
+                    const DeadlineIcon = style.icon;
+                    return (
+                      <SidebarMenuItem key={item.id}>
+                        <SidebarMenuButton asChild tooltip={item.title}>
+                          <Link href={item.href} onClick={onItemClick}>
+                            <DeadlineIcon className={cn("w-4 h-4", style.rowClass)} />
+                            <span className="flex-1 min-w-0 truncate">{item.title}</span>
+                            <span
+                              className={cn(
+                                "text-[10px] px-1.5 py-0.5 rounded border shrink-0 group-data-[collapsible=icon]:hidden",
+                                style.badgeClass
+                              )}
+                            >
+                              {style.label}
+                            </span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              )}
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
 
         {userId && <SidebarFolderTree userId={userId} />}
       </ShadcnSidebarContent>

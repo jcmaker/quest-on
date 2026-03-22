@@ -210,7 +210,7 @@ export default function AssignmentPage({
         {/* Chat Panel */}
         <motion.div
           className="flex flex-col overflow-hidden"
-          animate={{ flex: isCanvasOpen ? "0 0 40%" : "1 1 100%" }}
+          animate={{ flex: isCanvasOpen ? "0 0 60%" : "1 1 100%" }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
         >
           <AssignmentChatPanel
@@ -225,12 +225,12 @@ export default function AssignmentPage({
           />
         </motion.div>
 
-        {/* Canvas Panel — always mounted, width animates 0 ↔ 60% */}
+        {/* Canvas Panel — always mounted, width animates 0 ↔ 40% */}
         <motion.div
           className="flex flex-col overflow-hidden border-l"
           initial={false}
           animate={{
-            width: isCanvasOpen ? "60%" : "0%",
+            width: isCanvasOpen ? "40%" : "0%",
             opacity: isCanvasOpen ? 1 : 0,
           }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}

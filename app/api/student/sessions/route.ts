@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
     // Fetch all exams in one query
     const { data: exams, error: examsError } = await supabase
       .from("exams")
-      .select("id, title, code, duration, instructor_id")
+      .select("id, title, code, type, duration, deadline, instructor_id")
       .in("id", examIds);
 
     if (examsError) {
@@ -186,7 +186,9 @@ export async function GET(request: NextRequest) {
         examId: session.exam_id,
         examTitle: exam?.title || "알 수 없는 시험",
         examCode: exam?.code || "",
+        examType: exam?.type || null,
         duration: exam?.duration || 0,
+        deadline: exam?.deadline || null,
         status: session.submitted_at ? "completed" : "in-progress",
         submittedAt: session.submitted_at || null,
         createdAt: session.created_at,
