@@ -97,7 +97,7 @@ export function StudentListItem({
               </span>
               <span className="text-xs text-muted-foreground">최종 점수</span>
             </div>
-          ) : examStatus === "closed" && student.score !== undefined && student.score !== null ? (
+          ) : student.score !== undefined && student.score !== null ? (
             <div className="flex flex-col items-end">
               <span className="font-semibold text-lg">{student.score}점</span>
               <span className="text-xs text-muted-foreground">가채점</span>
@@ -107,7 +107,7 @@ export function StudentListItem({
                 </span>
               )}
             </div>
-          ) : examStatus === "closed" && student.status === "completed" ? (
+          ) : student.status === "completed" ? (
             <div className="flex flex-col items-end">
               <div className="flex items-center gap-1.5">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />

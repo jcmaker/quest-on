@@ -8,8 +8,22 @@ export const maxDuration = 300; // 5 minutes
 export async function POST(request: NextRequest) {
   // Authenticate via internal secret
   const secret = request.headers.get("x-internal-secret");
-  if (!secret || secret !== process.env.INTERNAL_API_SECRET) {
+  const expectedSecret = process.env.INTERNAL_API_SECRET;
+
+  if (process.env.NODE_ENV === "production" && !expectedSecret) {
+    console.error("[process-rag] INTERNAL_API_SECRET not configured in production");
+    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+  }
+
+  if (expectedSecret && (!secret || secret !== expectedSecret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!expectedSecret) {
+    console.error(
+      "[process-rag] WARNING: INTERNAL_API_SECRET not set. " +
+        "Skipping auth in development. Set it for production."
+    );
   }
 
   let body: {

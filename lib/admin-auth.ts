@@ -7,13 +7,30 @@ const TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 function getAdminSecret(): string {
   const secret = process.env.ADMIN_SESSION_SECRET;
-  if (!secret) {
+  if (secret) return secret;
+
+  if (process.env.NODE_ENV === "production") {
     throw new Error(
-      "ADMIN_SESSION_SECRET must be set. " +
-      "Do not use ADMIN_PASSWORD as a signing key."
+      "ADMIN_SESSION_SECRET must be set in production. " +
+        "Do not use ADMIN_PASSWORD as a signing key."
     );
   }
-  return secret;
+
+  // Dev-only fallback: derive from ADMIN_PASSWORD so admin panel works locally
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password) {
+    throw new Error(
+      "ADMIN_SESSION_SECRET or ADMIN_PASSWORD must be set."
+    );
+  }
+  console.error(
+    "[admin-auth] WARNING: ADMIN_SESSION_SECRET not set. " +
+      "Using derived fallback. Set ADMIN_SESSION_SECRET for production."
+  );
+  return crypto
+    .createHmac("sha256", "quest-on-dev-admin-salt")
+    .update(password)
+    .digest("hex");
 }
 
 export function createAdminToken(): string {

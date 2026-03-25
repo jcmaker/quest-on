@@ -38,6 +38,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# MCP config (contains project refs)
+.mcp.json
+
 # supabase local
 supabase/.branches/
 supabase/.temp/
