@@ -110,6 +110,7 @@ interface ExamNode {
     status: string;
     type?: string | null;
     deadline?: string | null;
+    open_at?: string | null;
     created_at: string;
     updated_at: string;
   } | null;
@@ -323,11 +324,13 @@ export default function InstructorHome() {
         status === "active" ||
         (hasDeadline && !Number.isNaN(deadlineTime) && deadlineTime >= now);
 
+      const isNonExamType = examType && examType !== "exam";
+
       switch (examFilter) {
         case "exam":
-          return examType !== "assignment";
+          return !isNonExamType;
         case "assignment":
-          return examType === "assignment";
+          return !!isNonExamType;
         case "deadline":
           return status === "completed" || isDeadlinePassed;
         case "in-progress":
@@ -520,6 +523,37 @@ export default function InstructorHome() {
       return null;
     }
 
+    const examType = node.exams.type;
+    const isNonExamType = examType && examType !== "exam";
+
+    // For non-exam types (assignments), derive status from time window
+    if (isNonExamType) {
+      const now = new Date();
+      const deadline = node.exams.deadline ? new Date(node.exams.deadline) : null;
+      const openAt = node.exams.open_at ? new Date(node.exams.open_at) : null;
+
+      if (deadline && now > deadline) {
+        return (
+          <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium bg-slate-200 text-slate-700 dark:bg-slate-700/40 dark:text-slate-300">
+            마감됨
+          </span>
+        );
+      }
+      if (!openAt || now >= openAt) {
+        return (
+          <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+            활성
+          </span>
+        );
+      }
+      return (
+        <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+          예정
+        </span>
+      );
+    }
+
+    // Existing exam logic
     const statusLabel =
       node.exams.status === "active"
         ? "활성"
@@ -561,7 +595,7 @@ export default function InstructorHome() {
     if (node.kind === "exam") {
       // 시험/과제인 경우 편집 페이지로 이동
       if (node.exam_id) {
-        if (node.exams?.type === "assignment") {
+        if (node.exams?.type && node.exams.type !== "exam") {
           router.push(`/instructor/assignment/${node.exam_id}/edit`);
         } else {
           router.push(`/instructor/${node.exam_id}/edit`);
@@ -842,7 +876,7 @@ export default function InstructorHome() {
         // 폴더 클릭 시 하위 내용 표시 (부분 렌더링)
         setCurrentFolderId(node.id);
       } else if (node.exam_id) {
-        if (node.exams?.type === "assignment") {
+        if (node.exams?.type && node.exams.type !== "exam") {
           router.push(`/instructor/assignment/${node.exam_id}`);
         } else {
           router.push(`/instructor/${node.exam_id}`);
@@ -1283,7 +1317,7 @@ export default function InstructorHome() {
               <FileText className="h-14 w-14 text-muted-foreground/60" strokeWidth={1.5} />
             )}
             {/* Type badge for exams/assignments */}
-            {!isFolder && node.exams?.type === "assignment" && (
+            {!isFolder && node.exams?.type && node.exams.type !== "exam" && (
               <span className="absolute left-2 top-2 inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">
                 과제
               </span>
@@ -1310,7 +1344,7 @@ export default function InstructorHome() {
                     <span className="exam-code font-mono">{node.exams.code}</span>
                   )}
                   <span>·</span>
-                  {node.exams?.type === "assignment" && node.exams?.deadline ? (
+                  {node.exams?.type && node.exams.type !== "exam" && node.exams?.deadline ? (
                     <span className="flex items-center gap-1">
                       <Clock className="w-3 h-3" />
                       마감: {formatDate(node.exams.deadline)}
@@ -1681,7 +1715,7 @@ export default function InstructorHome() {
                 <p className="font-medium text-sm text-foreground truncate">
                   {node.name}
                 </p>
-                {node.exams?.type === "assignment" && (
+                {node.exams?.type && node.exams.type !== "exam" && (
                   <span className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 shrink-0">
                     과제
                   </span>
@@ -1689,7 +1723,7 @@ export default function InstructorHome() {
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 {node.exams?.code && <span>{node.exams.code}</span>}
-                {node.exams?.type === "assignment" && node.exams?.deadline ? (
+                {node.exams?.type && node.exams.type !== "exam" && node.exams?.deadline ? (
                   <span className="flex items-center gap-1">
                     · <Clock className="w-3 h-3" /> 마감: {formatDate(node.exams.deadline)}
                   </span>

@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Clock, Send } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 interface AssignmentHeaderProps {
@@ -12,6 +12,7 @@ interface AssignmentHeaderProps {
   isSubmitted: boolean;
   onSubmit: () => void;
   isSubmitting: boolean;
+  onDeadlineExpired?: () => void;
 }
 
 export function AssignmentHeader({
@@ -20,10 +21,12 @@ export function AssignmentHeader({
   isSubmitted,
   onSubmit,
   isSubmitting,
+  onDeadlineExpired,
 }: AssignmentHeaderProps) {
   const router = useRouter();
   const [timeLeft, setTimeLeft] = useState("");
   const [isOverdue, setIsOverdue] = useState(false);
+  const expiredCalledRef = useRef(false);
 
   useEffect(() => {
     if (!deadline) return;
@@ -36,27 +39,39 @@ export function AssignmentHeader({
       if (diff <= 0) {
         setTimeLeft("마감됨");
         setIsOverdue(true);
+        // Trigger auto-submit on deadline expiry (once)
+        if (!expiredCalledRef.current && !isSubmitted && onDeadlineExpired) {
+          expiredCalledRef.current = true;
+          onDeadlineExpired();
+        }
         return;
       }
 
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
       if (days > 0) {
         setTimeLeft(`${days}일 ${hours}시간 남음`);
       } else if (hours > 0) {
         setTimeLeft(`${hours}시간 ${minutes}분 남음`);
+      } else if (minutes > 0) {
+        setTimeLeft(`${minutes}분 ${seconds}초 남음`);
       } else {
-        setTimeLeft(`${minutes}분 남음`);
+        setTimeLeft(`${seconds}초 남음`);
       }
       setIsOverdue(false);
     };
 
     updateTimer();
-    const interval = setInterval(updateTimer, 60000);
+    // Tick every second when < 5 minutes, every 60s otherwise
+    const deadlineTime = new Date(deadline).getTime();
+    const diff = deadlineTime - Date.now();
+    const intervalMs = diff <= 5 * 60 * 1000 ? 1000 : 60000;
+    const interval = setInterval(updateTimer, intervalMs);
     return () => clearInterval(interval);
-  }, [deadline]);
+  }, [deadline, isSubmitted, onDeadlineExpired]);
 
   return (
     <div className="flex items-center justify-between px-4 py-3 border-b bg-background/95 backdrop-blur-sm">
@@ -73,7 +88,7 @@ export function AssignmentHeader({
       </div>
       <div className="flex items-center gap-3 shrink-0">
         {deadline && (
-          <div className={`flex items-center gap-1.5 text-sm ${isOverdue ? "text-red-500" : "text-muted-foreground"}`}>
+          <div className={`flex items-center gap-1.5 text-sm ${isOverdue ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
             <Clock className="w-4 h-4" />
             <span>{timeLeft}</span>
           </div>

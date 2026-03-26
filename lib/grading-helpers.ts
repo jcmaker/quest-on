@@ -52,12 +52,18 @@ export function selectBestSubmission(
   });
 }
 
+/** Decompressed submission data per question */
+export interface DecompressedSubmission {
+  answer: string;
+  workspace_state?: unknown;
+}
+
 /** Group submissions by q_idx, decompress if needed, pick best per question. */
 export function decompressSubmissions(
   submissions: Array<Record<string, unknown>>,
   warnings?: DecompressionWarning[]
-): Record<number, { answer: string }> {
-  const result: Record<number, { answer: string }> = {};
+): Record<number, DecompressedSubmission> {
+  const result: Record<number, DecompressedSubmission> = {};
 
   if (!submissions || submissions.length === 0) return result;
 
@@ -96,7 +102,10 @@ export function decompressSubmissions(
       }
     }
 
-    result[qIdx] = { answer: answer || "" };
+    result[qIdx] = {
+      answer: answer || "",
+      workspace_state: bestSubmission.workspace_state ?? undefined,
+    };
   });
 
   return result;

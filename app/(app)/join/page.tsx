@@ -68,7 +68,7 @@ export default function ExamCodeEntry() {
       }
       const data = await res.json();
       const examType = data.exam?.type;
-      if (examType === "assignment") {
+      if (examType && examType !== "exam") {
         router.push(`/assignment/${code}`);
       } else {
         router.push(`/exam/${code}`);

@@ -202,12 +202,13 @@ export function useExamDetail({
   useEffect(() => {
     if (!finalGradesData?.grades) return;
 
-    const finalGradesMap = new Map<string, number>();
+    const finalGradesMap = new Map<
+      string,
+      { score: number; gradeStatus?: string; aiComment?: string | null }
+    >();
     finalGradesData.grades.forEach(
-      (g: { session_id: string; score: number; isManual?: boolean }) => {
-        if (g.isManual) {
-          finalGradesMap.set(g.session_id, g.score);
-        }
+      (g: { session_id: string; score: number; gradeStatus?: string; aiComment?: string | null }) => {
+        finalGradesMap.set(g.session_id, g);
       }
     );
 
@@ -216,11 +217,15 @@ export function useExamDetail({
       return {
         ...prev,
         students: prev.students.map((student) => {
-          const finalScore = finalGradesMap.get(student.id);
+          const gradeData = finalGradesMap.get(student.id);
+          if (!gradeData) return student;
+          const isManuallyGraded = gradeData.gradeStatus === "manually_graded";
           return {
             ...student,
-            finalScore: finalScore !== undefined ? finalScore : student.finalScore,
-            isGraded: finalScore !== undefined,
+            finalScore: isManuallyGraded ? gradeData.score : student.finalScore,
+            isGraded: isManuallyGraded,
+            gradeType: (gradeData.gradeStatus as InstructorStudent["gradeType"]) ?? student.gradeType,
+            aiComment: gradeData.aiComment ?? student.aiComment,
           };
         }),
       };

@@ -193,7 +193,7 @@ export function GeneratedQuestionCard({
             className="gap-1.5"
           >
             <Check className="w-3.5 h-3.5" />
-            시험에 추가
+            문제 확정
           </Button>
           <Button
             type="button"

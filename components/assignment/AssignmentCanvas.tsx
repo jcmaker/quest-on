@@ -1,10 +1,23 @@
 "use client";
 
-import { useEditor, EditorContent } from "@tiptap/react";
-import { useEffect, useCallback } from "react";
+import {
+  useEditor,
+  EditorContent,
+  NodeViewWrapper,
+  NodeViewContent,
+  ReactNodeViewRenderer,
+} from "@tiptap/react";
+import type { NodeViewProps } from "@tiptap/core";
+import { useEffect } from "react";
 import StarterKit from "@tiptap/starter-kit";
 import { TextAlign } from "@tiptap/extension-text-align";
 import { Placeholder } from "@tiptap/extension-placeholder";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableCell } from "@tiptap/extension-table-cell";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
+import { common, createLowlight } from "lowlight";
 import { Button } from "@/components/ui/button";
 import {
   Bold,
@@ -19,9 +32,79 @@ import {
   FileText,
   Download,
   X,
+  Code,
+  Table2,
+  Plus,
+  Minus,
+  Trash2,
 } from "lucide-react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
+
+const lowlight = createLowlight(common);
+
+const CODE_LANGUAGES = [
+  { value: "", label: "Plain Text" },
+  { value: "javascript", label: "JavaScript" },
+  { value: "typescript", label: "TypeScript" },
+  { value: "python", label: "Python" },
+  { value: "sql", label: "SQL" },
+  { value: "java", label: "Java" },
+  { value: "c", label: "C" },
+  { value: "cpp", label: "C++" },
+  { value: "go", label: "Go" },
+  { value: "rust", label: "Rust" },
+  { value: "html", label: "HTML" },
+  { value: "css", label: "CSS" },
+  { value: "json", label: "JSON" },
+];
+
+// Custom code block NodeView with inline language selector
+function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
+  const currentLang = node.attrs.language || "";
+  const langLabel = CODE_LANGUAGES.find((l) => l.value === currentLang)?.label || "Plain Text";
+
+  return (
+    <NodeViewWrapper className="code-block-wrapper relative my-3">
+      {/* Language selector overlay */}
+      <div
+        contentEditable={false}
+        className="absolute top-2 right-2 z-10"
+      >
+        <select
+          value={currentLang}
+          onChange={(e) => updateAttributes({ language: e.target.value })}
+          className="h-6 text-[10px] font-medium rounded-md border border-white/20 bg-black/10 dark:bg-white/10 backdrop-blur-sm px-1.5 py-0 outline-none cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {CODE_LANGUAGES.map((lang) => (
+            <option key={lang.value} value={lang.value}>
+              {lang.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {/* Language label (left) */}
+      {currentLang && (
+        <div
+          contentEditable={false}
+          className="absolute top-2 left-3 z-10 text-[10px] font-medium text-muted-foreground/60 select-none"
+        >
+          {langLabel}
+        </div>
+      )}
+      <pre className={currentLang ? "pt-8" : ""}>
+        <NodeViewContent className="hljs" />
+      </pre>
+    </NodeViewWrapper>
+  );
+}
+
+// CodeBlockLowlight with custom NodeView
+const CustomCodeBlock = CodeBlockLowlight.extend({
+  addNodeView() {
+    return ReactNodeViewRenderer(CodeBlockNodeView);
+  },
+});
 
 interface AssignmentCanvasProps {
   content: string;
@@ -29,6 +112,7 @@ interface AssignmentCanvasProps {
   isSubmitted: boolean;
   onClose: () => void;
   title: string;
+  examType?: string;
 }
 
 export function AssignmentCanvas({
@@ -42,13 +126,18 @@ export function AssignmentCanvas({
     immediatelyRender: false,
     editable: !isSubmitted,
     extensions: [
-      StarterKit,
+      StarterKit.configure({ codeBlock: false }),
       Placeholder.configure({
         placeholder: "AI와 대화하거나 직접 문서를 작성하세요...",
       }),
       TextAlign.configure({
         types: ["heading", "paragraph"],
       }),
+      Table.configure({ resizable: true }),
+      TableRow,
+      TableCell,
+      TableHeader,
+      CustomCodeBlock.configure({ lowlight }),
     ],
     content: content,
     onUpdate: ({ editor }) => {
@@ -88,6 +177,9 @@ export function AssignmentCanvas({
     pdf.save(`${title || "과제"}.pdf`);
   };
 
+  // Prevent focus loss on toolbar button clicks
+  const preventFocusLoss = (e: React.MouseEvent) => e.preventDefault();
+
   if (!editor) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -95,6 +187,12 @@ export function AssignmentCanvas({
       </div>
     );
   }
+
+  const isInCodeBlock = editor.isActive("codeBlock");
+  const isInTable = editor.isActive("table");
+
+  const activeClass = "bg-primary/10 text-primary";
+  const inactiveClass = "";
 
   return (
     <div className="flex flex-col h-full">
@@ -127,15 +225,17 @@ export function AssignmentCanvas({
         </div>
       </div>
 
-      {/* Toolbar */}
+      {/* Main Toolbar */}
       {!isSubmitted && (
-        <div className="border-b bg-muted/50 p-2 flex flex-wrap gap-1 shrink-0">
+        <div className="border-b bg-muted/30 px-3 py-1.5 flex flex-wrap items-center gap-0.5 shrink-0">
+          {/* Text formatting */}
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
+            className={`h-8 w-8 ${editor.isActive("bold") ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
             onClick={() => editor.chain().focus().toggleBold().run()}
-            className={editor.isActive("bold") ? "bg-muted" : ""}
             title="굵게 (Ctrl+B)"
           >
             <Bold className="h-4 w-4" />
@@ -143,26 +243,25 @@ export function AssignmentCanvas({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
+            className={`h-8 w-8 ${editor.isActive("italic") ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
             onClick={() => editor.chain().focus().toggleItalic().run()}
-            className={editor.isActive("italic") ? "bg-muted" : ""}
             title="기울임 (Ctrl+I)"
           >
             <Italic className="h-4 w-4" />
           </Button>
 
-          <div className="w-px h-6 bg-border mx-1" />
+          <div className="w-px h-5 bg-border mx-1" />
 
+          {/* Headings */}
           <Button
             type="button"
             variant="ghost"
-            size="sm"
-            onClick={() =>
-              editor.chain().focus().toggleHeading({ level: 1 }).run()
-            }
-            className={
-              editor.isActive("heading", { level: 1 }) ? "bg-muted" : ""
-            }
+            size="icon"
+            className={`h-8 w-8 ${editor.isActive("heading", { level: 1 }) ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
             title="제목 1"
           >
             <Heading1 className="h-4 w-4" />
@@ -170,26 +269,25 @@ export function AssignmentCanvas({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
-            onClick={() =>
-              editor.chain().focus().toggleHeading({ level: 2 }).run()
-            }
-            className={
-              editor.isActive("heading", { level: 2 }) ? "bg-muted" : ""
-            }
+            size="icon"
+            className={`h-8 w-8 ${editor.isActive("heading", { level: 2 }) ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
+            onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
             title="제목 2"
           >
             <Heading2 className="h-4 w-4" />
           </Button>
 
-          <div className="w-px h-6 bg-border mx-1" />
+          <div className="w-px h-5 bg-border mx-1" />
 
+          {/* Lists */}
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
+            className={`h-8 w-8 ${editor.isActive("bulletList") ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
             onClick={() => editor.chain().focus().toggleBulletList().run()}
-            className={editor.isActive("bulletList") ? "bg-muted" : ""}
             title="글머리 기호 목록"
           >
             <List className="h-4 w-4" />
@@ -197,22 +295,25 @@ export function AssignmentCanvas({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
+            className={`h-8 w-8 ${editor.isActive("orderedList") ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
-            className={editor.isActive("orderedList") ? "bg-muted" : ""}
             title="번호 매기기 목록"
           >
             <ListOrdered className="h-4 w-4" />
           </Button>
 
-          <div className="w-px h-6 bg-border mx-1" />
+          <div className="w-px h-5 bg-border mx-1" />
 
+          {/* Alignment */}
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
+            className={`h-8 w-8 ${editor.isActive({ textAlign: "left" }) ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
             onClick={() => editor.chain().focus().setTextAlign("left").run()}
-            className={editor.isActive({ textAlign: "left" }) ? "bg-muted" : ""}
             title="왼쪽 정렬"
           >
             <AlignLeft className="h-4 w-4" />
@@ -220,11 +321,10 @@ export function AssignmentCanvas({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
+            className={`h-8 w-8 ${editor.isActive({ textAlign: "center" }) ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
             onClick={() => editor.chain().focus().setTextAlign("center").run()}
-            className={
-              editor.isActive({ textAlign: "center" }) ? "bg-muted" : ""
-            }
             title="가운데 정렬"
           >
             <AlignCenter className="h-4 w-4" />
@@ -232,14 +332,139 @@ export function AssignmentCanvas({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+            size="icon"
+            className={`h-8 w-8 ${editor.isActive({ textAlign: "right" }) ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
             onClick={() => editor.chain().focus().setTextAlign("right").run()}
-            className={
-              editor.isActive({ textAlign: "right" }) ? "bg-muted" : ""
-            }
             title="오른쪽 정렬"
           >
             <AlignRight className="h-4 w-4" />
+          </Button>
+
+          <div className="w-px h-5 bg-border mx-1" />
+
+          {/* Code block */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={`h-8 gap-1.5 px-2.5 ${isInCodeBlock ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
+            onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+            title="코드 블록"
+          >
+            <Code className="h-3.5 w-3.5" />
+            <span className="text-xs">코드</span>
+          </Button>
+
+          {/* Code language selector in toolbar — visible when in code block */}
+          {isInCodeBlock && (
+            <select
+              value={editor.getAttributes("codeBlock").language || ""}
+              onChange={(e) =>
+                editor.chain().focus().updateAttributes("codeBlock", { language: e.target.value }).run()
+              }
+              onMouseDown={preventFocusLoss}
+              className="h-7 text-xs rounded-md border border-border bg-background px-2 py-0 outline-none focus:ring-1 focus:ring-primary/50"
+            >
+              {CODE_LANGUAGES.map((lang) => (
+                <option key={lang.value} value={lang.value}>
+                  {lang.label}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <div className="w-px h-5 bg-border mx-1" />
+
+          {/* Table insert */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={`h-8 gap-1.5 px-2.5 ${isInTable ? activeClass : inactiveClass}`}
+            onMouseDown={preventFocusLoss}
+            onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
+            title="테이블 삽입"
+          >
+            <Table2 className="h-3.5 w-3.5" />
+            <span className="text-xs">테이블</span>
+          </Button>
+        </div>
+      )}
+
+      {/* Table sub-toolbar — only when cursor is in table */}
+      {!isSubmitted && isInTable && (
+        <div className="border-b bg-blue-50/50 dark:bg-blue-950/20 px-3 py-1 flex items-center gap-1 shrink-0">
+          <span className="text-[10px] font-medium text-muted-foreground mr-1.5">표 편집</span>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onMouseDown={preventFocusLoss}
+            onClick={() => editor.chain().focus().addColumnAfter().run()}
+            title="열 추가"
+          >
+            <Plus className="h-3 w-3" />
+            열
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onMouseDown={preventFocusLoss}
+            onClick={() => editor.chain().focus().addRowAfter().run()}
+            title="행 추가"
+          >
+            <Plus className="h-3 w-3" />
+            행
+          </Button>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+            onMouseDown={preventFocusLoss}
+            onClick={() => editor.chain().focus().deleteColumn().run()}
+            title="열 삭제"
+          >
+            <Minus className="h-3 w-3" />
+            열
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+            onMouseDown={preventFocusLoss}
+            onClick={() => editor.chain().focus().deleteRow().run()}
+            title="행 삭제"
+          >
+            <Minus className="h-3 w-3" />
+            행
+          </Button>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs text-destructive hover:text-destructive"
+            onMouseDown={preventFocusLoss}
+            onClick={() => {
+              editor.chain().focus().deleteTable().run();
+              // Fallback: if table is the only content and deleteTable fails
+              if (editor.isActive("table")) {
+                editor.commands.clearContent();
+              }
+            }}
+            title="테이블 삭제"
+          >
+            <Trash2 className="h-3 w-3" />
+            삭제
           </Button>
         </div>
       )}

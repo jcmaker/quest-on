@@ -1,5 +1,7 @@
 /** Shared exam-related type definitions */
 
+import type { TaskType, InitialState, CanvasConfig } from "./workspace";
+
 export interface RubricItem {
   id?: string;
   evaluationArea: string;
@@ -37,6 +39,9 @@ export interface Exam {
   rubric_public?: boolean;
   allow_draft_in_waiting?: boolean;
   allow_chat_in_waiting?: boolean;
+  type?: TaskType;
+  initial_state?: InitialState;
+  canvas_config?: CanvasConfig;
 }
 
 export interface DraftAnswer {
@@ -67,7 +72,11 @@ export interface InstructorExam extends Exam {
   started_at?: string | null;
   deadline?: string | null;
   assignment_prompt?: string | null;
+  initial_state?: InitialState;
+  canvas_config?: CanvasConfig;
 }
+
+export type GradeStatus = "ai_graded" | "manually_graded" | "pending";
 
 export interface InstructorStudent {
   id: string;
@@ -83,6 +92,8 @@ export interface InstructorStudent {
   questionCount?: number;
   answerLength?: number;
   isGraded?: boolean;
+  gradeType?: GradeStatus;
+  aiComment?: string;
 }
 
 export type SortOption = "score" | "questionCount" | "answerLength" | "submittedAt";

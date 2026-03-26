@@ -58,9 +58,11 @@ model exams {
   rubric_public          Boolean?               @default(false) // 루브릭 공개 여부
   materials_text         Json?                  @default("[]") // 추출된 텍스트 저장
   rag_status             String?                @default("none") // 'none' | 'pending' | 'processing' | 'completed' | 'failed'
-  type                   String?                @default("exam") // 'exam' | 'assignment'
+  type                   String?                @default("exam") // 'exam' | 'report' | 'code' | 'erd' | 'mindmap'
   deadline               DateTime?              @db.Timestamptz(6) // 과제 제출 기한
   assignment_prompt      String? // 과제 설명/프롬프트
+  initial_state          Json?                  @default("{}") // Instructor template: starter code, initial ERD, etc.
+  canvas_config          Json?                  @default("{}") // Canvas config: { secondaryCanvas, layout, codeEnabled, erdEnabled }
   ai_events              ai_events[]
   exam_nodes             exam_nodes[]
   exam_material_chunks   exam_material_chunks[]
@@ -216,6 +218,7 @@ model submissions {
   edit_count             Int?      @default(0) // 답안 수정 횟수
   compressed_answer_data String?
   compression_metadata   Json?     @default("{}")
+  workspace_state        Json?     @default("{}") // Student's combined workspace: { code, erd, notes }
   sessions               sessions  @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([session_id, q_idx])

@@ -58,7 +58,7 @@ export async function POST(
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, status, started_at, duration")
+      .select("id, status, started_at, duration, type")
       .eq("id", session.exam_id)
       .single();
 
@@ -100,8 +100,8 @@ export async function POST(
         return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500);
       }
       reconciledSession = updatedSession;
-    } else if (isExamStarted(exam.status, exam.started_at, nowTime) || exam.duration === 0) {
-      // 시험이 이미 시작되었거나, 무제한(과제형) 시험인 경우 바로 in_progress로 전환
+    } else if (isExamStarted(exam.status, exam.started_at, nowTime) || exam.duration === 0 || (exam.type && exam.type !== "exam")) {
+      // 시험이 이미 시작되었거나, 무제한(과제형)/비시험 유형인 경우 바로 in_progress로 전환
       reconciledSession = await promoteSessionToInProgress(session, now, {
         preflightAcceptedAt: now,
       });

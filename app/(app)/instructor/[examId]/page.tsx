@@ -2,8 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import React, { useState, useEffect, use, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import React, { useState, useEffect, use, useMemo, useCallback } from "react";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ExamDetailHeader } from "@/components/instructor/ExamDetailHeader";
@@ -26,7 +26,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Search, ChevronDown, ChevronUp, RefreshCw, CheckCheck, Loader2 } from "lucide-react";
 import { StudentLiveMonitoring } from "@/components/instructor/StudentLiveMonitoring";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
@@ -79,6 +80,51 @@ export default function ExamDetail({
   } = useStudentFiltering({ students: exam?.students ?? [] });
 
   const queryClient = useQueryClient();
+
+  // Bulk approve state
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
+
+  const aiGradedStudents = useMemo(
+    () => nonGradedStudents.filter((s) => s.gradeType === "ai_graded"),
+    [nonGradedStudents]
+  );
+
+  const handleSelectStudent = useCallback((sessionId: string, checked: boolean) => {
+    setSelectedSessionIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(sessionId);
+      else next.delete(sessionId);
+      return next;
+    });
+  }, []);
+
+  const handleSelectAllAiGraded = useCallback((checked: boolean) => {
+    if (checked) {
+      setSelectedSessionIds(new Set(aiGradedStudents.map((s) => s.id)));
+    } else {
+      setSelectedSessionIds(new Set());
+    }
+  }, [aiGradedStudents]);
+
+  const bulkApproveMutation = useMutation({
+    mutationFn: async (sessionIds: string[]) => {
+      const response = await fetch(`/api/exam/${resolvedParams.examId}/bulk-approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionIds }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "일괄 승인에 실패했습니다.");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      setSelectedSessionIds(new Set());
+      queryClient.invalidateQueries({ queryKey: qk.instructor.finalGrades(resolvedParams.examId) });
+      queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
+    },
+  });
 
   // Redirect non-instructors
   useEffect(() => {
@@ -361,40 +407,78 @@ export default function ExamDetail({
 
               {/* Non-graded students */}
               <div className="border rounded-lg flex flex-col h-[calc(100vh-400px)] min-h-[600px]">
-                <div className="p-4 border-b bg-muted/50 flex-shrink-0 flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold">
+                <div className="p-4 border-b bg-muted/50 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold">
+                        {loading || analyticsLoading || !exam ? (
+                          <Skeleton className="h-6 w-32" />
+                        ) : (
+                          `학생 목록 (${nonGradedStudents.length}명)`
+                        )}
+                      </h3>
                       {loading || analyticsLoading || !exam ? (
-                        <Skeleton className="h-6 w-32" />
+                        <div className="text-sm text-muted-foreground">
+                          <Skeleton className="h-4 w-24 mt-2" />
+                        </div>
                       ) : (
-                        `학생 목록 (${nonGradedStudents.length}명)`
+                        <p className="text-sm text-muted-foreground">
+                          {sortOption === "score" && "가채점 점수 순"}
+                          {sortOption === "questionCount" && "질문 갯수 순"}
+                          {sortOption === "answerLength" && "답안 길이 순"}
+                          {sortOption === "submittedAt" && "제출 빠른 순"}
+                        </p>
                       )}
-                    </h3>
-                    {loading || analyticsLoading || !exam ? (
-                      <div className="text-sm text-muted-foreground">
-                        <Skeleton className="h-4 w-24 mt-2" />
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground">
-                        {sortOption === "score" && "가채점 점수 순"}
-                        {sortOption === "questionCount" && "질문 갯수 순"}
-                        {sortOption === "answerLength" && "답안 길이 순"}
-                        {sortOption === "submittedAt" && "제출 빠른 순"}
-                      </p>
-                    )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => {
+                        queryClient.invalidateQueries({ queryKey: qk.instructor.lateStudents(resolvedParams.examId) });
+                        queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
+                      }}
+                      title="새로고침"
+                    >
+                      <RefreshCw className="h-4 w-4" />
+                    </Button>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => {
-                      queryClient.invalidateQueries({ queryKey: qk.instructor.lateStudents(resolvedParams.examId) });
-                      queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
-                    }}
-                    title="새로고침"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
+
+                  {/* Bulk approve controls */}
+                  {aiGradedStudents.length > 0 && (
+                    <div className="flex items-center gap-3 mt-3 pt-3 border-t">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={
+                            aiGradedStudents.length > 0 &&
+                            aiGradedStudents.every((s) => selectedSessionIds.has(s.id))
+                          }
+                          onCheckedChange={(checked) => handleSelectAllAiGraded(!!checked)}
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          AI 채점 전체 선택 ({aiGradedStudents.length}명)
+                        </span>
+                      </div>
+                      {selectedSessionIds.size > 0 && (
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="ml-auto"
+                          disabled={bulkApproveMutation.isPending}
+                          onClick={() => {
+                            bulkApproveMutation.mutate(Array.from(selectedSessionIds));
+                          }}
+                        >
+                          {bulkApproveMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                          ) : (
+                            <CheckCheck className="h-4 w-4 mr-1.5" />
+                          )}
+                          일괄 승인 ({selectedSessionIds.size}명)
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="divide-y overflow-y-auto flex-1">
                   {loading || analyticsLoading || !exam ? (
@@ -418,6 +502,9 @@ export default function ExamDetail({
                         showFinalScore={false}
                         analyticsData={analyticsData}
                         examStatus={exam.status}
+                        selectable={student.gradeType === "ai_graded"}
+                        selected={selectedSessionIds.has(student.id)}
+                        onSelect={handleSelectStudent}
                       />
                     ))
                   )}

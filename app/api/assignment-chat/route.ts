@@ -23,13 +23,24 @@ const CANVAS_END = "<!-- CANVAS_END -->";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { message, sessionId, examId, studentId, previousResponseId } = body;
+    const { message, sessionId, examId, studentId, previousResponseId, workspaceState } = body;
 
     if (!message || !sessionId || !examId) {
       return new Response(
         JSON.stringify({ error: "VALIDATION_ERROR", message: "Missing required fields" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
+    }
+
+    // Validate workspace_state size (max 500KB to prevent abuse)
+    if (workspaceState) {
+      const wsSize = JSON.stringify(workspaceState).length;
+      if (wsSize > 500 * 1024) {
+        return new Response(
+          JSON.stringify({ error: "VALIDATION_ERROR", message: "Workspace state too large" }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Auth
@@ -64,7 +75,8 @@ export async function POST(request: NextRequest) {
       .eq("id", examId)
       .single();
 
-    if (!exam || exam.type !== "assignment") {
+    const validTypes = ["assignment", "report", "code", "erd", "mindmap"];
+    if (!exam || !validTypes.includes(exam.type)) {
       return new Response(
         JSON.stringify({ error: "NOT_FOUND", message: "Assignment not found" }),
         { status: 404, headers: { "Content-Type": "application/json" } }
@@ -113,6 +125,7 @@ export async function POST(request: NextRequest) {
             .map((m) => `[${m.fileName}]\n${m.text}`)
             .join("\n\n")
         : undefined,
+      workspaceState: workspaceState ?? undefined,
     });
 
     // Fetch previous response_id for conversation chaining

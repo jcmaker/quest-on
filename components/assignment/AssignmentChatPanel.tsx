@@ -288,33 +288,32 @@ export function AssignmentChatPanel({
 
       {/* Bottom input */}
       {!isSubmitted && (
-        <div className="border-t p-3">
-          <div className={`mx-auto space-y-2 ${maxW}`}>
-            <div className="flex items-center">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleMakeDocument}
-                disabled={isLoading}
-                className="h-8 text-xs"
-              >
-                <FileEdit className="w-3.5 h-3.5 mr-1" />
-                대화 내용 기반 문서 작성
-              </Button>
-            </div>
-            <div className="relative rounded-2xl border border-border bg-muted/30 focus-within:border-primary/50 transition-colors">
+        <div className="p-4 pb-8">
+          <div className={`mx-auto w-full ${maxW} space-y-3`}>
+            <div className="relative rounded-2xl border border-border bg-muted/30 shadow-sm focus-within:border-primary/50 focus-within:shadow-md transition-all">
               <Textarea
                 ref={textareaRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="메시지를 입력하세요..."
-                className="min-h-[44px] max-h-[120px] resize-none border-0 bg-transparent rounded-2xl px-4 pt-3 pb-10 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm"
-                rows={1}
+                placeholder="과제에 대해 질문하거나 도움을 요청하세요..."
+                className="min-h-[80px] max-h-[160px] resize-none border-0 bg-transparent rounded-2xl px-4 pt-4 pb-12 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm"
                 disabled={isLoading}
               />
-              <div className="absolute bottom-2 right-2">
+              <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleMakeDocument}
+                    disabled={isLoading}
+                    className="h-8 px-2 text-xs"
+                  >
+                    <FileEdit className="w-3.5 h-3.5 mr-1" />
+                    대화 내용 기반 문서 작성
+                  </Button>
+                </div>
                 <Button
                   onClick={handleSend}
                   disabled={!input.trim() || isLoading}

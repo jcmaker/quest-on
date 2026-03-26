@@ -8,6 +8,68 @@ const sessionId = z.string().uuid("Invalid session ID format");
 // Sanitized string: strips XSS vectors at validation time
 const sanitizedString = (schema: z.ZodString) => schema.transform(sanitizeUserInput);
 
+// ========== Task Type & Workspace Schemas ==========
+
+export const taskTypeSchema = z.enum(["exam", "report", "code", "erd", "mindmap"]);
+
+export const codeLanguageSchema = z.enum([
+  "sql", "python", "javascript", "typescript", "java", "c", "cpp", "go", "rust", "plaintext",
+]);
+
+const erdColumnSchema = z.object({
+  name: z.string().max(100),
+  type: z.string().max(100),
+  isPrimary: z.boolean().optional(),
+  isForeignKey: z.boolean().optional(),
+  references: z.string().max(200).optional(),
+});
+
+const erdNodeSchema = z.object({
+  id: z.string(),
+  type: z.literal("table"),
+  position: z.object({ x: z.number(), y: z.number() }),
+  data: z.object({
+    tableName: z.string().max(100),
+    columns: z.array(erdColumnSchema).max(50),
+  }),
+});
+
+const erdEdgeSchema = z.object({
+  id: z.string(),
+  source: z.string(),
+  target: z.string(),
+  label: z.string().max(100).optional(),
+  type: z.enum(["one-to-one", "one-to-many", "many-to-many"]).optional(),
+});
+
+const erdStateSchema = z.object({
+  nodes: z.array(erdNodeSchema).max(100),
+  edges: z.array(erdEdgeSchema).max(200),
+});
+
+export const workspaceStateSchema = z.object({
+  code: z.string().max(200000),
+  language: codeLanguageSchema,
+  erd: erdStateSchema,
+  notes: z.string().max(200000),
+  lastUpdated: z.string(),
+});
+
+export const initialStateSchema = z.object({
+  starterCode: z.string().max(100000).optional(),
+  language: codeLanguageSchema.optional(),
+  initialErd: erdStateSchema.optional(),
+  instructions: z.string().max(10000).optional(),
+});
+
+export const canvasConfigSchema = z.object({
+  secondaryCanvas: z.boolean(),
+  layout: z.enum(["horizontal", "vertical"]).optional(),
+  codeEnabled: z.boolean().optional(),
+  erdEnabled: z.boolean().optional(),
+  notesEnabled: z.boolean().optional(),
+});
+
 // ========== Exam JSON Column Schemas ==========
 // These validate the JSON stored in exams.questions, exams.rubric, exams.materials
 
@@ -283,11 +345,15 @@ export const createAssignmentSchema = z.object({
   updated_at: z.string(),
   parent_folder_id: z.string().nullable().optional(),
   assignment_prompt: z.string().max(10000).optional(),
+  type: taskTypeSchema.optional(),
+  initial_state: initialStateSchema.optional(),
+  canvas_config: canvasConfigSchema.optional(),
 });
 
 export const saveCanvasSchema = z.object({
   sessionId: z.string().uuid("Invalid session ID"),
   content: z.string().max(500000, "Canvas content too long"),
+  workspace_state: workspaceStateSchema.optional(),
 });
 
 export const submitAssignmentSchema = z.object({
@@ -295,6 +361,7 @@ export const submitAssignmentSchema = z.object({
   examId: z.string().uuid("Invalid exam ID"),
   studentId: z.string().min(1),
   canvasContent: z.string().max(500000).optional(),
+  workspace_state: workspaceStateSchema.optional(),
 });
 
 // Drive operations
@@ -383,3 +450,9 @@ export function validateRequest<T>(
   }
   return { success: true, data: result.data };
 }
+
+// ========== Bulk Approve Schema ==========
+
+export const bulkApproveSchema = z.object({
+  sessionIds: z.array(z.string().uuid("Invalid session ID format")).min(1, "At least one session required").max(200, "Maximum 200 sessions per request"),
+});

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import pLimit from "p-limit";
 import { getOpenAI, AI_MODEL_HEAVY } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import {
@@ -130,6 +131,7 @@ export async function autoGradeSession(
       q_idx,
       answer,
       compressed_answer_data,
+      workspace_state,
       created_at
     `
     )
@@ -196,7 +198,11 @@ export async function autoGradeSession(
     ? questions.filter((q) => q.idx === 0)
     : questions;
 
-  const gradePromises = questionsToGrade.map(async (question): Promise<GradeResult | null> => {
+  // Limit per-session concurrency to avoid overwhelming the AI provider
+  // when a single session has many questions (e.g., 20-question exam)
+  const perSessionLimiter = pLimit(5);
+
+  const gradePromises = questionsToGrade.map((question) => perSessionLimiter(async (): Promise<GradeResult | null> => {
     // Per-question rubric resolution (resolveQuestionRubric returns DEFAULT_RUBRIC when empty)
     const rubricItems = resolveQuestionRubric(question, exam.rubric);
     if (rubricItems.length === 1 && rubricItems[0].evaluationArea === "전반적 답변 품질") {
@@ -230,10 +236,22 @@ export async function autoGradeSession(
     let userPrompt: string;
 
     if (isAssignment) {
+      // Parse workspace_state for hybrid (Code + ERD) assignments
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ws = submission.workspace_state as any;
+      const wsCode = typeof ws?.code === "string" ? ws.code : "";
+      const wsErd = ws?.erd as { nodes?: Array<{ data: { tableName: string; columns: Array<{ name: string; type: string; isPrimary?: boolean; isForeignKey?: boolean; references?: string }> } }>; edges?: Array<{ source: string; target: string; type?: string }> } | undefined;
+      const hasWorkspace = !!(wsCode.trim() || (wsErd?.nodes?.length ?? 0) > 0);
+
       systemPrompt = buildAssignmentGradingPrompt({
         examTitle: exam.title,
         assignmentPrompt: question.prompt || null,
         rubricText,
+        workspaceContext: hasWorkspace ? {
+          code: wsCode || undefined,
+          language: typeof ws?.language === "string" ? ws.language : undefined,
+          erd: wsErd?.nodes?.length ? { nodes: wsErd.nodes, edges: wsErd.edges || [] } : undefined,
+        } : null,
       });
 
       const chatHistoryText = questionMessages.length > 0
@@ -521,7 +539,7 @@ export async function autoGradeSession(
     }
 
     return null;
-  });
+  }));
 
   // 모든 문제 병렬 채점 실행 (with outer timeout)
   // Track settlement of each promise so we can recover partial results on timeout

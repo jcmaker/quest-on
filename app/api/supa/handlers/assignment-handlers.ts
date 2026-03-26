@@ -43,6 +43,10 @@ export async function createAssignment(data: {
   updated_at: string;
   parent_folder_id?: string | null;
   assignment_prompt?: string;
+  close_at?: string;
+  type?: string;
+  initial_state?: Record<string, unknown>;
+  canvas_config?: Record<string, unknown>;
 }) {
   try {
     const user = await currentUser();
@@ -176,13 +180,17 @@ export async function createAssignment(data: {
     const exam = rpcResult.exam;
     const examNode = rpcResult.exam_node;
 
-    // Update type and deadline (RPC doesn't know about these new fields)
+    // Update type, deadline, and hybrid workspace fields (RPC doesn't know about these)
+    const assignmentType = data.type || "assignment";
     await getSupabase()
       .from("exams")
       .update({
-        type: "assignment",
+        type: assignmentType,
         deadline: examData.deadline,
+        close_at: data.close_at || examData.deadline,
         assignment_prompt: examData.assignment_prompt,
+        initial_state: data.initial_state || {},
+        canvas_config: data.canvas_config || {},
       })
       .eq("id", exam.id);
 
@@ -218,6 +226,7 @@ export async function createAssignment(data: {
 export async function saveCanvas(data: {
   sessionId: string;
   content: string;
+  workspace_state?: Record<string, unknown>;
 }) {
   try {
     const user = await currentUser();
@@ -241,17 +250,19 @@ export async function saveCanvas(data: {
     }
 
     // Upsert canvas content as q_idx=0 submission
+    const upsertData: Record<string, unknown> = {
+      session_id: data.sessionId,
+      q_idx: 0,
+      answer: data.content,
+      updated_at: new Date().toISOString(),
+    };
+    if (data.workspace_state) {
+      upsertData.workspace_state = data.workspace_state;
+    }
+
     const { error } = await getSupabase()
       .from("submissions")
-      .upsert(
-        {
-          session_id: data.sessionId,
-          q_idx: 0,
-          answer: data.content,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "session_id,q_idx" }
-      );
+      .upsert(upsertData, { onConflict: "session_id,q_idx" });
 
     if (error) {
       logError("[saveCanvas] DB error", error, { path: "/api/supa/assignment-handlers" });
@@ -270,6 +281,7 @@ export async function submitAssignment(data: {
   examId: string;
   studentId: string;
   canvasContent?: string;
+  workspace_state?: Record<string, unknown>;
 }) {
   try {
     const user = await currentUser();
@@ -301,18 +313,19 @@ export async function submitAssignment(data: {
     }
 
     // Save final canvas content if provided
-    if (data.canvasContent) {
+    if (data.canvasContent || data.workspace_state) {
+      const submitData: Record<string, unknown> = {
+        session_id: data.sessionId,
+        q_idx: 0,
+        answer: data.canvasContent || "",
+        updated_at: new Date().toISOString(),
+      };
+      if (data.workspace_state) {
+        submitData.workspace_state = data.workspace_state;
+      }
       await getSupabase()
         .from("submissions")
-        .upsert(
-          {
-            session_id: data.sessionId,
-            q_idx: 0,
-            answer: data.canvasContent,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "session_id,q_idx" }
-        );
+        .upsert(submitData, { onConflict: "session_id,q_idx" });
     }
 
     // Update session status

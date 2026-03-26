@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
-import { deduplicateGrades, calculateOverallScore } from "@/lib/grade-utils";
+import { calculateOverallScore } from "@/lib/grade-utils";
+
+type GradeStatus = "ai_graded" | "manually_graded" | "pending";
 
 // P1-4: Lazy Supabase getter to avoid stale connections in serverless
 function getSupabase() {
@@ -67,7 +69,7 @@ export async function GET(
     const sessionIds = sessions.map((s) => s.id);
     const { data: grades, error: gradesError } = await getSupabase()
       .from("grades")
-      .select("session_id, score, q_idx, created_at, grade_type")
+      .select("session_id, score, q_idx, created_at, grade_type, comment, stage_grading")
       .in("session_id", sessionIds);
 
     if (gradesError) {
@@ -91,15 +93,49 @@ export async function GET(
       session_id: string;
       score: number;
       gradedCount: number;
+      gradeStatus: GradeStatus;
+      aiComment: string | null;
     }> = [];
 
     gradesBySession.forEach((sessionGrades, sessionId) => {
       const { overallScore, gradedCount } = calculateOverallScore(sessionGrades);
       if (gradedCount > 0) {
+        // Determine grading status from grade_type values
+        const hasManual = sessionGrades.some((g) => g.grade_type === "manual");
+        const hasFailed = sessionGrades.some((g) => g.grade_type === "ai_failed");
+        let gradeStatus: GradeStatus = "pending";
+        if (hasManual) {
+          gradeStatus = "manually_graded";
+        } else if (!hasFailed) {
+          gradeStatus = "ai_graded";
+        }
+
+        // Extract AI comment preview from first grade with a comment
+        const gradeWithComment = sessionGrades.find((g) => g.comment?.trim());
+        let aiComment: string | null = null;
+        if (gradeWithComment?.comment) {
+          aiComment = gradeWithComment.comment.length > 200
+            ? gradeWithComment.comment.slice(0, 200) + "..."
+            : gradeWithComment.comment;
+        } else {
+          // Try stage_grading overall comment
+          const gradeWithStage = sessionGrades.find((g) => {
+            const sg = g.stage_grading as Record<string, unknown> | null;
+            return sg?.answer && typeof (sg.answer as Record<string, unknown>).comment === "string";
+          });
+          if (gradeWithStage) {
+            const sg = gradeWithStage.stage_grading as Record<string, unknown>;
+            const comment = ((sg.answer as Record<string, unknown>)?.comment as string) || "";
+            aiComment = comment.length > 200 ? comment.slice(0, 200) + "..." : comment || null;
+          }
+        }
+
         finalGrades.push({
           session_id: sessionId,
           score: overallScore,
           gradedCount,
+          gradeStatus,
+          aiComment,
         });
       }
     });

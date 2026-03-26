@@ -301,7 +301,7 @@ export async function initExamSession(data: {
     // 1. Fetch Exam by Code
     const { data: exam, error: examError } = await getSupabase()
       .from("exams")
-      .select("id, title, code, description, duration, questions, rubric, rubric_public, chat_weight, status, instructor_id, materials, materials_text, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, student_count")
+      .select("id, title, code, description, duration, questions, rubric, rubric_public, chat_weight, status, instructor_id, materials, materials_text, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, student_count, type, deadline")
       .eq("code", data.examCode)
       .single();
 
@@ -323,16 +323,21 @@ export async function initExamSession(data: {
       return errorJson("EXAM_NOT_AVAILABLE", "Exam not available for joining", 403, { currentStatus: examStatus, message: "This exam is closed or archived" });
     }
 
+    // Determine if this is a non-exam type (assignment, report, code, erd, mindmap)
+    const isNonExamType = !!(exam.type && exam.type !== "exam");
+
     // Gate 필드가 있는 경우: open_at / close_at 체크 (입장 시간)
-    const hasGateFields = openAt !== null || closeAt !== null;
+    // For assignments without close_at, use deadline as entry cutoff
+    const effectiveCloseAt = closeAt ?? (isNonExamType && exam.deadline ? new Date(exam.deadline).getTime() : null);
+    const hasGateFields = openAt !== null || effectiveCloseAt !== null;
     if (hasGateFields) {
       const isEntryNotYetOpen = openAt !== null && nowTime < openAt;
       if (isEntryNotYetOpen) {
         return errorJson("ENTRY_WINDOW_NOT_OPEN", "Entry window has not opened yet", 403, { openAt: exam.open_at });
       }
-      const isEntryClosed = closeAt !== null && nowTime >= closeAt;
+      const isEntryClosed = effectiveCloseAt !== null && nowTime >= effectiveCloseAt;
       if (isEntryClosed) {
-        return errorJson("ENTRY_WINDOW_CLOSED", "Entry window closed", 403, { closeAt: exam.close_at, message: "The entry window for this exam has closed" });
+        return errorJson("ENTRY_WINDOW_CLOSED", "Entry window closed", 403, { closeAt: exam.close_at || exam.deadline, message: "The entry window for this exam has closed" });
       }
     }
 
@@ -556,10 +561,10 @@ export async function initExamSession(data: {
           .maybeSingle();
         session = updatedSession || existingSession;
       } else if (
-        (examStarted || exam.duration === 0) &&
+        (examStarted || exam.duration === 0 || isNonExamType) &&
         ["waiting", "joined", "not_joined"].includes(currentStatus)
       ) {
-        // 시험이 시작되었거나 무제한(과제형) 시험이면 바로 in_progress로 전환
+        // 시험이 시작되었거나 무제한(과제형)/비시험 유형이면 바로 in_progress로 전환
         session = await promoteSessionToInProgress(existingSession, now, {
           deviceFingerprint: incomingFingerprint,
         });
@@ -619,8 +624,8 @@ export async function initExamSession(data: {
       // 시작 후 + 무제한(과제형): in_progress (바로 응시 가능)
       // 시작 후 + 제한시간 있음: late_pending (강사 승인 필요)
       let initialStatus: string;
-      if (exam.duration === 0) {
-        initialStatus = "in_progress"; // 무제한(과제형)은 지각 없음
+      if (exam.duration === 0 || isNonExamType) {
+        initialStatus = "in_progress"; // 무제한(과제형)/비시험 유형은 지각 없음
       } else if (examStarted) {
         initialStatus = "late_pending"; // 지각 학생: 강사 승인 필요
       } else {

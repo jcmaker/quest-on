@@ -348,6 +348,10 @@ export default function StudentDashboard() {
       deadline: item.deadline,
       href: `/assignment/${item.examCode}`,
     }))
+    .filter((item) => {
+      if (!item.deadline) return true;
+      return new Date(item.deadline).getTime() > Date.now();
+    })
     .filter((item) => Boolean(item.examCode));
 
   // 완료율 계산

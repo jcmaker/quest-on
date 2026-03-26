@@ -147,20 +147,7 @@ export function RubricTable({
       </CardHeader>
       <CardContent className="space-y-4">
 
-        {/* 버튼: 테이블 위에 배치 (CaseQuestionGenerator 패턴과 동일) */}
         <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              onAdd();
-            }}
-            className="gap-2"
-            variant="outline"
-          >
-            <Plus className="w-4 h-4" />
-            평가 기준 추가
-          </Button>
           {onAIGenerate && (
             <Button
               type="button"
@@ -271,7 +258,7 @@ export function RubricTable({
         {rubric.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-muted-foreground mb-1">아직 추가된 루브릭이 없습니다</p>
-            <p className="text-sm text-muted-foreground">위 버튼을 클릭하여 평가 기준을 설정하세요</p>
+            <p className="text-sm text-muted-foreground">아래 + 버튼을 눌러 평가 기준을 설정하세요</p>
           </div>
         ) : (
           <div className="border rounded-lg overflow-hidden">
@@ -367,6 +354,21 @@ export function RubricTable({
             </Table>
           </div>
         )}
+        <div className="flex justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            aria-label="평가 기준 추가"
+            onClick={(e) => {
+              e.preventDefault();
+              onAdd();
+            }}
+            className="h-9 w-9 rounded-full"
+          >
+            <Plus className="w-4 h-4" />
+          </Button>
+        </div>
 
         {onChatWeightChange && (
           <div className="border rounded-lg p-4 space-y-4 bg-muted/20">

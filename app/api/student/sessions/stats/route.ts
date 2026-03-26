@@ -69,13 +69,14 @@ export async function GET() {
       const typeByExamId = new Map(
         (exams || []).map((exam) => [exam.id, exam.type || null])
       );
-      unsubmittedAssignments = inProgressSessions.filter(
-        (session) => typeByExamId.get(session.exam_id) === "assignment"
-      ).length;
+      unsubmittedAssignments = inProgressSessions.filter((session) => {
+        const t = typeByExamId.get(session.exam_id);
+        return t != null && t !== "exam";
+      }).length;
 
       const assignmentExamById = new Map(
         (exams || [])
-          .filter((exam) => exam.type === "assignment")
+          .filter((exam) => exam.type != null && exam.type !== "exam")
           .map((exam) => [exam.id, exam])
       );
       unsubmittedAssignmentItems = inProgressSessions
@@ -92,6 +93,13 @@ export async function GET() {
           };
         })
         .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      // Filter out past-deadline items (auto-submitted)
+      const now = new Date().toISOString();
+      unsubmittedAssignmentItems = unsubmittedAssignmentItems.filter(
+        (item) => !item.deadline || item.deadline > now
+      );
+      unsubmittedAssignments = unsubmittedAssignmentItems.length;
     }
 
     // Get all grades for completed sessions to calculate overall average
