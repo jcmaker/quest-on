@@ -996,7 +996,7 @@ export default function CreateExam() {
             </DialogContent>
           </Dialog>
           {/* P0-1: 드래프트 복원 확인 Dialog */}
-          <Dialog open={showRestoreModal} onOpenChange={(open) => { if (!open) discardDraft(); }}>
+          <Dialog open={showRestoreModal}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>이전 작업 복원</DialogTitle>

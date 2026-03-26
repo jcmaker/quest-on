@@ -6,6 +6,7 @@ import type { RubricItem } from "@/components/instructor/RubricTable";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 
 const STORAGE_KEY = "quest-on:exam-draft";
+const RESTORE_ACK_KEY = "quest-on:exam-draft:restore-ack";
 const SAVE_INTERVAL_MS = 5000;
 
 export interface ExamDraftData {
@@ -49,12 +50,52 @@ function loadDraft(): ExamDraftData | null {
   }
 }
 
+function getDraftFingerprint(draft: ExamDraftData): string {
+  return draft.savedAt;
+}
+
+function getRestoreAck(): string | null {
+  try {
+    return sessionStorage.getItem(RESTORE_ACK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setRestoreAck(fingerprint: string): void {
+  try {
+    sessionStorage.setItem(RESTORE_ACK_KEY, fingerprint);
+  } catch {
+    // sessionStorage unavailable
+  }
+}
+
+function clearRestoreAck(): void {
+  try {
+    sessionStorage.removeItem(RESTORE_ACK_KEY);
+  } catch {
+    // sessionStorage unavailable
+  }
+}
+
+function shouldShowRestoreModal(draft: ExamDraftData | null): boolean {
+  if (!draft) return false;
+  return getRestoreAck() !== getDraftFingerprint(draft);
+}
+
 export function useExamDraftAutoSave(options: UseExamDraftAutoSaveOptions) {
-  // Lazy init: read localStorage once on mount
-  const [savedDraft] = useState<ExamDraftData | null>(() => loadDraft());
-  const [showRestoreModal, setShowRestoreModal] = useState(
-    () => loadDraft() !== null
-  );
+  // Lazy init: read localStorage once on mount and derive modal state from the same draft snapshot.
+  const [restoreState, setRestoreState] = useState<{
+    savedDraft: ExamDraftData | null;
+    showRestoreModal: boolean;
+  }>(() => {
+    const draft = loadDraft();
+    return {
+      savedDraft: draft,
+      showRestoreModal: shouldShowRestoreModal(draft),
+    };
+  });
+  const { savedDraft, showRestoreModal } = restoreState;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const optionsRef = useRef(options);
   useEffect(() => {
@@ -104,16 +145,31 @@ export function useExamDraftAutoSave(options: UseExamDraftAutoSaveOptions) {
   }, [saveDraft]);
 
   const restoreDraft = useCallback(() => {
-    setShowRestoreModal(false);
+    if (savedDraft) {
+      setRestoreAck(getDraftFingerprint(savedDraft));
+    }
+    setRestoreState((prev) => ({
+      ...prev,
+      showRestoreModal: false,
+    }));
     return savedDraft;
   }, [savedDraft]);
 
   const discardDraft = useCallback(() => {
-    setShowRestoreModal(false);
+    clearRestoreAck();
+    setRestoreState({
+      savedDraft: null,
+      showRestoreModal: false,
+    });
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
   const clearDraft = useCallback(() => {
+    clearRestoreAck();
+    setRestoreState({
+      savedDraft: null,
+      showRestoreModal: false,
+    });
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
