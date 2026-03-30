@@ -3,11 +3,17 @@ import { requireAdmin } from "@/lib/admin-auth";
 import { successJson, errorJson } from "@/lib/api-response";
 import { listPagedAiEvents } from "@/lib/ai-events-store";
 import { parseAiUsageFilters } from "@/lib/ai-analytics";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
   try {
     const denied = await requireAdmin();
     if (denied) return denied;
+
+    const rl = await checkRateLimitAsync("admin", RATE_LIMITS.general);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
+    }
 
     const searchParams = request.nextUrl?.searchParams ?? new URL(request.url).searchParams;
     const rawPage = parseInt(searchParams.get("page") || "1", 10);

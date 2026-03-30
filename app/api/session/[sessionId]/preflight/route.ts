@@ -10,6 +10,7 @@ import {
   isExamUnavailable,
   promoteSessionToInProgress,
 } from "@/app/api/supa/handlers/session-handlers";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 const supabase = getSupabaseServer();
 
@@ -28,6 +29,11 @@ export async function POST(
     const user = await currentUser();
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const rl = await checkRateLimitAsync(`session-preflight:${user.id}`, RATE_LIMITS.sessionRead);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     const resolvedParams = await params;

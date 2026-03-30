@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 const supabase = getSupabaseServer();
 
@@ -17,6 +18,11 @@ export async function GET() {
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
       return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
+    }
+
+    const rl = await checkRateLimitAsync(`student-profile:${user.id}`, RATE_LIMITS.sessionRead);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     const { data: profile, error } = await supabase
@@ -47,6 +53,11 @@ export async function POST(request: NextRequest) {
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
       return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
+    }
+
+    const rl = await checkRateLimitAsync(`student-profile:${user.id}`, RATE_LIMITS.sessionRead);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     const body = await request.json();

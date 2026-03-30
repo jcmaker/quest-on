@@ -5,6 +5,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { batchGetUserInfo } from "@/lib/clerk-users";
 import { validateUUID } from "@/lib/validate-params";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -32,6 +33,11 @@ export async function GET(
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Forbidden", 403);
+    }
+
+    const rl = await checkRateLimitAsync(`live-messages:${user.id}`, RATE_LIMITS.sessionRead);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     // Get session to verify it exists and get exam_id

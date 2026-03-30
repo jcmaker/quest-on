@@ -8,6 +8,7 @@ import {
   formatSearchResultsAsContext,
 } from "@/lib/search-chunks";
 import { successJson, errorJson } from "@/lib/api-response";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 /**
  * POST /api/search-materials
@@ -19,6 +20,11 @@ export async function POST(request: NextRequest) {
     const user = await currentUser();
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    const rl = await checkRateLimitAsync(`search-materials:${user.id}`, RATE_LIMITS.general);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     const body = await request.json();

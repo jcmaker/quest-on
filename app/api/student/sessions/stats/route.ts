@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -18,6 +19,11 @@ export async function GET() {
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "student") {
       return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
+    }
+
+    const rl = await checkRateLimitAsync(`student-sessions-stats:${user.id}`, RATE_LIMITS.sessionRead);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     // Get all sessions for this student (for stats only, no pagination)

@@ -3,6 +3,7 @@ import { createClerkClient } from "@clerk/nextjs/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Clerk 클라이언트 직접 초기화
 const clerk = createClerkClient({
@@ -14,6 +15,11 @@ export async function GET(request: NextRequest) {
     // 어드민 인증 확인
     const denied = await requireAdmin();
     if (denied) return denied;
+
+    const rl = await checkRateLimitAsync("admin", RATE_LIMITS.general);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
+    }
 
     // 페이지네이션 파라미터 파싱
     const searchParams = request.nextUrl.searchParams;

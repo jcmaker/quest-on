@@ -5,6 +5,7 @@ import { decompressData } from "@/lib/compression";
 import { successJson, errorJson } from "@/lib/api-response";
 import { validateUUID } from "@/lib/validate-params";
 import { deduplicateGrades, calculateOverallScore } from "@/lib/grade-utils";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // P1-4: Lazy Supabase getter to avoid stale connections in serverless
 function getSupabase() {
@@ -25,6 +26,11 @@ export async function GET(
     const userRole = user.unsafeMetadata?.role as string;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_ACCESS_REQUIRED", "Instructor access required", 403);
+    }
+
+    const rl = await checkRateLimitAsync(`analytics-overview:${user.id}`, RATE_LIMITS.general);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
     const { examId } = await params;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClerkClient } from "@clerk/nextjs/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { successJson, errorJson } from "@/lib/api-response";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // Clerk 클라이언트 직접 초기화
 const clerk = createClerkClient({
@@ -16,6 +17,11 @@ export async function PATCH(
     // 어드민 인증 확인
     const denied = await requireAdmin();
     if (denied) return denied;
+
+    const rl = await checkRateLimitAsync("admin", RATE_LIMITS.general);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
+    }
 
     const { userId } = await params;
     const { role } = await request.json();
@@ -52,6 +58,11 @@ export async function GET(
     // 어드민 인증 확인
     const denied = await requireAdmin();
     if (denied) return denied;
+
+    const rl = await checkRateLimitAsync("admin", RATE_LIMITS.general);
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
+    }
 
     const { userId } = await params;
 
