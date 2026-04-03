@@ -28,12 +28,15 @@ export function useAssignmentChat({
 }: UseAssignmentChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [citations, setCitations] = useState<Array<{ title: string; url: string }>>([]);
   const abortControllerRef = useRef<AbortController | null>(null);
   const previousResponseIdRef = useRef<string | null>(null);
 
   const sendMessage = useCallback(
     async (message: string) => {
       if (!message.trim() || isLoading) return;
+
+      setCitations([]);
 
       const userMsg: ChatMessage = {
         id: `user-${Date.now()}`,
@@ -113,6 +116,8 @@ export function useAssignmentChat({
                         : m
                     )
                   );
+                } else if (currentEventType === "citations" && Array.isArray(data.citations)) {
+                  setCitations(data.citations);
                 } else if (currentEventType === "canvas_update" && data.content) {
                   onCanvasUpdate?.(data.content);
                   onCanvasOpen?.();
@@ -175,5 +180,6 @@ export function useAssignmentChat({
     isLoading,
     sendMessage,
     cancelStream,
+    citations,
   };
 }

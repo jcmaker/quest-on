@@ -24,8 +24,9 @@ interface AssignmentChatPanelProps {
   isSubmitted: boolean;
   assignmentPrompt: string;
   questions: { id: string; text: string; type: string }[];
-  onOpenCanvas: () => void;
+  onOpenCanvas: (content?: string) => void;
   isCanvasOpen: boolean;
+  citations?: Array<{ title: string; url: string }>;
 }
 
 export function AssignmentChatPanel({
@@ -37,6 +38,7 @@ export function AssignmentChatPanel({
   questions,
   onOpenCanvas,
   isCanvasOpen,
+  citations,
 }: AssignmentChatPanelProps) {
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -216,7 +218,7 @@ export function AssignmentChatPanel({
           )}
 
           {/* Chat messages */}
-          {messages.map((msg) => (
+          {messages.map((msg, idx) => (
             <div key={msg.id}>
               <div
                 className={`flex gap-3 ${
@@ -260,11 +262,33 @@ export function AssignmentChatPanel({
                 </div>
               </div>
 
+              {/* Citations for last AI message */}
+              {msg.role === "assistant" && idx === messages.length - 1 && citations && citations.length > 0 && (
+                <div className="ml-11 mt-2">
+                  <div className="pt-2 border-t border-border/40 max-w-[80%]">
+                    <p className="text-xs text-muted-foreground mb-1.5 font-medium">참고 출처</p>
+                    <div className="flex flex-col gap-1">
+                      {citations.map((citation, cidx) => (
+                        <a
+                          key={cidx}
+                          href={citation.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-blue-500 hover:text-blue-400 hover:underline truncate"
+                        >
+                          {cidx + 1}. {citation.title}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Canvas artifact card */}
               {msg.hasCanvasUpdate && (
                 <div className="ml-11 mt-2">
                   <button
-                    onClick={onOpenCanvas}
+                    onClick={() => onOpenCanvas(msg.canvasContent)}
                     className="flex items-center gap-3 w-full max-w-xs px-4 py-3 bg-muted/50 hover:bg-muted border border-border rounded-xl transition-colors group text-left"
                   >
                     <div className="shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">

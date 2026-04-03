@@ -853,14 +853,34 @@ export default function InstructorHome() {
         queryClient.prefetchQuery({
           queryKey: qk.instructor.examDetail(node.exam_id),
           queryFn: async () => {
-            const [examRes, sessionsRes] = await Promise.all([
-              fetch(`/api/exam/${node.exam_id}`),
-              fetch(`/api/exam/${node.exam_id}/sessions`),
-            ]);
+            const examRes = await fetch("/api/supa", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "get_exam_by_id", data: { id: node.exam_id } }),
+            });
             if (!examRes.ok) throw new Error("Prefetch failed");
-            const exam = await examRes.json();
-            const sessions = sessionsRes.ok ? await sessionsRes.json() : { sessions: [] };
-            return { exam, sessions };
+            const examResult = await examRes.json();
+            const questionsArray = examResult.exam.questions || [];
+            return {
+              exam: {
+                id: examResult.exam.id,
+                title: examResult.exam.title,
+                code: examResult.exam.code,
+                description: examResult.exam.description,
+                duration: examResult.exam.duration,
+                status: examResult.exam.status,
+                createdAt: examResult.exam.created_at,
+                questions: [],
+                students: [],
+                open_at: examResult.exam.open_at || null,
+                close_at: examResult.exam.close_at || null,
+                started_at: examResult.exam.started_at || null,
+                deadline: examResult.exam.deadline || null,
+                assignment_prompt: examResult.exam.assignment_prompt || null,
+              },
+              questionsCount: questionsArray.length,
+              questionsRaw: questionsArray,
+            };
           },
           staleTime: 5 * 60 * 1000,
         });

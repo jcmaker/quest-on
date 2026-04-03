@@ -908,7 +908,7 @@
 .ProseMirror table th,
 .ProseMirror table td {
   min-width: 3em;
-  padding: 0.5rem 0.7rem;
+  padding: 0.65rem 1.1rem;
   border-right: var(--pm-border) solid var(--pm-table-border);
   border-bottom: var(--pm-border) solid var(--pm-table-border);
   vertical-align: top;
@@ -917,8 +917,8 @@
 .ProseMirror table th {
   font-weight: 600;
   text-align: left;
-  background: hsl(217.22 91.22% 52.94%) !important;
-  color: white !important;
+  background: hsl(215 20% 28%) !important;
+  color: hsl(0 0% 96%) !important;
 }
 .ProseMirror table td {
   background: hsl(var(--card));
@@ -1007,7 +1007,7 @@
 .rich-text-content th,
 .rich-text-content td {
   min-width: 3em;
-  padding: 0.5rem 0.7rem;
+  padding: 0.65rem 1.1rem;
   border-right: var(--pm-border) solid var(--pm-table-border);
   border-bottom: var(--pm-border) solid var(--pm-table-border);
   font-size: 0.95rem;
@@ -1015,8 +1015,8 @@
 .rich-text-content th {
   font-weight: 600;
   text-align: left;
-  background: hsl(217.22 91.22% 52.94%) !important;
-  color: white !important;
+  background: hsl(215 20% 28%) !important;
+  color: hsl(0 0% 96%) !important;
 }
 .rich-text-content td {
   background: hsl(var(--card));

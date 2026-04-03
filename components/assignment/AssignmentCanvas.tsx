@@ -99,10 +99,27 @@ function CodeBlockNodeView({ node, updateAttributes }: NodeViewProps) {
   );
 }
 
-// CodeBlockLowlight with custom NodeView
+// CodeBlockLowlight with custom NodeView + case-normalized language parsing
 const CustomCodeBlock = CodeBlockLowlight.extend({
   addNodeView() {
     return ReactNodeViewRenderer(CodeBlockNodeView);
+  },
+  addAttributes() {
+    const parentAttrs = this.parent?.() ?? {};
+    return {
+      ...parentAttrs,
+      language: {
+        ...(parentAttrs.language ?? {}),
+        // Normalize language to lowercase so lowlight can match it
+        // (AI may generate ```Python or ```JavaScript with mixed case)
+        parseHTML: (element) => {
+          const prefix = "language-";
+          const classes = [...(element.firstElementChild?.classList ?? [])];
+          const found = classes.find((c) => c.startsWith(prefix));
+          return found ? found.slice(prefix.length).toLowerCase() : null;
+        },
+      },
+    };
   },
 });
 
@@ -154,7 +171,9 @@ export function AssignmentCanvas({
   // Sync external content changes (e.g., from AI canvas_update)
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content);
+      queueMicrotask(() => {
+        editor.commands.setContent(content);
+      });
     }
   }, [content, editor]);
 

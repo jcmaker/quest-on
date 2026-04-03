@@ -42,6 +42,7 @@ export default function AssignmentPage({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
   const [isCanvasOpen, setIsCanvasOpen] = useState(false);
+  const [activeCanvasMarkdown, setActiveCanvasMarkdown] = useState<string>("");
 
   // Hybrid workspace state
   const [workspaceState, setWorkspaceState] = useState<WorkspaceState | null>(null);
@@ -88,6 +89,7 @@ export default function AssignmentPage({
       try {
         const html = marked.parse(markdownContent, { async: false }) as string;
         setCanvasContent(html);
+        setActiveCanvasMarkdown(markdownContent);
       } catch {
         setCanvasContent(`<p>${markdownContent}</p>`);
       }
@@ -95,15 +97,37 @@ export default function AssignmentPage({
     [setCanvasContent]
   );
 
-  const handleCanvasOpen = useCallback(() => {
-    setIsCanvasOpen(true);
-  }, []);
+  const handleCanvasOpen = useCallback(
+    (markdown?: string) => {
+      if (!markdown) {
+        // Called from hook after new canvas_update — always open
+        setIsCanvasOpen(true);
+        return;
+      }
+      if (isCanvasOpen && activeCanvasMarkdown === markdown) {
+        // Same document already showing — toggle close
+        setIsCanvasOpen(false);
+      } else {
+        // Different content or canvas closed — load and open
+        try {
+          const html = marked.parse(markdown, { async: false }) as string;
+          setCanvasContent(html);
+        } catch {
+          setCanvasContent(`<p>${markdown}</p>`);
+        }
+        setActiveCanvasMarkdown(markdown);
+        setIsCanvasOpen(true);
+      }
+    },
+    [isCanvasOpen, activeCanvasMarkdown, setCanvasContent]
+  );
 
   const {
     messages,
     setMessages,
     isLoading: isChatLoading,
     sendMessage,
+    citations,
   } = useAssignmentChat({
     sessionId: session?.id || "",
     examId: exam?.id || "",
@@ -129,18 +153,29 @@ export default function AssignmentPage({
           const data = await res.json();
           const existingMsgs = data.messages || [];
           if (existingMsgs.length > 0) {
+            const CANVAS_START_MARKER = "<!-- CANVAS_START -->";
+            const CANVAS_END_MARKER = "<!-- CANVAS_END -->";
+            const extractCanvasMarkdown = (content: string) => {
+              const start = content.indexOf(CANVAS_START_MARKER);
+              const end = content.indexOf(CANVAS_END_MARKER);
+              if (start !== -1 && end !== -1) {
+                return content.slice(start + CANVAS_START_MARKER.length, end).trim();
+              }
+              return undefined;
+            };
             setMessages(
               existingMsgs.map(
                 (m: { id: string; role: string; content: string }) => {
                   const isAssistant = m.role === "ai";
                   const hasCanvas =
-                    isAssistant && m.content.includes("<!-- CANVAS_START -->");
+                    isAssistant && m.content.includes(CANVAS_START_MARKER);
                   return {
                     id: m.id,
                     role: isAssistant ? "assistant" as const : "user" as const,
                     content: m.content,
                     isStreaming: false,
                     hasCanvasUpdate: hasCanvas,
+                    canvasContent: hasCanvas ? extractCanvasMarkdown(m.content) : undefined,
                   };
                 }
               )
@@ -318,6 +353,7 @@ export default function AssignmentPage({
                 questions={(exam.questions || []) as { id: string; text: string; type: string }[]}
                 onOpenCanvas={handleCanvasOpen}
                 isCanvasOpen={true}
+                citations={citations}
               />
             }
           />
@@ -362,6 +398,7 @@ export default function AssignmentPage({
             questions={(exam.questions || []) as { id: string; text: string; type: string }[]}
             onOpenCanvas={handleCanvasOpen}
             isCanvasOpen={isCanvasOpen}
+            citations={citations}
           />
         </motion.div>
 

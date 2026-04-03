@@ -154,6 +154,7 @@ export async function POST(request: NextRequest) {
       previous_response_id: prevResponseId || undefined,
       store: true,
       stream: true,
+      tools: [{ type: "web_search_preview" }],
     });
 
     // Create SSE response stream
@@ -173,6 +174,37 @@ export async function POST(request: NextRequest) {
               );
             } else if (event.type === "response.completed") {
               responseId = event.response.id;
+
+              // Extract citations from output annotations
+              const citations: Array<{ title: string; url: string }> = [];
+              const output = event.response.output ?? [];
+              for (const block of output) {
+                if (block.type === "message" && Array.isArray(block.content)) {
+                  for (const content of block.content) {
+                    if (content.type === "output_text" && Array.isArray(content.annotations)) {
+                      for (const annotation of content.annotations) {
+                        if (
+                          annotation.type === "url_citation" &&
+                          annotation.url &&
+                          annotation.title
+                        ) {
+                          const already = citations.some((c) => c.url === annotation.url);
+                          if (!already) {
+                            citations.push({ title: annotation.title, url: annotation.url });
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+
+              // Send citations as SSE event if any found
+              if (citations.length > 0) {
+                controller.enqueue(
+                  encoder.encode(sseEvent("citations", { citations }))
+                );
+              }
             }
           }
 
