@@ -105,7 +105,7 @@ const CustomCodeBlock = CodeBlockLowlight.extend({
     return ReactNodeViewRenderer(CodeBlockNodeView);
   },
   addAttributes() {
-    const parentAttrs = this.parent?.() ?? {};
+    const parentAttrs = (this.parent?.() ?? {}) as { language?: Record<string, unknown> };
     return {
       ...parentAttrs,
       language: {
