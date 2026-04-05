@@ -127,8 +127,8 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
 
         if (regex) {
           // 이미 하이라이트되지 않은 부분만 매칭
-          const parts = htmlAnswer.split(/<mark[^>]*>.*?<\/mark>/gs);
-          const markers = htmlAnswer.match(/<mark[^>]*>.*?<\/mark>/gs) || [];
+          const parts = htmlAnswer.split(/<mark[^>]*>[\s\S]*?<\/mark>/g);
+          const markers = htmlAnswer.match(/<mark[^>]*>[\s\S]*?<\/mark>/g) || [];
 
           // 각 부분에서 내부 복사 텍스트 찾기
           let newHtmlAnswer = "";
@@ -158,8 +158,8 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
 
         if (regex) {
           // 이미 하이라이트되지 않은 부분만 매칭
-          const parts = htmlAnswer.split(/<mark[^>]*>.*?<\/mark>/gs);
-          const markers = htmlAnswer.match(/<mark[^>]*>.*?<\/mark>/gs) || [];
+          const parts = htmlAnswer.split(/<mark[^>]*>[\s\S]*?<\/mark>/g);
+          const markers = htmlAnswer.match(/<mark[^>]*>[\s\S]*?<\/mark>/g) || [];
 
           // 각 부분에서 외부 복사 텍스트 찾기
           let newHtmlAnswer = "";
