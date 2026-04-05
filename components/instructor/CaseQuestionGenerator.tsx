@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Collapsible,
@@ -25,7 +24,7 @@ import {
   CardContent,
   CardAction,
 } from "@/components/ui/card";
-import { Sparkles, ChevronDown, X, Plus, FileText, CheckCircle2, AlertCircle } from "lucide-react";
+import { Sparkles, ChevronDown, X, FileText, CheckCircle2, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   useQuestionGeneration,
@@ -68,8 +67,7 @@ export function CaseQuestionGenerator({
   const [isOpen, setIsOpen] = useState(true);
   const difficulty = "basic" as const;
   const [questionCount, setQuestionCount] = useState(1);
-  const [topics, setTopics] = useState("");
-  const [customInstructions, setCustomInstructions] = useState("");
+  const [freeformPrompt, setFreeformPrompt] = useState("");
 
   const {
     generatedQuestions,
@@ -86,17 +84,29 @@ export function CaseQuestionGenerator({
     adjustQuestion,
     applyAdjustment,
     getAdjustHistory,
-    acceptQuestion,
     acceptAll,
   } = useQuestionGeneration();
 
-  // Show toast when generation completes successfully
+  // Auto-apply all questions when generation completes
   const wasGeneratingRef = useRef(false);
   useEffect(() => {
     if (wasGeneratingRef.current && !isGenerating && generationProgress.stage === "complete" && !error) {
-      toast.success("문제 생성이 완료되었습니다.");
+      const all = acceptAll();
+      if (all.length > 0) {
+        onQuestionsAccepted(
+          all.map((q) => ({
+            id: q.id,
+            text: q.text,
+            type: q.type as Question["type"],
+            rubric: q.rubric,
+          }))
+        );
+        applyRubricIfNeeded();
+        toast.success(`${all.length}개 문제가 추가되었습니다.`);
+      }
     }
     wasGeneratingRef.current = isGenerating;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGenerating, generationProgress.stage, error]);
 
   const getGenerateParams = () => {
@@ -112,8 +122,7 @@ export function CaseQuestionGenerator({
       examTitle,
       difficulty,
       questionCount,
-      topics: topics || undefined,
-      customInstructions: customInstructions || undefined,
+      customInstructions: freeformPrompt || undefined,
       materialsText: materialsText.length > 0 ? materialsText : undefined,
     };
   };
@@ -135,38 +144,6 @@ export function CaseQuestionGenerator({
       onRubricSuggested(suggestedRubric);
       rubricSuggestedRef.current = true;
       toast("AI 루브릭 제안을 확인하세요.", { icon: "📋" });
-    }
-  };
-
-  const handleAcceptOne = (questionId: string) => {
-    const q = acceptQuestion(questionId);
-    if (q) {
-      onQuestionsAccepted([
-        {
-          id: q.id,
-          text: q.text,
-          type: q.type as Question["type"],
-          rubric: q.rubric,
-        },
-      ]);
-      applyRubricIfNeeded();
-      toast.success("문제가 추가되었습니다.");
-    }
-  };
-
-  const handleAcceptAll = () => {
-    const all = acceptAll();
-    if (all.length > 0) {
-      onQuestionsAccepted(
-        all.map((q) => ({
-          id: q.id,
-          text: q.text,
-          type: q.type as Question["type"],
-          rubric: q.rubric,
-        }))
-      );
-      applyRubricIfNeeded();
-      toast.success(`${all.length}개 문제가 추가되었습니다.`);
     }
   };
 
@@ -233,36 +210,17 @@ export function CaseQuestionGenerator({
               </Select>
             </div>
 
-            {/* Topics */}
+            {/* Freeform prompt */}
             <div className="space-y-1.5">
-              <Label className="text-sm">
-                특정 토픽{" "}
-                <span className="text-muted-foreground font-normal">
-                  (선택)
-                </span>
-              </Label>
-              <Input
-                value={topics}
-                onChange={(e) => setTopics(e.target.value)}
-                placeholder="예: 주요 개념, 특정 주제, 응용 사례"
-                maxLength={500}
-              />
-            </div>
-
-            {/* Custom instructions */}
-            <div className="space-y-1.5">
-              <Label className="text-sm">
-                추가 지시사항{" "}
-                <span className="text-muted-foreground font-normal">
-                  (선택)
-                </span>
+              <Label className="text-sm">어떤 문제를 만들어드릴까요?
+                <span className="text-muted-foreground font-normal ml-1">(선택)</span>
               </Label>
               <Textarea
-                value={customInstructions}
-                onChange={(e) => setCustomInstructions(e.target.value)}
-                placeholder="예: 한국 기업 사례를 활용해주세요"
+                value={freeformPrompt}
+                onChange={(e) => setFreeformPrompt(e.target.value)}
+                placeholder="예: 커피포트 시장조사 과제, 한국 기업 사례 중심, 난이도 높게..."
                 maxLength={2000}
-                className="min-h-[60px] resize-none"
+                className="min-h-[80px] resize-none"
               />
             </div>
 
@@ -385,19 +343,8 @@ export function CaseQuestionGenerator({
                     <h3 className="text-sm font-medium text-muted-foreground">
                       AI 생성 미리보기
                     </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">마음에 드는 문제를 선택해 시험에 추가하세요.</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">생성 완료 시 자동으로 문제 목록에 추가됩니다.</p>
                   </div>
-                  {generatedQuestions.length > 1 && !isGenerating && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      onClick={handleAcceptAll}
-                      className="gap-1.5"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      전체 시험에 추가 ({generatedQuestions.length}개)
-                    </Button>
-                  )}
                 </div>
 
                 <AnimatePresence mode="popLayout">
@@ -416,7 +363,6 @@ export function CaseQuestionGenerator({
                         isRegenerating={regeneratingId === q.id}
                         isAdjusting={adjustingId === q.id}
                         adjustHistory={getAdjustHistory(q.id)}
-                        onAccept={() => handleAcceptOne(q.id)}
                         onRegenerate={() =>
                           regenerateOne(q.id, getGenerateParams())
                         }

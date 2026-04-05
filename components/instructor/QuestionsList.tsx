@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react";
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -15,6 +17,9 @@ import {
 import { Plus, ArrowUp, ArrowDown, ChevronDown, Pencil } from "lucide-react";
 import { QuestionEditor } from "./QuestionEditor";
 import type { Question } from "./QuestionEditor";
+import { QuestionAdjustSheet } from "./QuestionAdjustSheet";
+import type { ChatMessage } from "@/hooks/useQuestionGeneration";
+import toast from "react-hot-toast";
 
 interface QuestionsListProps {
   questions: Question[];
@@ -30,8 +35,64 @@ interface QuestionsListProps {
   onMove?: (index: number, direction: "up" | "down") => void;
 }
 
+interface AdjustResult {
+  questionText: string;
+  explanation: string;
+}
+
 export function QuestionsList({ questions, highlightedIds, defaultOpen = true, onUpdate, onRemove, onAdd, onMove }: QuestionsListProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [isAdjusting, setIsAdjusting] = useState(false);
+  const [adjustHistories, setAdjustHistories] = useState<Map<string, ChatMessage[]>>(new Map());
+  const [sheetQuestionId, setSheetQuestionId] = useState<string | null>(null);
+
+  const sheetQuestion = questions.find((q) => q.id === sheetQuestionId) ?? null;
+  const sheetHistory = sheetQuestionId ? (adjustHistories.get(sheetQuestionId) ?? []) : [];
+
+  const handleAdjust = useCallback(async (instruction: string): Promise<AdjustResult | null> => {
+    if (!sheetQuestionId) return null;
+    const question = questions.find((q) => q.id === sheetQuestionId);
+    if (!question) return null;
+
+    setIsAdjusting(true);
+    setAdjustHistories((prev) => {
+      const next = new Map(prev);
+      const history = next.get(sheetQuestionId) ?? [];
+      next.set(sheetQuestionId, [...history, { role: "user", content: instruction }]);
+      return next;
+    });
+
+    try {
+      const res = await fetch("/api/ai/adjust-question", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId: sheetQuestionId, questionText: question.text, instruction }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json() as AdjustResult;
+
+      setAdjustHistories((prev) => {
+        const next = new Map(prev);
+        const history = next.get(sheetQuestionId) ?? [];
+        next.set(sheetQuestionId, [
+          ...history,
+          { role: "assistant", content: data.explanation, questionText: data.questionText },
+        ]);
+        return next;
+      });
+      return data;
+    } catch {
+      toast.error("수정에 실패했습니다.");
+      return null;
+    } finally {
+      setIsAdjusting(false);
+    }
+  }, [sheetQuestionId, questions]);
+
+  const handleApplyAdjustment = useCallback((newText: string) => {
+    if (!sheetQuestionId) return;
+    onUpdate(sheetQuestionId, "text", newText);
+  }, [sheetQuestionId, onUpdate]);
 
   // Auto-expand when questions are added (e.g., from AI acceptance)
   useEffect(() => {
@@ -42,6 +103,7 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
   }, [questions.length]);
 
   return (
+    <>
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
       <Card data-testid="manual-questions-section">
         <CollapsibleTrigger asChild>
@@ -128,6 +190,7 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
                       index={index}
                       onUpdate={onUpdate}
                       onRemove={onRemove}
+                      onAIEdit={() => setSheetQuestionId(question.id)}
                     />
                   </div>
                 ))}
@@ -152,5 +215,18 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
         </CollapsibleContent>
       </Card>
     </Collapsible>
+
+      {sheetQuestion && (
+        <QuestionAdjustSheet
+          open={sheetQuestionId !== null}
+          onOpenChange={(open) => { if (!open) setSheetQuestionId(null); }}
+          questionText={sheetQuestion.text}
+          history={sheetHistory}
+          isAdjusting={isAdjusting}
+          onSendInstruction={handleAdjust}
+          onApply={handleApplyAdjustment}
+        />
+      )}
+    </>
   );
 }

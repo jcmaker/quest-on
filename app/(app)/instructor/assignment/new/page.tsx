@@ -12,10 +12,6 @@ import {
   FileImage,
   File,
   ClipboardList,
-  Code,
-  Database,
-  GitBranch,
-  PanelRightOpen,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { extractErrorMessage } from "@/lib/error-messages";
@@ -44,7 +40,6 @@ import {
   ScrollProgress,
 } from "@/components/animate-ui/primitives/animate/scroll-progress";
 import { useFileUpload } from "@/hooks/useFileUpload";
-import type { TaskType, InitialState, CanvasConfig, CodeLanguage } from "@/lib/types/workspace";
 
 function isQuestionContentEmpty(text: string): boolean {
   return text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
@@ -77,12 +72,6 @@ export default function CreateAssignment() {
   const questionsListRef = useRef<HTMLDivElement>(null);
   const [highlightedQuestionIds, setHighlightedQuestionIds] = useState<Set<string>>(new Set());
   const [isAIGeneratingRubric, setIsAIGeneratingRubric] = useState(false);
-
-  // Hybrid workspace state
-  const [taskType, setTaskType] = useState<TaskType>("report");
-  const [starterCode, setStarterCode] = useState("");
-  const [codeLanguage, setCodeLanguage] = useState<CodeLanguage>("sql");
-  const [secondaryCanvas, setSecondaryCanvas] = useState(false);
 
   const generateExamCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -277,22 +266,9 @@ export default function CreateAssignment() {
     try {
       const materialUrls = fileUpload.getUploadedUrls();
       const materialsText = fileUpload.getMaterialsText();
-      // datetime-local value: "2026-03-24T23:59" → append seconds + KST offset → ISO
-      const deadlineDate = new Date(examData.deadline + ":00+09:00");
+      // date input gives "YYYY-MM-DD", auto-set to 23:59 KST
+      const deadlineDate = new Date(examData.deadline + "T23:59:00+09:00");
       const deadlineISO = deadlineDate.toISOString();
-
-      const initialState: InitialState = {};
-      if (taskType === "code" && starterCode) {
-        initialState.starterCode = starterCode;
-        initialState.language = codeLanguage;
-      }
-
-      const canvasConfig: CanvasConfig = {
-        secondaryCanvas,
-        codeEnabled: taskType === "code" || secondaryCanvas,
-        erdEnabled: taskType === "erd" || secondaryCanvas,
-        notesEnabled: true,
-      };
 
       const dataForDB = {
         title: examData.title,
@@ -308,9 +284,9 @@ export default function CreateAssignment() {
         status: "draft",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        type: taskType,
-        initial_state: initialState,
-        canvas_config: canvasConfig,
+        type: "report",
+        initial_state: {},
+        canvas_config: {},
       };
 
       await createAssignmentMutation.mutateAsync(dataForDB);
@@ -361,86 +337,6 @@ export default function CreateAssignment() {
               deadline={examData.deadline}
               onDeadlineChange={(value) => setExamData((prev) => ({ ...prev, deadline: value }))}
             />
-
-            {/* Task Type Selector */}
-            <div className="space-y-3 rounded-lg border border-border bg-card p-5">
-              <Label className="text-base font-semibold">과제 유형</Label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {([
-                  { value: "report" as TaskType, label: "리포트", icon: FileText, desc: "서술형 과제" },
-                  { value: "code" as TaskType, label: "코드", icon: Code, desc: "코드 작성" },
-                  { value: "erd" as TaskType, label: "ERD", icon: Database, desc: "DB 설계" },
-                  { value: "mindmap" as TaskType, label: "마인드맵", icon: GitBranch, desc: "개념 정리" },
-                ]).map(({ value, label, icon: Icon, desc }) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setTaskType(value)}
-                    className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all ${
-                      taskType === value
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border hover:border-muted-foreground/50"
-                    }`}
-                  >
-                    <Icon className="w-6 h-6" />
-                    <span className="text-sm font-medium">{label}</span>
-                    <span className="text-xs text-muted-foreground">{desc}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Starter Code input (for code type) */}
-              {taskType === "code" && (
-                <div className="space-y-2 mt-4 pt-4 border-t border-border">
-                  <Label className="text-sm font-medium">시작 코드 (선택)</Label>
-                  <div className="flex gap-2 mb-2">
-                    <select
-                      value={codeLanguage}
-                      onChange={(e) => setCodeLanguage(e.target.value as CodeLanguage)}
-                      className="rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-                    >
-                      <option value="sql">SQL</option>
-                      <option value="python">Python</option>
-                      <option value="javascript">JavaScript</option>
-                      <option value="typescript">TypeScript</option>
-                      <option value="java">Java</option>
-                      <option value="c">C</option>
-                      <option value="cpp">C++</option>
-                      <option value="go">Go</option>
-                      <option value="rust">Rust</option>
-                      <option value="plaintext">Plain Text</option>
-                    </select>
-                  </div>
-                  <textarea
-                    value={starterCode}
-                    onChange={(e) => setStarterCode(e.target.value)}
-                    placeholder="학생에게 제공할 시작 코드를 입력하세요..."
-                    className="w-full min-h-[120px] rounded-md border border-border bg-background p-3 font-mono text-sm"
-                  />
-                </div>
-              )}
-
-              {/* Hybrid View toggle (for code or erd types) */}
-              {(taskType === "code" || taskType === "erd") && (
-                <div className="flex items-center gap-3 mt-4 pt-4 border-t border-border">
-                  <button
-                    type="button"
-                    onClick={() => setSecondaryCanvas(!secondaryCanvas)}
-                    className={`flex items-center gap-2 rounded-lg border-2 px-4 py-2.5 transition-all ${
-                      secondaryCanvas
-                        ? "border-primary bg-primary/5 text-primary"
-                        : "border-border hover:border-muted-foreground/50"
-                    }`}
-                  >
-                    <PanelRightOpen className="w-4 h-4" />
-                    <span className="text-sm font-medium">하이브리드 뷰 활성화</span>
-                  </button>
-                  <span className="text-xs text-muted-foreground">
-                    코드 에디터 + ERD 캔버스를 동시에 표시합니다
-                  </span>
-                </div>
-              )}
-            </div>
 
             <FileUpload
               files={examData.materials}
@@ -544,7 +440,7 @@ export default function CreateAssignment() {
                   </div>
                   <div className="text-sm text-muted-foreground space-y-1 border-t pt-3">
                     <p>문제 {questions.length}개{examData.materials.length > 0 && ` · 자료 ${examData.materials.length}개`}</p>
-                    <p>제출 기한: {examData.deadline ? `${examData.deadline.replace("T", " ")}까지` : "-"}</p>
+                    <p>제출 기한: {examData.deadline ? `${examData.deadline} 23:59까지` : "-"}</p>
                   </div>
                 </div>
               </div>

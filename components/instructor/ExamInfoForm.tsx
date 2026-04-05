@@ -203,11 +203,11 @@ export function ExamInfoForm({
               </Tooltip>
             </div>
             <Input
-              type="datetime-local"
+              type="date"
               id="deadline"
               value={deadline || ""}
               onChange={(e) => onDeadlineChange?.(e.target.value)}
-              min={new Date().toISOString().slice(0, 16)}
+              min={new Date().toISOString().slice(0, 10)}
               className="w-full max-w-xs"
               required
             />

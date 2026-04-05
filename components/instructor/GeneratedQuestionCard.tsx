@@ -9,7 +9,6 @@ import {
   TooltipContent,
 } from "@/components/ui/tooltip";
 import {
-  Check,
   RefreshCw,
   MessageSquare,
   Trash2,
@@ -42,7 +41,7 @@ interface GeneratedQuestionCardProps {
   isRegenerating: boolean;
   isAdjusting: boolean;
   adjustHistory: ChatMessage[];
-  onAccept: () => void;
+  onAccept?: () => void;
   onRegenerate: () => void;
   onRemove: () => void;
   onAdjust: (instruction: string) => Promise<AdjustResult | null>;
@@ -56,7 +55,6 @@ export function GeneratedQuestionCard({
   isRegenerating,
   isAdjusting,
   adjustHistory,
-  onAccept,
   onRegenerate,
   onRemove,
   onAdjust,
@@ -185,16 +183,6 @@ export function GeneratedQuestionCard({
 
         {/* Footer actions */}
         <div className="flex flex-wrap items-center gap-2 pt-3 border-t">
-          <Button
-            type="button"
-            size="sm"
-            variant="default"
-            onClick={onAccept}
-            className="gap-1.5"
-          >
-            <Check className="w-3.5 h-3.5" />
-            문제 확정
-          </Button>
           <Button
             type="button"
             size="sm"

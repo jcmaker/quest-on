@@ -19,6 +19,13 @@ import { Send, Loader2, Check, ChevronDown, ChevronUp, Eye } from "lucide-react"
 import toast from "react-hot-toast";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 
+const PRESETS = [
+  { label: "더 어렵게", instruction: "난이도를 높여주세요. 더 복잡한 조건과 깊은 분석을 요구하도록 수정해주세요." },
+  { label: "더 쉽게", instruction: "난이도를 낮춰주세요. 조건을 단순화하고 질문을 더 명확하게 만들어주세요." },
+  { label: "더 구체적으로", instruction: "질문을 더 구체적이고 명확하게 만들어주세요." },
+  { label: "더 길게", instruction: "시나리오를 더 상세하게 만들고 하위 질문을 추가해주세요." },
+];
+
 interface QuestionAdjustSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -41,6 +48,7 @@ export function QuestionAdjustSheet({
   const [input, setInput] = useState("");
   const [appliedIdx, setAppliedIdx] = useState<number | null>(null);
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
+  const [loadingPreset, setLoadingPreset] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -177,6 +185,38 @@ export function QuestionAdjustSheet({
             </div>
           )}
           <div ref={chatEndRef} />
+        </div>
+
+        {/* Preset buttons */}
+        <div className="px-6 py-2 border-t shrink-0 flex flex-wrap gap-1.5">
+          {PRESETS.map((preset) => (
+            <Button
+              key={preset.label}
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isAdjusting || loadingPreset !== null}
+              className="rounded-full text-xs h-7 px-3"
+              onClick={async () => {
+                setLoadingPreset(preset.label);
+                try {
+                  const result = await onSendInstruction(preset.instruction) as { questionText?: string; explanation?: string } | null;
+                  if (result && typeof result === "object" && "questionText" in result) {
+                    toast.success(`"${preset.label}" 수정이 적용되었습니다.`);
+                  }
+                } catch {
+                  toast.error("수정에 실패했습니다.");
+                } finally {
+                  setLoadingPreset(null);
+                }
+              }}
+            >
+              {loadingPreset === preset.label && (
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              )}
+              {preset.label}
+            </Button>
+          ))}
         </div>
 
         {/* Input area */}

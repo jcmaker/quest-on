@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Hash, HelpCircle, Trash2 } from "lucide-react";
+import { Hash, HelpCircle, MessageSquare, Trash2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -37,6 +37,7 @@ interface QuestionEditorProps {
     value: string | boolean
   ) => void;
   onRemove?: (id: string) => void;
+  onAIEdit?: () => void;
 }
 
 export function QuestionEditor({
@@ -44,6 +45,7 @@ export function QuestionEditor({
   index,
   onUpdate,
   onRemove,
+  onAIEdit,
 }: QuestionEditorProps) {
   return (
     <div
@@ -65,22 +67,41 @@ export function QuestionEditor({
           <div className="h-6 w-px bg-border"></div>
           <span className="text-sm text-muted-foreground">문제 출제 중</span>
         </div>
-        {onRemove && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={() => onRemove(question.id)}
-                className="size-8 text-destructive hover:text-destructive"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>문제 삭제</TooltipContent>
-          </Tooltip>
-        )}
+        <div className="flex items-center gap-1">
+          {onAIEdit && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onAIEdit}
+                  className="gap-1.5 bg-violet-500 hover:bg-violet-600 text-white border-0 h-8 shadow-sm"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  AI 수정
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>AI로 문제 수정</TooltipContent>
+            </Tooltip>
+          )}
+          {onRemove && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => onRemove(question.id)}
+                  className="size-8 text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>문제 삭제</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </div>
       <div className="space-y-4">
         <div className="space-y-2">
