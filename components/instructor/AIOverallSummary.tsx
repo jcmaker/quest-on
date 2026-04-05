@@ -114,7 +114,7 @@ export function AIOverallSummary({
               <Plus className="w-4 h-4" /> 강점
             </h4>
             <ul className="space-y-2 text-sm">
-              {summary.strengths.map((item, i) => (
+              {(summary.strengths ?? []).map((item, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span className="text-blue-400 mt-1">•</span>
                   <span>{item}</span>
@@ -128,7 +128,7 @@ export function AIOverallSummary({
               <Minus className="w-4 h-4" /> 개선점
             </h4>
             <ul className="space-y-2 text-sm">
-              {summary.weaknesses.map((item, i) => (
+              {(summary.weaknesses ?? []).map((item, i) => (
                 <li key={i} className="flex items-start gap-2">
                   <span className="text-orange-400 mt-1">•</span>
                   <span>{item}</span>

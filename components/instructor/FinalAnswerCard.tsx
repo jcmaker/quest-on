@@ -28,7 +28,7 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-const FLEXIBLE_WHITESPACE_PATTERN = "(?:\\s|&nbsp;|<br\\s*/?>)+";
+const FLEXIBLE_WHITESPACE_PATTERN = "(?:\\s|&nbsp;|<br\\s*/?>)*";
 
 // 원본 텍스트 기준으로 특수문자 이스케이프를 먼저 수행한 뒤,
 // HTML 이스케이프와 공백/줄바꿈 유연 매칭 패턴을 결합한다.
