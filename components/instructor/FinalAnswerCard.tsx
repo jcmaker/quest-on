@@ -62,6 +62,37 @@ function textToHtml(text: string): string {
   return escapeHtml(text).replace(/\n/g, "<br>"); // 줄바꿈을 <br>로 변환
 }
 
+function applyPositionFallback(
+  htmlAnswer: string,
+  log: PasteLog,
+  colorClass: string
+): string {
+  const { paste_start, paste_end } = log;
+
+  if (
+    paste_start === undefined ||
+    paste_start === null ||
+    paste_end === undefined ||
+    paste_end === null ||
+    paste_end <= paste_start
+  ) return htmlAnswer;
+
+  const plainText = stripHtml(htmlAnswer);
+
+  if (paste_start >= plainText.length || paste_end > plainText.length) return htmlAnswer;
+
+  const targetText = plainText.substring(paste_start, paste_end);
+  if (!targetText.trim()) return htmlAnswer;
+
+  const escapedTarget = escapeRegExp(escapeHtml(targetText));
+  const targetRegex = new RegExp(escapedTarget, "g");
+
+  return htmlAnswer.replace(
+    targetRegex,
+    `<mark class="${colorClass} opacity-60 px-1 rounded" title="붙여넣기 후 수정됨">$&</mark>`
+  );
+}
+
 // 답안에서 복사-붙여넣기한 부분을 하이라이트
 function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
   if (!answer) return "";
@@ -92,50 +123,62 @@ function highlightPastedContent(answer: string, pasteLogs: PasteLog[]): string {
       for (const log of internalPastes) {
         const pastedText = log.pasted_text!;
         const regex = buildFlexibleHtmlRegexFromRawText(pastedText);
-        if (!regex) continue;
-        // 이미 하이라이트되지 않은 부분만 매칭
-        const parts = htmlAnswer.split(/<mark[^>]*>.*?<\/mark>/g);
-        const markers = htmlAnswer.match(/<mark[^>]*>.*?<\/mark>/g) || [];
+        const beforeLength = htmlAnswer.length;
 
-        // 각 부분에서 내부 복사 텍스트 찾기
-        let newHtmlAnswer = "";
-        for (let i = 0; i < parts.length; i++) {
-          const part = parts[i];
-          const highlightedPart = part.replace(
-            regex,
-            `<mark class="bg-blue-200 text-blue-900 font-semibold px-1 rounded">$&</mark>`
-          );
-          newHtmlAnswer += highlightedPart;
-          if (i < markers.length) {
-            newHtmlAnswer += markers[i];
+        if (regex) {
+          // 이미 하이라이트되지 않은 부분만 매칭
+          const parts = htmlAnswer.split(/<mark[^>]*>.*?<\/mark>/gs);
+          const markers = htmlAnswer.match(/<mark[^>]*>.*?<\/mark>/gs) || [];
+
+          // 각 부분에서 내부 복사 텍스트 찾기
+          let newHtmlAnswer = "";
+          for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            const highlightedPart = part.replace(
+              regex,
+              `<mark class="bg-blue-200 text-blue-900 font-semibold px-1 rounded">$&</mark>`
+            );
+            newHtmlAnswer += highlightedPart;
+            if (i < markers.length) newHtmlAnswer += markers[i];
           }
+          htmlAnswer = newHtmlAnswer;
         }
-        htmlAnswer = newHtmlAnswer;
+
+        // Fallback: if regex didn't match (answer length unchanged), try position-based
+        if (htmlAnswer.length === beforeLength) {
+          htmlAnswer = applyPositionFallback(htmlAnswer, log, "bg-blue-100 text-blue-800");
+        }
       }
 
       // 외부 복사 하이라이트 (빨간색) - 내부 복사와 동일한 로직, 색상만 다름
       for (const log of externalPastes) {
         const pastedText = log.pasted_text!;
         const regex = buildFlexibleHtmlRegexFromRawText(pastedText);
-        if (!regex) continue;
-        // 이미 하이라이트되지 않은 부분만 매칭
-        const parts = htmlAnswer.split(/<mark[^>]*>.*?<\/mark>/g);
-        const markers = htmlAnswer.match(/<mark[^>]*>.*?<\/mark>/g) || [];
+        const beforeLength = htmlAnswer.length;
 
-        // 각 부분에서 외부 복사 텍스트 찾기
-        let newHtmlAnswer = "";
-        for (let i = 0; i < parts.length; i++) {
-          const part = parts[i];
-          const highlightedPart = part.replace(
-            regex,
-            `<mark class="bg-red-200 text-red-900 font-semibold px-1 rounded">$&</mark>`
-          );
-          newHtmlAnswer += highlightedPart;
-          if (i < markers.length) {
-            newHtmlAnswer += markers[i];
+        if (regex) {
+          // 이미 하이라이트되지 않은 부분만 매칭
+          const parts = htmlAnswer.split(/<mark[^>]*>.*?<\/mark>/gs);
+          const markers = htmlAnswer.match(/<mark[^>]*>.*?<\/mark>/gs) || [];
+
+          // 각 부분에서 외부 복사 텍스트 찾기
+          let newHtmlAnswer = "";
+          for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            const highlightedPart = part.replace(
+              regex,
+              `<mark class="bg-red-200 text-red-900 font-semibold px-1 rounded">$&</mark>`
+            );
+            newHtmlAnswer += highlightedPart;
+            if (i < markers.length) newHtmlAnswer += markers[i];
           }
+          htmlAnswer = newHtmlAnswer;
         }
-        htmlAnswer = newHtmlAnswer;
+
+        // Fallback: if regex didn't match (answer length unchanged), try position-based
+        if (htmlAnswer.length === beforeLength) {
+          htmlAnswer = applyPositionFallback(htmlAnswer, log, "bg-red-100 text-red-800");
+        }
       }
     }
 
@@ -336,6 +379,26 @@ export function FinalAnswerCard({
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+            {relevantLogs.length > 0 && (
+              <div className="flex items-center gap-4 text-xs text-muted-foreground px-1">
+                {suspiciousLogs.length > 0 && (
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded bg-red-200" />
+                    외부 복사
+                  </span>
+                )}
+                {internalLogs.length > 0 && (
+                  <span className="flex items-center gap-1.5">
+                    <span className="inline-block w-3 h-3 rounded bg-blue-200" />
+                    내부 복사 (AI 답변)
+                  </span>
+                )}
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block w-3 h-3 rounded bg-red-100 opacity-60 border border-red-200" />
+                  붙여넣기 후 수정됨
+                </span>
               </div>
             )}
             <div className="bg-gray-50 rounded-lg p-4">
