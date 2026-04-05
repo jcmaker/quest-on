@@ -1,12 +1,16 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -17,6 +21,8 @@ import {
   Circle,
   PlayCircle,
   FileText,
+  Award,
+  TrendingUp,
   Plus,
   Copy,
   Search,
@@ -35,23 +41,15 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
-import {
-  useInfiniteQuery,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import { useInView } from "react-intersection-observer";
 import { usePathname } from "next/navigation";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { useDebounce } from "@/hooks/useDebounce";
 import { cn } from "@/lib/utils";
-import {
-  getScoreColor as getScoreColorUtil,
-  getStatusColor as getStatusColorUtil,
-  formatDateKo,
-} from "@/lib/grading-utils";
-import { getEmoji3dPath } from "@/lib/emoji-3d";
+import { getScoreColor as getScoreColorUtil, getStatusColor as getStatusColorUtil, formatDateKo } from "@/lib/grading-utils";
+
 
 interface ExamSession {
   id: string;
@@ -165,19 +163,23 @@ export default function StudentDashboard() {
   }, [isLoaded, isSignedIn, userRole, user, router]);
 
   // Check if profile exists for students (React Query 기반)
-  const { data: profileData, isLoading: isProfileLoading } = useQuery({
+  const {
+    data: profileData,
+    isLoading: isProfileLoading,
+  } = useQuery({
     queryKey: ["student-profile", user?.id],
     enabled:
-      isLoaded && isSignedIn && userRole === "student" && !profileChecked,
+      isLoaded &&
+      isSignedIn &&
+      userRole === "student" &&
+      !profileChecked,
     queryFn: async () => {
       const response = await fetch("/api/student/profile");
       if (response.status === 403) {
         return { forbidden: true } as const;
       }
       if (!response.ok) {
-        throw new Error(
-          "[Profile Check] 프로필을 불러오는 중 오류가 발생했습니다.",
-        );
+        throw new Error("[Profile Check] 프로필을 불러오는 중 오류가 발생했습니다.");
       }
       const data = await response.json();
       return { forbidden: false, ...data } as const;
@@ -214,7 +216,7 @@ export default function StudentDashboard() {
     queryFn: async ({ pageParam = 1, signal }) => {
       const response = await fetch(
         `/api/student/sessions?page=${pageParam}&limit=10`,
-        { signal }, // AbortSignal 연결
+        { signal } // AbortSignal 연결
       );
       if (!response.ok) throw new Error("Failed to fetch sessions");
       return response.json() as Promise<SessionsResponse>;
@@ -261,10 +263,10 @@ export default function StudentDashboard() {
   const allSessions = data?.pages.flatMap((page) => page.sessions) || [];
 
   const completedSessions = allSessions.filter(
-    (session) => session.status === "completed",
+    (session) => session.status === "completed"
   );
   const inProgressSessions = allSessions.filter(
-    (session) => session.status === "in-progress",
+    (session) => session.status === "in-progress"
   );
   const unsubmittedAssignments = allSessions.filter(
     (session) =>
@@ -273,7 +275,9 @@ export default function StudentDashboard() {
 
   // ✅ 같은 시험 코드에 제출된 세션이 있으면 미제출 세션 제외
   const examCodesWithSubmittedSessions = new Set(
-    allSessions.filter((s) => s.status === "completed").map((s) => s.examCode),
+    allSessions
+      .filter((s) => s.status === "completed")
+      .map((s) => s.examCode)
   );
 
   // Filter sessions based on search query and filter
@@ -361,7 +365,7 @@ export default function StudentDashboard() {
   currentMonth.setDate(1);
   currentMonth.setHours(0, 0, 0, 0);
   const thisMonthSessions = allSessions.filter(
-    (session) => new Date(session.createdAt) >= currentMonth,
+    (session) => new Date(session.createdAt) >= currentMonth
   ).length;
 
   const getStatusColor = getStatusColorUtil;
@@ -383,18 +387,12 @@ export default function StudentDashboard() {
   };
 
   // 마우스 오버 시 리포트 데이터 프리페칭 (체감 네비게이션 속도 개선)
-  const handleSessionHover = (session: {
-    id: string;
-    status: string;
-    isGraded: boolean;
-  }) => {
+  const handleSessionHover = (session: { id: string; status: string; isGraded: boolean }) => {
     if (session.status === "completed" && session.isGraded) {
       queryClient.prefetchQuery({
         queryKey: ["student-report", session.id, user?.id],
         queryFn: async () => {
-          const response = await fetch(
-            `/api/student/session/${session.id}/report`,
-          );
+          const response = await fetch(`/api/student/session/${session.id}/report`);
           if (!response.ok) throw new Error("Prefetch failed");
           return response.json();
         },
@@ -484,10 +482,9 @@ export default function StudentDashboard() {
   // Session action/CTA renderer (shared between grid and list views)
   const renderSessionAction = (session: ExamSession) => {
     if (session.status === "in-progress") {
-      const resumePath =
-        session.duration === 0
-          ? `/assignment/${session.examCode}`
-          : `/exam/${session.examCode}`;
+      const resumePath = session.duration === 0
+        ? `/assignment/${session.examCode}`
+        : `/exam/${session.examCode}`;
       return (
         <Link
           href={resumePath}
@@ -533,7 +530,7 @@ export default function StudentDashboard() {
       "shrink-0 min-h-[36px] px-3 text-sm font-medium rounded-md transition-colors",
       active
         ? "bg-primary/10 text-primary border border-primary/20"
-        : "text-muted-foreground hover:bg-muted border border-transparent",
+        : "text-muted-foreground hover:bg-muted border border-transparent"
     );
 
   return (
@@ -589,9 +586,7 @@ export default function StudentDashboard() {
             {/* Main Content Area */}
             <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
               {/* Top Header — lightweight */}
-              <header
-                className={`sticky top-0 z-40 bg-background/80 backdrop-blur-sm border-b border-border transition-transform duration-300 ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}
-              >
+              <header className={`sticky top-0 z-40 bg-background/80 backdrop-blur-sm border-b border-border transition-transform duration-300 ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}>
                 <div className="px-4 sm:px-6 lg:px-8 py-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
@@ -606,7 +601,7 @@ export default function StudentDashboard() {
                           {getGreeting(
                             user?.firstName ||
                               user?.emailAddresses[0]?.emailAddress ||
-                              "",
+                              ""
                           )}
                         </p>
                       </div>
@@ -621,45 +616,27 @@ export default function StudentDashboard() {
               </header>
 
               {/* Main Content */}
-              <main
-                ref={mainRef}
-                className="flex-1 overflow-y-auto bg-background pb-20 lg:pb-0"
-              >
+              <main ref={mainRef} className="flex-1 overflow-y-auto bg-background pb-20 lg:pb-0">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
                   {/* Welcome Section — minimal card */}
-                  <div className="dashboard-surface-glow relative overflow-hidden rounded-[2rem] border border-border/70 bg-gradient-to-r from-[#4e7dff] via-[#4a74f5] to-[#4f79ff] p-5 text-white shadow-sm sm:p-6">
-                    <div className="grid items-center gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-                      <div className="space-y-3 min-w-0">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/70">
-                          Student Dashboard
-                        </p>
-                        <h2 className="text-3xl font-extrabold leading-tight text-white sm:text-4xl">
+                  <div className="border bg-card rounded-xl p-6 sm:p-8">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <h2 className="text-xl sm:text-2xl font-bold text-foreground">
                           {getGreeting(user?.firstName || user?.fullName || "")}
                         </h2>
-                        <p className="text-sm sm:text-base text-white/85 leading-relaxed">
+                        <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
                           시험 코드를 입력하여 시험을 시작하거나, 완료한 시험의
                           결과를 확인하세요
                         </p>
-                        <div className="pt-1">
-                          <Link href="/join">
-                            <Button className="min-h-[44px]">
-                              <Plus
-                                className="w-4 h-4 mr-2"
-                                aria-hidden="true"
-                              />
-                              시험 시작
-                            </Button>
-                          </Link>
-                        </div>
                       </div>
-                      <div className="relative h-full min-h-[140px]">
-                        <Image
-                          src={getEmoji3dPath("board")}
-                          alt="학생 대시보드 메인 오브젝트"
-                          width={350}
-                          height={350}
-                          className="absolute -right-5 -top-11 h-40 w-40 object-contain sm:-right-10 sm:-top-16 sm:h-52 sm:w-52 lg:h-56 lg:w-56"
-                        />
+                      <div className="hidden md:block shrink-0">
+                        <Link href="/join">
+                          <Button className="min-h-[44px]">
+                            <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
+                            시험 시작
+                          </Button>
+                        </Link>
                       </div>
                     </div>
                   </div>
@@ -675,24 +652,22 @@ export default function StudentDashboard() {
                     ) : (
                       <>
                         {/* 전체 시험 카드 */}
-                        <div className="relative overflow-hidden border rounded-2xl shadow-sm p-5">
-                          <Image
-                            src={getEmoji3dPath("board")}
-                            alt=""
-                            width={220}
-                            height={220}
-                            className="stat-card-watermark"
-                            aria-hidden="true"
-                          />
+                        <div className="border bg-card rounded-xl shadow-sm p-5">
                           <div className="flex items-center justify-between mb-3">
-                            <span className="relative z-10 text-sm font-medium text-muted-foreground">
+                            <span className="text-sm font-medium text-muted-foreground">
                               전체 시험
                             </span>
+                            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                              <FileText
+                                className="w-4 h-4 text-primary/70"
+                                aria-hidden="true"
+                              />
+                            </div>
                           </div>
-                          <div className="relative z-10 text-2xl sm:text-3xl font-bold">
+                          <div className="text-2xl sm:text-3xl font-bold">
                             {displayTotalCount}
                           </div>
-                          <div className="relative z-10 mt-2 flex items-baseline gap-2">
+                          <div className="flex items-baseline gap-2 mt-2">
                             <div className="flex items-center gap-1">
                               <div className="h-2 w-2 rounded-full bg-primary" />
                               <span className="text-xs font-medium text-foreground">
@@ -705,7 +680,7 @@ export default function StudentDashboard() {
                               </span>
                             )}
                           </div>
-                          <p className="relative z-10 mt-1 text-xs text-muted-foreground">
+                          <p className="text-xs text-muted-foreground mt-1">
                             {displayCompletedCount}개 완료,{" "}
                             {displayInProgressCount}개 진행 중
                           </p>
@@ -733,22 +708,20 @@ export default function StudentDashboard() {
                         </div>
 
                         {/* 평균 점수 카드 */}
-                        <div className="relative overflow-hidden border bg-card rounded-2xl shadow-sm p-5">
-                          <Image
-                            src={getEmoji3dPath("trophy")}
-                            alt=""
-                            width={220}
-                            height={220}
-                            className="stat-card-watermark"
-                            aria-hidden="true"
-                          />
+                        <div className="border bg-card rounded-xl shadow-sm p-5">
                           <div className="flex items-center justify-between mb-3">
-                            <span className="relative z-10 text-sm font-medium text-muted-foreground">
+                            <span className="text-sm font-medium text-muted-foreground">
                               평균 점수
                             </span>
+                            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                              <TrendingUp
+                                className="w-4 h-4 text-primary/70"
+                                aria-hidden="true"
+                              />
+                            </div>
                           </div>
                           <div
-                            className={`relative z-10 text-2xl sm:text-3xl font-bold transition-colors duration-200 ${
+                            className={`text-2xl sm:text-3xl font-bold transition-colors duration-200 ${
                               overallAverageScore !== null
                                 ? getScoreColor(overallAverageScore, 100)
                                 : "text-muted-foreground"
@@ -758,7 +731,7 @@ export default function StudentDashboard() {
                               ? `${overallAverageScore}%`
                               : "평가 대기"}
                           </div>
-                          <p className="relative z-10 mt-1 text-xs text-muted-foreground">
+                          <p className="text-xs text-muted-foreground mt-1">
                             {overallStats?.completedSessions ||
                               displayCompletedCount}
                             개 시험 기준
@@ -766,24 +739,22 @@ export default function StudentDashboard() {
                         </div>
 
                         {/* 완료한 시험 카드 */}
-                        <div className="relative overflow-hidden border bg-card rounded-2xl shadow-sm sm:col-span-2 lg:col-span-1 p-5">
-                          <Image
-                            src={getEmoji3dPath("exam-result")}
-                            alt=""
-                            width={220}
-                            height={220}
-                            className="stat-card-watermark"
-                            aria-hidden="true"
-                          />
+                        <div className="border bg-card rounded-xl shadow-sm sm:col-span-2 lg:col-span-1 p-5">
                           <div className="flex items-center justify-between mb-3">
-                            <span className="relative z-10 text-sm font-medium text-muted-foreground">
+                            <span className="text-sm font-medium text-muted-foreground">
                               완료한 시험
                             </span>
+                            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                              <Award
+                                className="w-4 h-4 text-primary/70"
+                                aria-hidden="true"
+                              />
+                            </div>
                           </div>
-                          <div className="relative z-10 text-2xl sm:text-3xl font-bold">
+                          <div className="text-2xl sm:text-3xl font-bold">
                             {displayCompletedCount}
                           </div>
-                          <p className="relative z-10 mt-1 text-xs text-muted-foreground">
+                          <p className="text-xs text-muted-foreground mt-1">
                             {displayInProgressCount > 0
                               ? `${displayInProgressCount}개 진행 중`
                               : "모든 시험 완료"}
@@ -798,8 +769,12 @@ export default function StudentDashboard() {
                     {/* Section header */}
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                       <div className="min-w-0 flex-1">
-                        <h3 className="text-lg sm:text-xl font-semibold">
-                          기록
+                        <h3 className="flex items-center space-x-2 text-lg sm:text-xl font-semibold">
+                          <FileText
+                            className="w-5 h-5 text-primary shrink-0"
+                            aria-hidden="true"
+                          />
+                          <span>기록</span>
                         </h3>
                         <p className="mt-1 text-sm text-muted-foreground">
                           시험에서의 성과 및 진행 상황
@@ -851,9 +826,7 @@ export default function StudentDashboard() {
                         </button>
                         <button
                           onClick={() => setFilter("in-progress")}
-                          className={filterButtonClass(
-                            filter === "in-progress",
-                          )}
+                          className={filterButtonClass(filter === "in-progress")}
                           aria-pressed={filter === "in-progress"}
                           aria-label="진행 중 필터"
                         >
@@ -904,7 +877,7 @@ export default function StudentDashboard() {
                               "p-1.5 rounded-md transition-colors",
                               viewMode === "grid"
                                 ? "bg-primary/10 text-primary"
-                                : "text-muted-foreground hover:text-foreground",
+                                : "text-muted-foreground hover:text-foreground"
                             )}
                             aria-label="그리드 뷰"
                             aria-pressed={viewMode === "grid"}
@@ -917,7 +890,7 @@ export default function StudentDashboard() {
                               "p-1.5 rounded-md transition-colors",
                               viewMode === "list"
                                 ? "bg-primary/10 text-primary"
-                                : "text-muted-foreground hover:text-foreground",
+                                : "text-muted-foreground hover:text-foreground"
                             )}
                             aria-label="리스트 뷰"
                             aria-pressed={viewMode === "list"}
@@ -1003,7 +976,7 @@ export default function StudentDashboard() {
                               <Badge
                                 variant="outline"
                                 className={`flex items-center space-x-1 ${getStatusColor(
-                                  session.status,
+                                  session.status
                                 )}`}
                                 aria-label={`상태: ${
                                   session.status === "completed"
@@ -1024,7 +997,7 @@ export default function StudentDashboard() {
                                   <span
                                     className={`text-lg font-bold ${getScoreColor(
                                       session.averageScore,
-                                      100,
+                                      100
                                     )}`}
                                   >
                                     {session.averageScore}%
@@ -1046,21 +1019,13 @@ export default function StudentDashboard() {
                               <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" aria-hidden="true" />
                                 {session.duration === 0 ? (
-                                  <Badge
-                                    variant="secondary"
-                                    className="text-[10px] px-1.5 py-0"
-                                  >
-                                    과제
-                                  </Badge>
+                                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">과제</Badge>
                                 ) : (
                                   `${session.duration}분`
                                 )}
                               </span>
                               <span className="flex items-center gap-1">
-                                <Calendar
-                                  className="w-3 h-3"
-                                  aria-hidden="true"
-                                />
+                                <Calendar className="w-3 h-3" aria-hidden="true" />
                                 {session.submittedAt
                                   ? formatDate(session.submittedAt)
                                   : formatDate(session.createdAt)}
@@ -1090,7 +1055,7 @@ export default function StudentDashboard() {
                                 <Badge
                                   variant="outline"
                                   className={`flex items-center space-x-1 shrink-0 ${getStatusColor(
-                                    session.status,
+                                    session.status
                                   )}`}
                                   aria-label={`상태: ${
                                     session.status === "completed"
@@ -1122,12 +1087,7 @@ export default function StudentDashboard() {
                                     aria-hidden="true"
                                   />
                                   {session.duration === 0 ? (
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-[10px] px-1.5 py-0"
-                                    >
-                                      과제
-                                    </Badge>
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">과제</Badge>
                                   ) : (
                                     <span>{session.duration}분</span>
                                   )}
@@ -1158,7 +1118,7 @@ export default function StudentDashboard() {
                                     <div
                                       className={`text-lg sm:text-xl font-bold transition-colors duration-200 ${getScoreColor(
                                         session.averageScore,
-                                        100,
+                                        100
                                       )}`}
                                       aria-label={`평균 점수: ${session.averageScore}%`}
                                     >
@@ -1180,29 +1140,31 @@ export default function StudentDashboard() {
                     )}
 
                     {/* Infinite scroll observer + end messages */}
-                    {!searchQuery.trim() && filter === "all" && hasNextPage && (
-                      <div
-                        ref={observerRef}
-                        className="flex flex-col items-center justify-center py-6 gap-2"
-                        aria-live="polite"
-                      >
-                        {isFetchingNextPage ? (
-                          <>
-                            <Loader2
-                              className="w-6 h-6 animate-spin text-primary"
-                              aria-hidden="true"
-                            />
+                    {!searchQuery.trim() &&
+                      filter === "all" &&
+                      hasNextPage && (
+                        <div
+                          ref={observerRef}
+                          className="flex flex-col items-center justify-center py-6 gap-2"
+                          aria-live="polite"
+                        >
+                          {isFetchingNextPage ? (
+                            <>
+                              <Loader2
+                                className="w-6 h-6 animate-spin text-primary"
+                                aria-hidden="true"
+                              />
+                              <span className="text-sm text-muted-foreground">
+                                더 불러오는 중...
+                              </span>
+                            </>
+                          ) : (
                             <span className="text-sm text-muted-foreground">
-                              더 불러오는 중...
+                              스크롤해서 더 보기
                             </span>
-                          </>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">
-                            스크롤해서 더 보기
-                          </span>
-                        )}
-                      </div>
-                    )}
+                          )}
+                        </div>
+                      )}
                     {!hasNextPage &&
                       !searchQuery.trim() &&
                       filter === "all" &&

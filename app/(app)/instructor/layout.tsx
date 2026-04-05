@@ -15,7 +15,6 @@ import {
 import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { UserMenu } from "@/components/auth/UserMenu";
-import { getEmoji3dPath } from "@/lib/emoji-3d";
 
 export default function InstructorLayout({
   children,
@@ -90,19 +89,12 @@ export default function InstructorLayout({
     <div className="min-h-screen bg-background">
       <SignedOut>
         <div className="flex items-center justify-center h-screen p-4">
-          <Card className="w-full max-w-md border-0 bg-card/85 shadow-xl backdrop-blur-sm">
+          <Card className="w-full max-w-md shadow-xl border-0 bg-card/80 backdrop-blur-sm">
             <CardHeader className="text-center space-y-4">
-              <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary">
+              <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center mx-auto">
                 <GraduationCap
                   className="w-8 h-8 text-primary-foreground"
                   aria-hidden="true"
-                />
-                <Image
-                  src={getEmoji3dPath("graduation")}
-                  alt="졸업 이모티콘"
-                  width={52}
-                  height={52}
-                  className="pointer-events-none absolute -bottom-4 -right-4 h-12 w-12 rounded-xl border border-border/50 bg-background/90 p-1 shadow-sm"
                 />
               </div>
               <CardTitle className="text-xl font-bold">
@@ -150,18 +142,9 @@ export default function InstructorLayout({
           </Sidebar>
 
           <SidebarInset className="min-w-0 overflow-x-hidden">
-            <header className={`sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-sm transition-transform duration-300 lg:hidden ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}>
-              <div className="flex items-center justify-between px-4 py-3">
-                <div className="flex items-center gap-2.5">
-                  <Image src="/qlogo_icon.png" alt="Quest-On" width={28} height={28} />
-                  <Image
-                    src={getEmoji3dPath("presentation")}
-                    alt="강사 대시보드"
-                    width={38}
-                    height={38}
-                    className="h-8 w-8 rounded-lg border border-border/50 bg-card/90 p-0.5 shadow-sm"
-                  />
-                </div>
+            <header className={`sticky top-0 z-40 lg:hidden bg-background/80 backdrop-blur-sm border-b border-border transition-transform duration-300 ${headerVisible ? "translate-y-0" : "-translate-y-full"}`}>
+              <div className="px-4 py-3 flex items-center justify-between">
+                <Image src="/qlogo_icon.png" alt="Quest-On" width={28} height={28} />
                 <UserMenu />
               </div>
             </header>

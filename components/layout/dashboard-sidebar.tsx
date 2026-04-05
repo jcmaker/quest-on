@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
+import { cn } from "@/lib/utils";
 import {
   SidebarContent as ShadcnSidebarContent,
   SidebarHeader,
@@ -92,9 +93,9 @@ export function DashboardSidebar({
 
   return (
     <>
-      <SidebarHeader className="relative p-4">
+      <SidebarHeader className="p-4 relative">
         <div className="flex items-center gap-2 overflow-hidden">
-          <Link href={homeHref} className="flex min-w-0 items-center gap-2.5">
+          <Link href={homeHref} className="flex items-center gap-2 min-w-0">
             <Image
               src="/qstn_logo_svg.svg"
               alt="Quest-On Logo"
@@ -111,7 +112,7 @@ export function DashboardSidebar({
         {/* Chevron toggle pinned to sidebar edge */}
         <button
           onClick={toggleSidebar}
-          className="absolute -right-3.5 top-1/2 z-10 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-sidebar-foreground/60 shadow-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          className="absolute -right-3.5 top-1/2 -translate-y-1/2 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-sidebar-border bg-sidebar shadow-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
           aria-label={isCollapsed ? "사이드바 확장" : "사이드바 축소"}
         >
           {isCollapsed ? (
