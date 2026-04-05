@@ -285,8 +285,6 @@ export default function CreateAssignment() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         type: "report",
-        initial_state: {},
-        canvas_config: {},
       };
 
       await createAssignmentMutation.mutateAsync(dataForDB);
@@ -380,6 +378,7 @@ export default function CreateAssignment() {
                 questions={questions}
                 highlightedIds={highlightedQuestionIds}
                 defaultOpen={false}
+                mode="assignment"
                 onUpdate={updateQuestion}
                 onRemove={(id) => setQuestions((prev) => prev.filter((q) => q.id !== id))}
                 onAdd={addQuestion}

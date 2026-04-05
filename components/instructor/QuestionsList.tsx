@@ -25,6 +25,7 @@ interface QuestionsListProps {
   questions: Question[];
   highlightedIds?: Set<string>;
   defaultOpen?: boolean;
+  mode?: "exam" | "assignment";
   onUpdate: (
     id: string,
     field: keyof Question,
@@ -40,7 +41,7 @@ interface AdjustResult {
   explanation: string;
 }
 
-export function QuestionsList({ questions, highlightedIds, defaultOpen = true, onUpdate, onRemove, onAdd, onMove }: QuestionsListProps) {
+export function QuestionsList({ questions, highlightedIds, defaultOpen = true, mode = "exam", onUpdate, onRemove, onAdd, onMove }: QuestionsListProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [adjustHistories, setAdjustHistories] = useState<Map<string, ChatMessage[]>>(new Map());
@@ -133,7 +134,7 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
         <CollapsibleContent>
           <CardContent>
             <div className="flex items-center justify-between mb-4">
-              <p className="text-sm text-muted-foreground">시험 문제를 입력하세요</p>
+              <p className="text-sm text-muted-foreground">{mode === "assignment" ? "과제 문제를 입력하세요" : "시험 문제를 입력하세요"}</p>
               {onAdd && (
                 <Button
                   type="button"
@@ -191,6 +192,7 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, o
                       onUpdate={onUpdate}
                       onRemove={onRemove}
                       onAIEdit={() => setSheetQuestionId(question.id)}
+                      mode={mode}
                     />
                   </div>
                 ))}
