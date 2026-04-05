@@ -4,10 +4,10 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-const supabase = getSupabaseServer();
-
 export async function POST(request: Request) {
   try {
+    const supabase = getSupabaseServer();
+
     // Authentication check
     const user = await currentUser();
     if (!user) {
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     }
 
     // Rate limit: prevent paste log spam
-    const rl = await checkRateLimitAsync(`paste-log:${user.id}`, RATE_LIMITS.general);
+    const rl = await checkRateLimitAsync(`paste-log:${user.id}`, RATE_LIMITS.pasteLog);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many paste log requests", 429);
     }

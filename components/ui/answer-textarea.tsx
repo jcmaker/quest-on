@@ -19,9 +19,8 @@ interface AnswerTextareaProps {
 }
 
 // 내부 복사 마커 (Zero-width space 앞뒤로 추가하여 감지 용이)
-const INTERNAL_COPY_MARKER_START = "\u200B\u200B\u200B";
-const INTERNAL_COPY_MARKER_END = "\u200B\u200B\u200B";
-const INTERNAL_COPY_MARKER = INTERNAL_COPY_MARKER_START + INTERNAL_COPY_MARKER_END;
+const INTERNAL_COPY_MARKER_START = "\u200B\u{E0001}\u200B";
+const INTERNAL_COPY_MARKER_END = "\u200B\u{E0002}\u200B";
 const INTERNAL_COPY_MIME_TYPE = "application/x-queston-internal";
 
 export function AnswerTextarea({
@@ -81,14 +80,14 @@ export function AnswerTextarea({
 
       // 내부 복사 마커 확인
       const isInternalByMarker =
-        pastedData.startsWith(INTERNAL_COPY_MARKER_START) ||
-        pastedData.includes(INTERNAL_COPY_MARKER);
+        pastedData.includes("\u200B\u{E0001}\u200B") ||
+        pastedData.includes("\u200B\u{E0002}\u200B");
       const isInternal = isInternalByMime || isInternalByMarker;
 
       // 마커 제거 (실제 텍스트만 저장)
       const cleanText = pastedData
-        .replace(INTERNAL_COPY_MARKER_START, "")
-        .replace(INTERNAL_COPY_MARKER_END, "");
+        .replace(/\u200B\u{E0001}\u200B/gu, "")
+        .replace(/\u200B\u{E0002}\u200B/gu, "");
 
       // 붙여넣기 전 상태 저장
       const answerLengthBefore = textarea.value.length;

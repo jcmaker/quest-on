@@ -229,4 +229,6 @@ export const RATE_LIMITS = {
   publicSearch: { limit: 20, windowSec: 60 } satisfies RateLimitConfig,
   /** Submission endpoints (expensive: triggers auto-grading): 30 requests per minute */
   submission: { limit: 30, windowSec: 60 } satisfies RateLimitConfig,
+  /** Paste log endpoints: 120 requests per minute per user (high frequency during exams) */
+  pasteLog: { limit: 120, windowSec: 60 } satisfies RateLimitConfig,
 } as const;
