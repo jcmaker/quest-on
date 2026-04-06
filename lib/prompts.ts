@@ -25,7 +25,10 @@ type FieldType = keyof typeof FIELD_MAX_LENGTHS;
  * - Removes system instruction mimicking patterns (**[...]**, # [...])
  * - Enforces field-specific max length
  */
-export function sanitizeForPrompt(text: string, fieldType: FieldType = "default"): string {
+export function sanitizeForPrompt(
+  text: string,
+  fieldType: FieldType = "default",
+): string {
   if (!text) return "";
   const maxLength = FIELD_MAX_LENGTHS[fieldType];
 
@@ -112,7 +115,7 @@ ${(rubric || [])
   .map(
     (item, index) =>
       `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
+   - 세부 기준: ${item.detailedCriteria}`,
   )
   .join("\n")}
 `
@@ -216,7 +219,7 @@ ${rubric!
   .map(
     (item, index) =>
       `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
+   - 세부 기준: ${item.detailedCriteria}`,
   )
   .join("\n")}
 
@@ -296,7 +299,7 @@ ${rubric!
   .map(
     (item, index) =>
       `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
+   - 세부 기준: ${item.detailedCriteria}`,
   )
   .join("\n")}
 
@@ -941,7 +944,10 @@ export function buildUnifiedGradingUserPrompt(params: {
           let truncated = false;
           for (let i = messages.length - 1; i >= 0; i--) {
             const msg = messages[i];
-            const sanitized = sanitizeForPrompt(msg.content).slice(0, MAX_MESSAGE_LENGTH);
+            const sanitized = sanitizeForPrompt(msg.content).slice(
+              0,
+              MAX_MESSAGE_LENGTH,
+            );
             const line = `${msg.role === "user" ? "학생" : "AI"}: ${sanitized}`;
             if (totalChars + line.length > TOTAL_CHAT_BUDGET) {
               truncated = true;
@@ -1013,18 +1019,49 @@ export function buildAssignmentChatSystemPrompt(params: {
     code?: string;
     language?: string;
     erd?: {
-      nodes?: Array<{ data: { tableName: string; columns: Array<{ name: string; type: string; isPrimary?: boolean; isForeignKey?: boolean; references?: string }> } }>;
-      edges?: Array<{ source: string; target: string; label?: string; type?: string }>;
+      nodes?: Array<{
+        data: {
+          tableName: string;
+          columns: Array<{
+            name: string;
+            type: string;
+            isPrimary?: boolean;
+            isForeignKey?: boolean;
+            references?: string;
+          }>;
+        };
+      }>;
+      edges?: Array<{
+        source: string;
+        target: string;
+        label?: string;
+        type?: string;
+      }>;
     };
     notes?: string;
   };
 }): string {
-  const { examTitle, assignmentPrompt, questions, rubric, relevantMaterialsText, fullMaterialsText, workspaceState } = params;
+  const {
+    examTitle,
+    assignmentPrompt,
+    questions,
+    rubric,
+    relevantMaterialsText,
+    fullMaterialsText,
+    workspaceState,
+  } = params;
   const hasRubric = !!(rubric && Array.isArray(rubric) && rubric.length > 0);
   const hasQuestions = !!(questions && questions.length > 0);
 
   // Strip HTML tags from question text for cleaner prompt
-  const stripHtml = (html: string) => html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+  const stripHtml = (html: string) =>
+    html
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .trim();
 
   const questionsSection = hasQuestions
     ? `\n**[과제 문제 시나리오]** — 모든 답변은 아래 문제를 기반으로 해야 합니다:
@@ -1037,7 +1074,7 @@ ${(rubric || [])
   .map(
     (item, index) =>
       `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
+   - 세부 기준: ${item.detailedCriteria}`,
   )
   .join("\n")}`
     : "";
@@ -1055,14 +1092,18 @@ ${(rubric || [])
 
     if (workspaceState.code && workspaceState.code.trim()) {
       const lang = workspaceState.language || "plaintext";
-      parts.push(`### 코드 (${lang}):\n\`\`\`${lang}\n${sanitizeForPrompt(workspaceState.code, "context")}\n\`\`\``);
+      parts.push(
+        `### 코드 (${lang}):\n\`\`\`${lang}\n${sanitizeForPrompt(workspaceState.code, "context")}\n\`\`\``,
+      );
     }
 
     if (workspaceState.erd?.nodes && workspaceState.erd.nodes.length > 0) {
       const tableDescs = workspaceState.erd.nodes.map((node) => {
         const cols = node.data.columns
           .map((c) => {
-            const flags = [c.isPrimary && "PK", c.isForeignKey && "FK"].filter(Boolean).join(",");
+            const flags = [c.isPrimary && "PK", c.isForeignKey && "FK"]
+              .filter(Boolean)
+              .join(",");
             const ref = c.references ? ` -> ${c.references}` : "";
             return `  - ${c.name}: ${c.type}${flags ? ` (${flags})` : ""}${ref}`;
           })
@@ -1073,7 +1114,9 @@ ${(rubric || [])
     }
 
     if (workspaceState.notes && workspaceState.notes.trim()) {
-      parts.push(`### 메모:\n${sanitizeForPrompt(workspaceState.notes, "context")}`);
+      parts.push(
+        `### 메모:\n${sanitizeForPrompt(workspaceState.notes, "context")}`,
+      );
     }
 
     if (parts.length > 0) {
@@ -1100,9 +1143,13 @@ ${workspaceSection}
 **역할 및 응답 원칙:**
 - 항상 위 **[과제 문제 시나리오]**를 머릿속에 숙지한 채로 답변합니다. 학생의 질문이 짧거나 맥락이 없어도, 해당 문제 시나리오의 맥락에서 해석하여 답변하세요.
 - 강의 자료가 있을 경우 자료의 내용을 우선적으로 근거로 사용합니다.
-- 바로 정답을 주기보다 유도 질문이나 힌트로 안내합니다. 단, 학생이 명시적으로 답을 요청하면 직접 답변합니다.${hasWorkspace ? `
+- 바로 정답을 주기보다 유도 질문이나 힌트로 안내합니다. 단, 학생이 명시적으로 답을 요청하면 직접 답변합니다.${
+    hasWorkspace
+      ? `
 - **워크스페이스 컨텍스트:** 학생의 코드와 ERD를 함께 분석하여, 코드-스키마 간 불일치, 누락된 외래 키, 비효율적 쿼리 등을 지적합니다.
-- 코드 리뷰 시 구체적인 줄 번호나 테이블/컬럼 이름을 언급하여 명확한 피드백을 제공합니다.` : ""}
+- 코드 리뷰 시 구체적인 줄 번호나 테이블/컬럼 이름을 언급하여 명확한 피드백을 제공합니다.`
+      : ""
+  }
 
 **문서 생성/수정 모드**: 학생이 "문서로 만들기", "문서 작성해줘", "보고서 작성" 등을 요청하면:
 - <!-- CANVAS_START --> 마커와 <!-- CANVAS_END --> 마커 사이에 전체 마크다운 문서를 출력합니다.
@@ -1171,25 +1218,32 @@ export function buildAssignmentGradingPrompt(params: {
       workspaceSection += "\n\n**학생 작업 환경 (Workspace):**\n";
 
       if (hasCode) {
-        const truncatedCode = workspaceContext.code!.length > 10000
-          ? workspaceContext.code!.slice(0, 10000) + "\n... (코드 일부 생략)"
-          : workspaceContext.code!;
+        const truncatedCode =
+          workspaceContext.code!.length > 10000
+            ? workspaceContext.code!.slice(0, 10000) + "\n... (코드 일부 생략)"
+            : workspaceContext.code!;
         workspaceSection += `\n[코드 (${workspaceContext.language || "plaintext"})]\n\`\`\`${workspaceContext.language || ""}\n${truncatedCode}\n\`\`\`\n`;
       }
 
       if (hasErd) {
         const nodes = workspaceContext.erd!.nodes.slice(0, 50);
-        const erdText = nodes.map((node) => {
-          const cols = node.data.columns.map((col) => {
-            const flags = [
-              col.isPrimary ? "PK" : "",
-              col.isForeignKey ? "FK" : "",
-              col.references ? `→ ${col.references}` : "",
-            ].filter(Boolean).join(", ");
-            return `  - ${col.name}: ${col.type}${flags ? ` (${flags})` : ""}`;
-          }).join("\n");
-          return `**${node.data.tableName}**\n${cols}`;
-        }).join("\n\n");
+        const erdText = nodes
+          .map((node) => {
+            const cols = node.data.columns
+              .map((col) => {
+                const flags = [
+                  col.isPrimary ? "PK" : "",
+                  col.isForeignKey ? "FK" : "",
+                  col.references ? `→ ${col.references}` : "",
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+                return `  - ${col.name}: ${col.type}${flags ? ` (${flags})` : ""}`;
+              })
+              .join("\n");
+            return `**${node.data.tableName}**\n${cols}`;
+          })
+          .join("\n\n");
         workspaceSection += `\n[ERD 다이어그램]\n${erdText}\n`;
 
         if (workspaceContext.erd!.nodes.length > 50) {
