@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bot,
+  Clock,
   RefreshCw,
   Search,
   Settings,
@@ -129,6 +130,16 @@ export default function AdminDashboard() {
     retry: false,
   });
 
+  const { data: pendingInstructors, refetch: refetchPending } = useQuery({
+    queryKey: ["admin-pending-instructors"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/instructors/pending");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.instructors || [];
+    },
+  });
+
   useEffect(() => {
     if (usersResponse?.unauthorized) {
       router.push("/admin/login");
@@ -152,6 +163,18 @@ export default function AdminDashboard() {
       }
     } catch {
       setMutationError("서버 오류가 발생했습니다.");
+    }
+  };
+
+  const approveInstructor = async (instructorId: string) => {
+    const res = await fetch("/api/admin/instructors/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instructorId }),
+    });
+    if (res.ok) {
+      refetchPending();
+      refetch();
     }
   };
 
@@ -297,6 +320,51 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {pendingInstructors && pendingInstructors.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
+              <Clock className="w-5 h-5" />
+              승인 대기 강사 ({pendingInstructors.length}명)
+            </CardTitle>
+            <CardDescription>
+              강사 승인 요청이 있습니다. 검토 후 승인해주세요.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {pendingInstructors.map((instructor: {
+                id: string;
+                name: string;
+                email: string;
+                created_at: string;
+              }) => (
+                <div
+                  key={instructor.id}
+                  className="flex items-center justify-between rounded-lg border border-amber-200 bg-white dark:bg-amber-950/30 p-4"
+                >
+                  <div>
+                    <p className="font-medium">{instructor.name || "이름 없음"}</p>
+                    <p className="text-sm text-muted-foreground">{instructor.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      신청일: {new Date(instructor.created_at).toLocaleDateString("ko-KR")}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => approveInstructor(instructor.id)}
+                    className="bg-amber-600 hover:bg-amber-700 text-white"
+                  >
+                    <UserCheck className="w-4 h-4 mr-1" />
+                    승인
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

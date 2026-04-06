@@ -7,6 +7,7 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)",
   "/sign-up(.*)",
   "/onboarding",
+  "/instructor-pending",
 ]);
 const isAdminRoute = createRouteMatcher(["/admin(.*)", "/api/admin(.*)"]);
 const isInstructorRoute = createRouteMatcher(["/instructor(.*)"]);
@@ -21,15 +22,21 @@ export const proxy = clerkMiddleware(async (auth, req) => {
   interface CustomJwtPayload {
     unsafeMetadata?: {
       role?: "instructor" | "student" | "admin";
+      status?: string;
     };
   }
 
   const claims = sessionClaims as unknown as CustomJwtPayload;
   const userRole = claims.unsafeMetadata?.role;
+  // status 없으면 approved 취급 (마이그레이션 전 기존 강사 보호)
+  const isPending = claims.unsafeMetadata?.status === "pending";
 
   if (isInstructorRoute(req)) {
     if (userRole !== "instructor") {
       return NextResponse.redirect(new URL("/student", req.url));
+    }
+    if (isPending) {
+      return NextResponse.redirect(new URL("/instructor-pending", req.url));
     }
   }
 

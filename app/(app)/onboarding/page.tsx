@@ -53,8 +53,26 @@ export default function OnboardingPage() {
 
     try {
       await user.update({
-        unsafeMetadata: { role },
+        unsafeMetadata: {
+          role,
+          ...(role === "instructor" ? { status: "pending" } : {}),
+        },
       });
+
+      if (role === "instructor") {
+        try {
+          await fetch("/api/instructor/profile", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: user.fullName || user.firstName || "",
+              email: user.primaryEmailAddress?.emailAddress || "",
+            }),
+          });
+        } catch {
+          // non-critical, continue
+        }
+      }
 
       // Clear localStorage after successful role update
       localStorage.removeItem("selectedRole");
@@ -67,7 +85,7 @@ export default function OnboardingPage() {
       if (redirectUrl && redirectUrl.startsWith("/")) {
         router.push(redirectUrl);
       } else if (role === "instructor") {
-        router.push("/instructor");
+        router.push("/instructor-pending");
       } else {
         router.push("/student");
       }
