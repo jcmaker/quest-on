@@ -70,7 +70,9 @@ export default function CreateAssignment() {
   const [chatWeight, setChatWeight] = useState<number | null>(null);
   const fileUpload = useFileUpload();
   const questionsListRef = useRef<HTMLDivElement>(null);
+  const examInfoRef = useRef<HTMLDivElement>(null);
   const [highlightedQuestionIds, setHighlightedQuestionIds] = useState<Set<string>>(new Set());
+  const [fieldErrors, setFieldErrors] = useState<{ title?: string; deadline?: string; questions?: string }>({});
   const [isAIGeneratingRubric, setIsAIGeneratingRubric] = useState(false);
 
   const generateExamCode = () => {
@@ -249,18 +251,29 @@ export default function CreateAssignment() {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
 
-    if (!examData.title) { isSubmittingRef.current = false; toast.error("과제 제목을 입력해주세요."); return; }
-    if (!examData.code) { isSubmittingRef.current = false; toast.error("과제 코드를 생성해주세요."); return; }
-    if (!examData.deadline) { isSubmittingRef.current = false; toast.error("제출 기한을 설정해주세요."); return; }
-    if (questions.length === 0) { isSubmittingRef.current = false; toast.error("최소 1개 이상의 문제를 추가해주세요."); return; }
-    const emptyQuestionIndices = questions
-      .map((q, i) => (isQuestionContentEmpty(q.text) ? i + 1 : -1))
-      .filter((i) => i !== -1);
-    if (emptyQuestionIndices.length > 0) {
+    const errors: { title?: string; deadline?: string; questions?: string } = {};
+    if (!examData.title.trim()) errors.title = "과제 제목을 입력해주세요";
+    if (!examData.deadline) errors.deadline = "제출 기한을 선택해주세요";
+    if (questions.length === 0) {
+      errors.questions = "최소 1개 이상의 문제를 추가해주세요";
+    } else {
+      const emptyIndices = questions.map((q, i) => (isQuestionContentEmpty(q.text) ? i + 1 : -1)).filter((i) => i !== -1);
+      if (emptyIndices.length > 0) {
+        errors.questions = emptyIndices.length === questions.length ? "문제 내용을 입력해주세요" : `${emptyIndices.join(", ")}번 문제가 비어있습니다`;
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       isSubmittingRef.current = false;
-      toast.error(emptyQuestionIndices.length === questions.length ? "문제를 입력해주세요." : `${emptyQuestionIndices.join(", ")}번 문제가 비어있습니다.`);
+      if (errors.title || errors.deadline) {
+        examInfoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      } else if (errors.questions) {
+        questionsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
       return;
     }
+    setFieldErrors({});
 
     setIsLoading(true);
     try {
@@ -323,18 +336,22 @@ export default function CreateAssignment() {
           </div>
 
           <form onSubmit={handleSubmit} onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") e.preventDefault(); }} className="space-y-6">
-            <ExamInfoForm
-              title={examData.title}
-              code={examData.code}
-              duration={examData.duration}
-              onTitleChange={(value) => setExamData((prev) => ({ ...prev, title: value }))}
-              onCodeChange={(value) => setExamData((prev) => ({ ...prev, code: value }))}
-              onDurationChange={(value) => setExamData((prev) => ({ ...prev, duration: value }))}
-              onGenerateCode={generateExamCode}
-              mode="assignment"
-              deadline={examData.deadline}
-              onDeadlineChange={(value) => setExamData((prev) => ({ ...prev, deadline: value }))}
-            />
+            <div ref={examInfoRef}>
+              <ExamInfoForm
+                title={examData.title}
+                code={examData.code}
+                duration={examData.duration}
+                onTitleChange={(value) => { setExamData((prev) => ({ ...prev, title: value })); setFieldErrors((prev) => ({ ...prev, title: undefined })); }}
+                onCodeChange={(value) => setExamData((prev) => ({ ...prev, code: value }))}
+                onDurationChange={(value) => setExamData((prev) => ({ ...prev, duration: value }))}
+                onGenerateCode={generateExamCode}
+                mode="assignment"
+                deadline={examData.deadline}
+                onDeadlineChange={(value) => { setExamData((prev) => ({ ...prev, deadline: value })); setFieldErrors((prev) => ({ ...prev, deadline: undefined })); }}
+                titleError={fieldErrors.title}
+                deadlineError={fieldErrors.deadline}
+              />
+            </div>
 
             <FileUpload
               files={examData.materials}
@@ -373,15 +390,18 @@ export default function CreateAssignment() {
               }}
             />
 
-            <div ref={questionsListRef}>
+            <div ref={questionsListRef} className={fieldErrors.questions ? "rounded-lg ring-2 ring-red-500 ring-offset-2" : ""}>
+              {fieldErrors.questions && (
+                <p className="text-xs text-red-500 mb-2 px-1">{fieldErrors.questions}</p>
+              )}
               <QuestionsList
                 questions={questions}
                 highlightedIds={highlightedQuestionIds}
                 defaultOpen={false}
                 mode="assignment"
-                onUpdate={updateQuestion}
+                onUpdate={(id, field, value) => { updateQuestion(id, field, value); setFieldErrors((prev) => ({ ...prev, questions: undefined })); }}
                 onRemove={(id) => setQuestions((prev) => prev.filter((q) => q.id !== id))}
-                onAdd={addQuestion}
+                onAdd={() => { addQuestion(); setFieldErrors((prev) => ({ ...prev, questions: undefined })); }}
                 onMove={moveQuestion}
               />
             </div>
@@ -412,7 +432,7 @@ export default function CreateAssignment() {
             <div className="space-y-2">
               <div className="flex gap-4">
                 <Button type="button" variant="outline" onClick={() => router.push("/instructor")}>취소</Button>
-                <Button type="submit" disabled={isLoading || !examData.title || !examData.code || !examData.deadline || questions.length === 0 || questions.every((q) => isQuestionContentEmpty(q.text))}>
+                <Button type="submit" disabled={isLoading}>
                   {isLoading ? "생성 중..." : "과제 출제하기"}
                 </Button>
               </div>

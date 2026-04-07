@@ -29,6 +29,8 @@ interface ExamInfoFormProps {
   mode?: "exam" | "assignment";
   deadline?: string;
   onDeadlineChange?: (value: string) => void;
+  titleError?: string;
+  deadlineError?: string;
 }
 
 export function ExamInfoForm({
@@ -42,6 +44,8 @@ export function ExamInfoForm({
   mode = "exam",
   deadline,
   onDeadlineChange,
+  titleError,
+  deadlineError,
 }: ExamInfoFormProps) {
   const [durationInput, setDurationInput] = useState<string>(
     duration === 0 ? "" : duration.toString()
@@ -152,7 +156,11 @@ export function ExamInfoForm({
               onChange={(e) => onTitleChange(e.target.value)}
               placeholder="예) 국제경영론 25-1 중간고사"
               required
+              className={titleError ? "border-red-500 focus-visible:ring-red-500" : ""}
             />
+            {titleError && (
+              <p className="text-xs text-red-500 mt-1">{titleError}</p>
+            )}
           </div>
           <div className="space-y-2">
             <div className="flex items-center gap-2">
@@ -208,9 +216,12 @@ export function ExamInfoForm({
               value={deadline || ""}
               onChange={(e) => onDeadlineChange?.(e.target.value)}
               min={new Date().toISOString().slice(0, 10)}
-              className="w-full max-w-xs"
+              className={`w-full max-w-xs ${deadlineError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
               required
             />
+            {deadlineError && (
+              <p className="text-xs text-red-500 mt-1">{deadlineError}</p>
+            )}
           </div>
         ) : (
         <div className="space-y-2">
