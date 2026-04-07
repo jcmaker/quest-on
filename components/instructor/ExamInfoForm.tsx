@@ -232,6 +232,7 @@ export function ExamInfoForm({
               <PopoverContent className="w-auto p-0" align="start">
                 <Calendar
                   mode="single"
+                  locale={ko}
                   selected={deadline ? new Date(deadline) : undefined}
                   onSelect={(date) => {
                     if (date) {
