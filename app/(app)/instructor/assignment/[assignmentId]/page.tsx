@@ -29,6 +29,8 @@ import {
   ChevronUp,
   RefreshCw,
   FileText,
+  Copy,
+  Check,
 } from "lucide-react";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
@@ -69,6 +71,7 @@ export default function AssignmentDashboard({
 
   const [examInfoOpen, setExamInfoOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const {
     exam,
@@ -243,6 +246,22 @@ export default function AssignmentDashboard({
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="px-4 pb-4 space-y-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">과제 코드:</span>
+                        <code className="font-mono font-semibold">{exam.code}</code>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(exam.code);
+                            setCodeCopied(true);
+                            setTimeout(() => setCodeCopied(false), 2000);
+                          }}
+                          className="text-muted-foreground hover:text-foreground transition-colors"
+                          title="코드 복사"
+                        >
+                          {codeCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
                       {exam.assignment_prompt && (
                         <div className="flex items-start gap-2 text-sm">
                           <FileText className="h-4 w-4 text-muted-foreground mt-0.5" />
