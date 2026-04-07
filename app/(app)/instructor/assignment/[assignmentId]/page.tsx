@@ -229,33 +229,34 @@ export default function AssignmentDashboard({
             <div id="assignment-info-section">
               <Collapsible open={examInfoOpen} onOpenChange={setExamInfoOpen}>
                 <div className="border rounded-lg">
-                  <CollapsibleTrigger className="w-full">
-                    <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center gap-3">
-                        <h3 className="font-semibold">과제 정보</h3>
-                        <span className="text-sm text-muted-foreground">
-                          {exam.code}
-                        </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(exam.code);
-                            setCodeCopied(true);
-                            setTimeout(() => setCodeCopied(false), 2000);
-                          }}
-                          className="text-muted-foreground hover:text-foreground transition-colors"
-                          title="코드 복사"
-                        >
-                          {codeCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                        </button>
+                  <div className="flex items-center">
+                    <CollapsibleTrigger className="flex-1">
+                      <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <h3 className="font-semibold">과제 정보</h3>
+                          <span className="text-sm text-muted-foreground">
+                            {exam.code}
+                          </span>
+                        </div>
+                        {examInfoOpen ? (
+                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        )}
                       </div>
-                      {examInfoOpen ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
-                  </CollapsibleTrigger>
+                    </CollapsibleTrigger>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(exam.code);
+                        setCodeCopied(true);
+                        setTimeout(() => setCodeCopied(false), 2000);
+                      }}
+                      className="pr-4 text-muted-foreground hover:text-foreground transition-colors"
+                      title="코드 복사"
+                    >
+                      {codeCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
                   <CollapsibleContent>
                     <div className="px-4 pb-4 space-y-3">
                       {exam.assignment_prompt && (
