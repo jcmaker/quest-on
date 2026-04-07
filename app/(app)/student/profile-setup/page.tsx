@@ -188,7 +188,8 @@ export default function ProfileSetupPage() {
 
       if (response.ok) {
         // 성공 시 redirect URL이 있으면 해당 페이지로, 없으면 학생 대시보드로
-        router.push(redirectUrl || "/student");
+        sessionStorage.setItem("profile-setup-complete", "true");
+        window.location.href = redirectUrl || "/student";
       } else {
         setError(data.error || "프로필 저장에 실패했습니다.");
       }

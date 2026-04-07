@@ -185,6 +185,8 @@ export default function StudentDashboard() {
       return { forbidden: false, ...data } as const;
     },
     retry: false,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnMount: false,
   });
 
   useEffect(() => {
@@ -196,11 +198,15 @@ export default function StudentDashboard() {
     }
 
     // profile 정보가 없으면 프로필 설정 페이지로 이동
-    if (!("profile" in profileData) || !profileData.profile) {
+    const fromProfileSetup = document.referrer.includes("/student/profile-setup") ||
+      sessionStorage.getItem("profile-setup-complete") === "true";
+
+    if (!fromProfileSetup && (!("profile" in profileData) || !profileData.profile)) {
       router.replace("/student/profile-setup");
       return;
     }
 
+    sessionStorage.removeItem("profile-setup-complete");
     setProfileChecked(true);
   }, [profileData, profileChecked, router]);
 
