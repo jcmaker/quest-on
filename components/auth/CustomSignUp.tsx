@@ -186,6 +186,9 @@ export function CustomSignUp() {
                     <span className="font-bold">회원가입</span>
                   </Button>
                 </SignUp.Action>
+
+                {/* Clerk Smart CAPTCHA 마운트 포인트 */}
+                <div id="clerk-captcha" />
               </SignUp.Step>
             </SignUp.Root>
 
