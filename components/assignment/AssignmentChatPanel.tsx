@@ -76,7 +76,7 @@ export function AssignmentChatPanel({
     return (
       <div className="flex flex-col h-full">
         {/* Scrollable area with the assignment prompt bubble */}
-        <div className="flex-1 overflow-y-auto flex flex-col justify-end p-4">
+        <div className="flex-1 overflow-y-auto p-4">
           <div className={`mx-auto w-full ${maxW}`}>
             {/* Assignment prompt */}
             {assignmentPrompt && (
@@ -172,51 +172,56 @@ export function AssignmentChatPanel({
   // ---------- Conversation layout ----------
   return (
     <div className="flex flex-col h-full">
+      {/* Questions header - pinned at top, independently scrollable */}
+      {(assignmentPrompt || questions.length > 0) && (
+        <div className="overflow-y-auto border-b border-border/40 max-h-[45%] p-4 pb-2 shrink-0">
+          <div className={`mx-auto space-y-3 ${maxW}`}>
+            {assignmentPrompt && (
+              <div className="flex gap-3">
+                <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-4 py-3">
+                  <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <AIMessageRenderer
+                      content={assignmentPrompt}
+                      timestamp={new Date().toISOString()}
+                      variant="plain"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            {questions.length > 0 && (
+              <div className="flex gap-3 pb-2">
+                <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-4 py-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">과제 문제</p>
+                  <div className="space-y-3">
+                    {questions.map((q, i) => (
+                      <div key={q.id} className="border rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-medium">문제 {i + 1}</span>
+                          <Badge variant="outline" className="text-xs">
+                            {q.type === "essay" ? "서술형" : q.type === "short-answer" ? "단답형" : "객관식"}
+                          </Badge>
+                        </div>
+                        <RichTextViewer content={q.text} className="text-sm" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className={`mx-auto space-y-4 ${maxW}`}>
-          {/* Assignment prompt as first pinned bubble */}
-          {assignmentPrompt && (
-            <div className="flex gap-3">
-              <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted">
-                <Bot className="w-4 h-4" />
-              </div>
-              <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-4 py-3">
-                <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <AIMessageRenderer
-                    content={assignmentPrompt}
-                    timestamp={new Date().toISOString()}
-                    variant="plain"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-          {/* Questions */}
-          {questions.length > 0 && (
-            <div className="flex gap-3">
-              <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted">
-                <Bot className="w-4 h-4" />
-              </div>
-              <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-4 py-3">
-                <p className="text-xs font-medium text-muted-foreground mb-2">과제 문제</p>
-                <div className="space-y-3">
-                  {questions.map((q, i) => (
-                    <div key={q.id} className="border rounded-lg p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xs font-medium">문제 {i + 1}</span>
-                        <Badge variant="outline" className="text-xs">
-                          {q.type === "essay" ? "서술형" : q.type === "short-answer" ? "단답형" : "객관식"}
-                        </Badge>
-                      </div>
-                      <RichTextViewer content={q.text} className="text-sm" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Chat messages */}
           {messages.map((msg, idx) => (
             <div key={msg.id}>
