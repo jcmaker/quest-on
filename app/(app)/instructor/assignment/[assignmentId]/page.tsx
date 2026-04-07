@@ -29,8 +29,6 @@ import {
   ChevronUp,
   RefreshCw,
   FileText,
-  Copy,
-  Check,
 } from "lucide-react";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
@@ -229,34 +227,30 @@ export default function AssignmentDashboard({
             <div id="assignment-info-section">
               <Collapsible open={examInfoOpen} onOpenChange={setExamInfoOpen}>
                 <div className="border rounded-lg">
-                  <div className="flex items-center">
-                    <CollapsibleTrigger className="flex-1">
-                      <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <h3 className="font-semibold">과제 정보</h3>
-                          <span className="text-sm text-muted-foreground">
-                            {exam.code}
-                          </span>
-                        </div>
-                        {examInfoOpen ? (
-                          <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                        )}
+                  <CollapsibleTrigger className="w-full">
+                    <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <h3 className="font-semibold">과제 정보</h3>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(exam.code);
+                            setCodeCopied(true);
+                            setTimeout(() => setCodeCopied(false), 2000);
+                          }}
+                          className={`text-sm cursor-pointer border-b border-dashed transition-colors ${codeCopied ? "text-green-600 border-green-500" : "text-muted-foreground border-muted-foreground/50 hover:text-foreground hover:border-foreground"}`}
+                          title="클릭하여 복사"
+                        >
+                          {codeCopied ? "복사됨!" : exam.code}
+                        </span>
                       </div>
-                    </CollapsibleTrigger>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(exam.code);
-                        setCodeCopied(true);
-                        setTimeout(() => setCodeCopied(false), 2000);
-                      }}
-                      className="pr-4 text-muted-foreground hover:text-foreground transition-colors"
-                      title="코드 복사"
-                    >
-                      {codeCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
+                      {examInfoOpen ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </div>
+                  </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="px-4 pb-4 space-y-3">
                       {exam.assignment_prompt && (
