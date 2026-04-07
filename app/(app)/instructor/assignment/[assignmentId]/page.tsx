@@ -236,19 +236,6 @@ export default function AssignmentDashboard({
                         <span className="text-sm text-muted-foreground">
                           {exam.code}
                         </span>
-                      </div>
-                      {examInfoOpen ? (
-                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="px-4 pb-4 space-y-3">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-muted-foreground">과제 코드:</span>
-                        <code className="font-mono font-semibold">{exam.code}</code>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -262,6 +249,15 @@ export default function AssignmentDashboard({
                           {codeCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                         </button>
                       </div>
+                      {examInfoOpen ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="px-4 pb-4 space-y-3">
                       {exam.assignment_prompt && (
                         <div className="flex items-start gap-2 text-sm">
                           <FileText className="h-4 w-4 text-muted-foreground mt-0.5" />
