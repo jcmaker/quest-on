@@ -15,7 +15,15 @@ import {
 } from "@/components/ui/tooltip";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
-import { HelpCircle, AlertTriangle } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { HelpCircle, AlertTriangle, CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { ko } from "date-fns/locale";
 import { useState, useEffect } from "react";
 
 interface ExamInfoFormProps {
@@ -197,7 +205,7 @@ export function ExamInfoForm({
         {mode === "assignment" ? (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <Label htmlFor="deadline">제출 기한</Label>
+              <Label>제출 기한</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
@@ -210,15 +218,31 @@ export function ExamInfoForm({
                 </TooltipContent>
               </Tooltip>
             </div>
-            <Input
-              type="date"
-              id="deadline"
-              value={deadline || ""}
-              onChange={(e) => onDeadlineChange?.(e.target.value)}
-              min={new Date().toISOString().slice(0, 10)}
-              className={`w-full max-w-xs ${deadlineError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
-              required
-            />
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={`w-full max-w-xs justify-start font-normal ${!deadline ? "text-muted-foreground" : ""} ${deadlineError ? "border-red-500" : ""}`}
+                >
+                  <CalendarIcon className="mr-2 h-4 w-4" />
+                  {deadline ? format(new Date(deadline), "PPP", { locale: ko }) : "날짜 선택"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="single"
+                  selected={deadline ? new Date(deadline) : undefined}
+                  onSelect={(date) => {
+                    if (date) {
+                      onDeadlineChange?.(format(date, "yyyy-MM-dd"));
+                    }
+                  }}
+                  disabled={(date) => date < new Date(new Date().setHours(0, 0, 0, 0))}
+                  defaultMonth={deadline ? new Date(deadline) : new Date()}
+                />
+              </PopoverContent>
+            </Popover>
             {deadlineError && (
               <p className="text-xs text-red-500 mt-1">{deadlineError}</p>
             )}

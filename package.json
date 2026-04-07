@@ -83,6 +83,7 @@
     "pdf2json": "^4.0.0",
     "radix-ui": "^1.4.3",
     "react": "19.1.0",
+    "react-day-picker": "^9.14.0",
     "react-dom": "19.1.0",
     "react-grab": "^0.1.21",
     "react-hook-form": "^7.71.2",
