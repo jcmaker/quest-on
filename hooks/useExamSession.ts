@@ -292,7 +292,8 @@ export function useExamSession({
       return response.json();
     },
     enabled: !!heartbeatSessionId && !!user && !isSubmitted,
-    refetchInterval: 15000,
+    // Jitter: 25~35s to spread 100-student heartbeat load (~3 req/s vs ~7 req/s at 15s fixed)
+    refetchInterval: () => 25000 + Math.random() * 10000,
     refetchIntervalInBackground: true,
     staleTime: 0,
     retry: false,

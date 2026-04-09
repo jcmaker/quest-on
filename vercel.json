@@ -34,5 +34,5 @@
       "maxDuration": 300
     }
   },
-  "regions": ["iad1"]
+  "regions": ["iad1", "icn1"]
 }

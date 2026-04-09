@@ -96,9 +96,11 @@ export function WaitingRoom({
         },
         (payload) => {
           // When exam status changes to "running", trigger gate start check
+          // Add random jitter (0-3s) to spread concurrent requests from all waiting students
           const newStatus = payload.new?.status;
           if (newStatus === "running") {
-            checkExamStatus();
+            const delay = Math.random() * 3000;
+            setTimeout(checkExamStatus, delay);
           }
         }
       )
@@ -151,13 +153,18 @@ export function WaitingRoom({
   useEffect(() => {
     if (!sessionId || !examId || !isWaiting) return;
 
-    // Initial check
-    checkExamStatus();
+    // Initial check with small jitter to avoid synchronized requests on mount
+    const initialDelay = Math.random() * 2000;
+    const initialTimer = setTimeout(checkExamStatus, initialDelay);
 
-    // 10-second fallback polling
-    const interval = setInterval(checkExamStatus, 10000);
+    // Fallback polling: randomized 10-20s interval to avoid synchronized thundering herd
+    const pollInterval = 10000 + Math.random() * 10000;
+    const interval = setInterval(checkExamStatus, pollInterval);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
   }, [sessionId, examId, isWaiting, checkExamStatus]);
 
   return (

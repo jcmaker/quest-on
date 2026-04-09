@@ -12,11 +12,9 @@ import {
 } from "@/app/api/supa/handlers/session-handlers";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-const supabase = getSupabaseServer();
-
 /**
  * POST /api/session/[sessionId]/preflight
- * 
+ *
  * Preflight Modal 수락 처리
  * - preflight_accepted_at 설정
  * - 시험 상태에 따라 waiting 또는 in_progress로 조정
@@ -36,6 +34,7 @@ export async function POST(
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
+    const supabase = getSupabaseServer();
     const resolvedParams = await params;
     const sessionId = resolvedParams.sessionId;
 

@@ -107,6 +107,8 @@ export async function POST(request: NextRequest) {
       save_draft: RATE_LIMITS.general,
       save_all_drafts: RATE_LIMITS.general,
       save_draft_answers: RATE_LIMITS.general,
+      check_exam_gate_status: RATE_LIMITS.sessionRead,
+      session_heartbeat: RATE_LIMITS.sessionRead,
     };
 
     if (action in rateLimitedActions) {

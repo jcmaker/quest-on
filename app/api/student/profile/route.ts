@@ -4,8 +4,6 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { successJson, errorJson } from "@/lib/api-response";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-const supabase = getSupabaseServer();
-
 // 프로필 조회
 export async function GET() {
   try {
@@ -25,6 +23,7 @@ export async function GET() {
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
+    const supabase = getSupabaseServer();
     const { data: profile, error } = await supabase
       .from("student_profiles")
       .select("*")
@@ -50,8 +49,10 @@ export async function POST(request: NextRequest) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
+    // Allow users with no role set yet (freshly registered, Clerk JWT not yet propagated)
+    // or with role "student". Block only explicit non-student roles.
     const userRole = user.unsafeMetadata?.role as string;
-    if (userRole !== "student") {
+    if (userRole && userRole !== "student") {
       return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
 
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
       return errorJson("MISSING_FIELDS", "Name, student number, and school are required", 400);
     }
 
+    const supabase = getSupabaseServer();
     // Upsert profile using Supabase
     const { data: profile, error } = await supabase
       .from("student_profiles")

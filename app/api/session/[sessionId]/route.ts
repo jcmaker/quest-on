@@ -7,15 +7,13 @@ import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { logWarn } from "@/lib/logger";
 
-// Initialize Supabase client
-const supabase = getSupabaseServer();
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
   try {
     const { sessionId } = await params;
+    const supabase = getSupabaseServer();
 
     const invalidId = validateUUID(sessionId, "sessionId");
     if (invalidId) return invalidId;
