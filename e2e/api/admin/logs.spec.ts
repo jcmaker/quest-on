@@ -28,9 +28,9 @@ test.describe("GET /api/admin/logs", () => {
   test("admin gets logs with level filter", async ({ adminRequest }) => {
     // Seed some error logs directly
     await supabase.from("error_logs").insert([
-      { level: "error", message: "Something broke", context: {} },
-      { level: "warn", message: "Something warned", context: {} },
-      { level: "info", message: "Something happened", context: {} },
+      { level: "error", message: "Something broke", payload: {} },
+      { level: "warn", message: "Something warned", payload: {} },
+      { level: "info", message: "Something happened", payload: {} },
     ]);
 
     const res = await adminRequest.get("/api/admin/logs?level=error");
@@ -49,7 +49,7 @@ test.describe("GET /api/admin/logs", () => {
     const logs = Array.from({ length: 5 }, (_, i) => ({
       level: "info",
       message: `Log entry ${i}`,
-      context: {},
+      payload: {},
     }));
     await supabase.from("error_logs").insert(logs);
 

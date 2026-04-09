@@ -76,9 +76,10 @@ export async function POST(request: Request) {
       // Fallback: attempt to record in error_logs so the failure is traceable
       try {
         await supabase.from("error_logs").insert({
-          error_type: "paste_log_failure",
+          level: "error",
           message: insertError.message,
-          context: { sessionId, examCode, questionId, timestamp: timestamp.toISOString() },
+          payload: { sessionId, examCode, questionId, timestamp: timestamp.toISOString() },
+          path: "/api/log/paste",
         });
       } catch {
         // Last resort already logged above

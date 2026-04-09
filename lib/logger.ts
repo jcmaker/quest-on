@@ -26,35 +26,22 @@ function createServerSupabaseClient() {
 }
 
 /**
- * 클라이언트 사이드에서 사용할 Supabase 클라이언트 생성
- * Anon Key를 사용합니다 (RLS 정책에 따라 insert 가능).
- */
-function createClientSupabaseClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Missing Supabase environment variables for client-side logging");
-  }
-
-  return createClient(supabaseUrl, supabaseAnonKey);
-}
-
-/**
  * 에러 로그를 Supabase에 저장하는 공통 함수
- * 서버 사이드와 클라이언트 사이드 모두에서 호출 가능합니다.
- * 
+ * 서버 사이드에서만 DB에 기록합니다.
+ * 클라이언트에서는 console.error만 출력합니다 (Vercel 로그가 수집).
+ *
  * @param entry - 로그 엔트리 정보
  * @returns 성공 여부
  */
 export async function insertLog(entry: LogEntry): Promise<boolean> {
-  try {
-    // 서버 사이드인지 클라이언트 사이드인지 확인
-    const isServer = typeof window === "undefined";
+  // 클라이언트에서는 콘솔만 출력하고 종료 (anon key로 직접 write 방지)
+  if (typeof window !== "undefined") {
+    console.error(`[${entry.level}] ${entry.message}`, entry.payload ?? "");
+    return true;
+  }
 
-    const supabase = isServer
-      ? createServerSupabaseClient()
-      : createClientSupabaseClient();
+  try {
+    const supabase = createServerSupabaseClient();
 
     // payload를 JSONB로 변환 (이미 객체인 경우 그대로, 아니면 JSON.stringify)
     let payloadJson: Record<string, unknown> = {};
