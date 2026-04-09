@@ -67,50 +67,57 @@ describe("sanitizeForPrompt", () => {
   });
 });
 
-describe("buildUnifiedGradingUserPrompt — token budget (P0-2)", () => {
-  it("includes all messages when under budget", () => {
-    const messages = [
-      { role: "user", content: "질문입니다" },
-      { role: "assistant", content: "답변입니다" },
-    ];
+describe("buildUnifiedGradingUserPrompt", () => {
+  it("includes answer and question in output", () => {
     const result = buildUnifiedGradingUserPrompt({
-      questionPrompt: "문제",
-      messages,
-      answer: "답안",
+      questionPrompt: "문제입니다",
+      answer: "답안입니다",
     });
-    expect(result).toContain("학생: 질문입니다");
-    expect(result).toContain("AI: 답변입니다");
-    expect(result).not.toContain("생략됨");
+    expect(result).toContain("문제입니다");
+    expect(result).toContain("답안입니다");
   });
 
-  it("truncates oldest messages when over 300k char budget", () => {
-    // Create messages that exceed 300k chars total
-    // Each message is ~2006 chars after sanitization + prefix
-    const messageCount = 200; // 200 * ~2006 = ~400k > 300k budget
-    const messages = Array.from({ length: messageCount }, (_, i) => ({
-      role: i % 2 === 0 ? "user" : "assistant",
-      content: `msg_${i}_` + "x".repeat(1990),
-    }));
+  it("shows no-chat notice when aiDependencyAssessment is absent", () => {
     const result = buildUnifiedGradingUserPrompt({
       questionPrompt: "문제",
-      messages,
       answer: "답안",
     });
-    // Should contain truncation notice
-    expect(result).toContain("생략됨");
-    // Should preserve the latest message (marker at start survives truncation)
-    expect(result).toContain(`msg_${messageCount - 1}_`);
-    // Should NOT contain the first message (oldest, truncated)
-    expect(result).not.toContain("msg_0_x");
-  });
-
-  it("shows no chat section when messages array is empty", () => {
-    const result = buildUnifiedGradingUserPrompt({
-      questionPrompt: "문제",
-      messages: [],
-      answer: "답안",
-    });
-    expect(result).toContain("대화 기록 없음");
+    expect(result).toContain("AI 활용 신호 없음");
     expect(result).toContain("chat_score는 0");
+  });
+
+  it("includes dependency summary when aiDependencyAssessment is provided", () => {
+    const assessment = {
+      summary: "학생이 AI를 적절히 활용함",
+      delegationRequestCount: 1,
+      startingPointDependencyCount: 0,
+      directAnswerRequestCount: 0,
+      directAnswerRelianceCount: 0,
+      finalAnswerOverlapScore: 0.1,
+      recoveryObserved: true,
+      triggerEvidence: ["예시 트리거"],
+      recoveryEvidence: ["예시 회복"],
+      penaltyApplied: 0,
+    };
+    const result = buildUnifiedGradingUserPrompt({
+      questionPrompt: "문제",
+      answer: "답안",
+      aiDependencyAssessment: assessment,
+    });
+    expect(result).toContain("학생이 AI를 적절히 활용함");
+    expect(result).toContain("풀이 위임형 요청: 1회");
+    expect(result).toContain("예시 트리거");
+  });
+
+  it("truncates long answers to 6000 chars", () => {
+    const longAnswer = "a".repeat(10000);
+    const result = buildUnifiedGradingUserPrompt({
+      questionPrompt: "문제",
+      answer: longAnswer,
+    });
+    // Answer section should not exceed 6000 chars for the answer content
+    const answerIdx = result.indexOf("**학생의 최종 답안:**");
+    const answerContent = result.slice(answerIdx);
+    expect(answerContent.length).toBeLessThan(7000);
   });
 });

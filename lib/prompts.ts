@@ -915,63 +915,33 @@ ${rubricScoresSchema ? "- 각 루브릭 항목별로 0-5점 척도로 평가하�
 }
 
 /**
- * 통합 채점 유저 프롬프트 — 문제, 대화 기록, 최종 답안, AI 의존 신호를 하나로 전달
+ * 통합 채점 유저 프롬프트 — 문제, 최종 답안, AI 활용 분석 요약을 전달
+ * (채팅 원본 제거: 토큰 절감 및 prompt injection 위험 감소)
  */
 export function buildUnifiedGradingUserPrompt(params: {
   questionPrompt: string;
   questionAiContext?: string;
-  messages: Array<{ role: string; content: string }>;
   answer: string;
   aiDependencyAssessment?: AiDependencyAssessment;
 }): string {
   const {
     questionPrompt,
     questionAiContext,
-    messages,
     answer,
     aiDependencyAssessment,
   } = params;
 
-  const MAX_MESSAGE_LENGTH = 2000;
-  /** P0-2: Total character budget for chat history to prevent context window overflow */
-  const TOTAL_CHAT_BUDGET = 300_000;
-  const chatSection =
-    messages.length > 0
-      ? (() => {
-          // Build messages newest-first, then reverse for chronological order
-          const formatted: string[] = [];
-          let totalChars = 0;
-          let truncated = false;
-          for (let i = messages.length - 1; i >= 0; i--) {
-            const msg = messages[i];
-            const sanitized = sanitizeForPrompt(msg.content).slice(
-              0,
-              MAX_MESSAGE_LENGTH,
-            );
-            const line = `${msg.role === "user" ? "학생" : "AI"}: ${sanitized}`;
-            if (totalChars + line.length > TOTAL_CHAT_BUDGET) {
-              truncated = true;
-              break;
-            }
-            formatted.push(line);
-            totalChars += line.length;
-          }
-          formatted.reverse();
-          const header = truncated
-            ? `**학생과 AI의 대화 기록 (최근 ${formatted.length}/${messages.length}개 — 이전 대화는 길이 제한으로 생략됨):**`
-            : `**학생과 AI의 대화 기록:**`;
-          return `${header}\n${formatted.join("\n\n")}`;
-        })()
-      : "**대화 기록 없음** — 학생이 AI와 대화하지 않았습니다. chat_score는 0으로 설정하세요.";
+  const MAX_ANSWER_LENGTH = 6000;
 
   const answerSection = answer
     ? `**학생의 최종 답안:**
-${sanitizeForPrompt(answer).slice(0, MAX_MESSAGE_LENGTH * 3)}`
+${sanitizeForPrompt(answer).slice(0, MAX_ANSWER_LENGTH)}`
     : "**답안 없음** — 학생이 최종 답안을 제출하지 않았습니다. answer_score는 0으로 설정하세요.";
 
   const dependencySection = aiDependencyAssessment
     ? `
-**사전 분석된 AI 활용/의존 신호:**
+**사전 분석된 AI 활용/의존 신호 (채팅 원본 대신 제공되는 구조화된 요약):**
+- 요약: ${aiDependencyAssessment.summary}
 - 풀이 위임형 요청: ${aiDependencyAssessment.delegationRequestCount}회
 - 출발점 의존 신호: ${aiDependencyAssessment.startingPointDependencyCount}회
 - 직접 답 요구: ${aiDependencyAssessment.directAnswerRequestCount}회
@@ -988,16 +958,14 @@ ${sanitizeForPrompt(answer).slice(0, MAX_MESSAGE_LENGTH * 3)}`
           ? aiDependencyAssessment.recoveryEvidence.join(" / ")
           : "없음"
       }`
-    : "";
+    : "**AI 활용 신호 없음** — 학생이 AI와 대화하지 않았습니다. chat_score는 0으로 설정하세요.";
 
-  return `다음 정보를 바탕으로 채팅 과정과 최종 답안을 통합 평가해주세요:
+  return `다음 정보를 바탕으로 AI 활용 분석 요약과 최종 답안을 통합 평가해주세요:
 
 **문제:**
 ${questionPrompt || ""}
 
 ${questionAiContext ? `**문제 컨텍스트:**\n${questionAiContext}\n` : ""}
-
-${chatSection}
 
 ${answerSection}
 ${dependencySection}

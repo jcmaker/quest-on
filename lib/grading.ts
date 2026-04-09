@@ -254,11 +254,12 @@ export async function autoGradeSession(
         } : null,
       });
 
-      const chatHistoryText = questionMessages.length > 0
-        ? `\n\n[학생과 AI의 대화 기록]\n${questionMessages.map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`).join("\n\n")}`
+      // Use ai_summary instead of raw chat history (token reduction + prompt injection prevention)
+      const aiSummaryText = aiDependencyAssessment.summary
+        ? `\n\n[AI 활용 요약]\n${aiDependencyAssessment.summary}`
         : "";
 
-      userPrompt = `[학생이 작성한 문서]\n${submission.answer || "(문서 없음)"}${chatHistoryText}`;
+      userPrompt = `[학생이 작성한 문서]\n${submission.answer || "(문서 없음)"}${aiSummaryText}`;
     } else {
       systemPrompt = buildUnifiedGradingSystemPrompt({
         rubricText,
@@ -269,87 +270,27 @@ export async function autoGradeSession(
       userPrompt = buildUnifiedGradingUserPrompt({
         questionPrompt: question.prompt || "",
         questionAiContext: question.ai_context,
-        messages: questionMessages,
         answer: submission.answer || "",
         aiDependencyAssessment,
       });
     }
 
-    const tracked = await callTrackedChatCompletion(
-      () =>
-        getOpenAI().chat.completions.create({
-          model: AI_MODEL_HEAVY,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          response_format: { type: "json_object" },
-        }, { signal: abortController.signal }),
-      {
-        feature: "auto_grading_question",
-        route: "lib/grading.ts",
-        model: AI_MODEL_HEAVY,
-        userId: session.student_id,
-        examId: exam.id,
-        sessionId,
-        qIdx,
-        metadata: buildAiTextMetadata({
-          inputText: [systemPrompt, userPrompt],
-          extra: {
-            chat_weight: chatWeight,
-            rubric_item_count: rubricItems.length,
-            message_count: questionMessages.length,
-          },
-        }),
-      },
-      {
-        timeoutMs: 90_000,
-        metadataBuilder: (result) =>
-          buildAiTextMetadata({
-            outputText:
-              (result as { choices?: Array<{ message?: { content?: string | null } }> })
-                .choices?.[0]?.message?.content ?? null,
-          }),
+    // Retry loop: up to 2 retries (3 total attempts) with exponential backoff (1s, 2s)
+    // Covers API errors, empty responses, and JSON parse failures.
+    const MAX_GRADING_RETRIES = 2;
+    const RETRY_DELAYS_MS = [1_000, 2_000];
+
+    let rawParsed: unknown = null;
+    for (let attempt = 0; attempt <= MAX_GRADING_RETRIES; attempt++) {
+      if (attempt > 0) {
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]));
+        logError(`[AUTO_GRADE] Retrying grading API call (attempt ${attempt + 1}/${MAX_GRADING_RETRIES + 1})`, null, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId, qIdx, attempt },
+        });
       }
-    );
-    const completion = tracked.data;
-
-    // Zod schema for AI grading response — validates structure before trusting scores
-    const aiGradingResponseSchema = z.object({
-      chat_score: z.number().finite().optional(),
-      chat_comment: z.string().optional(),
-      answer_score: z.number().finite().optional(),
-      answer_comment: z.string().optional(),
-      overall_comment: z.string().optional(),
-      rubric_scores: z.record(z.string(), z.number().finite().min(0).max(5)).optional(),
-    });
-
-    // Fix 3A: Validate choices array before accessing
-    if (!completion.choices?.length) {
-      logError("[AUTO_GRADE] Empty AI response (no choices)", null, {
-        path: "lib/grading.ts",
-        additionalData: { sessionId, qIdx },
-      });
-      failedGradeResults.push({ q_idx: qIdx, failureReason: "Empty AI response (no choices)" });
-      return null;
-    }
-
-    let rawParsed: unknown;
-    try {
-      rawParsed = JSON.parse(
-        completion.choices[0]?.message?.content || "{}"
-      );
-    } catch (parseErr) {
-      const rawContent = completion.choices[0]?.message?.content ?? "(empty)";
-      logError("[AUTO_GRADE] Failed to parse grading JSON response, retrying in 2s", parseErr, {
-        path: "lib/grading.ts",
-        additionalData: { sessionId, qIdx, rawContent: rawContent.slice(0, 500) },
-      });
-
-      // P1-1: Retry once after 2-3s delay with jitter to avoid thundering herd
       try {
-        await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
-        const retryTracked = await callTrackedChatCompletion(
+        const tracked = await callTrackedChatCompletion(
           () =>
             getOpenAI().chat.completions.create({
               model: AI_MODEL_HEAVY,
@@ -369,7 +310,12 @@ export async function autoGradeSession(
             qIdx,
             metadata: buildAiTextMetadata({
               inputText: [systemPrompt, userPrompt],
-              extra: { retry: true },
+              extra: {
+                chat_weight: chatWeight,
+                rubric_item_count: rubricItems.length,
+                message_count: questionMessages.length,
+                attempt,
+              },
             }),
           },
           {
@@ -382,28 +328,37 @@ export async function autoGradeSession(
               }),
           }
         );
-        const retryCompletion = retryTracked.data;
-        // Fix 3A: Validate choices array on retry too
-        if (!retryCompletion.choices?.length) {
-          logError("[AUTO_GRADE] Empty AI response (no choices) on retry", null, {
+        const c = tracked.data;
+        if (!c.choices?.length) {
+          throw new Error("Empty AI response (no choices)");
+        }
+        rawParsed = JSON.parse(c.choices[0]?.message?.content || "{}");
+        break; // success — exit retry loop
+      } catch (err) {
+        if (attempt === MAX_GRADING_RETRIES) {
+          logError(`[AUTO_GRADE] All ${MAX_GRADING_RETRIES + 1} grading attempts failed`, err, {
             path: "lib/grading.ts",
             additionalData: { sessionId, qIdx },
           });
-          failedGradeResults.push({ q_idx: qIdx, failureReason: "Empty AI response (no choices) after retry" });
+          failedGradeResults.push({ q_idx: qIdx, failureReason: `API failed after ${MAX_GRADING_RETRIES + 1} attempts: ${err instanceof Error ? err.message : String(err)}` });
           return null;
         }
-        rawParsed = JSON.parse(
-          retryCompletion.choices[0]?.message?.content || "{}"
-        );
-      } catch (retryErr) {
-        logError("[AUTO_GRADE] Retry also failed for grading JSON parse", retryErr, {
+        logError(`[AUTO_GRADE] Grading attempt ${attempt + 1} failed, will retry`, err, {
           path: "lib/grading.ts",
-          additionalData: { sessionId, qIdx },
+          additionalData: { sessionId, qIdx, attempt },
         });
-        failedGradeResults.push({ q_idx: qIdx, failureReason: "JSON parse failure after retry" });
-        return null;
       }
     }
+
+    // Zod schema for AI grading response — validates structure before trusting scores
+    const aiGradingResponseSchema = z.object({
+      chat_score: z.number().finite().optional(),
+      chat_comment: z.string().optional(),
+      answer_score: z.number().finite().optional(),
+      answer_comment: z.string().optional(),
+      overall_comment: z.string().optional(),
+      rubric_scores: z.record(z.string(), z.number().finite().min(0).max(5)).optional(),
+    });
 
     // Assignment grading: different response schema and scoring
     if (isAssignment) {
