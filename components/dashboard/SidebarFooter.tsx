@@ -117,7 +117,7 @@ export function SidebarFooter() {
                 <p className="text-sm font-medium truncate text-sidebar-foreground">
                   {displayName}
                 </p>
-                <p className="text-xs text-sidebar-foreground/60 truncate capitalize">
+                <p className="text-xs text-sidebar-foreground/80 truncate capitalize">
                   {userRole}
                 </p>
               </div>

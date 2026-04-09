@@ -77,7 +77,7 @@ test.describe("Onboarding — Role Selection", () => {
 
 test.describe("Profile Setup — /student/profile-setup", () => {
   test.afterEach(async ({ studentPage }) => {
-    await studentPage.unrouteAll({ behavior: "wait" });
+    await studentPage.unrouteAll({ behavior: "ignoreErrors" });
     await cleanupTestData();
   });
 
