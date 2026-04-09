@@ -67,11 +67,15 @@ async function applyMigrations() {
 
     if (error && error.message.includes("does not exist")) {
       console.log("[global-setup] Adding chat_weight column to exams table...");
-      execSync(
-        `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres -c "ALTER TABLE exams ADD COLUMN IF NOT EXISTS chat_weight INT DEFAULT 50;"`,
-        { stdio: "pipe" }
-      );
-      console.log("[global-setup] chat_weight column added.");
+      if (!process.env.CI) {
+        execSync(
+          `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres -c "ALTER TABLE exams ADD COLUMN IF NOT EXISTS chat_weight INT DEFAULT 50;"`,
+          { stdio: "pipe" }
+        );
+        console.log("[global-setup] chat_weight column added.");
+      } else {
+        console.log("[global-setup] CI: skipping docker exec for chat_weight migration.");
+      }
     }
   } catch (err) {
     console.warn("[global-setup] chat_weight migration failed:", err);
@@ -86,11 +90,15 @@ async function applyMigrations() {
 
     if (gradeColErr && gradeColErr.message.includes("does not exist")) {
       console.log("[global-setup] Adding updated_at column to grades table...");
-      execSync(
-        `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres -c "ALTER TABLE grades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;"`,
-        { stdio: "pipe" }
-      );
-      console.log("[global-setup] grades.updated_at column added.");
+      if (!process.env.CI) {
+        execSync(
+          `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres -c "ALTER TABLE grades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP;"`,
+          { stdio: "pipe" }
+        );
+        console.log("[global-setup] grades.updated_at column added.");
+      } else {
+        console.log("[global-setup] CI: skipping docker exec for grades.updated_at migration.");
+      }
     }
   } catch (err) {
     console.warn("[global-setup] grades.updated_at migration failed:", err);
@@ -111,11 +119,15 @@ async function applyMigrations() {
     // If error is "function does not exist", apply the migration
     if (rpcCheckErr && rpcCheckErr.message.includes("does not exist")) {
       console.log("[global-setup] Applying submit_exam_atomic RPC...");
-      execSync(
-        `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres < ${path.resolve(__dirname, "../sql/006_submit_exam_atomic.sql")}`,
-        { stdio: "pipe" }
-      );
-      console.log("[global-setup] submit_exam_atomic RPC applied.");
+      if (!process.env.CI) {
+        execSync(
+          `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres < ${path.resolve(__dirname, "../sql/006_submit_exam_atomic.sql")}`,
+          { stdio: "pipe" }
+        );
+        console.log("[global-setup] submit_exam_atomic RPC applied.");
+      } else {
+        console.log("[global-setup] CI: skipping docker exec for submit_exam_atomic RPC.");
+      }
     }
     // If error is something else (like FK violation), the function exists — that's fine
   } catch (err) {
@@ -144,13 +156,17 @@ async function applyMigrations() {
 
     if (rpcCheckErr2 && rpcCheckErr2.message.includes("does not exist")) {
       console.log("[global-setup] Applying create_exam_with_node RPC...");
-      execSync(
-        `docker exec -i supabase_db_quest-on psql -U postgres -d postgres < ${path.resolve(__dirname, "../sql/012_create_exam_with_node.sql")}`,
-        { stdio: "pipe" }
-      );
-      // Reload PostgREST schema cache
-      execSync("docker kill --signal=SIGUSR1 supabase_rest_quest-on", { stdio: "pipe" });
-      console.log("[global-setup] create_exam_with_node RPC applied.");
+      if (!process.env.CI) {
+        execSync(
+          `docker exec -i supabase_db_quest-on psql -U postgres -d postgres < ${path.resolve(__dirname, "../sql/012_create_exam_with_node.sql")}`,
+          { stdio: "pipe" }
+        );
+        // Reload PostgREST schema cache
+        execSync("docker kill --signal=SIGUSR1 supabase_rest_quest-on", { stdio: "pipe" });
+        console.log("[global-setup] create_exam_with_node RPC applied.");
+      } else {
+        console.log("[global-setup] CI: skipping docker exec for create_exam_with_node RPC.");
+      }
     } else if (rpcCheckErr2) {
       // Clean up the test row if the function exists but insert failed (expected unique violation)
       // The function exists - that's all we care about
@@ -160,14 +176,16 @@ async function applyMigrations() {
   }
 
   // Migration: ensure error_logs has payload and user_id columns
-  try {
-    execSync(
-      `docker exec supabase_db_quest-on psql -U postgres -d postgres -c "ALTER TABLE IF EXISTS error_logs ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}'; ALTER TABLE IF EXISTS error_logs ADD COLUMN IF NOT EXISTS user_id TEXT;"`,
-      { stdio: "pipe" }
-    );
-    execSync("docker kill --signal=SIGUSR1 supabase_rest_quest-on", { stdio: "pipe" });
-  } catch (err) {
-    console.warn("[global-setup] error_logs migration failed:", err);
+  if (!process.env.CI) {
+    try {
+      execSync(
+        `docker exec supabase_db_quest-on psql -U postgres -d postgres -c "ALTER TABLE IF EXISTS error_logs ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}'; ALTER TABLE IF EXISTS error_logs ADD COLUMN IF NOT EXISTS user_id TEXT;"`,
+        { stdio: "pipe" }
+      );
+      execSync("docker kill --signal=SIGUSR1 supabase_rest_quest-on", { stdio: "pipe" });
+    } catch (err) {
+      console.warn("[global-setup] error_logs migration failed:", err);
+    }
   }
 
   // Ensure exam-materials storage bucket exists (for upload tests)
