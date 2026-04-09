@@ -93,6 +93,7 @@ runs:
       run: |
         psql postgresql://postgres:postgres@127.0.0.1:54322/postgres \
           -f sql/006_submit_exam_atomic.sql \
+          -f sql/007_index_optimization.sql \
           -f sql/012_create_exam_with_node.sql
         # Reload PostgREST schema cache so new functions are immediately callable
         psql postgresql://postgres:postgres@127.0.0.1:54322/postgres \
