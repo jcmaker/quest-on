@@ -58,5 +58,30 @@ runs:
             user_id TEXT,
             created_at TIMESTAMPTZ DEFAULT now()
           );
+
+          CREATE TABLE IF NOT EXISTS audit_logs (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            action TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            details JSONB,
+            created_at TIMESTAMPTZ DEFAULT now() NOT NULL
+          );
+
+          CREATE TABLE IF NOT EXISTS paste_logs (
+            id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+            session_id UUID NOT NULL,
+            exam_code TEXT,
+            question_id TEXT,
+            length INT,
+            pasted_text TEXT,
+            paste_start INT,
+            paste_end INT,
+            answer_length_before INT,
+            is_internal BOOLEAN NOT NULL DEFAULT false,
+            suspicious BOOLEAN NOT NULL DEFAULT false,
+            timestamp TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT now()
+          );
         "
       shell: bash

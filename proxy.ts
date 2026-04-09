@@ -26,10 +26,10 @@ export const proxy = clerkMiddleware(async (auth, req) => {
     };
   }
 
-  const claims = sessionClaims as unknown as CustomJwtPayload;
-  const userRole = claims.unsafeMetadata?.role;
+  const claims = sessionClaims as unknown as CustomJwtPayload | null;
+  const userRole = claims?.unsafeMetadata?.role;
   // status 없으면 approved 취급 (마이그레이션 전 기존 강사 보호)
-  const isPending = claims.unsafeMetadata?.status === "pending";
+  const isPending = claims?.unsafeMetadata?.status === "pending";
 
   if (isInstructorRoute(req)) {
     if (userRole !== "instructor") {
