@@ -98,6 +98,7 @@ describe("buildUnifiedGradingUserPrompt", () => {
       triggerEvidence: ["예시 트리거"],
       recoveryEvidence: ["예시 회복"],
       penaltyApplied: 0,
+      overallRisk: "low" as const,
     };
     const result = buildUnifiedGradingUserPrompt({
       questionPrompt: "문제",
