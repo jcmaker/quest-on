@@ -111,6 +111,6 @@ describe("createAdminToken", () => {
 
     const createAdminToken = await getCreateAdminToken();
 
-    expect(() => createAdminToken()).toThrow("ADMIN_SESSION_SECRET must be set");
+    expect(() => createAdminToken()).toThrow("ADMIN_SESSION_SECRET or ADMIN_PASSWORD must be set.");
   });
 });
