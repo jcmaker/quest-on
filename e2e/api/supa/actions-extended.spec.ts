@@ -180,8 +180,8 @@ test.describe("Supa — POST /api/supa (extended actions)", () => {
     expect(body.session).toBeTruthy();
     expect(body.session.exam_id).toBe(exam.id);
     expect(body.session.student_id).toBe("test-student-id");
-    // When exam is running with started_at set, session should be in_progress
-    expect(body.session.status).toBe("in_progress");
+    // When exam is running with started_at set and has a duration, session should be late_pending
+    expect(body.session.status).toBe("late_pending");
   });
 
   test("init_exam_session with invalid exam code → 404", async ({

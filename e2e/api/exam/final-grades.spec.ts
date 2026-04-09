@@ -47,7 +47,7 @@ test.describe("GET /api/exam/[examId]/final-grades", () => {
     expect(body.grades).toEqual([]);
   });
 
-  test("returns empty when only auto grades exist", async ({
+  test("returns ai_graded entry when only auto grades exist", async ({
     instructorRequest,
   }) => {
     const exam = await seedExam({ status: "running" });
@@ -63,7 +63,10 @@ test.describe("GET /api/exam/[examId]/final-grades", () => {
 
     expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.grades).toEqual([]);
+    expect(body.grades).toHaveLength(1);
+    expect(body.grades[0].session_id).toBe(session.id);
+    expect(body.grades[0].score).toBe(90);
+    expect(body.grades[0].gradeStatus).toBe("ai_graded");
   });
 
   test("computes correct average across questions", async ({

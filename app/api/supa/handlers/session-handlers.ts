@@ -5,6 +5,7 @@ import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
 import { triggerGradingIfNeeded } from "@/lib/grading-trigger";
+import { sanitizeUserInput } from "@/lib/sanitize";
 
 /** 5-second grace period for network latency (shared across heartbeat/initExamSession/feedback) */
 const GRACE_PERIOD_MS = 5_000;
@@ -773,6 +774,17 @@ export async function submitExam(data: {
       const questionCount = examForValidation.questions.length;
       if (data.answers.length > questionCount) {
         return errorJson("VALIDATION_ERROR", `Too many answers: got ${data.answers.length}, expected at most ${questionCount}`, 400);
+      }
+    }
+
+    // Reject answers that contain XSS / dangerous HTML content
+    for (const answer of data.answers) {
+      const answerObj = answer as Record<string, unknown>;
+      if (typeof answerObj.text === "string") {
+        const sanitized = sanitizeUserInput(answerObj.text);
+        if (sanitized !== answerObj.text) {
+          return errorJson("INVALID_INPUT", "Answers contain invalid content", 400);
+        }
       }
     }
 

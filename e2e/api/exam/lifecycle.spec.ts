@@ -172,7 +172,7 @@ test.describe("Exam Lifecycle — start / end / sessions", () => {
 
     const sessions = await getSessionsByExam(exam.id);
     for (const s of sessions) {
-      expect(s.status).toBe("submitted");
+      expect(s.status).toBe("auto_submitted");
       expect(s.submitted_at).toBeTruthy();
     }
   });
