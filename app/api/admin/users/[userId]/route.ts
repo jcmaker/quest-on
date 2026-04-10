@@ -26,15 +26,14 @@ export async function PATCH(
 
     const supabase = getSupabaseServer();
 
-    // profiles 테이블에서 role 업데이트
     const { data: profile, error } = await supabase
       .from("profiles")
       .update({
         role,
         updated_at: new Date().toISOString(),
       })
-      .or(`id.eq.${userId},clerk_id.eq.${userId}`)
-      .select("id, email, full_name, role")
+      .eq("id", userId)
+      .select("id, display_name, role")
       .single();
 
     if (error) {
@@ -44,8 +43,7 @@ export async function PATCH(
     return successJson({
       user: {
         id: profile.id,
-        email: profile.email,
-        fullName: profile.full_name,
+        fullName: profile.display_name,
         role: profile.role,
       },
     });
@@ -72,24 +70,27 @@ export async function GET(
 
     const { data: profile, error } = await supabase
       .from("profiles")
-      .select("id, email, full_name, role, status, avatar_url, created_at, clerk_id")
-      .or(`id.eq.${userId},clerk_id.eq.${userId}`)
+      .select("id, display_name, role, status, avatar_url, created_at")
+      .eq("id", userId)
       .single();
 
     if (error || !profile) {
       return errorJson("NOT_FOUND", "User not found", 404);
     }
 
+    // auth.users에서 email 가져오기
+    const { data: authData } = await supabase.auth.admin.getUserById(userId);
+    const email = authData?.user?.email ?? "";
+
     return successJson({
       user: {
         id: profile.id,
-        email: profile.email,
-        fullName: profile.full_name,
+        email,
+        fullName: profile.display_name,
         role: profile.role,
         status: profile.status,
         avatarUrl: profile.avatar_url,
         createdAt: profile.created_at,
-        clerkId: profile.clerk_id,
       },
     });
   } catch {

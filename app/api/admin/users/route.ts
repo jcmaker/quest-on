@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
     const supabase = getSupabaseServer();
     const { data: users, count, error } = await supabase
       .from("profiles")
-      .select("id, email, full_name, role, status, avatar_url, created_at, clerk_id", {
+      .select("id, display_name, role, status, avatar_url, created_at", {
         count: "exact",
       })
       .range(offset, offset + limit - 1)
@@ -32,16 +32,29 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
+    // auth.users에서 email 가져오기 (service role)
+    const userIds = (users ?? []).map((u) => u.id);
+    const emailMap = new Map<string, string>();
+    if (userIds.length > 0) {
+      const { data: authData } = await supabase.auth.admin.listUsers({
+        perPage: limit,
+      });
+      if (authData?.users) {
+        for (const au of authData.users) {
+          emailMap.set(au.id, au.email ?? "");
+        }
+      }
+    }
+
     const total = count ?? 0;
     const usersWithRoles = (users ?? []).map((user) => ({
       id: user.id,
-      email: user.email,
-      fullName: user.full_name,
+      email: emailMap.get(user.id) ?? "",
+      fullName: user.display_name,
       role: user.role || "student",
       status: user.status,
       avatarUrl: user.avatar_url,
       createdAt: user.created_at,
-      clerkId: user.clerk_id,
     }));
 
     const stats = {

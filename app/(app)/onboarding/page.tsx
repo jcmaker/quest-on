@@ -175,7 +175,30 @@ export default function OnboardingPage() {
       });
       if (!profileRes.ok) throw new Error("Profile update failed");
 
-      // 3. Clear localStorage
+      // role별 추가 프로필 테이블에도 저장 (기존 API들이 여기서 읽음)
+      if (role === "student") {
+        await fetch("/api/student/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            student_number: studentNumber.trim(),
+            school: school.trim(),
+          }),
+        });
+      } else {
+        await fetch("/api/instructor/profile", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            email: user.email,
+            school: school.trim(),
+          }),
+        });
+      }
+
+      // Clear localStorage
       localStorage.removeItem("selectedRole");
 
       // 4. Redirect

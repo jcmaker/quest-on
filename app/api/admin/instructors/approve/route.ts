@@ -33,15 +33,13 @@ export async function POST(request: Request) {
     }
 
     // profiles 테이블 status 업데이트 (JWT 클레임 반영)
-    // instructorId가 Supabase UUID이면 직접 업데이트,
-    // Clerk ID이면 clerk_id 컬럼으로 조회 후 업데이트
     const { error: profileError } = await supabase
       .from("profiles")
       .update({
         status: "approved",
         updated_at: new Date().toISOString(),
       })
-      .or(`id.eq.${instructorId},clerk_id.eq.${instructorId}`);
+      .eq("id", instructorId);
 
     if (profileError) {
       logError("[approve-instructor] Profile update error", profileError, {
