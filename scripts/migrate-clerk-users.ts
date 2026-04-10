@@ -10,11 +10,11 @@
  *   SUPABASE_SERVICE_ROLE_KEY
  *
  * 순서:
- *   1. Clerk에서 전체 유저 목록 조회
- *   2. 각 유저를 Supabase Auth에 생성 (email_confirm: true)
- *   3. profiles 테이블에 clerk_id 매핑 저장
- *   4. Magic Link 발송 (유저가 비밀번호 재설정 가능)
- *   5. FK re-keying SQL 출력
+ *   1. Clerk에서 전체 유저 목록 조회 (clerk_id + email + name + role)
+ *   2. Supabase Auth에서 이메일로 매칭 or 신규 유저 생성
+ *   3. profiles 테이블에 정보 업데이트
+ *   4. 기존 테이블의 Clerk ID → Supabase UUID로 일괄 UPDATE
+ *   5. 검증
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -44,6 +44,8 @@ interface ClerkUser {
   };
 }
 
+// ─── Step 1: Clerk 유저 조회 ───
+
 async function fetchClerkUsers(): Promise<ClerkUser[]> {
   const allUsers: ClerkUser[] = [];
   let offset = 0;
@@ -52,11 +54,7 @@ async function fetchClerkUsers(): Promise<ClerkUser[]> {
   while (true) {
     const res = await fetch(
       `https://api.clerk.com/v1/users?limit=${limit}&offset=${offset}`,
-      {
-        headers: {
-          Authorization: `Bearer ${CLERK_SECRET_KEY}`,
-        },
-      }
+      { headers: { Authorization: `Bearer ${CLERK_SECRET_KEY}` } }
     );
 
     if (!res.ok) {
@@ -73,189 +71,160 @@ async function fetchClerkUsers(): Promise<ClerkUser[]> {
   return allUsers;
 }
 
-async function migrateUser(clerkUser: ClerkUser): Promise<{
-  clerkId: string;
-  supabaseId: string | null;
-  status: "created" | "skipped" | "error";
-  error?: string;
-}> {
-  const email = clerkUser.email_addresses[0]?.email_address;
-  if (!email) {
-    return { clerkId: clerkUser.id, supabaseId: null, status: "skipped", error: "No email" };
-  }
-
-  const role = clerkUser.unsafe_metadata?.role ?? "student";
-  const status = clerkUser.unsafe_metadata?.status ?? "approved";
-  const fullName = [clerkUser.first_name, clerkUser.last_name]
-    .filter(Boolean)
-    .join(" ") || null;
-
-  // 이미 마이그레이션된 유저 확인
-  const { data: existing } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("clerk_id", clerkUser.id)
-    .single();
-
-  if (existing) {
-    return { clerkId: clerkUser.id, supabaseId: existing.id, status: "skipped" };
-  }
-
-  // Supabase Auth에 유저 생성
-  const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-    email,
-    email_confirm: true,
-    user_metadata: {
-      full_name: fullName,
-      avatar_url: clerkUser.image_url,
-      role,
-    },
-  });
-
-  if (authError) {
-    // 이미 존재하는 이메일은 조회
-    if (authError.message.includes("already registered")) {
-      const { data: existingByEmail } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", email)
-        .single();
-      if (existingByEmail) {
-        // clerk_id 연결
-        await supabase
-          .from("profiles")
-          .update({ clerk_id: clerkUser.id })
-          .eq("id", existingByEmail.id);
-        return { clerkId: clerkUser.id, supabaseId: existingByEmail.id, status: "skipped" };
-      }
-    }
-    return { clerkId: clerkUser.id, supabaseId: null, status: "error", error: authError.message };
-  }
-
-  const supabaseId = authData.user.id;
-
-  // profiles 테이블 업데이트 (trigger가 이미 만든 경우 upsert)
-  await supabase
-    .from("profiles")
-    .upsert(
-      {
-        id: supabaseId,
-        clerk_id: clerkUser.id,
-        email,
-        full_name: fullName,
-        avatar_url: clerkUser.image_url,
-        role,
-        status,
-      },
-      { onConflict: "id" }
-    );
-
-  return { clerkId: clerkUser.id, supabaseId, status: "created" };
-}
-
-async function sendMagicLink(email: string): Promise<void> {
-  const { error } = await supabase.auth.admin.generateLink({
-    type: "magiclink",
-    email,
-  });
-  if (error) {
-    console.warn(`  Magic link failed for ${email}: ${error.message}`);
-  }
-}
+// ─── Main ───
 
 async function main() {
   console.log("=== Clerk → Supabase Auth Migration ===\n");
 
+  // Step 1: Clerk 유저 조회
   console.log("1. Fetching Clerk users...");
   const clerkUsers = await fetchClerkUsers();
   console.log(`   Found ${clerkUsers.length} users\n`);
 
-  const results = {
-    created: 0,
-    skipped: 0,
-    errors: 0,
-    mapping: [] as Array<{ clerkId: string; supabaseId: string }>,
-  };
+  // Supabase Auth 유저 목록 한 번에 가져오기
+  const { data: authListData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  const authUsers = authListData?.users ?? [];
+  const emailToAuthId = new Map(authUsers.map((u) => [u.email, u.id]));
 
-  console.log("2. Migrating users to Supabase...");
-  for (const user of clerkUsers) {
-    const email = user.email_addresses[0]?.email_address ?? "(no email)";
+  // Step 2: 매칭/생성
+  console.log("2. Matching/creating Supabase Auth users...");
+
+  const mappings: Array<{ clerkId: string; supabaseId: string; clerkUser: ClerkUser }> = [];
+  const results = { matched: 0, created: 0, failed: 0 };
+
+  for (const clerkUser of clerkUsers) {
+    const email = clerkUser.email_addresses[0]?.email_address;
+    if (!email) {
+      console.log(`   ${clerkUser.id}: no email, skipping`);
+      results.failed++;
+      continue;
+    }
+
     process.stdout.write(`   ${email}... `);
 
-    const result = await migrateUser(user);
-
-    if (result.status === "created") {
-      console.log(`✓ created (${result.supabaseId})`);
-      results.created++;
-      results.mapping.push({ clerkId: result.clerkId, supabaseId: result.supabaseId! });
-    } else if (result.status === "skipped") {
-      console.log(`- skipped`);
-      results.skipped++;
-      if (result.supabaseId) {
-        results.mapping.push({ clerkId: result.clerkId, supabaseId: result.supabaseId });
-      }
+    const existingId = emailToAuthId.get(email);
+    if (existingId) {
+      console.log(`✓ matched (${existingId})`);
+      mappings.push({ clerkId: clerkUser.id, supabaseId: existingId, clerkUser });
+      results.matched++;
     } else {
-      console.log(`✗ error: ${result.error}`);
-      results.errors++;
-    }
-  }
+      // Supabase Auth에 없으면 생성
+      const fullName = [clerkUser.first_name, clerkUser.last_name].filter(Boolean).join(" ") || null;
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email,
+        email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          avatar_url: clerkUser.image_url,
+        },
+      });
 
-  console.log(`\n   Results: ${results.created} created, ${results.skipped} skipped, ${results.errors} errors`);
-
-  if (results.created > 0) {
-    console.log("\n3. Sending Magic Link emails to new users...");
-    for (const user of clerkUsers) {
-      const email = user.email_addresses[0]?.email_address;
-      if (email && results.mapping.some((m) => m.clerkId === user.id)) {
-        await sendMagicLink(email);
-        console.log(`   Sent magic link to ${email}`);
+      if (authError) {
+        console.log(`✗ ${authError.message}`);
+        results.failed++;
+      } else {
+        console.log(`+ created (${authData.user.id})`);
+        mappings.push({ clerkId: clerkUser.id, supabaseId: authData.user.id, clerkUser });
+        emailToAuthId.set(email, authData.user.id);
+        results.created++;
       }
     }
   }
 
-  console.log("\n4. FK Re-keying SQL (run this AFTER migration verification):");
-  console.log(`
--- =============================================================================
--- Run this SQL in Supabase SQL Editor AFTER verifying migration is complete
--- =============================================================================
+  console.log(`\n   Results: ${results.matched} matched, ${results.created} created, ${results.failed} failed`);
 
--- Populate supabase UUIDs in FK columns
-UPDATE public.sessions s
-  SET supabase_student_id = p.id
-  FROM public.profiles p
-  WHERE s.student_id = p.clerk_id AND p.clerk_id IS NOT NULL;
+  // Step 3: profiles 업데이트
+  console.log("\n3. Updating profiles...");
+  for (const { supabaseId, clerkUser } of mappings) {
+    const fullName = [clerkUser.first_name, clerkUser.last_name].filter(Boolean).join(" ") || "User";
+    const role = clerkUser.unsafe_metadata?.role ?? "student";
+    const status = clerkUser.unsafe_metadata?.status ?? "approved";
 
-UPDATE public.exams e
-  SET supabase_instructor_id = p.id
-  FROM public.profiles p
-  WHERE e.instructor_id = p.clerk_id AND p.clerk_id IS NOT NULL;
+    await supabase
+      .from("profiles")
+      .upsert(
+        {
+          id: supabaseId,
+          display_name: fullName,
+          avatar_url: clerkUser.image_url,
+          role,
+          status,
+        },
+        { onConflict: "id" }
+      );
+  }
+  console.log(`   ${mappings.length} profiles updated`);
 
-UPDATE public.exam_nodes en
-  SET supabase_instructor_id = p.id
-  FROM public.profiles p
-  WHERE en.instructor_id = p.clerk_id AND p.clerk_id IS NOT NULL;
+  // Step 4: FK re-keying
+  console.log("\n4. Updating foreign keys...");
 
-UPDATE public.ai_events ae
-  SET supabase_user_id = p.id
-  FROM public.profiles p
-  WHERE ae.user_id = p.clerk_id AND p.clerk_id IS NOT NULL;
+  for (const { clerkId, supabaseId } of mappings) {
+    // sessions.student_id
+    const r1 = await supabase.from("sessions").update({ student_id: supabaseId }).eq("student_id", clerkId);
+    if (r1.count) console.log(`   sessions: ${r1.count} rows for ${clerkId}`);
 
-UPDATE public.student_profiles sp
-  SET supabase_student_id = p.id
-  FROM public.profiles p
-  WHERE sp.student_id = p.clerk_id AND p.clerk_id IS NOT NULL;
+    // exams.instructor_id
+    const r2 = await supabase.from("exams").update({ instructor_id: supabaseId }).eq("instructor_id", clerkId);
+    if (r2.count) console.log(`   exams: ${r2.count} rows for ${clerkId}`);
 
-UPDATE public.instructor_profiles ip
-  SET supabase_id = p.id
-  FROM public.profiles p
-  WHERE ip.id = p.clerk_id AND p.clerk_id IS NOT NULL;
+    // exam_nodes.instructor_id
+    const r3 = await supabase.from("exam_nodes").update({ instructor_id: supabaseId }).eq("instructor_id", clerkId);
+    if (r3.count) console.log(`   exam_nodes: ${r3.count} rows for ${clerkId}`);
 
--- Verification (should all return 0)
-SELECT 'sessions missing' AS check, COUNT(*) FROM sessions WHERE supabase_student_id IS NULL AND student_id LIKE 'user_%';
-SELECT 'exams missing' AS check, COUNT(*) FROM exams WHERE supabase_instructor_id IS NULL AND instructor_id LIKE 'user_%';
-`);
+    // ai_events.user_id
+    const r4 = await supabase.from("ai_events").update({ user_id: supabaseId }).eq("user_id", clerkId);
+    if (r4.count) console.log(`   ai_events: ${r4.count} rows for ${clerkId}`);
+
+    // student_profiles.student_id
+    const r5 = await supabase.from("student_profiles").update({ student_id: supabaseId }).eq("student_id", clerkId);
+    if (r5.count) console.log(`   student_profiles: ${r5.count} rows for ${clerkId}`);
+
+    // instructor_profiles.id — PK이므로 delete + insert
+    const { data: instrProfile } = await supabase
+      .from("instructor_profiles")
+      .select("*")
+      .eq("id", clerkId)
+      .single();
+
+    if (instrProfile) {
+      await supabase.from("instructor_profiles").delete().eq("id", clerkId);
+      await supabase.from("instructor_profiles").insert({
+        ...instrProfile,
+        id: supabaseId,
+      });
+      console.log(`   instructor_profiles: re-keyed ${clerkId}`);
+    }
+  }
+
+  // Step 5: 검증
+  console.log("\n5. Verification...");
+  const { count: clerkSessions } = await supabase
+    .from("sessions")
+    .select("*", { count: "exact", head: true })
+    .like("student_id", "user_%");
+  console.log(`   sessions with Clerk IDs remaining: ${clerkSessions ?? 0}`);
+
+  const { count: clerkExams } = await supabase
+    .from("exams")
+    .select("*", { count: "exact", head: true })
+    .like("instructor_id", "user_%");
+  console.log(`   exams with Clerk IDs remaining: ${clerkExams ?? 0}`);
+
+  const { count: clerkStudentProfiles } = await supabase
+    .from("student_profiles")
+    .select("*", { count: "exact", head: true })
+    .like("student_id", "user_%");
+  console.log(`   student_profiles with Clerk IDs remaining: ${clerkStudentProfiles ?? 0}`);
+
+  const { count: clerkInstructorProfiles } = await supabase
+    .from("instructor_profiles")
+    .select("*", { count: "exact", head: true })
+    .like("id", "user_%");
+  console.log(`   instructor_profiles with Clerk IDs remaining: ${clerkInstructorProfiles ?? 0}`);
 
   console.log("\n=== Migration complete ===");
+  console.log("\nClerk ID가 0개 남았으면 성공!");
+  console.log("남은 게 있으면 해당 Clerk 유저가 Supabase에 매칭되지 않은 것 — 수동 확인 필요.");
 }
 
 main().catch((err) => {
