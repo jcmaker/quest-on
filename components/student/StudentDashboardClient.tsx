@@ -541,7 +541,7 @@ export default function StudentDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <SignedOut>
+      {!isSignedIn && isLoaded && (
         <div className="flex items-center justify-center h-screen">
           <Card className="w-full max-w-md shadow-xl border-0 bg-card/80 backdrop-blur-sm">
             <CardHeader className="text-center space-y-4">
@@ -563,9 +563,9 @@ export default function StudentDashboard() {
             </CardContent>
           </Card>
         </div>
-      </SignedOut>
+      )}
 
-      <SignedIn>
+      {isSignedIn && (
         <SidebarProvider
           defaultOpen={true}
           style={
@@ -1187,7 +1187,7 @@ export default function StudentDashboard() {
 
           <MobileBottomNav navItems={navigationItems} />
         </SidebarProvider>
-      </SignedIn>
+      )}
     </div>
   );
 }
