@@ -23,6 +23,25 @@ const isStudentRoute = (pathname: string) => pathname.startsWith("/student");
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
+  const { pathname } = request.nextUrl;
+
+  // 어드민 라우트는 별도 인증 (admin-auth.ts)
+  if (isAdminRoute(pathname)) return response;
+
+  // API 라우트는 리다이렉트하지 않음
+  if (pathname.startsWith("/api/")) return response;
+
+  // 테스트 바이패스: 쿠키 기반 (브라우저 E2E 테스트용)
+  const bypassSecret = process.env.TEST_BYPASS_SECRET;
+  if (bypassSecret && process.env.NODE_ENV !== "production") {
+    const bypassCookie = request.cookies.get("__test_bypass")?.value;
+    if (bypassCookie === bypassSecret) {
+      const role = request.cookies.get("__test_user_role")?.value || null;
+      const isPending = false;
+      return applyRouteGuards(request, response, pathname, role, isPending);
+    }
+  }
+
   // Supabase 세션 쿠키 갱신
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -42,14 +61,6 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-
-  // 어드민 라우트는 별도 인증 (admin-auth.ts)
-  if (isAdminRoute(pathname)) return response;
-
-  // API 라우트는 리다이렉트하지 않음
-  if (pathname.startsWith("/api/")) return response;
-
   // 미인증 → 공개 라우트 통과, 나머지는 로그인 페이지
   if (!user) {
     if (isPublicRoute(pathname)) return response;
@@ -66,6 +77,16 @@ export async function proxy(request: NextRequest) {
   const role = profile?.role ?? null;
   const isPending = profile?.status === "pending";
 
+  return applyRouteGuards(request, response, pathname, role, isPending);
+}
+
+function applyRouteGuards(
+  request: NextRequest,
+  response: NextResponse,
+  pathname: string,
+  role: string | null,
+  isPending: boolean,
+): NextResponse {
   // 로그인된 유저가 공개 라우트(홈, 로그인 등)에 접근 → role에 맞는 대시보드로 리다이렉트
   if (isPublicRoute(pathname) && pathname !== "/auth/callback") {
     if (!role) {
