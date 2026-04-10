@@ -88,7 +88,7 @@ function applyRouteGuards(
   isPending: boolean,
 ): NextResponse {
   // 로그인된 유저가 공개 라우트(홈, 로그인 등)에 접근 → role에 맞는 대시보드로 리다이렉트
-  if (isPublicRoute(pathname) && pathname !== "/auth/callback") {
+  if (isPublicRoute(pathname) && pathname !== "/auth/callback" && pathname !== "/join") {
     if (!role) {
       return NextResponse.redirect(new URL("/onboarding", request.url));
     }
