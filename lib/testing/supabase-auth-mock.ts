@@ -8,11 +8,43 @@
  *   x-test-user-role: instructor | student
  */
 
-import type { AppUser } from "@/lib/supabase-auth";
+import { timingSafeEqual } from "crypto";
 
-export { AppUser };
+export type AppUser = {
+  id: string;
+  email: string;
+  role: "instructor" | "student";
+  status: "pending" | "approved";
+  fullName: string | null;
+  avatarUrl: string | null;
+};
 
 export async function currentUser(): Promise<AppUser | null> {
+  const bypassSecret = process.env.TEST_BYPASS_SECRET;
+  if (!bypassSecret) return null;
+
+  const { headers } = await import("next/headers");
+  const hdrs = await headers();
+  const token = hdrs.get("x-test-bypass-token");
+
+  if (
+    token &&
+    token.length === bypassSecret.length &&
+    timingSafeEqual(Buffer.from(token), Buffer.from(bypassSecret))
+  ) {
+    const testId = hdrs.get("x-test-user-id");
+    const testRole = (hdrs.get("x-test-user-role") ?? "student") as AppUser["role"];
+    if (testId) {
+      return {
+        id: testId,
+        email: `${testId}@test.local`,
+        role: testRole,
+        status: "approved",
+        fullName: "Test User",
+        avatarUrl: null,
+      };
+    }
+  }
   return null;
 }
 
