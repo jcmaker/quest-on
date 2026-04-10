@@ -47,11 +47,12 @@ export async function proxy(request: NextRequest) {
   // 어드민 라우트는 별도 인증 (admin-auth.ts)
   if (isAdminRoute(pathname)) return response;
 
-  // 공개 라우트는 통과
-  if (isPublicRoute(pathname)) return response;
+  // API 라우트는 리다이렉트하지 않음
+  if (pathname.startsWith("/api/")) return response;
 
-  // 미인증 → 로그인 페이지
+  // 미인증 → 공개 라우트 통과, 나머지는 로그인 페이지
   if (!user) {
+    if (isPublicRoute(pathname)) return response;
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
@@ -64,6 +65,24 @@ export async function proxy(request: NextRequest) {
 
   const role = profile?.role ?? null;
   const isPending = profile?.status === "pending";
+
+  // 로그인된 유저가 공개 라우트(홈, 로그인 등)에 접근 → role에 맞는 대시보드로 리다이렉트
+  if (isPublicRoute(pathname) && pathname !== "/auth/callback") {
+    if (!role) {
+      return NextResponse.redirect(new URL("/onboarding", request.url));
+    }
+    if (role === "instructor") {
+      if (isPending) {
+        if (pathname !== "/instructor-pending") {
+          return NextResponse.redirect(new URL("/instructor-pending", request.url));
+        }
+        return response;
+      }
+      return NextResponse.redirect(new URL("/instructor", request.url));
+    }
+    // student
+    return NextResponse.redirect(new URL("/student", request.url));
+  }
 
   if (isInstructorRoute(pathname)) {
     if (role !== "instructor") {
