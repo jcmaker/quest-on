@@ -44,7 +44,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = createSupabaseClient();
     const { data } = await supabase
       .from("profiles")
-      .select("role, status, full_name, avatar_url, email")
+      .select("role, status, display_name, avatar_url")
       .eq("id", user.id)
       .single();
 
@@ -53,10 +53,10 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
       profile: data
         ? {
             role: data.role as AppProfile["role"],
-            status: data.status as AppProfile["status"],
-            fullName: data.full_name ?? null,
+            status: (data.status ?? "approved") as AppProfile["status"],
+            fullName: data.display_name ?? null,
             avatarUrl: data.avatar_url ?? null,
-            email: data.email ?? user.email ?? "",
+            email: user.email ?? "",
           }
         : null,
       isLoaded: true,

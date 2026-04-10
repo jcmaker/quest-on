@@ -70,7 +70,7 @@ export async function currentUser(): Promise<AppUser | null> {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, status, email, full_name, avatar_url")
+    .select("role, status, display_name, avatar_url")
     .eq("id", user.id)
     .single();
 
@@ -78,10 +78,10 @@ export async function currentUser(): Promise<AppUser | null> {
 
   return {
     id: user.id,
-    email: profile.email ?? user.email ?? "",
+    email: user.email ?? "",
     role: profile.role as AppUser["role"],
-    status: profile.status as AppUser["status"],
-    fullName: profile.full_name ?? null,
+    status: (profile.status ?? "approved") as AppUser["status"],
+    fullName: profile.display_name ?? null,
     avatarUrl: profile.avatar_url ?? null,
   };
 }

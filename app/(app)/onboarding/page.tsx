@@ -161,41 +161,19 @@ export default function OnboardingPage() {
     setIsSubmitting(true);
 
     try {
-      // 1. profiles 테이블에 role/status 업데이트
+      // profiles 테이블에 모든 정보 한 번에 업데이트
       const profileRes = await fetch("/api/user/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           role,
           status: role === "instructor" ? "pending" : "approved",
+          display_name: name.trim(),
+          school: school.trim(),
+          ...(role === "student" ? { student_id: studentNumber.trim() } : {}),
         }),
       });
       if (!profileRes.ok) throw new Error("Profile update failed");
-
-      // 2. role별 추가 프로필 저장
-      if (role === "student") {
-        const res = await fetch("/api/student/profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: name.trim(),
-            student_number: studentNumber.trim(),
-            school: school.trim(),
-          }),
-        });
-        if (!res.ok) throw new Error("Student profile save failed");
-      } else {
-        const res = await fetch("/api/instructor/profile", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: name.trim(),
-            email: user.email,
-            school: school.trim(),
-          }),
-        });
-        if (!res.ok) throw new Error("Instructor profile save failed");
-      }
 
       // 3. Clear localStorage
       localStorage.removeItem("selectedRole");

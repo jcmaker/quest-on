@@ -6,11 +6,14 @@ import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { z } from "zod";
 
 const PatchSchema = z.object({
-  role: z.enum(["instructor", "student"]),
+  role: z.enum(["instructor", "student"]).optional(),
   status: z.enum(["pending", "approved"]).optional(),
+  display_name: z.string().max(100).optional(),
+  school: z.string().max(100).optional(),
+  student_id: z.string().max(50).optional(),
 });
 
-// 현재 유저의 role/status 업데이트 (온보딩 시 사용)
+// 현재 유저의 프로필 업데이트 (온보딩 + 프로필 수정)
 export async function PATCH(request: NextRequest) {
   try {
     const user = await currentUser();
@@ -29,20 +32,31 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json();
     const parsed = PatchSchema.safeParse(body);
     if (!parsed.success) {
-      return errorJson("INVALID_INPUT", "Invalid role or status", 400);
+      return errorJson("INVALID_INPUT", "Invalid input", 400);
     }
 
-    const { role, status } = parsed.data;
-    const resolvedStatus = status ?? (role === "instructor" ? "pending" : "approved");
+    const { role, status, display_name, school, student_id } = parsed.data;
+
+    const updateData: Record<string, string> = {
+      updated_at: new Date().toISOString(),
+    };
+
+    if (role !== undefined) {
+      updateData.role = role;
+      // role 설정 시 status 자동 결정 (명시적 status가 없으면)
+      updateData.status = status ?? (role === "instructor" ? "pending" : "approved");
+    } else if (status !== undefined) {
+      updateData.status = status;
+    }
+
+    if (display_name !== undefined) updateData.display_name = display_name;
+    if (school !== undefined) updateData.school = school;
+    if (student_id !== undefined) updateData.student_id = student_id;
 
     const supabase = getSupabaseServer();
     const { error } = await supabase
       .from("profiles")
-      .update({
-        role,
-        status: resolvedStatus,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq("id", user.id);
 
     if (error) throw error;
