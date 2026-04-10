@@ -55,9 +55,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/sign-in", request.url));
   }
 
-  // JWT 커스텀 클레임에서 role/status 읽기 (custom_access_token_hook 등록 후 활성화)
-  const role = (user.app_metadata?.app_role as string) ?? null;
-  const isPending = user.app_metadata?.app_status === "pending";
+  // profiles 테이블에서 role/status 읽기
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, status")
+    .eq("id", user.id)
+    .single();
+
+  const role = profile?.role ?? null;
+  const isPending = profile?.status === "pending";
 
   if (isInstructorRoute(pathname)) {
     if (role !== "instructor") {
