@@ -126,7 +126,7 @@ export default function ProfilePage() {
               <div className="flex items-center space-x-6">
                 <Avatar className="h-24 w-24">
                   <AvatarImage
-                    src={profile?.avatarUrl}
+                    src={profile?.avatarUrl ?? undefined}
                     alt={profile?.fullName || "User"}
                   />
                   <AvatarFallback className="text-2xl">

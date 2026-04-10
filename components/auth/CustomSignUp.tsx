@@ -38,7 +38,6 @@ export function CustomSignUp() {
       provider,
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
-        data: { role },
       },
     });
   };
