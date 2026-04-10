@@ -32,12 +32,11 @@ import { qk } from "@/lib/query-keys";
 interface User {
   id: string;
   email: string;
-  firstName: string;
-  lastName: string;
+  fullName: string | null;
   role: string;
+  status: string | null;
   createdAt: string;
-  lastSignInAt: string;
-  imageUrl: string;
+  avatarUrl: string | null;
 }
 
 interface UserStats {
@@ -198,9 +197,8 @@ export default function AdminDashboard() {
 
   const filteredUsers = users.filter((user) => {
     const matchesSearch =
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.lastName?.toLowerCase().includes(searchTerm.toLowerCase());
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.fullName?.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesRole = roleFilter === "all" || user.role === roleFilter;
 
@@ -423,13 +421,13 @@ export default function AdminDashboard() {
                   >
                     <div className="flex items-center space-x-4">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                        {user.imageUrl ? (
+                        {user.avatarUrl ? (
                           <div
                             className="h-10 w-10 rounded-full bg-cover bg-center"
                             style={{
-                              backgroundImage: `url(${user.imageUrl})`,
+                              backgroundImage: `url(${user.avatarUrl})`,
                             }}
-                            title={user.firstName || user.email}
+                            title={user.fullName || user.email}
                           />
                         ) : (
                           <Users className="h-5 w-5 text-primary" />
@@ -438,9 +436,7 @@ export default function AdminDashboard() {
                       <div>
                         <div className="flex items-center space-x-2">
                           <h3 className="font-semibold">
-                            {user.firstName && user.lastName
-                              ? `${user.firstName} ${user.lastName}`
-                              : user.email}
+                            {user.fullName || user.email}
                           </h3>
                           <Badge variant={getRoleBadgeVariant(user.role)}>
                             {user.role === "instructor"

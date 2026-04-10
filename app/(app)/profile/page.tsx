@@ -96,14 +96,11 @@ export default function ProfilePage() {
       : "학생";
 
   const getUserInitials = () => {
-    if (user.firstName && user.lastName) {
-      return `${user.firstName[0]}${user.lastName[0]}`;
+    if (profile?.fullName) {
+      return profile.fullName[0].toUpperCase();
     }
-    if (user.firstName) {
-      return user.firstName[0];
-    }
-    if (user.emailAddresses[0]) {
-      return user.emailAddresses[0].emailAddress[0].toUpperCase();
+    if (profile?.email) {
+      return profile.email[0].toUpperCase();
     }
     return "U";
   };
@@ -172,8 +169,8 @@ export default function ProfilePage() {
                   <div>
                     <p className="text-sm text-muted-foreground">가입일</p>
                     <p className="font-medium">
-                      {user.createdAt
-                        ? new Date(user.createdAt).toLocaleDateString("ko-KR", {
+                      {user.created_at
+                        ? new Date(user.created_at).toLocaleDateString("ko-KR", {
                             year: "numeric",
                             month: "long",
                             day: "numeric",
@@ -267,14 +264,14 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {user.firstName && (
+              {profile?.fullName && (
                 <div className="flex items-center justify-between py-2">
                   <div className="flex items-center space-x-3">
                     <User className="w-5 h-5 text-muted-foreground" />
                     <div>
                       <p className="font-medium">이름</p>
                       <p className="text-sm text-muted-foreground">
-                        {user.firstName} {user.lastName || ""}
+                        {profile.fullName}
                       </p>
                     </div>
                   </div>
