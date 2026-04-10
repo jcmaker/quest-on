@@ -20,7 +20,7 @@ const isInstructorRoute = (pathname: string) =>
 
 const isStudentRoute = (pathname: string) => pathname.startsWith("/student");
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   // Supabase 세션 쿠키 갱신
