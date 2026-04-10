@@ -326,7 +326,7 @@ export default function ExamPage() {
   if (session.isSubmitted) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
-        <ExamHeader examCode={examCode} duration={exam.duration} currentStep="exam" user={user} />
+        <ExamHeader examCode={examCode} duration={exam.duration} currentStep="exam" user={profile ? { avatarUrl: profile.avatarUrl, fullName: profile.fullName, email: profile.email } : null} />
         <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
           <Card data-testid="exam-submitted-state" className="max-w-2xl w-full shadow-xl border-0">
             <CardHeader className="text-center space-y-4 pb-6">
@@ -454,7 +454,7 @@ export default function ExamPage() {
             examCode={examCode}
             duration={exam.duration}
             currentStep="exam"
-            user={user}
+            user={profile ? { avatarUrl: profile.avatarUrl, fullName: profile.fullName, email: profile.email } : null}
             disableLogoLink
             sessionStartTime={session.sessionStartTime}
             timeRemaining={session.timeRemaining}

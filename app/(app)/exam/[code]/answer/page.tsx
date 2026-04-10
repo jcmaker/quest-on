@@ -502,7 +502,7 @@ export default function AnswerSubmission() {
           examCode={examCode}
           duration={exam?.duration ?? 60}
           currentStep="answer"
-          user={user}
+          user={profile ? { avatarUrl: profile.avatarUrl, fullName: profile.fullName, email: profile.email } : null}
         />
         <div className="container mx-auto px-4 py-16">
           <Card data-testid="exam-submitted-state" className="max-w-2xl mx-auto">
@@ -541,7 +541,7 @@ export default function AnswerSubmission() {
         examCode={examCode}
         duration={exam?.duration || 60}
         currentStep="answer"
-        user={user}
+        user={profile ? { avatarUrl: profile.avatarUrl, fullName: profile.fullName, email: profile.email } : null}
       />
 
       {/* Main Content - Resizable Layout */}

@@ -1785,7 +1785,7 @@ export default function InstructorHome() {
     <div className="w-full max-w-7xl mx-auto overflow-x-hidden px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
                   {/* Simple greeting */}
                   <p className="text-lg font-medium text-foreground">
-                    안녕하세요, {user?.firstName || user?.fullName || "강사"}님
+                    안녕하세요, {profile?.fullName || "강사"}님
                   </p>
 
                   {/* 시험 관리 */}

@@ -469,7 +469,7 @@ export default function StudentReportPage() {
           examTitle={reportData.exam.title}
           examCode={reportData.exam.code}
           examDescription={reportData.exam.description}
-          studentName={user?.fullName || "학생"}
+          studentName={profile?.fullName || "학생"}
           submittedAt={reportData.session.submitted_at}
           overallScore={reportData.overallScore}
           questions={reportData.exam.questions}

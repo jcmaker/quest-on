@@ -605,8 +605,8 @@ export default function StudentDashboard() {
                         </h1>
                         <p className="text-xs text-muted-foreground truncate hidden sm:block">
                           {getGreeting(
-                            user?.firstName ||
-                              user?.emailAddresses[0]?.emailAddress ||
+                            profile?.fullName ||
+                              user?.email ||
                               ""
                           )}
                         </p>
@@ -629,7 +629,7 @@ export default function StudentDashboard() {
                     <div className="flex items-center justify-between gap-4">
                       <div className="space-y-2 flex-1 min-w-0">
                         <h2 className="text-xl sm:text-2xl font-bold text-foreground">
-                          {getGreeting(user?.firstName || user?.fullName || "")}
+                          {getGreeting(profile?.fullName || user?.email || "")}
                         </h2>
                         <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
                           시험 코드를 입력하여 시험을 시작하거나, 완료한 시험의
