@@ -12,7 +12,7 @@ export async function createFolder(data: { name: string; parent_id?: string | nu
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
@@ -74,7 +74,7 @@ export async function getFolderContents(data: {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
@@ -200,7 +200,7 @@ export async function getBreadcrumb(data: { folder_id: string }) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
@@ -250,7 +250,7 @@ export async function moveNode(data: {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
@@ -287,7 +287,7 @@ export async function updateNode(data: { node_id: string; name?: string; color?:
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
@@ -333,7 +333,7 @@ export async function deleteNode(data: { node_id: string }) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
@@ -386,7 +386,7 @@ export async function getInstructorDrive() {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }

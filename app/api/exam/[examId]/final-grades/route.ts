@@ -36,7 +36,7 @@ export async function GET(
     }
 
     // Check if user is instructor
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }

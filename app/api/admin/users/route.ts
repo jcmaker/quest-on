@@ -1,18 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClerkClient } from "@clerk/nextjs/server";
+import { NextRequest } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
-// Clerk 클라이언트 직접 초기화
-const clerk = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY!,
-});
-
 export async function GET(request: NextRequest) {
   try {
-    // 어드민 인증 확인
     const denied = await requireAdmin();
     if (denied) return denied;
 
@@ -21,33 +15,50 @@ export async function GET(request: NextRequest) {
       return errorJson("RATE_LIMITED", "Too many requests. Please try again later.", 429);
     }
 
-    // 페이지네이션 파라미터 파싱
     const searchParams = request.nextUrl.searchParams;
     const rawLimit = parseInt(searchParams.get("limit") || "100", 10);
     const rawOffset = parseInt(searchParams.get("offset") || "0", 10);
     const limit = Math.min(Math.max(isNaN(rawLimit) ? 100 : rawLimit, 1), 500);
     const offset = Math.max(isNaN(rawOffset) ? 0 : rawOffset, 0);
 
-    // 사용자 정보 가져오기 (페이지네이션 적용)
-    const users = await clerk.users.getUserList({
-      limit,
-      offset,
-    });
+    const supabase = getSupabaseServer();
+    const { data: users, count, error } = await supabase
+      .from("profiles")
+      .select("id, display_name, role, status, avatar_url, created_at", {
+        count: "exact",
+      })
+      .range(offset, offset + limit - 1)
+      .order("created_at", { ascending: false });
 
-    const usersWithRoles = users.data.map((user) => ({
+    if (error) throw error;
+
+    // auth.users에서 email 가져오기 (service role)
+    const userIds = (users ?? []).map((u) => u.id);
+    const emailMap = new Map<string, string>();
+    if (userIds.length > 0) {
+      const { data: authData } = await supabase.auth.admin.listUsers({
+        perPage: limit,
+      });
+      if (authData?.users) {
+        for (const au of authData.users) {
+          emailMap.set(au.id, au.email ?? "");
+        }
+      }
+    }
+
+    const total = count ?? 0;
+    const usersWithRoles = (users ?? []).map((user) => ({
       id: user.id,
-      email: user.emailAddresses[0]?.emailAddress,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: (user.unsafeMetadata?.role as string) || "student",
-      createdAt: user.createdAt,
-      lastSignInAt: user.lastSignInAt,
-      imageUrl: user.imageUrl,
+      email: emailMap.get(user.id) ?? "",
+      fullName: user.display_name,
+      role: user.role || "student",
+      status: user.status,
+      avatarUrl: user.avatar_url,
+      createdAt: user.created_at,
     }));
 
-    // Role별 통계 계산
     const stats = {
-      total: users.totalCount,
+      total,
       instructors: usersWithRoles.filter((u) => u.role === "instructor").length,
       students: usersWithRoles.filter((u) => u.role === "student").length,
       noRole: usersWithRoles.filter((u) => !u.role || u.role === "").length,
@@ -59,8 +70,8 @@ export async function GET(request: NextRequest) {
       pagination: {
         limit,
         offset,
-        total: users.totalCount,
-        hasMore: offset + limit < users.totalCount,
+        total,
+        hasMore: offset + limit < total,
       },
     });
   } catch (error) {

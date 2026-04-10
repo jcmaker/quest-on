@@ -27,42 +27,12 @@ test.describe("CSP directive validation", () => {
     expect(result.pass, result.message).toBe(true);
   });
 
-  test("connect-src includes clerk-telemetry.com", async () => {
-    const directives = parseCSP(cspHeader);
-    const result = assertDirectiveContains(
-      directives,
-      "connect-src",
-      "https://clerk-telemetry.com",
-    );
-    expect(result.pass, result.message).toBe(true);
-  });
-
-  test("script-src includes clerk accounts dev", async () => {
-    const directives = parseCSP(cspHeader);
-    const result = assertDirectiveContains(
-      directives,
-      "script-src",
-      "https://*.clerk.accounts.dev",
-    );
-    expect(result.pass, result.message).toBe(true);
-  });
-
   test("script-src includes vercel scripts", async () => {
     const directives = parseCSP(cspHeader);
     const result = assertDirectiveContains(
       directives,
       "script-src",
       "https://va.vercel-scripts.com",
-    );
-    expect(result.pass, result.message).toBe(true);
-  });
-
-  test("img-src includes clerk image domain", async () => {
-    const directives = parseCSP(cspHeader);
-    const result = assertDirectiveContains(
-      directives,
-      "img-src",
-      "https://img.clerk.com",
     );
     expect(result.pass, result.message).toBe(true);
   });

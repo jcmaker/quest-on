@@ -15,6 +15,7 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseServer();
 
+    // instructor_profiles 테이블 상태 업데이트
     const { error: dbError } = await supabase
       .from("instructor_profiles")
       .update({
@@ -31,30 +32,20 @@ export async function POST(request: Request) {
       return errorJson("DATABASE_ERROR", "Failed to update status", 500);
     }
 
-    // Update Clerk unsafeMetadata
-    const clerkSecretKey = process.env.CLERK_SECRET_KEY;
-    if (clerkSecretKey) {
-      const clerkRes = await fetch(
-        `https://api.clerk.com/v1/users/${instructorId}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${clerkSecretKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            unsafe_metadata: {
-              role: "instructor",
-              status: "approved",
-            },
-          }),
-        }
-      );
-      if (!clerkRes.ok) {
-        logError("[approve-instructor] Clerk update failed", await clerkRes.text(), {
-          path: "/api/admin/instructors/approve",
-        });
-      }
+    // profiles 테이블 status 업데이트 (JWT 클레임 반영)
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .update({
+        status: "approved",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", instructorId);
+
+    if (profileError) {
+      logError("[approve-instructor] Profile update error", profileError, {
+        path: "/api/admin/instructors/approve",
+      });
+      // non-fatal: instructor_profiles already updated
     }
 
     return successJson({ approved: true });

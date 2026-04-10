@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { extractErrorMessage } from "@/lib/error-messages";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { qk } from "@/lib/query-keys";
 import {
@@ -50,7 +50,7 @@ function isQuestionContentEmpty(text: string): boolean {
 
 export default function CreateExam() {
   const router = useRouter();
-  const { user, isLoaded, isSignedIn } = useUser();
+  const { user, profile, isLoaded, isSignedIn } = useAppUser();
   const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);

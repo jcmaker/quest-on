@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     if (!user) return errorJson("UNAUTHORIZED", "Unauthorized", 401);
 
     const body = await request.json();
-    const { name, email } = body;
+    const { name, email, school } = body;
 
     const supabase = getSupabaseServer();
 
@@ -19,6 +19,7 @@ export async function POST(request: Request) {
         id: user.id,
         name: name || "",
         email: email || "",
+        school: school || null,
         status: "pending",
         updated_at: new Date().toISOString(),
       }, { onConflict: "id" });

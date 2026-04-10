@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -105,7 +105,7 @@ function getGreeting(name: string) {
 export default function StudentDashboard() {
   const router = useRouter();
   const pathname = usePathname();
-  const { isSignedIn, isLoaded, user } = useUser();
+  const { isSignedIn, isLoaded, user, profile } = useAppUser();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -121,7 +121,7 @@ export default function StudentDashboard() {
   const { ref: observerRef, inView } = useInView();
 
   // Get user role from metadata
-  const userRole = (user?.unsafeMetadata?.role as string) || "student";
+  const userRole = (profile?.role as string) || "student";
   const [profileChecked, setProfileChecked] = useState(false);
 
   // Scroll to top on mount and when pathname changes
@@ -151,7 +151,7 @@ export default function StudentDashboard() {
   // Redirect non-students or users without role
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      if (!user?.unsafeMetadata?.role) {
+      if (!profile?.role) {
         router.push("/onboarding");
         return;
       }
@@ -541,7 +541,7 @@ export default function StudentDashboard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <SignedOut>
+      {!isSignedIn && isLoaded && (
         <div className="flex items-center justify-center h-screen">
           <Card className="w-full max-w-md shadow-xl border-0 bg-card/80 backdrop-blur-sm">
             <CardHeader className="text-center space-y-4">
@@ -563,9 +563,9 @@ export default function StudentDashboard() {
             </CardContent>
           </Card>
         </div>
-      </SignedOut>
+      )}
 
-      <SignedIn>
+      {isSignedIn && (
         <SidebarProvider
           defaultOpen={true}
           style={
@@ -605,8 +605,8 @@ export default function StudentDashboard() {
                         </h1>
                         <p className="text-xs text-muted-foreground truncate hidden sm:block">
                           {getGreeting(
-                            user?.firstName ||
-                              user?.emailAddresses[0]?.emailAddress ||
+                            profile?.fullName ||
+                              user?.email ||
                               ""
                           )}
                         </p>
@@ -629,7 +629,7 @@ export default function StudentDashboard() {
                     <div className="flex items-center justify-between gap-4">
                       <div className="space-y-2 flex-1 min-w-0">
                         <h2 className="text-xl sm:text-2xl font-bold text-foreground">
-                          {getGreeting(user?.firstName || user?.fullName || "")}
+                          {getGreeting(profile?.fullName || user?.email || "")}
                         </h2>
                         <p className="text-sm sm:text-base text-muted-foreground leading-relaxed">
                           시험 코드를 입력하여 시험을 시작하거나, 완료한 시험의
@@ -1187,7 +1187,7 @@ export default function StudentDashboard() {
 
           <MobileBottomNav navItems={navigationItems} />
         </SidebarProvider>
-      </SignedIn>
+      )}
     </div>
   );
 }

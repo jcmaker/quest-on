@@ -1,10 +1,9 @@
-import { ClerkProvider } from "@clerk/nextjs";
 import { Analytics } from "@vercel/analytics/next";
 import { ConditionalHeader } from "@/components/ConditionalHeader";
 import QueryProvider from "@/components/providers/QueryProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { AppAuthProvider } from "@/components/providers/AppAuthProvider";
 import { Toaster } from "@/components/ui/sonner";
-import { clerkAppearance, clerkLocalization } from "@/lib/clerk-config";
 
 export default function AppLayout({
   children,
@@ -12,10 +11,7 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider
-      appearance={clerkAppearance}
-      localization={clerkLocalization}
-    >
+    <AppAuthProvider>
       <ThemeProvider>
         <QueryProvider>
           <ConditionalHeader />
@@ -24,6 +20,6 @@ export default function AppLayout({
         </QueryProvider>
         <Analytics />
       </ThemeProvider>
-    </ClerkProvider>
+    </AppAuthProvider>
   );
 }

@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo, useCallback, memo, useRef } from "react";
@@ -152,7 +152,7 @@ const FOLDER_COLORS = [
 
 export default function InstructorHome() {
   const router = useRouter();
-  const { isSignedIn, isLoaded, user } = useUser();
+  const { isSignedIn, isLoaded, user, profile } = useAppUser();
   const queryClient = useQueryClient();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1785,7 +1785,7 @@ export default function InstructorHome() {
     <div className="w-full max-w-7xl mx-auto overflow-x-hidden px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 sm:space-y-8">
                   {/* Simple greeting */}
                   <p className="text-lg font-medium text-foreground">
-                    안녕하세요, {user?.firstName || user?.fullName || "강사"}님
+                    안녕하세요, {profile?.fullName || "강사"}님
                   </p>
 
                   {/* 시험 관리 */}

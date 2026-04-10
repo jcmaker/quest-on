@@ -20,10 +20,9 @@ interface ExamHeaderProps {
   duration: number; // in minutes
   currentStep: "exam" | "answer";
   user?: {
-    imageUrl?: string;
+    avatarUrl?: string | null;
     fullName?: string | null;
-    firstName?: string | null;
-    emailAddresses?: Array<{ emailAddress: string }>;
+    email?: string;
   } | null;
   sessionStartTime?: string | null; // 세션 시작 시간 (ISO string)
   timeRemaining?: number | null; // 남은 시간 (초 단위, 서버에서 계산된 값)
@@ -265,12 +264,12 @@ export function ExamHeader({
               )}
               <Avatar className="h-8 w-8">
                 <AvatarImage
-                  src={user?.imageUrl}
+                  src={user?.avatarUrl ?? undefined}
                   alt={user?.fullName || "User"}
                 />
                 <AvatarFallback>
-                  {user?.firstName?.charAt(0) ||
-                    user?.emailAddresses?.[0]?.emailAddress?.charAt(0) ||
+                  {user?.fullName?.charAt(0) ||
+                    user?.email?.charAt(0) ||
                     "U"}
                 </AvatarFallback>
               </Avatar>

@@ -1,7 +1,7 @@
 "use client";
 
 import { redirect } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { useState, useEffect, use, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
@@ -162,7 +162,7 @@ export default function GradeStudentPage({
 }) {
   const resolvedParams = use(params);
   const searchParams = useSearchParams();
-  const { isSignedIn, isLoaded, user } = useUser();
+  const { isSignedIn, isLoaded, user, profile } = useAppUser();
   const queryClient = useQueryClient();
 
   // URL 쿼리 파라미터에서 전체 평균 및 표준편차 데이터 읽기
@@ -218,7 +218,7 @@ export default function GradeStudentPage({
   useEffect(() => {
     if (
       isLoaded &&
-      (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "instructor")
+      (!isSignedIn || (profile?.role as string) !== "instructor")
     ) {
       redirect("/student");
     }
@@ -246,7 +246,7 @@ export default function GradeStudentPage({
     enabled: !!(
       isLoaded &&
       isSignedIn &&
-      (user?.unsafeMetadata?.role as string) === "instructor"
+      (profile?.role as string) === "instructor"
     ),
   });
 
@@ -762,7 +762,7 @@ export default function GradeStudentPage({
   }
 
   // Don't render anything if not authorized
-  if (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "instructor") {
+  if (!isSignedIn || (profile?.role as string) !== "instructor") {
     return null;
   }
 

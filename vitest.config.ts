@@ -10,6 +10,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),
+      // Supabase auth mock for tests — prevents SSR cookie/header deps
+      "@/lib/supabase-auth": path.resolve(
+        __dirname,
+        "lib/testing/supabase-auth-mock.ts"
+      ),
     },
   },
 });

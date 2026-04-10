@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -75,10 +75,10 @@ interface ReportData {
 export default function StudentReportPage() {
   const params = useParams();
   const router = useRouter();
-  const { user, isLoaded, isSignedIn } = useUser();
+  const { user, profile, isLoaded, isSignedIn } = useAppUser();
   const sessionId = params.sessionId as string;
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState(0);
-  const userRole = (user?.unsafeMetadata?.role as string) || "student";
+  const userRole = (profile?.role as string) || "student";
 
   const {
     data: reportData,
@@ -121,7 +121,7 @@ export default function StudentReportPage() {
   useEffect(() => {
     if (!isLoaded) return;
 
-    if (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "student") {
+    if (!isSignedIn || (profile?.role as string) !== "student") {
       router.push("/student");
       return;
     }
@@ -137,7 +137,7 @@ export default function StudentReportPage() {
     );
   }
 
-  if (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "student") {
+  if (!isSignedIn || (profile?.role as string) !== "student") {
     return null;
   }
 
@@ -469,7 +469,7 @@ export default function StudentReportPage() {
           examTitle={reportData.exam.title}
           examCode={reportData.exam.code}
           examDescription={reportData.exam.description}
-          studentName={user?.fullName || "학생"}
+          studentName={profile?.fullName || "학생"}
           submittedAt={reportData.session.submitted_at}
           overallScore={reportData.overallScore}
           questions={reportData.exam.questions}

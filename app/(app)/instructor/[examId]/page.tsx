@@ -1,7 +1,7 @@
 "use client";
 
 import { redirect } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import React, { useState, useEffect, use, useMemo, useCallback } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,7 @@ export default function ExamDetail({
   params: Promise<{ examId: string }>;
 }) {
   const resolvedParams = use(params);
-  const { isSignedIn, isLoaded, user } = useUser();
+  const { isSignedIn, isLoaded, user, profile } = useAppUser();
 
   const [monitoringSessionId, setMonitoringSessionId] = useState<string | null>(null);
   const [monitoringStudent, setMonitoringStudent] = useState<InstructorStudent | null>(null);
@@ -130,7 +130,7 @@ export default function ExamDetail({
   useEffect(() => {
     if (
       isLoaded &&
-      (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "instructor")
+      (!isSignedIn || (profile?.role as string) !== "instructor")
     ) {
       redirect("/student");
     }
@@ -180,7 +180,7 @@ export default function ExamDetail({
     );
   }
 
-  if (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "instructor") {
+  if (!isSignedIn || (profile?.role as string) !== "instructor") {
     return null;
   }
 

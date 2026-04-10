@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -35,7 +35,7 @@ interface StudentProfile {
 }
 
 export default function ProfilePage() {
-  const { user, isLoaded } = useUser();
+  const { user, profile, isLoaded } = useAppUser();
   const router = useRouter();
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(
     null
@@ -52,7 +52,7 @@ export default function ProfilePage() {
   useEffect(() => {
     const loadStudentProfile = async () => {
       if (isLoaded && user) {
-        const userRole = (user?.unsafeMetadata?.role as string) || "student";
+        const userRole = (profile?.role as string) || "student";
         if (userRole === "student") {
           setIsLoadingProfile(true);
           try {
@@ -87,7 +87,7 @@ export default function ProfilePage() {
     return null;
   }
 
-  const userRole = (user?.unsafeMetadata?.role as string) || "student";
+  const userRole = (profile?.role as string) || "student";
   const roleLabel =
     userRole === "instructor"
       ? "강사"
@@ -96,14 +96,11 @@ export default function ProfilePage() {
       : "학생";
 
   const getUserInitials = () => {
-    if (user.firstName && user.lastName) {
-      return `${user.firstName[0]}${user.lastName[0]}`;
+    if (profile?.fullName) {
+      return profile.fullName[0].toUpperCase();
     }
-    if (user.firstName) {
-      return user.firstName[0];
-    }
-    if (user.emailAddresses[0]) {
-      return user.emailAddresses[0].emailAddress[0].toUpperCase();
+    if (user?.email) {
+      return user.email[0].toUpperCase();
     }
     return "U";
   };
@@ -129,8 +126,8 @@ export default function ProfilePage() {
               <div className="flex items-center space-x-6">
                 <Avatar className="h-24 w-24">
                   <AvatarImage
-                    src={user.imageUrl}
-                    alt={user.fullName || "User"}
+                    src={profile?.avatarUrl ?? undefined}
+                    alt={profile?.fullName || "User"}
                   />
                   <AvatarFallback className="text-2xl">
                     {getUserInitials()}
@@ -138,7 +135,7 @@ export default function ProfilePage() {
                 </Avatar>
                 <div className="flex-1">
                   <h2 className="text-2xl font-bold">
-                    {user.fullName || "이름 없음"}
+                    {profile?.fullName || "이름 없음"}
                   </h2>
                   <div className="flex items-center space-x-2 mt-2">
                     <Badge
@@ -160,7 +157,7 @@ export default function ProfilePage() {
                   <div>
                     <p className="text-sm text-muted-foreground">이메일</p>
                     <p className="font-medium">
-                      {user.emailAddresses[0]?.emailAddress || "이메일 없음"}
+                      {user?.email || "이메일 없음"}
                     </p>
                   </div>
                 </div>
@@ -172,8 +169,8 @@ export default function ProfilePage() {
                   <div>
                     <p className="text-sm text-muted-foreground">가입일</p>
                     <p className="font-medium">
-                      {user.createdAt
-                        ? new Date(user.createdAt).toLocaleDateString("ko-KR", {
+                      {user.created_at
+                        ? new Date(user.created_at).toLocaleDateString("ko-KR", {
                             year: "numeric",
                             month: "long",
                             day: "numeric",
@@ -267,14 +264,14 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {user.firstName && (
+              {profile?.fullName && (
                 <div className="flex items-center justify-between py-2">
                   <div className="flex items-center space-x-3">
                     <User className="w-5 h-5 text-muted-foreground" />
                     <div>
                       <p className="font-medium">이름</p>
                       <p className="text-sm text-muted-foreground">
-                        {user.firstName} {user.lastName || ""}
+                        {profile.fullName}
                       </p>
                     </div>
                   </div>

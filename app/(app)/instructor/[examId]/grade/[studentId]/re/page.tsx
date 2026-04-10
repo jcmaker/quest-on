@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import {
   Card,
   CardContent,
@@ -15,7 +15,7 @@ import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 export default function RegradePage() {
   const params = useParams();
   const router = useRouter();
-  const { user, isLoaded } = useUser();
+  const { user, profile, isLoaded } = useAppUser();
   const examId = params.examId as string;
   const studentId = params.studentId as string;
   const [status, setStatus] = useState<

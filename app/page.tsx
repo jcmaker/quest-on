@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { currentUser } from "@clerk/nextjs/server";
+import { currentUser } from "@/lib/get-current-user";
 import dynamic from "next/dynamic";
 import { PublicHeader } from "@/components/PublicHeader";
 import HeroSection from "@/components/landing/HeroSection";
@@ -26,18 +26,14 @@ export default async function LandingPage() {
   const user = await currentUser();
 
   if (user) {
-    const role = (user.unsafeMetadata?.role as string) || "student";
-
-    if (!user.unsafeMetadata?.role) {
+    if (!user.role) {
       redirect("/onboarding");
     } else {
-      switch (role) {
+      switch (user.role) {
         case "instructor":
           redirect("/instructor");
         case "student":
           redirect("/student");
-        case "admin":
-          redirect("/admin");
         default:
           redirect("/student");
       }
