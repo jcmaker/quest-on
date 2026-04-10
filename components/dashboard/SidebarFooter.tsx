@@ -1,6 +1,7 @@
 "use client";
 
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
+import { createSupabaseClient } from "@/lib/supabase-client";
 import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { LogOut, Settings, User, ChevronDown } from "lucide-react";
@@ -16,30 +17,32 @@ import {
 import { ThemeTogglerButton } from "@/components/animate-ui/components/buttons/theme-toggler";
 
 export function SidebarFooter() {
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const { user, profile } = useAppUser();
   const router = useRouter();
   const { state } = useSidebar();
   const isCollapsed = state === "collapsed";
 
   const handleSignOut = async () => {
     try {
-      await signOut();
+      const supabase = createSupabaseClient();
+      await supabase.auth.signOut();
+      router.push("/");
+      router.refresh();
     } catch {
       // Sign-out error handled silently
     }
   };
 
-  const displayName = user?.fullName || user?.firstName || "User";
-  const userRole = (user?.unsafeMetadata?.role as string) || "Student";
+  const displayName = profile?.fullName || "User";
+  const userRole = profile?.role || "student";
   const avatarInitial =
-    user?.firstName?.[0] ||
-    user?.emailAddresses[0]?.emailAddress?.[0]?.toUpperCase() ||
+    profile?.fullName?.[0]?.toUpperCase() ||
+    profile?.email?.[0]?.toUpperCase() ||
     "U";
 
   const avatarElement = (
     <Avatar className="h-9 w-9 shrink-0">
-      <AvatarImage src={user?.imageUrl} alt={displayName} />
+      <AvatarImage src={profile?.avatarUrl ?? undefined} alt={displayName} />
       <AvatarFallback className="bg-primary text-primary-foreground">
         {avatarInitial}
       </AvatarFallback>
@@ -57,7 +60,7 @@ export function SidebarFooter() {
         <div className="flex flex-col space-y-1">
           <p className="text-sm font-medium leading-none">{displayName}</p>
           <p className="text-xs leading-none text-muted-foreground">
-            {user?.emailAddresses[0]?.emailAddress}
+            {profile?.email}
           </p>
         </div>
       </DropdownMenuLabel>
@@ -117,11 +120,11 @@ export function SidebarFooter() {
                 <p className="text-sm font-medium truncate text-sidebar-foreground">
                   {displayName}
                 </p>
-                <p className="text-xs text-sidebar-foreground/80 truncate capitalize">
-                  {userRole}
+                <p className="text-xs text-sidebar-foreground/60 truncate">
+                  {userRole === "instructor" ? "강사" : "학생"}
                 </p>
               </div>
-              <ChevronDown className="w-4 h-4 text-sidebar-foreground/60 shrink-0" />
+              <ChevronDown className="h-4 w-4 text-sidebar-foreground/60 shrink-0" />
             </button>
           </DropdownMenuTrigger>
           {dropdownContent}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { useRouter } from "next/navigation";
 
 interface Exam {
@@ -24,7 +24,7 @@ interface Session {
 }
 
 export function useAssignmentSession(code: string) {
-  const { user, isLoaded, isSignedIn } = useUser();
+  const { user, profile, isLoaded, isSignedIn } = useAppUser();
   const router = useRouter();
   const [exam, setExam] = useState<Exam | null>(null);
   const [session, setSession] = useState<Session | null>(null);

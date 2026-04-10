@@ -30,7 +30,7 @@ export async function GET(
     }
 
     // Check if user is student
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "student") {
       return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }

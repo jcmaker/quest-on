@@ -1,17 +1,17 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { Header } from "./Header";
 
 /**
- * Pathname-only check first to avoid unnecessary useUser() calls
+ * Pathname-only check first to avoid unnecessary auth calls
  * on routes that always hide the header.
  */
 export function ConditionalHeader() {
   const pathname = usePathname();
 
-  // Routes that always hide the header — no Clerk call needed
+  // Routes that always hide the header
   if (
     pathname === "/onboarding" ||
     pathname.startsWith("/exam/") ||
@@ -25,15 +25,11 @@ export function ConditionalHeader() {
   return <RoleAwareHeader pathname={pathname} />;
 }
 
-/**
- * Only mounted on routes that *may* show the header,
- * so useUser() is skipped on /exam/*, /sign-in*, etc.
- */
 function RoleAwareHeader({ pathname }: { pathname: string }) {
-  const { isSignedIn, isLoaded, user } = useUser();
+  const { isSignedIn, isLoaded, profile } = useAppUser();
 
-  if (isLoaded && isSignedIn && user?.unsafeMetadata?.role) {
-    const userRole = user.unsafeMetadata.role as string;
+  if (isLoaded && isSignedIn && profile?.role) {
+    const userRole = profile.role;
 
     if (userRole === "student") {
       if (

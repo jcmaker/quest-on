@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { z } from "zod";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -65,7 +65,7 @@ export default function AnswerSubmission() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { user } = useUser();
+  const { user, profile } = useAppUser();
 
   const examCode = params.code as string;
 

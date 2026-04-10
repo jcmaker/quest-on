@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { SignedIn, SignedOut, useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -105,7 +105,7 @@ function getGreeting(name: string) {
 export default function StudentDashboard() {
   const router = useRouter();
   const pathname = usePathname();
-  const { isSignedIn, isLoaded, user } = useUser();
+  const { isSignedIn, isLoaded, user, profile } = useAppUser();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
@@ -121,7 +121,7 @@ export default function StudentDashboard() {
   const { ref: observerRef, inView } = useInView();
 
   // Get user role from metadata
-  const userRole = (user?.unsafeMetadata?.role as string) || "student";
+  const userRole = (profile?.role as string) || "student";
   const [profileChecked, setProfileChecked] = useState(false);
 
   // Scroll to top on mount and when pathname changes
@@ -151,7 +151,7 @@ export default function StudentDashboard() {
   // Redirect non-students or users without role
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      if (!user?.unsafeMetadata?.role) {
+      if (!profile?.role) {
         router.push("/onboarding");
         return;
       }

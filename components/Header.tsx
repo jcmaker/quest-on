@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useUser, SignInButton, SignUpButton } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { Button } from "@/components/ui/button";
 import { UserMenu } from "@/components/auth/UserMenu";
 import Link from "next/link";
@@ -10,12 +10,11 @@ import { GraduationCap, Users, FilePlus, UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function Header() {
-  const { isSignedIn, isLoaded, user } = useUser();
+  const { isSignedIn, isLoaded, profile } = useAppUser();
   const pathname = usePathname();
 
-  // Get user role from metadata
-  const userRole = (user?.unsafeMetadata?.role as string) || "student";
-  const hasRole = Boolean(user?.unsafeMetadata?.role);
+  const userRole = profile?.role ?? "student";
+  const hasRole = Boolean(profile?.role);
 
   const isLinkActive = (href: string) => {
     if (href === "/instructor") {
@@ -111,7 +110,6 @@ export function Header() {
                 </Link>
               </>
             )}
-            {/* Role이 설정되지 않은 사용자에게는 네비게이션을 보여주지 않음 */}
           </nav>
         </div>
 
@@ -123,14 +121,14 @@ export function Header() {
                 <UserMenu />
               ) : (
                 <div className="flex items-center space-x-2">
-                  <SignInButton>
+                  <Link href="/sign-in">
                     <Button variant="outline" size="sm">
                       로그인
                     </Button>
-                  </SignInButton>
-                  <SignUpButton>
+                  </Link>
+                  <Link href="/sign-up">
                     <Button size="sm">회원가입</Button>
-                  </SignUpButton>
+                  </Link>
                 </div>
               )}
             </>

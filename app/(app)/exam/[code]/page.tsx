@@ -40,7 +40,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import {
   FileText,
   ChevronDown,
@@ -95,7 +95,7 @@ export default function ExamPage() {
   const params = useParams();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { user, isLoaded } = useUser();
+  const { user, profile, isLoaded } = useAppUser();
   const examCode = params.code as string;
 
   // --- Shared state owned by the page (used by multiple hooks) ---

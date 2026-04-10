@@ -61,7 +61,7 @@ export async function GET(
     }
 
     // Check if user is authorized to view this session
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     const isInstructor = userRole === "instructor";
     const isStudentOwner = session.student_id === user.id;
 

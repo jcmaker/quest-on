@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState, useEffect } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import {
@@ -173,7 +173,7 @@ function ChatPanel({
   sessionIdSeed: string;
   scopeDescription: string;
 }) {
-  const { user } = useUser();
+  const { user, profile } = useAppUser();
   const userId = user?.id ?? "instructor_unknown";
 
   const [input, setInput] = useState("");

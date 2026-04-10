@@ -1,20 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClerkClient } from "@clerk/nextjs/server";
+import { NextRequest } from "next/server";
+import { getSupabaseServer } from "@/lib/supabase-server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { successJson, errorJson } from "@/lib/api-response";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
-
-// Clerk 클라이언트 직접 초기화
-const clerk = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY!,
-});
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
-    // 어드민 인증 확인
     const denied = await requireAdmin();
     if (denied) return denied;
 
@@ -26,26 +20,36 @@ export async function PATCH(
     const { userId } = await params;
     const { role } = await request.json();
 
-    // Role 유효성 검사
     if (!role || !["instructor", "student"].includes(role)) {
       return errorJson("BAD_REQUEST", "Invalid role. Must be 'instructor' or 'student'", 400);
     }
 
-    // 사용자 정보 업데이트
-    const updatedUser = await clerk.users.updateUser(userId, {
-      unsafeMetadata: { role },
-    });
+    const supabase = getSupabaseServer();
+
+    // profiles 테이블에서 role 업데이트
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .update({
+        role,
+        updated_at: new Date().toISOString(),
+      })
+      .or(`id.eq.${userId},clerk_id.eq.${userId}`)
+      .select("id, email, full_name, role")
+      .single();
+
+    if (error) {
+      return errorJson("NOT_FOUND", "User not found", 404);
+    }
 
     return successJson({
       user: {
-        id: updatedUser.id,
-        email: updatedUser.emailAddresses[0]?.emailAddress,
-        firstName: updatedUser.firstName,
-        lastName: updatedUser.lastName,
-        role: updatedUser.unsafeMetadata?.role as string,
+        id: profile.id,
+        email: profile.email,
+        fullName: profile.full_name,
+        role: profile.role,
       },
     });
-  } catch (error) {
+  } catch {
     return errorJson("INTERNAL_ERROR", "Failed to update user role", 500);
   }
 }
@@ -55,7 +59,6 @@ export async function GET(
   { params }: { params: Promise<{ userId: string }> }
 ) {
   try {
-    // 어드민 인증 확인
     const denied = await requireAdmin();
     if (denied) return denied;
 
@@ -65,25 +68,31 @@ export async function GET(
     }
 
     const { userId } = await params;
+    const supabase = getSupabaseServer();
 
-    // 특정 사용자 정보 가져오기
-    const user = await clerk.users.getUser(userId);
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("id, email, full_name, role, status, avatar_url, created_at, clerk_id")
+      .or(`id.eq.${userId},clerk_id.eq.${userId}`)
+      .single();
 
-    const userInfo = {
-      id: user.id,
-      email: user.emailAddresses[0]?.emailAddress,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: (user.unsafeMetadata?.role as string) || "student",
-      createdAt: user.createdAt,
-      lastSignInAt: user.lastSignInAt,
-      imageUrl: user.imageUrl,
-      publicMetadata: user.publicMetadata,
-      unsafeMetadata: user.unsafeMetadata,
-    };
+    if (error || !profile) {
+      return errorJson("NOT_FOUND", "User not found", 404);
+    }
 
-    return successJson({ user: userInfo });
-  } catch (error) {
+    return successJson({
+      user: {
+        id: profile.id,
+        email: profile.email,
+        fullName: profile.full_name,
+        role: profile.role,
+        status: profile.status,
+        avatarUrl: profile.avatar_url,
+        createdAt: profile.created_at,
+        clerkId: profile.clerk_id,
+      },
+    });
+  } catch {
     return errorJson("INTERNAL_ERROR", "Failed to fetch user", 500);
   }
 }

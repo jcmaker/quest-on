@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       return errorJson("UNAUTHORIZED", "로그인이 필요합니다.", 401);
     }
 
-    const role = (user.unsafeMetadata?.role as string) || "student";
+    const role = (user.role) || "student";
     if (role !== "instructor") {
       return errorJson("FORBIDDEN", "교수자만 문제를 수정할 수 있습니다.", 403);
     }

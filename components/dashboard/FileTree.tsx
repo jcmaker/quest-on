@@ -22,7 +22,7 @@ import {
 import { Folder as FolderIconLucide, FolderOpen, FileText } from "lucide-react";
 import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 
@@ -407,7 +407,7 @@ export function FileTree({
 }: FileTreeProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useUser();
+  const { user, profile } = useAppUser();
   const queryClient = useQueryClient();
   const effectiveUserId = userId || user?.id;
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import {
   FileText,
   Presentation,
@@ -36,7 +36,7 @@ export default function EditExam({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { user, isLoaded } = useUser();
+  const { user, profile, isLoaded } = useAppUser();
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingExam, setIsLoadingExam] = useState(true);
   const [examData, setExamData] = useState({

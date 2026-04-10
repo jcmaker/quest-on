@@ -13,7 +13,7 @@ export async function GET() {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "student") {
       return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     // Allow users with no role set yet (freshly registered, Clerk JWT not yet propagated)
     // or with role "student". Block only explicit non-student roles.
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole && userRole !== "student") {
       return errorJson("STUDENT_ACCESS_REQUIRED", "Student access required", 403);
     }

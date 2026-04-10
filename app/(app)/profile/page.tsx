@@ -1,6 +1,6 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -35,7 +35,7 @@ interface StudentProfile {
 }
 
 export default function ProfilePage() {
-  const { user, isLoaded } = useUser();
+  const { user, profile, isLoaded } = useAppUser();
   const router = useRouter();
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(
     null
@@ -52,7 +52,7 @@ export default function ProfilePage() {
   useEffect(() => {
     const loadStudentProfile = async () => {
       if (isLoaded && user) {
-        const userRole = (user?.unsafeMetadata?.role as string) || "student";
+        const userRole = (profile?.role as string) || "student";
         if (userRole === "student") {
           setIsLoadingProfile(true);
           try {
@@ -87,7 +87,7 @@ export default function ProfilePage() {
     return null;
   }
 
-  const userRole = (user?.unsafeMetadata?.role as string) || "student";
+  const userRole = (profile?.role as string) || "student";
   const roleLabel =
     userRole === "instructor"
       ? "강사"
@@ -129,8 +129,8 @@ export default function ProfilePage() {
               <div className="flex items-center space-x-6">
                 <Avatar className="h-24 w-24">
                   <AvatarImage
-                    src={user.imageUrl}
-                    alt={user.fullName || "User"}
+                    src={profile?.avatarUrl}
+                    alt={profile?.fullName || "User"}
                   />
                   <AvatarFallback className="text-2xl">
                     {getUserInitials()}
@@ -138,7 +138,7 @@ export default function ProfilePage() {
                 </Avatar>
                 <div className="flex-1">
                   <h2 className="text-2xl font-bold">
-                    {user.fullName || "이름 없음"}
+                    {profile?.fullName || "이름 없음"}
                   </h2>
                   <div className="flex items-center space-x-2 mt-2">
                     <Badge
@@ -160,7 +160,7 @@ export default function ProfilePage() {
                   <div>
                     <p className="text-sm text-muted-foreground">이메일</p>
                     <p className="font-medium">
-                      {user.emailAddresses[0]?.emailAddress || "이메일 없음"}
+                      {profile?.email || "이메일 없음"}
                     </p>
                   </div>
                 </div>

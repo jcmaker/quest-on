@@ -5,7 +5,7 @@ import { currentUser } from "@/lib/get-current-user";
 import { autoGradeSession } from "@/lib/grading";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
-import { batchGetUserInfo } from "@/lib/clerk-users";
+import { batchGetUserInfo } from "@/lib/app-users";
 import { logError } from "@/lib/logger";
 import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
@@ -40,7 +40,7 @@ export async function GET(
     }
 
     // Check if user is instructor
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
@@ -419,7 +419,7 @@ export async function POST(
     }
 
     // Check if user is instructor
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
@@ -551,7 +551,7 @@ export async function PUT(
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }

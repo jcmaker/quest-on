@@ -33,7 +33,7 @@ export async function POST(
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Instructor access required", 403);
     }

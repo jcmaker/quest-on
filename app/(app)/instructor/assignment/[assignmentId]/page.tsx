@@ -1,7 +1,7 @@
 "use client";
 
 import { redirect } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import React, { useState, useEffect, use, useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -65,7 +65,7 @@ export default function AssignmentDashboard({
   params: Promise<{ assignmentId: string }>;
 }) {
   const resolvedParams = use(params);
-  const { isSignedIn, isLoaded, user } = useUser();
+  const { isSignedIn, isLoaded, user, profile } = useAppUser();
 
   const [examInfoOpen, setExamInfoOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
@@ -100,7 +100,7 @@ export default function AssignmentDashboard({
   useEffect(() => {
     if (
       isLoaded &&
-      (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "instructor")
+      (!isSignedIn || (profile?.role as string) !== "instructor")
     ) {
       redirect("/student");
     }
@@ -127,7 +127,7 @@ export default function AssignmentDashboard({
     );
   }
 
-  if (!isSignedIn || (user?.unsafeMetadata?.role as string) !== "instructor") {
+  if (!isSignedIn || (profile?.role as string) !== "instructor") {
     return null;
   }
 

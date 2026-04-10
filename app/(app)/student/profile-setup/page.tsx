@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -27,7 +27,7 @@ interface University {
 }
 
 export default function ProfileSetupPage() {
-  const { user, isLoaded } = useUser();
+  const { user, profile, isLoaded } = useAppUser();
   const router = useRouter();
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
 
@@ -57,7 +57,7 @@ export default function ProfileSetupPage() {
     }
 
     if (isLoaded && user) {
-      const userRole = (user?.unsafeMetadata?.role as string) || "student";
+      const userRole = (profile?.role as string) || "student";
       if (userRole !== "student") {
         router.push("/instructor");
         return;

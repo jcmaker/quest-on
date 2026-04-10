@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -26,7 +26,7 @@ import {
 import { CenteredViewportShell } from "@/components/layout/CenteredViewportShell";
 
 export default function OnboardingPage() {
-  const { user, isLoaded } = useUser();
+  const { user, isLoaded } = useAppUser();
   const router = useRouter();
   const [role, setRole] = useState<"instructor" | "student">("student");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -52,21 +52,27 @@ export default function OnboardingPage() {
     setIsSubmitting(true);
 
     try {
-      await user.update({
-        unsafeMetadata: {
+      // profiles 테이블에 role/status 업데이트
+      const res = await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
           role,
-          ...(role === "instructor" ? { status: "pending" } : {}),
-        },
+          status: role === "instructor" ? "pending" : "approved",
+        }),
       });
 
+      if (!res.ok) throw new Error("Profile update failed");
+
+      // instructor_profiles 생성 (강사인 경우)
       if (role === "instructor") {
         try {
           await fetch("/api/instructor/profile", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              name: user.fullName || user.firstName || "",
-              email: user.primaryEmailAddress?.emailAddress || "",
+              name: "",
+              email: user.email,
             }),
           });
         } catch {
@@ -79,7 +85,8 @@ export default function OnboardingPage() {
 
       // Check for redirect URL (deep link preservation)
       const params = new URLSearchParams(window.location.search);
-      const redirectUrl = params.get("redirect") || localStorage.getItem("onboarding_redirect");
+      const redirectUrl =
+        params.get("redirect") || localStorage.getItem("onboarding_redirect");
       localStorage.removeItem("onboarding_redirect");
 
       if (redirectUrl && redirectUrl.startsWith("/")) {

@@ -1,6 +1,8 @@
 "use client";
 
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
+import { createSupabaseClient } from "@/lib/supabase-client";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,8 +18,8 @@ import Link from "next/link";
 import { ThemeTogglerButton } from "@/components/animate-ui/components/buttons/theme-toggler";
 
 export function UserMenu() {
-  const { user, isLoaded } = useUser();
-  const { signOut } = useClerk();
+  const { user, profile, isLoaded } = useAppUser();
+  const router = useRouter();
 
   if (!isLoaded || !user) {
     return null;
@@ -25,22 +27,22 @@ export function UserMenu() {
 
   const handleSignOut = async () => {
     try {
-      await signOut();
+      const supabase = createSupabaseClient();
+      await supabase.auth.signOut();
+      router.push("/");
+      router.refresh();
     } catch {
       // Sign-out error handled silently
     }
   };
 
   const getUserInitials = () => {
-    if (user.firstName && user.lastName) {
-      return `${user.firstName[0]}${user.lastName[0]}`;
+    if (profile?.fullName) {
+      const parts = profile.fullName.trim().split(" ");
+      if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`;
+      return parts[0][0].toUpperCase();
     }
-    if (user.firstName) {
-      return user.firstName[0];
-    }
-    if (user.emailAddresses[0]) {
-      return user.emailAddresses[0].emailAddress[0].toUpperCase();
-    }
+    if (profile?.email) return profile.email[0].toUpperCase();
     return "U";
   };
 
@@ -49,7 +51,10 @@ export function UserMenu() {
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="relative h-9 w-9 rounded-full">
           <Avatar className="h-9 w-9">
-            <AvatarImage src={user.imageUrl} alt={user.fullName || "User"} />
+            <AvatarImage
+              src={profile?.avatarUrl ?? undefined}
+              alt={profile?.fullName || "User"}
+            />
             <AvatarFallback>{getUserInitials()}</AvatarFallback>
           </Avatar>
         </Button>
@@ -58,10 +63,10 @@ export function UserMenu() {
         <DropdownMenuLabel className="font-normal">
           <div className="flex flex-col space-y-1">
             <p className="text-sm font-medium leading-none">
-              {user.fullName || "User"}
+              {profile?.fullName || "User"}
             </p>
             <p className="text-xs leading-none text-muted-foreground">
-              {user.emailAddresses[0]?.emailAddress}
+              {profile?.email}
             </p>
           </div>
         </DropdownMenuLabel>

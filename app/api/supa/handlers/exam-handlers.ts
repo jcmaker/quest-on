@@ -68,7 +68,7 @@ export async function createExam(data: {
     }
 
     // Check if user is instructor
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
 
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
@@ -236,7 +236,7 @@ export async function updateExam(data: {
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
@@ -344,7 +344,7 @@ export async function getExamById(data: { id: string }) {
     }
 
     // Check if user is instructor
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
 
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
@@ -406,7 +406,7 @@ export async function getInstructorExams() {
     }
 
     // Check if user is instructor
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }
@@ -467,7 +467,7 @@ export async function copyExam(data: { exam_id: string }) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
     }
 
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("INSTRUCTOR_REQUIRED", "Instructor access required", 403);
     }

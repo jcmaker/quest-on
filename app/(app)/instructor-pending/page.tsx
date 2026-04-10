@@ -1,6 +1,8 @@
 "use client";
 
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
+import { useAppUser } from "@/components/providers/AppAuthProvider";
+import { createSupabaseClient } from "@/lib/supabase-client";
 import { Clock, Copy, Mail, Check, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -8,14 +10,20 @@ import { useState } from "react";
 const CONTACT_EMAIL = "questonkr@gmail.com";
 
 export default function InstructorPendingPage() {
-  const { user } = useUser();
-  const { signOut } = useClerk();
+  const { profile } = useAppUser();
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
 
   const handleCopyEmail = () => {
     navigator.clipboard.writeText(CONTACT_EMAIL);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleSignOut = async () => {
+    const supabase = createSupabaseClient();
+    await supabase.auth.signOut();
+    router.push("/sign-in");
   };
 
   const emailSubject = encodeURIComponent("[Quest-On 강사 승인 요청]");
@@ -32,7 +40,7 @@ Quest-On 서비스에 관심 가져주셔서 감사합니다.
 - 소속 기관 (대학교/회사명):
 - 담당 과목:
 - 사용 목적:
-- 가입 이메일: ${user?.primaryEmailAddress?.emailAddress || ""}
+- 가입 이메일: ${profile?.email || ""}
 
 감사합니다.`
   );
@@ -72,10 +80,11 @@ Quest-On 서비스에 관심 가져주셔서 감사합니다.
               className="p-1.5 rounded-md hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
               title="이메일 복사"
             >
-              {copied
-                ? <Check className="w-4 h-4 text-green-500" />
-                : <Copy className="w-4 h-4" />
-              }
+              {copied ? (
+                <Check className="w-4 h-4 text-green-500" />
+              ) : (
+                <Copy className="w-4 h-4" />
+              )}
             </button>
           </div>
           {copied && (
@@ -111,7 +120,7 @@ Quest-On 서비스에 관심 가져주셔서 감사합니다.
         {/* 로그아웃 */}
         <Button
           variant="ghost"
-          onClick={() => signOut({ redirectUrl: "/sign-in" })}
+          onClick={handleSignOut}
           className="w-full text-muted-foreground gap-2"
         >
           <LogOut className="w-4 h-4" />

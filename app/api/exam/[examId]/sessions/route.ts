@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
-import { batchGetUserInfo } from "@/lib/clerk-users";
+import { batchGetUserInfo } from "@/lib/app-users";
 import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { logError } from "@/lib/logger";
@@ -39,7 +39,7 @@ export async function GET(
     }
 
     // Check if user is instructor
-    const userRole = user.unsafeMetadata?.role as string;
+    const userRole = user.role;
     if (userRole !== "instructor") {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }

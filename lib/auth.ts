@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 export async function redirectByRole() {
   const user = await currentUser();
-  const role = (user?.unsafeMetadata?.role as string) || "student";
+  const role = user?.role ?? "student";
 
   if (role === "instructor") {
     redirect("/instructor");
@@ -14,7 +14,7 @@ export async function redirectByRole() {
 
 export async function getUserRole() {
   const user = await currentUser();
-  return (user?.unsafeMetadata?.role as string) || "student";
+  return user?.role ?? "student";
 }
 
 export async function requireAuth() {
