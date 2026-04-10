@@ -25,13 +25,17 @@ export async function batchGetUserInfo(
     const supabase = getSupabaseServer();
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id, full_name, email")
+      .select("id, display_name")
       .in("id", uniqueIds);
+
+    // auth.users에서 email 가져오기
+    const { data: authData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+    const emailMap = new Map(authData?.users?.map((u) => [u.id, u.email ?? ""]) ?? []);
 
     for (const profile of profiles ?? []) {
       result.set(profile.id, {
-        name: profile.full_name || `User ${profile.id.slice(0, 8)}`,
-        email: profile.email || `${profile.id}@example.com`,
+        name: profile.display_name || `User ${profile.id.slice(0, 8)}`,
+        email: emailMap.get(profile.id) || `${profile.id}@example.com`,
       });
     }
 

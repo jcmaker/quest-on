@@ -99,8 +99,8 @@ export default function ProfilePage() {
     if (profile?.fullName) {
       return profile.fullName[0].toUpperCase();
     }
-    if (profile?.email) {
-      return profile.email[0].toUpperCase();
+    if (user?.email) {
+      return user.email[0].toUpperCase();
     }
     return "U";
   };
@@ -157,7 +157,7 @@ export default function ProfilePage() {
                   <div>
                     <p className="text-sm text-muted-foreground">이메일</p>
                     <p className="font-medium">
-                      {profile?.email || "이메일 없음"}
+                      {user?.email || "이메일 없음"}
                     </p>
                   </div>
                 </div>

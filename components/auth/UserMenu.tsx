@@ -42,7 +42,7 @@ export function UserMenu() {
       if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`;
       return parts[0][0].toUpperCase();
     }
-    if (profile?.email) return profile.email[0].toUpperCase();
+    if (user?.email) return user.email[0].toUpperCase();
     return "U";
   };
 
@@ -66,7 +66,7 @@ export function UserMenu() {
               {profile?.fullName || "User"}
             </p>
             <p className="text-xs leading-none text-muted-foreground">
-              {profile?.email}
+              {user?.email}
             </p>
           </div>
         </DropdownMenuLabel>
