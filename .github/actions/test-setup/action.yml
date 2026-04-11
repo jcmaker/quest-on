@@ -49,6 +49,16 @@ runs:
     - name: Create non-Prisma tables
       run: |
         psql postgresql://postgres:postgres@127.0.0.1:54322/postgres -c "
+          CREATE TABLE IF NOT EXISTS instructor_profiles (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL DEFAULT '',
+            email TEXT NOT NULL DEFAULT '',
+            school TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TIMESTAMPTZ DEFAULT now(),
+            updated_at TIMESTAMPTZ DEFAULT now()
+          );
+
           CREATE TABLE IF NOT EXISTS error_logs (
             id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
             level TEXT NOT NULL DEFAULT 'error',
@@ -86,6 +96,10 @@ runs:
 
           -- grades.updated_at: required by grade upsert handler but not in Prisma schema
           ALTER TABLE grades ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+          -- sessions: late entry columns (added via database/add_late_entry_columns.sql, not in Prisma schema)
+          ALTER TABLE sessions ADD COLUMN IF NOT EXISTS late_entry_approved_at TIMESTAMPTZ DEFAULT NULL;
+          ALTER TABLE sessions ADD COLUMN IF NOT EXISTS late_entry_denied_at TIMESTAMPTZ DEFAULT NULL;
         "
       shell: bash
 
