@@ -81,7 +81,7 @@ export async function POST(
     // 6. Bulk update: promote auto grades to manual (instructor-approved)
     const { count, error: updateError } = await supabase
       .from("grades")
-      .update({ grade_type: "manual" })
+      .update({ grade_type: "manual" }, { count: "exact" })
       .in("session_id", validSessionIds)
       .eq("grade_type", "auto");
 
