@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Shine } from "@/components/ui/shine";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import {
   Tooltip,
@@ -183,16 +184,24 @@ export function GeneratedQuestionCard({
 
         {/* Footer actions */}
         <div className="flex flex-wrap items-center gap-2 pt-3 border-t">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setIsSheetOpen(true)}
-            className="gap-1.5 border-primary/30 text-primary hover:bg-primary/10 hover:text-primary"
+          <Shine
+            className="rounded-full"
+            duration={1200}
+            loop
+            loopDelay={1400}
+            opacity={0.24}
           >
-            <MessageSquare className="w-3.5 h-3.5" />
-            AI와 수정
-          </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              onClick={() => setIsSheetOpen(true)}
+              className="relative overflow-hidden gap-1.5 rounded-full"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              AI로 문제 다듬기
+            </Button>
+          </Shine>
           <Button
             type="button"
             size="sm"

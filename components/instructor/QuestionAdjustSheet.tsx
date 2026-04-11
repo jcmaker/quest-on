@@ -77,7 +77,7 @@ export function QuestionAdjustSheet({
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="w-full sm:max-w-lg flex flex-col gap-0 p-0">
         <SheetHeader className="px-6 py-4 border-b shrink-0">
-          <SheetTitle>AI와 문제 수정</SheetTitle>
+          <SheetTitle>AI로 문제 다듬기</SheetTitle>
         </SheetHeader>
 
         {/* P0-2: Current question preview with expand/collapse toggle */}
@@ -107,15 +107,15 @@ export function QuestionAdjustSheet({
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 min-h-0">
           {history.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-8">
-              수정 요청을 입력하면 AI가 문제를 조정합니다.
+              원하는 수정을 한 문장으로 적어주세요.
               <br />
-              예: &quot;난이도를 올려줘&quot;, &quot;조건을 변경해줘&quot;, &quot;더 구체적으로 만들어줘&quot;
+              예: &quot;난이도는 유지하고, 사례를 한국 기업으로 바꿔줘&quot;
             </p>
           )}
 
           {history.map((msg, idx) => (
             <div
-              key={idx}
+              key={`${msg.role}-${msg.content}-${msg.questionText ?? "no-question-text"}`}
               className={`flex ${
                 msg.role === "user" ? "justify-end" : "justify-start"
               }`}
@@ -227,7 +227,7 @@ export function QuestionAdjustSheet({
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="수정 요청을 입력하세요..."
+            placeholder="예: 난이도는 유지하고, 사례를 한국 기업으로 바꿔줘"
             className="min-h-[44px] max-h-32 resize-none"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
