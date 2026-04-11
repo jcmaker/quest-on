@@ -24,7 +24,14 @@ import {
   CardContent,
   CardAction,
 } from "@/components/ui/card";
-import { Sparkles, ChevronDown, X, FileText, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  Sparkles,
+  ChevronDown,
+  X,
+  FileText,
+  CheckCircle2,
+  AlertCircle,
+} from "lucide-react";
 import toast from "react-hot-toast";
 import {
   useQuestionGeneration,
@@ -37,12 +44,19 @@ import type { Question } from "./QuestionEditor";
 interface CaseQuestionGeneratorProps {
   examTitle: string;
   extractedTexts: Map<string, { text: string; fileName: string }>;
-  extractionStatus?: Map<string, "uploading" | "extracting" | "done" | "failed">;
+  extractionStatus?: Map<
+    string,
+    "uploading" | "extracting" | "done" | "failed"
+  >;
   onQuestionsAccepted: (questions: Question[]) => void;
   onRubricSuggested: (rubric: RubricItem[]) => void;
 }
 
-function getStageMessage(stage: string, current: number, total: number): string {
+function getStageMessage(
+  stage: string,
+  current: number,
+  total: number,
+): string {
   switch (stage) {
     case "started":
       return "시험 내용 분석 중...";
@@ -90,7 +104,12 @@ export function CaseQuestionGenerator({
   // Auto-apply all questions when generation completes
   const wasGeneratingRef = useRef(false);
   useEffect(() => {
-    if (wasGeneratingRef.current && !isGenerating && generationProgress.stage === "complete" && !error) {
+    if (
+      wasGeneratingRef.current &&
+      !isGenerating &&
+      generationProgress.stage === "complete" &&
+      !error
+    ) {
       const all = acceptAll();
       if (all.length > 0) {
         onQuestionsAccepted(
@@ -99,14 +118,14 @@ export function CaseQuestionGenerator({
             text: q.text,
             type: q.type as Question["type"],
             rubric: q.rubric,
-          }))
+          })),
         );
         applyRubricIfNeeded();
         toast.success(`${all.length}개 문제가 추가되었습니다.`);
       }
     }
     wasGeneratingRef.current = isGenerating;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGenerating, generationProgress.stage, error]);
 
   const getGenerateParams = () => {
@@ -115,7 +134,7 @@ export function CaseQuestionGenerator({
         url,
         text,
         fileName,
-      })
+      }),
     );
 
     return {
@@ -161,7 +180,11 @@ export function CaseQuestionGenerator({
       : 0;
 
   const stageMessage = isGenerating
-    ? getStageMessage(generationProgress.stage, generationProgress.current, generationProgress.total)
+    ? getStageMessage(
+        generationProgress.stage,
+        generationProgress.current,
+        generationProgress.total,
+      )
     : "";
 
   return (
@@ -212,20 +235,24 @@ export function CaseQuestionGenerator({
 
             {/* Freeform prompt */}
             <div className="space-y-1.5">
-              <Label className="text-sm">어떤 문제를 만들어드릴까요?
-                <span className="text-muted-foreground font-normal ml-1">(선택)</span>
+              <Label className="text-sm">
+                어떤 문제를 만들어드릴까요?
+                <span className="text-muted-foreground font-normal ml-1">
+                  (선택)
+                </span>
               </Label>
               <Textarea
                 value={freeformPrompt}
                 onChange={(e) => setFreeformPrompt(e.target.value)}
-                placeholder="예: 커피포트 시장조사 과제, 한국 기업 사례 중심, 난이도 높게..."
+                placeholder="예: 시장조사 과제, 한국 기업 사례 중심, 난이도 높게..."
                 maxLength={2000}
                 className="min-h-[80px] resize-none"
               />
             </div>
 
             {/* Materials info - P2-2: Show file details */}
-            {(extractedTexts.size > 0 || (extractionStatus && extractionStatus.size > 0)) && (
+            {(extractedTexts.size > 0 ||
+              (extractionStatus && extractionStatus.size > 0)) && (
               <Collapsible>
                 <CollapsibleTrigger asChild>
                   <button
@@ -233,45 +260,65 @@ export function CaseQuestionGenerator({
                     className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    업로드된 자료 {extractionStatus?.size || extractedTexts.size}개가 문제 생성에 활용됩니다.
+                    업로드된 자료{" "}
+                    {extractionStatus?.size || extractedTexts.size}개가 문제
+                    생성에 활용됩니다.
                     <ChevronDown className="w-3 h-3" />
                   </button>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
                   <div className="mt-2 space-y-1 pl-5">
                     {extractionStatus
-                      ? Array.from(extractionStatus.entries()).map(([fileName, status]) => (
-                          <div key={fileName} className="flex items-center gap-1.5 text-xs">
-                            {status === "done" ? (
+                      ? Array.from(extractionStatus.entries()).map(
+                          ([fileName, status]) => (
+                            <div
+                              key={fileName}
+                              className="flex items-center gap-1.5 text-xs"
+                            >
+                              {status === "done" ? (
+                                <CheckCircle2 className="w-3 h-3 text-green-600 dark:text-green-400" />
+                              ) : status === "failed" ? (
+                                <AlertCircle className="w-3 h-3 text-red-500" />
+                              ) : (
+                                <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                              )}
+                              <span
+                                className={
+                                  status === "failed"
+                                    ? "text-red-500 line-through"
+                                    : "text-muted-foreground"
+                                }
+                              >
+                                {fileName}
+                              </span>
+                              {status === "failed" && (
+                                <span className="text-red-500">
+                                  (추출 실패)
+                                </span>
+                              )}
+                            </div>
+                          ),
+                        )
+                      : Array.from(extractedTexts.values()).map(
+                          ({ fileName }) => (
+                            <div
+                              key={fileName}
+                              className="flex items-center gap-1.5 text-xs"
+                            >
                               <CheckCircle2 className="w-3 h-3 text-green-600 dark:text-green-400" />
-                            ) : status === "failed" ? (
-                              <AlertCircle className="w-3 h-3 text-red-500" />
-                            ) : (
-                              <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                            )}
-                            <span className={status === "failed" ? "text-red-500 line-through" : "text-muted-foreground"}>
-                              {fileName}
-                            </span>
-                            {status === "failed" && (
-                              <span className="text-red-500">(추출 실패)</span>
-                            )}
-                          </div>
-                        ))
-                      : Array.from(extractedTexts.values()).map(({ fileName }) => (
-                          <div key={fileName} className="flex items-center gap-1.5 text-xs">
-                            <CheckCircle2 className="w-3 h-3 text-green-600 dark:text-green-400" />
-                            <span className="text-muted-foreground">{fileName}</span>
-                          </div>
-                        ))}
+                              <span className="text-muted-foreground">
+                                {fileName}
+                              </span>
+                            </div>
+                          ),
+                        )}
                   </div>
                 </CollapsibleContent>
               </Collapsible>
             )}
 
             {/* Error */}
-            {error && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
+            {error && <p className="text-sm text-destructive">{error}</p>}
 
             {/* Generate / Cancel buttons */}
             <div className="flex items-center gap-2">
@@ -343,7 +390,9 @@ export function CaseQuestionGenerator({
                     <h3 className="text-sm font-medium text-muted-foreground">
                       AI 생성 미리보기
                     </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">생성 완료 시 자동으로 문제 목록에 추가됩니다.</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      생성 완료 시 자동으로 문제 목록에 추가됩니다.
+                    </p>
                   </div>
                 </div>
 
@@ -368,7 +417,11 @@ export function CaseQuestionGenerator({
                         }
                         onRemove={() => removeQuestion(q.id)}
                         onAdjust={async (instruction) => {
-                          return await adjustQuestion(q.id, instruction, examTitle);
+                          return await adjustQuestion(
+                            q.id,
+                            instruction,
+                            examTitle,
+                          );
                         }}
                         onApplyAdjustment={(newText) =>
                           applyAdjustment(q.id, newText)
