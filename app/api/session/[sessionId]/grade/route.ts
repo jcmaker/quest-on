@@ -463,12 +463,12 @@ export async function POST(
     if (expected_updated_at) {
       const { data: existingGrade } = await supabase
         .from("grades")
-        .select("updated_at")
+        .select("created_at")
         .eq("session_id", sessionId)
         .eq("q_idx", questionIdx)
         .single();
 
-      if (existingGrade && existingGrade.updated_at !== expected_updated_at) {
+      if (existingGrade && existingGrade.created_at !== expected_updated_at) {
         return errorJson("CONFLICT", "Grade was modified by another user. Please refresh and try again.", 409);
       }
     }
@@ -484,7 +484,6 @@ export async function POST(
           comment,
           stage_grading: stageGrading || null,
           grade_type: "manual",
-          updated_at: new Date().toISOString(),
         },
       ],
       "manual_grade_post"
@@ -495,7 +494,7 @@ export async function POST(
       .select("*")
       .eq("session_id", sessionId)
       .eq("q_idx", questionIdx)
-      .order("updated_at", { ascending: false })
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 

@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, ChevronDown, ChevronUp, RefreshCw, CheckCheck, Loader2 } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, RefreshCw, CheckCheck, Loader2, Eye, EyeOff } from "lucide-react";
 import { StudentLiveMonitoring } from "@/components/instructor/StudentLiveMonitoring";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
@@ -125,6 +125,35 @@ export default function ExamDetail({
       queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
     },
   });
+
+  // Grades release mutation
+  const releaseGradesMutation = useMutation({
+    mutationFn: async (release: boolean) => {
+      const url = `/api/exam/${resolvedParams.examId}/release-grades`;
+      const response = await fetch(url, {
+        method: release ? "POST" : "DELETE",
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "성적 공개 상태 변경에 실패했습니다.");
+      }
+      return response.json();
+    },
+    onSuccess: (_data, release) => {
+      setExam((prev) => prev ? { ...prev, grades_released: release } : prev);
+      queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
+    },
+  });
+
+  const handleToggleGradesRelease = () => {
+    const currentlyReleased = exam?.grades_released === true;
+    const msg = currentlyReleased
+      ? "학생들에게 성적이 비공개됩니다. 계속하시겠습니까?"
+      : "학생들에게 성적이 공개됩니다. 계속하시겠습니까?";
+    if (window.confirm(msg)) {
+      releaseGradesMutation.mutate(!currentlyReleased);
+    }
+  };
 
   // Redirect non-instructors
   useEffect(() => {
@@ -342,6 +371,40 @@ export default function ExamDetail({
               {exam.status === "running" && (
                 <LateEntryPanel examId={exam.id} examStatus={exam.status} />
               )}
+
+              {/* Grades Release Toggle */}
+              <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+                <div className="flex items-center gap-2">
+                  {exam.grades_released ? (
+                    <Eye className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  <span className="text-sm font-medium">
+                    {exam.grades_released ? "성적 공개중" : "성적 비공개"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {exam.grades_released
+                      ? "학생들이 성적과 리포트를 볼 수 있습니다"
+                      : "학생들은 답안만 확인할 수 있습니다"}
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant={exam.grades_released ? "outline" : "default"}
+                  disabled={releaseGradesMutation.isPending}
+                  onClick={handleToggleGradesRelease}
+                >
+                  {releaseGradesMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                  ) : exam.grades_released ? (
+                    <EyeOff className="h-4 w-4 mr-1.5" />
+                  ) : (
+                    <Eye className="h-4 w-4 mr-1.5" />
+                  )}
+                  {exam.grades_released ? "성적 비공개" : "성적 공개"}
+                </Button>
+              </div>
 
               {/* Search & Sort */}
               <div className="flex flex-col sm:flex-row gap-4">

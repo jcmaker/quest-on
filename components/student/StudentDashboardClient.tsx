@@ -67,6 +67,7 @@ interface ExamSession {
   maxScore: number | null;
   averageScore: number | null;
   isGraded: boolean;
+  gradesReleased?: boolean;
 }
 
 interface SessionsResponse {
@@ -393,8 +394,8 @@ export default function StudentDashboard() {
   };
 
   // 마우스 오버 시 리포트 데이터 프리페칭 (체감 네비게이션 속도 개선)
-  const handleSessionHover = (session: { id: string; status: string; isGraded: boolean }) => {
-    if (session.status === "completed" && session.isGraded) {
+  const handleSessionHover = (session: { id: string; status: string; isGraded: boolean; gradesReleased?: boolean }) => {
+    if (session.status === "completed" && (session.isGraded || session.gradesReleased === false)) {
       queryClient.prefetchQuery({
         queryKey: ["student-report", session.id, user?.id],
         queryFn: async () => {
@@ -504,6 +505,19 @@ export default function StudentDashboard() {
       );
     }
     if (session.status === "completed") {
+      if (session.gradesReleased === false) {
+        return (
+          <Link
+            href={`/student/report/${session.id}`}
+            className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
+          >
+            <Button variant="outline" size="sm" className="min-h-[36px] px-4">
+              <FileText className="w-4 h-4 mr-1.5" aria-hidden="true" />
+              답안 확인
+            </Button>
+          </Link>
+        );
+      }
       if (session.isGraded) {
         return (
           <Link

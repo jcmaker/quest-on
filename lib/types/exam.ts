@@ -74,6 +74,7 @@ export interface InstructorExam extends Exam {
   assignment_prompt?: string | null;
   initial_state?: InitialState;
   canvas_config?: CanvasConfig;
+  grades_released?: boolean;
 }
 
 export type GradeStatus = "ai_graded" | "manually_graded" | "pending";

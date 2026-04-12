@@ -159,6 +159,7 @@ export function useExamDetail({
           started_at: examResult.exam.started_at || null,
           deadline: examResult.exam.deadline || null,
           assignment_prompt: examResult.exam.assignment_prompt || null,
+          grades_released: examResult.exam.grades_released || false,
         } as InstructorExam,
         questionsCount: questionsArray.length,
         questionsRaw: questionsArray as Question[],
@@ -182,7 +183,22 @@ export function useExamDetail({
     if (!examDetailData?.exam) return;
     setExam((prev) => {
       if (!prev) return examDetailData.exam;               // 최초 로드
-      return { ...prev, students: examDetailData.exam.students }; // refetch: students만 갱신
+      // refetch: students를 갱신하되, 기존 score/finalScore 등 analytics 데이터 보존
+      const mergedStudents = examDetailData.exam.students.map((newStudent) => {
+        const existing = prev.students.find((s) => s.id === newStudent.id);
+        if (!existing) return newStudent;
+        return {
+          ...newStudent,
+          score: existing.score ?? newStudent.score,
+          finalScore: existing.finalScore ?? newStudent.finalScore,
+          isGraded: existing.isGraded || newStudent.isGraded,
+          gradeType: existing.gradeType ?? newStudent.gradeType,
+          aiComment: existing.aiComment ?? newStudent.aiComment,
+          questionCount: existing.questionCount ?? newStudent.questionCount,
+          answerLength: existing.answerLength ?? newStudent.answerLength,
+        };
+      });
+      return { ...prev, students: mergedStudents, grades_released: examDetailData.exam.grades_released };
     });
   }, [examDetailData]);
 
@@ -222,6 +238,7 @@ export function useExamDetail({
           const isManuallyGraded = gradeData.gradeStatus === "manually_graded";
           return {
             ...student,
+            score: gradeData.score ?? student.score,
             finalScore: isManuallyGraded ? gradeData.score : student.finalScore,
             isGraded: isManuallyGraded,
             gradeType: (gradeData.gradeStatus as InstructorStudent["gradeType"]) ?? student.gradeType,

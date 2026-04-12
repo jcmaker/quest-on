@@ -19,6 +19,7 @@ import {
   Award,
   TrendingUp,
   Loader2,
+  Clock,
 } from "lucide-react";
 import { getScoreColor } from "@/lib/grading-utils";
 import type { StageGrading, SummaryData } from "@/lib/types/grading";
@@ -70,6 +71,7 @@ interface ReportData {
   grades: Record<number, Grade>;
   overallScore: number | null;
   aiSummary?: SummaryData;
+  gradesReleased?: boolean;
 }
 
 export default function StudentReportPage() {
@@ -108,6 +110,9 @@ export default function StudentReportPage() {
     retry: false,
     refetchInterval: (query) => {
       const data = query.state.data;
+      if (data?.gradesReleased === false) {
+        return false; // Don't poll — grades hidden until instructor releases
+      }
       if (!data || !data.grades || Object.keys(data.grades).length === 0) {
         return 5000; // Poll every 5s while grading is incomplete
       }
@@ -159,8 +164,9 @@ export default function StudentReportPage() {
     );
   }
 
+  const gradesNotReleased = reportData.gradesReleased === false;
   const gradingInProgress =
-    !reportData.grades || Object.keys(reportData.grades).length === 0;
+    !gradesNotReleased && (!reportData.grades || Object.keys(reportData.grades).length === 0);
 
   if (gradingInProgress) {
     return (
@@ -195,10 +201,10 @@ export default function StudentReportPage() {
 
   const currentQuestion = reportData.exam?.questions?.[selectedQuestionIdx];
   const currentSubmission = reportData.submissions?.[selectedQuestionIdx];
-  const currentGrade = reportData.grades?.[selectedQuestionIdx];
+  const currentGrade = gradesNotReleased ? undefined : reportData.grades?.[selectedQuestionIdx];
   const currentMessages = reportData.messages?.[selectedQuestionIdx] || [];
   const currentAiDependency = currentGrade?.stage_grading?.chat?.ai_dependency;
-  const overallAiDependency = reportData.aiSummary?.aiDependency || null;
+  const overallAiDependency = gradesNotReleased ? null : (reportData.aiSummary?.aiDependency || null);
 
   return (
     <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
@@ -222,7 +228,7 @@ export default function StudentReportPage() {
                 "ko-KR"
               )}
             </p>
-            {reportData.overallScore !== null && (
+            {!gradesNotReleased && reportData.overallScore !== null && (
               <div className="flex items-center gap-2 mt-3">
                 <Award className="w-5 h-5 text-primary" />
                 <p
@@ -235,35 +241,30 @@ export default function StudentReportPage() {
                 </p>
               </div>
             )}
+            {gradesNotReleased && (
+              <p className="text-sm text-amber-600 dark:text-amber-400 mt-3">
+                채점이 아직 확정되지 않았습니다. 교수의 최종 확정 후 성적을 확인할 수 있습니다.
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-3">
-            {/* PDF 기능 임시 숨김 — 고도화 후 복원 예정
-            <Button
-              variant="default"
-              size="sm"
-              onClick={handleDownloadPDF}
-              disabled={downloading}
-            >
-              {downloading ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                  생성 중...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4 mr-2" />
-                  리포트 카드 다운로드
-                </>
-              )}
-            </Button>
-            */}
-            <Badge
-              variant="outline"
-              className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
-            >
-              <CheckCircle className="w-4 h-4 mr-1" />
-              평가 완료
-            </Badge>
+            {gradesNotReleased ? (
+              <Badge
+                variant="outline"
+                className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20"
+              >
+                <Clock className="w-4 h-4 mr-1" />
+                채점 확정 대기중
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20"
+              >
+                <CheckCircle className="w-4 h-4 mr-1" />
+                평가 완료
+              </Badge>
+            )}
           </div>
         </div>
       </div>
@@ -274,7 +275,7 @@ export default function StudentReportPage() {
           {reportData.exam?.questions &&
           Array.isArray(reportData.exam.questions) ? (
             reportData.exam.questions.map((question, idx) => {
-              const grade = reportData.grades[idx];
+              const grade = gradesNotReleased ? undefined : reportData.grades[idx];
               return (
                 <Button
                   key={question.id || idx}

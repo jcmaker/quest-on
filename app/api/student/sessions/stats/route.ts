@@ -110,7 +110,7 @@ export async function GET() {
 
     // Get all grades for completed sessions to calculate overall average
     const sessionIds = completedSessions.map((s) => s.id);
-    
+
     if (sessionIds.length === 0) {
       return successJson({
         totalSessions: sessions.length,
@@ -122,38 +122,59 @@ export async function GET() {
       });
     }
 
-    const { data: allGrades, error: gradesError } = await supabase
-      .from("grades")
-      .select("session_id, score")
-      .in("session_id", sessionIds);
-
-    if (gradesError) {
-      // Non-critical: grades fetch failed
+    // Fetch grades_released status for all completed sessions' exams
+    const completedExamIds = [...new Set(completedSessions.map((s) => s.exam_id).filter(Boolean))];
+    const releasedExamIds = new Set<string>();
+    if (completedExamIds.length > 0) {
+      const { data: releasedExams } = await supabase
+        .from("exams")
+        .select("id")
+        .in("id", completedExamIds)
+        .eq("grades_released", true);
+      if (releasedExams) {
+        releasedExams.forEach((e) => releasedExamIds.add(e.id));
+      }
     }
 
-    // Calculate overall average score
+    // Only include sessions whose exam has grades_released = true
+    const releasedSessionIds = completedSessions
+      .filter((s) => releasedExamIds.has(s.exam_id))
+      .map((s) => s.id);
+
     let overallAverageScore: number | null = null;
-    if (allGrades && allGrades.length > 0) {
-      // Group grades by session_id
-      const gradesBySession = new Map<string, number[]>();
-      allGrades.forEach((grade) => {
-        if (!gradesBySession.has(grade.session_id)) {
-          gradesBySession.set(grade.session_id, []);
+
+    if (releasedSessionIds.length > 0) {
+      const { data: allGrades, error: gradesError } = await supabase
+        .from("grades")
+        .select("session_id, score")
+        .in("session_id", releasedSessionIds);
+
+      if (gradesError) {
+        // Non-critical: grades fetch failed
+      }
+
+      if (allGrades && allGrades.length > 0) {
+        // Group grades by session_id
+        const gradesBySession = new Map<string, number[]>();
+        allGrades.forEach((grade) => {
+          if (!gradesBySession.has(grade.session_id)) {
+            gradesBySession.set(grade.session_id, []);
+          }
+          gradesBySession.get(grade.session_id)!.push(grade.score);
+        });
+
+        // Calculate average for each session, then overall average
+        const sessionAverages: number[] = [];
+        gradesBySession.forEach((scores) => {
+          const sessionAvg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+          sessionAverages.push(sessionAvg);
+        });
+
+        if (sessionAverages.length > 0) {
+          overallAverageScore = Math.round(
+            sessionAverages.reduce((sum, avg) => sum + avg, 0) / sessionAverages.length
+          );
         }
-        gradesBySession.get(grade.session_id)!.push(grade.score);
-      });
-
-      // Calculate average for each session, then overall average
-      const sessionAverages: number[] = [];
-      gradesBySession.forEach((scores) => {
-        const sessionAvg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-        sessionAverages.push(sessionAvg);
-      });
-
-      if (sessionAverages.length > 0) {
-        overallAverageScore = Math.round(
-          sessionAverages.reduce((sum, avg) => sum + avg, 0) / sessionAverages.length
-        );
       }
     }
 

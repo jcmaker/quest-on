@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
     // Fetch all exams in one query
     const { data: exams, error: examsError } = await supabase
       .from("exams")
-      .select("id, title, code, type, duration, deadline, instructor_id")
+      .select("id, title, code, type, duration, deadline, instructor_id, grades_released")
       .in("id", examIds);
 
     if (examsError) {
@@ -164,6 +164,7 @@ export async function GET(request: NextRequest) {
       const exam = examMap.get(session.exam_id);
       const submissions = submissionsBySession.get(session.id) || [];
       const grades = gradesBySession.get(session.id) || [];
+      const gradesReleased = exam?.grades_released === true;
 
       // Calculate score - each grade is 0-100, calculate average
       let totalScore = null;
@@ -171,7 +172,7 @@ export async function GET(request: NextRequest) {
       let averageScore = null;
       const isGraded = grades.length > 0;
 
-      if (isGraded) {
+      if (isGraded && gradesReleased) {
         const totalPoints = grades.reduce(
           (sum, grade) => sum + (grade.score || 0),
           0
@@ -196,7 +197,8 @@ export async function GET(request: NextRequest) {
         score: totalScore,
         maxScore: maxScore,
         averageScore: averageScore,
-        isGraded: isGraded,
+        isGraded: gradesReleased ? isGraded : false,
+        gradesReleased,
       };
     });
 

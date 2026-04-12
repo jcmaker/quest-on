@@ -397,22 +397,25 @@ export default function GradeStudentPage({
             questionIdx,
             score: scores[questionIdx] || 0,
             comment: feedbacks[questionIdx] || "",
-            stageGrading: {
-              chat: stageScores[questionIdx]?.chat
+            stageGrading: (() => {
+              const chat = stageScores[questionIdx]?.chat
                 ? {
                     ...(existingStageGrading?.chat || {}),
                     score: stageScores[questionIdx]?.chat || 0,
                     comment: stageComments[questionIdx]?.chat || "",
                   }
-                : existingStageGrading?.chat,
-              answer: stageScores[questionIdx]?.answer
+                : existingStageGrading?.chat ?? undefined;
+              const answer = stageScores[questionIdx]?.answer
                 ? {
                     ...(existingStageGrading?.answer || {}),
                     score: stageScores[questionIdx]?.answer || 0,
                     comment: stageComments[questionIdx]?.answer || "",
                   }
-                : existingStageGrading?.answer,
-            },
+                : existingStageGrading?.answer ?? undefined;
+              // chat/answer 모두 없으면 stageGrading 자체를 null로
+              if (!chat && !answer) return null;
+              return { chat, answer };
+            })(),
           }),
         }
       );
@@ -464,6 +467,10 @@ export default function GradeStudentPage({
     },
     onSuccess: () => {
       toast.success("채점이 저장되었습니다.");
+      // 성공 시에만 서버 데이터로 동기화 (optimistic update와의 race condition 방지)
+      queryClient.invalidateQueries({
+        queryKey: qk.session.grade(resolvedParams.studentId),
+      });
     },
     onError: (error: Error, _questionIdx, context) => {
       // 실패 시 이전 데이터로 롤백
@@ -480,9 +487,7 @@ export default function GradeStudentPage({
       toast.error(errorMessage, {
         duration: 5000,
       });
-    },
-    onSettled: () => {
-      // 성공/실패 모두 서버 데이터로 동기화
+      // 실패 시에도 서버 데이터로 동기화 (롤백 후 최신 상태 확인)
       queryClient.invalidateQueries({
         queryKey: qk.session.grade(resolvedParams.studentId),
       });

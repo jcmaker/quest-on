@@ -64,7 +64,7 @@ export async function GET(
     // Get exam data
     const { data: exam, error: examError } = await getSupabase()
       .from("exams")
-      .select("id, title, code, description, duration, questions")
+      .select("id, title, code, description, duration, questions, grades_released")
       .eq("id", session.exam_id)
       .single();
 
@@ -269,6 +269,8 @@ export async function GET(
       overallScore = gradedCount > 0 ? result.overallScore : null;
     }
 
+    const gradesReleased = exam.grades_released === true;
+
     return successJson({
       session: {
         id: session.id,
@@ -282,11 +284,12 @@ export async function GET(
       exam: exam,
       submissions: submissionsByQuestion,
       messages: messagesByQuestion,
-      grades: gradesByQuestion,
-      overallScore,
-      gradedCount,
+      grades: gradesReleased ? gradesByQuestion : {},
+      overallScore: gradesReleased ? overallScore : null,
+      gradedCount: gradesReleased ? gradedCount : 0,
       totalQuestionCount,
-      aiSummary: session.ai_summary || null,
+      aiSummary: gradesReleased ? (session.ai_summary || null) : null,
+      gradesReleased,
     });
   } catch {
     return errorJson("FETCH_REPORT_FAILED", "Failed to get report", 500);
