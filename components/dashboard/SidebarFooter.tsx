@@ -120,11 +120,11 @@ export function SidebarFooter() {
                 <p className="text-sm font-medium truncate text-sidebar-foreground">
                   {displayName}
                 </p>
-                <p className="text-xs text-sidebar-foreground/70 truncate">
+                <p className="text-xs text-sidebar-foreground/75 truncate">
                   {userRole === "instructor" ? "강사" : "학생"}
                 </p>
               </div>
-              <ChevronDown className="h-4 w-4 text-sidebar-foreground/70 shrink-0" />
+              <ChevronDown className="h-4 w-4 text-sidebar-foreground/75 shrink-0" />
             </button>
           </DropdownMenuTrigger>
           {dropdownContent}
