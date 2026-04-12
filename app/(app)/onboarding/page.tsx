@@ -208,12 +208,12 @@ export default function OnboardingPage() {
       localStorage.removeItem("onboarding_redirect");
 
       if (redirectUrl && redirectUrl.startsWith("/")) {
-        router.push(redirectUrl);
+        window.location.href = redirectUrl;
       } else if (role === "instructor") {
-        router.push("/instructor-pending");
+        window.location.href = "/instructor-pending";
       } else {
         sessionStorage.setItem("profile-setup-complete", "true");
-        router.push("/student");
+        window.location.href = "/student";
       }
     } catch {
       setError("저장에 실패했습니다. 다시 시도해주세요.");
