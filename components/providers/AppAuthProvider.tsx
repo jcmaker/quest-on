@@ -32,6 +32,49 @@ const AuthContext = createContext<AppAuthState>({
   isSignedIn: false,
 });
 
+// 테스트 바이패스: E2E 브라우저 테스트에서 Supabase 세션 없이 인증 제공
+// proxy.ts가 서버에서 __test_bypass 쿠키를 이미 검증했으므로, 클라이언트에서는 쿠키 존재만 확인
+function getTestBypassUser(): { user: User; profile: AppProfile } | null {
+  if (process.env.NEXT_PUBLIC_TEST_BYPASS_ENABLED !== "true") return null;
+  if (process.env.NODE_ENV === "production") return null;
+  if (typeof document === "undefined") return null;
+
+  const cookies = document.cookie.split(";").reduce(
+    (acc, c) => {
+      const [k, ...v] = c.trim().split("=");
+      acc[k] = v.join("=");
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+
+  if (!cookies["__test_bypass"] || !cookies["__test_user"]) return null;
+
+  try {
+    const parsed = JSON.parse(decodeURIComponent(cookies["__test_user"]));
+    const role = (cookies["__test_user_role"] || "student") as AppProfile["role"];
+    return {
+      user: {
+        id: parsed.id,
+        email: parsed.email ?? `${parsed.id}@test.local`,
+        aud: "authenticated",
+        app_metadata: {},
+        user_metadata: {},
+        created_at: "",
+      } as User,
+      profile: {
+        role,
+        status: "approved",
+        fullName: [parsed.firstName, parsed.lastName].filter(Boolean).join(" ") || null,
+        avatarUrl: null,
+        email: parsed.email ?? `${parsed.id}@test.local`,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AppAuthState>({
     user: null,
@@ -65,6 +108,18 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // 테스트 바이패스: E2E 브라우저 테스트 환경에서는 Supabase 세션 대신 쿠키 사용
+    const testUser = getTestBypassUser();
+    if (testUser) {
+      setState({
+        user: testUser.user,
+        profile: testUser.profile,
+        isLoaded: true,
+        isSignedIn: true,
+      });
+      return;
+    }
+
     const supabase = createSupabaseClient();
 
     // 초기 세션 확인

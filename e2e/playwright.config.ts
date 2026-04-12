@@ -79,6 +79,7 @@ export default defineConfig({
     env: {
       ...process.env,
       NODE_ENV: "test",
+      NEXT_PUBLIC_TEST_BYPASS_ENABLED: "true",
       ...loadEnvTest(),
     },
   },

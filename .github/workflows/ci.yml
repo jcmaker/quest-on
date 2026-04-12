@@ -95,6 +95,7 @@ jobs:
           CLERK_SECRET_KEY: sk_test_dummy
           TEST_BYPASS_SECRET: e2e-test-bypass-token-2024
           INTERNAL_API_SECRET: test-internal-api-secret-ci
+          NEXT_PUBLIC_TEST_BYPASS_ENABLED: "true"
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
@@ -137,6 +138,7 @@ jobs:
           CLERK_SECRET_KEY: sk_test_dummy
           TEST_BYPASS_SECRET: e2e-test-bypass-token-2024
           INTERNAL_API_SECRET: test-internal-api-secret-ci
+          NEXT_PUBLIC_TEST_BYPASS_ENABLED: "true"
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
