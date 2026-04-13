@@ -46,7 +46,7 @@ test.describe("Student Sessions — GET /api/student/sessions", () => {
   test("student gets graded session with score data", async ({
     studentRequest,
   }) => {
-    const exam = await seedExam({ status: "running" });
+    const exam = await seedExam({ status: "running", grades_released: true });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: new Date().toISOString(),

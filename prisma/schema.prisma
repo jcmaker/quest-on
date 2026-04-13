@@ -63,6 +63,7 @@ model exams {
   assignment_prompt      String? // 과제 설명/프롬프트
   initial_state          Json?                  @default("{}") // Instructor template: starter code, initial ERD, etc.
   canvas_config          Json?                  @default("{}") // Canvas config: { secondaryCanvas, layout, codeEnabled, erdEnabled }
+  grades_released        Boolean?               @default(false) // 성적 공개 여부 (채점 확정)
   ai_events              ai_events[]
   exam_nodes             exam_nodes[]
   exam_material_chunks   exam_material_chunks[]

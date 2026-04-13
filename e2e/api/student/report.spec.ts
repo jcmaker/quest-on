@@ -17,7 +17,7 @@ test.describe("Student Report — GET /api/student/session/[sessionId]/report", 
     studentRequest,
   }) => {
     const now = new Date().toISOString();
-    const exam = await seedExam({ status: "running" });
+    const exam = await seedExam({ status: "running", grades_released: true });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: now,

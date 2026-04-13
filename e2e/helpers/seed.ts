@@ -32,6 +32,7 @@ interface SeedExamOverrides {
   close_at?: string | null;
   allow_draft_in_waiting?: boolean;
   allow_chat_in_waiting?: boolean;
+  grades_released?: boolean;
 }
 
 export async function seedExam(overrides: SeedExamOverrides = {}) {
@@ -78,6 +79,7 @@ export async function seedExam(overrides: SeedExamOverrides = {}) {
     close_at: overrides.close_at ?? null,
     allow_draft_in_waiting: overrides.allow_draft_in_waiting ?? false,
     allow_chat_in_waiting: overrides.allow_chat_in_waiting ?? false,
+    grades_released: overrides.grades_released ?? false,
   };
 
   const { error } = await supabase.from("exams").insert(data);
