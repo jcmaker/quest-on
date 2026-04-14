@@ -14,9 +14,14 @@ interface CopyMessageButtonProps {
 export function CopyMessageButton({ text, className }: CopyMessageButtonProps) {
   const [copied, setCopied] = useState(false);
 
+  const INTERNAL_COPY_MARKER_START = "\u200B\u{E0001}\u200B";
+  const INTERNAL_COPY_MARKER_END = "\u200B\u{E0002}\u200B";
+
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(
+        INTERNAL_COPY_MARKER_START + text + INTERNAL_COPY_MARKER_END
+      );
       setCopied(true);
       toast.success("복사되었습니다.", { id: "copy-message" });
       setTimeout(() => setCopied(false), 2000);
