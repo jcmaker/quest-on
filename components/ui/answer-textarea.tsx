@@ -8,6 +8,7 @@ interface AnswerTextareaProps {
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  onFocus?: () => void;
   onPaste?: (e: {
     pastedText: string;
     pasteStart: number;
@@ -28,6 +29,7 @@ export function AnswerTextarea({
   onChange,
   placeholder = "여기에 상세한 답안을 작성하세요...",
   className = "",
+  onFocus,
   onPaste,
 }: AnswerTextareaProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -158,6 +160,7 @@ export function AnswerTextarea({
       ref={textareaRef}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onFocus={onFocus}
       placeholder={placeholder}
       className={cn(
         "w-full min-h-[300px] sm:min-h-[400px] p-4",

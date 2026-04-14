@@ -471,15 +471,9 @@ export default function ExamPage() {
               <div className="sticky top-0 z-[5] border-b border-border p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-background/95 backdrop-blur-sm shadow-sm">
                 <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
                   <Button
-                    variant={hasOpenedQuestion ? "outline" : "default"}
+                    variant="outline"
                     onClick={() => { setIsQuestionVisible(!isQuestionVisible); if (!hasOpenedQuestion) setHasOpenedQuestion(true); }}
-                    className={cn(
-                      "gap-2 transition-all duration-300 min-h-[44px] px-4",
-                      !hasOpenedQuestion && "animate-pulse ring-2 ring-blue-500/50 ring-offset-2 shadow-lg shadow-blue-200/50 font-semibold",
-                      hasOpenedQuestion
-                        ? "bg-background text-foreground border-border hover:bg-muted"
-                        : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800 dark:hover:bg-blue-900/50"
-                    )}
+                    className="gap-2 transition-all duration-300 min-h-[44px] px-4 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-950/30"
                     aria-label={isQuestionVisible ? "문제 접기" : "문제 보기"}
                     aria-expanded={isQuestionVisible}
                   >
@@ -550,6 +544,7 @@ export default function ExamPage() {
                       lastSaved={autoSave.lastSaved}
                       saveError={autoSave.saveError}
                       saveShortcut={saveShortcut}
+                      onFocus={() => setIsQuestionVisible(false)}
                     />
                   </ResizablePanel>
                 </ResizablePanelGroup>
