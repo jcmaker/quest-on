@@ -562,10 +562,10 @@ export async function initExamSession(data: {
           .maybeSingle();
         session = updatedSession || existingSession;
       } else if (
-        (examStarted || exam.duration === 0 || isNonExamType) &&
+        (examStarted || isNonExamType) &&
         ["waiting", "joined", "not_joined"].includes(currentStatus)
       ) {
-        // 시험이 시작되었거나 무제한(과제형)/비시험 유형이면 바로 in_progress로 전환
+        // 시험이 시작되었거나 비시험 유형이면 바로 in_progress로 전환
         session = await promoteSessionToInProgress(existingSession, now, {
           deviceFingerprint: incomingFingerprint,
         });
@@ -625,12 +625,14 @@ export async function initExamSession(data: {
       // 시작 후 + 무제한(과제형): in_progress (바로 응시 가능)
       // 시작 후 + 제한시간 있음: late_pending (강사 승인 필요)
       let initialStatus: string;
-      if (exam.duration === 0 || isNonExamType) {
-        initialStatus = "in_progress"; // 무제한(과제형)/비시험 유형은 지각 없음
-      } else if (examStarted) {
-        initialStatus = "late_pending"; // 지각 학생: 강사 승인 필요
+      if (isNonExamType) {
+        initialStatus = "in_progress";
+      } else if (!examStarted) {
+        initialStatus = "waiting"; // 시험 미시작: 무제한/유한 모두 대기
+      } else if (exam.duration === 0) {
+        initialStatus = "in_progress"; // 무제한 + 시작됨: 지각 개념 없음, 바로 입장
       } else {
-        initialStatus = "waiting"; // 정상 대기
+        initialStatus = "late_pending"; // 유한 + 시작 후 입장: 강사 승인 필요
       }
 
       // Upsert session (race-safe: uses UNIQUE(exam_id, student_id) constraint)

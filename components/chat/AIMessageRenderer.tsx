@@ -223,7 +223,7 @@ const AIMessageRenderer: React.FC<AIMessageRendererProps> = ({
 
               // 수평선
               hr: (): React.ReactElement => (
-                <hr className="border-border my-0 mt-0 mb-0 [&+*]:mt-0" />
+                <hr className="border-border !mt-3 mb-3" />
               ),
 
               // 취소선 스타일링 (물결표 오작동 방지)

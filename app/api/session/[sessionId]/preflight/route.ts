@@ -105,8 +105,8 @@ export async function POST(
         return errorJson("INTERNAL_ERROR", "Failed to accept preflight", 500);
       }
       reconciledSession = updatedSession;
-    } else if (isExamStarted(exam.status, exam.started_at, nowTime) || exam.duration === 0 || (exam.type && exam.type !== "exam")) {
-      // 시험이 이미 시작되었거나, 무제한(과제형)/비시험 유형인 경우 바로 in_progress로 전환
+    } else if (isExamStarted(exam.status, exam.started_at, nowTime) || (exam.type && exam.type !== "exam")) {
+      // 시험이 이미 시작되었거나, 비시험 유형인 경우 바로 in_progress로 전환
       reconciledSession = await promoteSessionToInProgress(session, now, {
         preflightAcceptedAt: now,
       });
