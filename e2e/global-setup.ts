@@ -175,19 +175,6 @@ async function applyMigrations() {
     console.warn("[global-setup] create_exam_with_node migration check failed:", err);
   }
 
-  // Migration: ensure error_logs has payload and user_id columns
-  if (!process.env.CI) {
-    try {
-      execSync(
-        `docker exec supabase_db_quest-on psql -U postgres -d postgres -c "ALTER TABLE IF EXISTS error_logs ADD COLUMN IF NOT EXISTS payload JSONB DEFAULT '{}'; ALTER TABLE IF EXISTS error_logs ADD COLUMN IF NOT EXISTS user_id TEXT;"`,
-        { stdio: "pipe" }
-      );
-      execSync("docker kill --signal=SIGUSR1 supabase_rest_quest-on", { stdio: "pipe" });
-    } catch (err) {
-      console.warn("[global-setup] error_logs migration failed:", err);
-    }
-  }
-
   // Ensure exam-materials storage bucket exists (for upload tests)
   try {
     const { data: buckets } = await supabase.storage.listBuckets();

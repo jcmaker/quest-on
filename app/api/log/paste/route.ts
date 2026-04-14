@@ -73,17 +73,6 @@ export async function POST(request: Request) {
         path: "/api/log/paste",
         additionalData: { sessionId, examCode, questionId },
       });
-      // Fallback: attempt to record in error_logs so the failure is traceable
-      try {
-        await supabase.from("error_logs").insert({
-          level: "error",
-          message: insertError.message,
-          payload: { sessionId, examCode, questionId, timestamp: timestamp.toISOString() },
-          path: "/api/log/paste",
-        });
-      } catch {
-        // Last resort already logged above
-      }
     }
 
     return successJson();
