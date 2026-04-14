@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -324,37 +324,7 @@ export default function ExamPage() {
   };
 
   if (session.isSubmitted) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col">
-        <ExamHeader examCode={examCode} duration={exam.duration} currentStep="exam" user={profile ? { avatarUrl: profile.avatarUrl, fullName: profile.fullName, email: profile.email } : null} />
-        <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
-          <Card data-testid="exam-submitted-state" className="max-w-2xl w-full shadow-xl border-0">
-            <CardHeader className="text-center space-y-4 pb-6">
-              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-green-500/10 rounded-full flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12 text-green-600 dark:text-green-400" aria-hidden="true" />
-              </div>
-              <CardTitle className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">답안이 성공적으로 제출되었습니다!</CardTitle>
-              <CardDescription className="text-sm sm:text-base">수고하셨습니다. 시험이 종료되었습니다.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="text-center space-y-4">
-                <p className="text-sm sm:text-base text-muted-foreground">
-                  제출이 완료되었습니다. AI가 답안을 채점하고 있으며, 보통 1~2분 내에 완료됩니다.
-                </p>
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                  <Link href={`/student/report/${sessionId}`}>
-                    <Button className="min-h-[52px] px-8 text-base sm:text-lg font-semibold" size="lg">리포트 확인하기</Button>
-                  </Link>
-                  <Button variant="outline" onClick={() => router.push("/student")} className="min-h-[52px] px-6 text-sm sm:text-base" size="lg">
-                    학생 대시보드로 돌아가기
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
+    return <SubmittedScreen examCode={examCode} duration={exam.duration} profile={profile} router={router} />;
   }
 
   if (session.showPreflight) {
@@ -585,5 +555,55 @@ export default function ExamPage() {
         submitErrorMessage={submission.submitErrorMessage}
       />
     </SidebarProvider>
+  );
+}
+
+function SubmittedScreen({
+  examCode,
+  duration,
+  profile,
+  router,
+}: {
+  examCode: string;
+  duration: number;
+  profile: { avatarUrl?: string | null; fullName?: string | null; email?: string | null } | null;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const [countdown, setCountdown] = useState(5);
+
+  useEffect(() => {
+    if (countdown <= 0) {
+      router.push("/student");
+      return;
+    }
+    const timer = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, router]);
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <ExamHeader examCode={examCode} duration={duration} currentStep="exam" user={profile ? { avatarUrl: profile.avatarUrl, fullName: profile.fullName, email: profile.email ?? undefined } : null} />
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
+        <Card data-testid="exam-submitted-state" className="max-w-2xl w-full shadow-xl border-0">
+          <CardHeader className="text-center space-y-4 pb-6">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 bg-green-500/10 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-10 h-10 sm:w-12 sm:h-12 text-green-600 dark:text-green-400" aria-hidden="true" />
+            </div>
+            <CardTitle className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">답안이 성공적으로 제출되었습니다!</CardTitle>
+            <CardDescription className="text-sm sm:text-base">수고하셨습니다. 시험이 종료되었습니다.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center space-y-4">
+              <p className="text-sm sm:text-base text-muted-foreground">
+                제출이 완료되었습니다. AI가 답안을 채점하고 있으며, 보통 1~2분 내에 완료됩니다.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">{countdown}초</span> 뒤 대시보드로 이동합니다.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }
