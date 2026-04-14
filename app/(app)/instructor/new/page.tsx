@@ -549,7 +549,7 @@ export default function CreateExam() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.instructor.exams() });
-      queryClient.invalidateQueries({ queryKey: ["drive-folder-contents"] });
+      queryClient.refetchQueries({ queryKey: ["drive-folder-contents"], type: "all" });
     },
   });
 
@@ -954,6 +954,7 @@ export default function CreateExam() {
                   <DialogFooter>
                     <Button
                       onClick={() => {
+                        queryClient.refetchQueries({ queryKey: ["drive-folder-contents"], type: "all" });
                         setIsDialogOpen(false);
                         router.push("/instructor");
                       }}

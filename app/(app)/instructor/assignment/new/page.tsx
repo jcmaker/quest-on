@@ -240,7 +240,10 @@ export default function CreateAssignment() {
       }
       return await response.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: qk.instructor.exams() }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: qk.instructor.exams() });
+      queryClient.refetchQueries({ queryKey: ["drive-folder-contents"], type: "all" });
+    },
   });
 
   const isSubmittingRef = useRef(false);
@@ -464,7 +467,11 @@ export default function CreateAssignment() {
                 </div>
               </div>
               <DialogFooter>
-                <Button onClick={() => { setIsDialogOpen(false); router.push("/instructor"); }}>확인</Button>
+                <Button onClick={() => {
+                  queryClient.refetchQueries({ queryKey: ["drive-folder-contents"], type: "all" });
+                  setIsDialogOpen(false);
+                  router.push("/instructor");
+                }}>확인</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
