@@ -7,6 +7,7 @@ import Image from "next/image";
 import { Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { createSupabaseClient } from "@/lib/supabase-client";
 
@@ -110,20 +111,21 @@ export function CustomSignIn() {
                 type="button"
                 variant="outline"
                 className="w-full min-h-[44px]"
-                disabled={!!oauthLoading}
+                disabled
                 onClick={() => handleOAuth("azure")}
               >
-                {oauthLoading === "azure" ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <svg className="w-5 h-5" viewBox="0 0 23 23" fill="none">
-                    <path d="M0 0h11.5v11.5H0V0z" fill="#F25022" />
-                    <path d="M11.5 0H23v11.5H11.5V0z" fill="#7FBA00" />
-                    <path d="M0 11.5h11.5V23H0V11.5z" fill="#00A4EF" />
-                    <path d="M11.5 11.5H23V23H11.5V11.5z" fill="#FFB900" />
-                  </svg>
-                )}
-                <span className="font-medium">Microsoft로 계속하기</span>
+                <svg className="w-5 h-5" viewBox="0 0 23 23" fill="none">
+                  <path d="M0 0h11.5v11.5H0V0z" fill="#F25022" />
+                  <path d="M11.5 0H23v11.5H11.5V0z" fill="#7FBA00" />
+                  <path d="M0 11.5h11.5V23H0V11.5z" fill="#00A4EF" />
+                  <path d="M11.5 11.5H23V23H11.5V11.5z" fill="#FFB900" />
+                </svg>
+                <span className="flex items-center gap-2 font-medium">
+                  Microsoft로 계속하기
+                  <Badge variant="secondary" className="text-[10px]">
+                    준비중
+                  </Badge>
+                </span>
               </Button>
             </div>
 
