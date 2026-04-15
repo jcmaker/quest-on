@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, CheckCircle } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { ReactNode } from "react";
 
 interface GradeHeaderProps {
   studentName: string;
@@ -10,6 +10,7 @@ interface GradeHeaderProps {
   studentNumber?: string;
   school?: string;
   onBackClick?: () => void;
+  questionNavigation?: ReactNode;
 }
 
 export function GradeHeader({
@@ -20,6 +21,7 @@ export function GradeHeader({
   studentNumber,
   school,
   onBackClick,
+  questionNavigation,
 }: GradeHeaderProps) {
   return (
     <div>
@@ -27,9 +29,12 @@ export function GradeHeader({
         <Button
           variant="outline"
           size="sm"
-          onClick={onBackClick || (() => {
-            window.location.href = `/instructor/${examId}`;
-          })}
+          onClick={
+            onBackClick ||
+            (() => {
+              window.location.href = `/instructor/${examId}`;
+            })
+          }
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
           시험으로 돌아가기
@@ -56,9 +61,10 @@ export function GradeHeader({
           </div>
           {overallScore !== null && (
             <p className="text-lg font-semibold mt-2">
-              전체 점수: {overallScore}점
+              전체 평균 점수: {overallScore}점
             </p>
           )}
+          <div className="mt-4">{questionNavigation}</div>
         </div>
       </div>
     </div>

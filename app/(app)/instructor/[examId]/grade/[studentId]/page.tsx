@@ -857,6 +857,14 @@ export default function GradeStudentPage({
               studentNumber={sessionData.student.student_number}
               school={sessionData.student.school}
               onBackClick={handleBackClick}
+              questionNavigation={
+                <QuestionNavigation
+                  questions={sessionData.exam?.questions || []}
+                  selectedQuestionIdx={selectedQuestionIdx}
+                  onSelectQuestion={setSelectedQuestionIdx}
+                  grades={sessionData.grades}
+                />
+              }
             />
           </div>
 
@@ -1028,6 +1036,74 @@ export default function GradeStudentPage({
                           </div>
                         </div>
                       </div>
+
+                      {/* 문항별 상세 정보 */}
+                      {sessionData.exam.questions.length > 0 && (
+                        <div className="mt-6 pt-6 border-t">
+                          <h4 className="text-sm font-semibold mb-3">
+                            문항별 상세 정보
+                          </h4>
+                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {sessionData.exam.questions.map((q, idx) => {
+                              const answerLength =
+                                examStats.answerLengthsByQuestion[idx] || 0;
+                              const questionCount =
+                                examStats.questionsByQuestion[idx] || 0;
+                              const pasteLogs =
+                                examStats.pasteLogsByQuestion[idx];
+                              const hasAnswer = answerLength > 0;
+
+                              return (
+                                <div
+                                  key={q.id}
+                                  className="p-3 rounded-lg border bg-muted/30"
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm font-medium">
+                                      {idx + 1}번 문항
+                                    </span>
+                                  </div>
+                                  <div className="space-y-1 text-xs">
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">
+                                        답안 길이:
+                                      </span>
+                                      <span className="font-medium">
+                                        {hasAnswer
+                                          ? `${answerLength.toLocaleString()}자`
+                                          : "미제출"}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-muted-foreground">
+                                        질문 수:
+                                      </span>
+                                      <span className="font-medium">
+                                        {questionCount}개
+                                      </span>
+                                    </div>
+                                    {pasteLogs && pasteLogs.total > 0 && (
+                                      <div className="flex justify-between">
+                                        <span className="text-muted-foreground">
+                                          붙여넣기:
+                                        </span>
+                                        <span className="font-medium">
+                                          {pasteLogs.total}회
+                                          {pasteLogs.suspicious > 0 && (
+                                            <span className="text-red-600 ml-1">
+                                              (의심 {pasteLogs.suspicious}회)
+                                            </span>
+                                          )}
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {/* 전체 분포에서의 위치 (Bell Curve) */}
                       {(averageStats.averageScore !== null ||
@@ -1643,73 +1719,6 @@ export default function GradeStudentPage({
                         </div>
                       )}
 
-                      {/* 문항별 상세 정보 */}
-                      {sessionData.exam.questions.length > 0 && (
-                        <div className="mt-6 pt-6 border-t">
-                          <h4 className="text-sm font-semibold mb-3">
-                            문항별 상세 정보
-                          </h4>
-                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                            {sessionData.exam.questions.map((q, idx) => {
-                              const answerLength =
-                                examStats.answerLengthsByQuestion[idx] || 0;
-                              const questionCount =
-                                examStats.questionsByQuestion[idx] || 0;
-                              const pasteLogs =
-                                examStats.pasteLogsByQuestion[idx];
-                              const hasAnswer = answerLength > 0;
-
-                              return (
-                                <div
-                                  key={q.id}
-                                  className="p-3 rounded-lg border bg-muted/30"
-                                >
-                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm font-medium">
-                                      {idx + 1}번 문항
-                                    </span>
-                                  </div>
-                                  <div className="space-y-1 text-xs">
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">
-                                        답안 길이:
-                                      </span>
-                                      <span className="font-medium">
-                                        {hasAnswer
-                                          ? `${answerLength.toLocaleString()}자`
-                                          : "미제출"}
-                                      </span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                      <span className="text-muted-foreground">
-                                        질문 수:
-                                      </span>
-                                      <span className="font-medium">
-                                        {questionCount}개
-                                      </span>
-                                    </div>
-                                    {pasteLogs && pasteLogs.total > 0 && (
-                                      <div className="flex justify-between">
-                                        <span className="text-muted-foreground">
-                                          붙여넣기:
-                                        </span>
-                                        <span className="font-medium">
-                                          {pasteLogs.total}회
-                                          {pasteLogs.suspicious > 0 && (
-                                            <span className="text-red-600 ml-1">
-                                              (의심 {pasteLogs.suspicious}회)
-                                            </span>
-                                          )}
-                                        </span>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
                     </CardContent>
                   </CollapsibleContent>
                 </Card>
@@ -1723,13 +1732,6 @@ export default function GradeStudentPage({
               loading={summaryLoading}
             />
           </div>
-
-          <QuestionNavigation
-            questions={sessionData.exam?.questions || []}
-            selectedQuestionIdx={selectedQuestionIdx}
-            onSelectQuestion={setSelectedQuestionIdx}
-            grades={sessionData.grades}
-          />
 
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2 space-y-6">
