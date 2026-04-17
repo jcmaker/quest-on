@@ -346,40 +346,6 @@ export default function GradeStudentPage({
     }
   }, [sessionData]);
 
-  // Query for AI Summary (optimizing GPT API call)
-  const { data: generatedSummary, isLoading: summaryLoading } = useQuery({
-    queryKey: qk.session.summary(sessionData?.session?.id),
-    queryFn: async ({ signal }) => {
-      const response = await fetch("/api/instructor/generate-summary", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sessionId: sessionData?.session?.id,
-        }),
-        signal, // AbortSignal 연결
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to generate summary");
-      }
-
-      const data = await response.json();
-      return data.summary as SummaryData;
-    },
-    // Only fetch if session loaded AND no summary in DB
-    enabled: !!sessionData?.session?.id && !sessionData?.session?.ai_summary,
-    staleTime: 1000 * 60 * 5, // 5 minutes cache
-  });
-
-  // Effect to update summary when generated
-  useEffect(() => {
-    if (generatedSummary) {
-      setOverallSummary(generatedSummary);
-    }
-  }, [generatedSummary]);
-
   // Mutation for saving grades (optimistic update)
   const saveGradeMutation = useMutation({
     mutationFn: async (questionIdx: number) => {
@@ -1729,7 +1695,7 @@ export default function GradeStudentPage({
           <div className="mb-6">
             <AIOverallSummary
               summary={overallSummary}
-              loading={summaryLoading}
+              loading={isRegrading && !overallSummary}
             />
           </div>
 
