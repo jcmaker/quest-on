@@ -59,6 +59,7 @@ export default function CreateAssignment() {
     code: "",
     deadline: "",
     materials: [] as File[],
+    language: "ko" as "ko" | "en",
   });
   const [disabledFiles, setDisabledFiles] = useState<Set<number>>(new Set());
   const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
@@ -212,6 +213,7 @@ export default function CreateAssignment() {
           examTitle: examData.title,
           questions: questions.filter((q) => !isQuestionContentEmpty(q.text)).map((q) => ({ text: q.text, type: q.type })),
           ...(params?.topics ? { topics: params.topics } : {}),
+          language: examData.language,
         }),
       });
       if (!response.ok) throw new Error("루브릭 생성에 실패했습니다.");
@@ -297,6 +299,7 @@ export default function CreateAssignment() {
         chat_weight: chatWeight,
         materials: materialUrls,
         materials_text: materialsText,
+        language: examData.language,
         status: "draft",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -353,6 +356,8 @@ export default function CreateAssignment() {
                 onDeadlineChange={(value) => { setExamData((prev) => ({ ...prev, deadline: value })); setFieldErrors((prev) => ({ ...prev, deadline: undefined })); }}
                 titleError={fieldErrors.title}
                 deadlineError={fieldErrors.deadline}
+                language={examData.language}
+                onLanguageChange={(value) => setExamData((prev) => ({ ...prev, language: value }))}
               />
             </div>
 
@@ -376,6 +381,7 @@ export default function CreateAssignment() {
               examTitle={examData.title}
               extractedTexts={fileUpload.extractedTexts}
               extractionStatus={fileUpload.fileStatus}
+              language={examData.language}
               onQuestionsAccepted={(newQuestions) => {
                 const newIds = newQuestions.map((q) => q.id);
                 setQuestions((prev) => {
@@ -402,6 +408,7 @@ export default function CreateAssignment() {
                 highlightedIds={highlightedQuestionIds}
                 defaultOpen={false}
                 mode="assignment"
+                language={examData.language}
                 onUpdate={(id, field, value) => { updateQuestion(id, field, value); setFieldErrors((prev) => ({ ...prev, questions: undefined })); }}
                 onRemove={(id) => setQuestions((prev) => prev.filter((q) => q.id !== id))}
                 onAdd={() => { addQuestion(); setFieldErrors((prev) => ({ ...prev, questions: undefined })); }}

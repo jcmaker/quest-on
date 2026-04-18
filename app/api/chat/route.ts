@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOpenAI, AI_MODEL } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { searchRelevantMaterials } from "@/lib/material-search";
-import { type RubricItem, buildStudentChatSystemPrompt } from "@/lib/prompts";
+import { type RubricItem, type PromptLanguage, buildStudentChatSystemPrompt } from "@/lib/prompts";
 import { handleCorsPreFlight } from "@/lib/cors";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, chatRequestSchema } from "@/lib/validations";
@@ -362,6 +362,7 @@ async function handleChatLogic(params: {
   currentQuestionAiContext?: string;
   skipIncrementUsedClarifications?: boolean;
   userId?: string;
+  language?: PromptLanguage;
 }): Promise<{
   aiResponse: string;
   responseId: string;
@@ -382,6 +383,7 @@ async function handleChatLogic(params: {
     currentQuestionAiContext,
     skipIncrementUsedClarifications,
     userId,
+    language,
   } = params;
   const warnings: string[] = [];
 
@@ -452,6 +454,7 @@ async function handleChatLogic(params: {
     currentQuestionAiContext,
     relevantMaterialsText: rag.relevantMaterialsText,
     rubric,
+    language,
   }) + ragWarning;
 
   const { response: aiResponse, responseId, tokensUsed, usage } = await getAIResponse(
@@ -618,6 +621,19 @@ export async function POST(request: NextRequest) {
         skipIncrementUsedClarifications,
       } = await resolveTempSession({ sessionId, examId, studentId });
 
+      // exam 언어 조회 (영문 프롬프트 분기용). 실패/미조회 시 기본값 ko 유지.
+      let tempExamLanguage: PromptLanguage = "ko";
+      if (examId) {
+        const { data: examLangRow } = await getSupabase()
+          .from("exams")
+          .select("language")
+          .eq("id", examId)
+          .maybeSingle();
+        if (examLangRow?.language === "en") {
+          tempExamLanguage = "en";
+        }
+      }
+
       // temp_로 남아있는 경우(DB 적재 불가): AI 응답은 하되 DB 저장은 생략
       if (!actualSessionId || actualSessionId.startsWith("temp_")) {
         const rag = await getRagContext({
@@ -643,6 +659,7 @@ export async function POST(request: NextRequest) {
           currentQuestionText,
           currentQuestionAiContext,
           relevantMaterialsText: rag.relevantMaterialsText,
+          language: tempExamLanguage,
         }) + tempRagWarning;
 
         const previousResponseId = null;
@@ -678,6 +695,7 @@ export async function POST(request: NextRequest) {
         currentQuestionAiContext,
         skipIncrementUsedClarifications,
         userId: user?.id ?? studentId,
+        language: tempExamLanguage,
       });
 
       return successJson({
@@ -721,7 +739,7 @@ export async function POST(request: NextRequest) {
 
     const { data: exam, error: examError } = await getSupabase()
       .from("exams")
-      .select("id, code, title, rubric, questions, materials_text, chat_weight, status")
+      .select("id, code, title, rubric, questions, materials_text, chat_weight, status, language")
       .eq("id", session.exam_id)
       .single();
 
@@ -755,6 +773,8 @@ export async function POST(request: NextRequest) {
         }>)
       : undefined;
 
+    const examLanguage: PromptLanguage = exam.language === "en" ? "en" : "ko";
+
     const { aiResponse, warnings } = await handleChatLogic({
       sessionId,
       message,
@@ -768,6 +788,7 @@ export async function POST(request: NextRequest) {
       currentQuestionText,
       currentQuestionAiContext,
       userId: user?.id ?? session.student_id,
+      language: examLanguage,
     });
 
     return successJson({

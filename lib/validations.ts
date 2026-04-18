@@ -219,6 +219,7 @@ export const createExamSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   parent_folder_id: z.string().nullable().optional(),
+  language: z.enum(["ko", "en"]).optional(),
 });
 
 export const updateExamSchema = z.object({
@@ -245,6 +246,7 @@ export const updateExamSchema = z.object({
     allow_draft_in_waiting: z.boolean().optional(),
     allow_chat_in_waiting: z.boolean().optional(),
     updated_at: z.string().optional(),
+    language: z.enum(["ko", "en"]).optional(),
   }).strict(),
 });
 
@@ -348,6 +350,7 @@ export const createAssignmentSchema = z.object({
   type: taskTypeSchema.optional(),
   initial_state: initialStateSchema.optional(),
   canvas_config: canvasConfigSchema.optional(),
+  language: z.enum(["ko", "en"]).optional(),
 });
 
 export const saveCanvasSchema = z.object({
@@ -405,6 +408,7 @@ export const generateRubricSchema = z.object({
     type: z.string().optional(),
   })).min(1, "At least one question is required"),
   topics: z.string().max(500).optional(),
+  language: z.enum(["ko", "en"]).default("ko"),
 });
 
 // AI Case Question Generation
@@ -420,6 +424,7 @@ export const generateCaseQuestionsSchema = z.object({
     fileName: z.string(),
   })).optional(),
   existingRubric: z.array(examRubricItemSchema).optional(),
+  language: z.enum(["ko", "en"]).default("ko"),
 });
 
 // AI Case Question Adjustment
@@ -431,6 +436,7 @@ export const adjustCaseQuestionSchema = z.object({
     content: z.string(),
   })).optional(),
   examTitle: z.string().optional(),
+  language: z.enum(["ko", "en"]).default("ko"),
 });
 
 // Helper to validate and return typed result or error response

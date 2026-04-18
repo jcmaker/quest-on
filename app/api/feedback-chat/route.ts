@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     // 시험 정보 조회
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, code, questions, rubric")
+      .select("id, title, code, questions, rubric, language")
       .eq("code", examCode)
       .single();
 
@@ -92,6 +92,8 @@ export async function POST(request: NextRequest) {
         )
         .join("\n") || "";
 
+    const examLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
+
     const systemPrompt = buildFeedbackChatSystemPrompt({
       examTitle: exam.title,
       currentQuestionText: currentQuestion?.text,
@@ -99,6 +101,7 @@ export async function POST(request: NextRequest) {
       rubric: exam?.rubric as RubricItem[] | undefined,
       conversationContext,
       message,
+      language: examLanguage,
     });
 
     const verifiedStudentId = user.id;

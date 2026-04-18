@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeForPrompt, buildUnifiedGradingUserPrompt } from "@/lib/prompts";
+import {
+  sanitizeForPrompt,
+  buildUnifiedGradingUserPrompt,
+  buildStudentChatSystemPrompt,
+  buildUnifiedGradingSystemPrompt,
+  buildAssignmentChatSystemPrompt,
+} from "@/lib/prompts";
 
 describe("sanitizeForPrompt", () => {
   it("strips <<< and >>> delimiters", () => {
@@ -120,5 +126,57 @@ describe("buildUnifiedGradingUserPrompt", () => {
     const answerIdx = result.indexOf("**학생의 최종 답안:**");
     const answerContent = result.slice(answerIdx);
     expect(answerContent.length).toBeLessThan(7000);
+  });
+});
+
+describe("Prompt language branching (en)", () => {
+  it("buildStudentChatSystemPrompt returns English prompt when language=en", () => {
+    const ko = buildStudentChatSystemPrompt({
+      examTitle: "Sample",
+      currentQuestionText: "Question body",
+    });
+    const en = buildStudentChatSystemPrompt({
+      examTitle: "Sample",
+      currentQuestionText: "Question body",
+      language: "en",
+    });
+    expect(en).not.toBe(ko);
+    expect(en).toMatch(/You are/i);
+    expect(en).toContain("Role:");
+    // Korean markers from the Korean variant must not leak into English output
+    expect(en).not.toContain("역할(Role):");
+    expect(en).not.toContain("규칙(Rules):");
+  });
+
+  it("buildUnifiedGradingSystemPrompt returns English prompt when language=en", () => {
+    const en = buildUnifiedGradingSystemPrompt({
+      rubricText: "Rubric body",
+      chatWeightPercent: 50,
+      language: "en",
+    });
+    expect(en).toMatch(/You are/i);
+    expect(en).toMatch(/Rubric body/);
+    // Korean rubric header should be absent
+    expect(en).not.toContain("평가 루브릭");
+  });
+
+  it("buildAssignmentChatSystemPrompt returns English prompt when language=en", () => {
+    const en = buildAssignmentChatSystemPrompt({
+      examTitle: "Assignment",
+      assignmentPrompt: "Do the thing",
+      language: "en",
+    });
+    expect(en).toMatch(/You are/i);
+    // Korean role/rules headers should not leak into English output
+    expect(en).not.toContain("역할(Role):");
+  });
+
+  it("buildStudentChatSystemPrompt defaults to Korean when language is omitted (regression)", () => {
+    const ko = buildStudentChatSystemPrompt({
+      examTitle: "시험",
+      currentQuestionText: "문제",
+    });
+    expect(ko).toContain("역할(Role):");
+    expect(ko).not.toMatch(/^You are/m);
   });
 });

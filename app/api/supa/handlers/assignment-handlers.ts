@@ -47,6 +47,7 @@ export async function createAssignment(data: {
   type?: string;
   initial_state?: Record<string, unknown>;
   canvas_config?: Record<string, unknown>;
+  language?: "ko" | "en";
 }) {
   try {
     const user = await currentUser();
@@ -182,16 +183,21 @@ export async function createAssignment(data: {
 
     // Update type, deadline, and hybrid workspace fields (RPC doesn't know about these)
     const assignmentType = data.type || "assignment";
+    const updatePayload: Record<string, unknown> = {
+      type: assignmentType,
+      deadline: examData.deadline,
+      close_at: data.close_at || examData.deadline,
+      assignment_prompt: examData.assignment_prompt,
+      initial_state: data.initial_state || {},
+      canvas_config: data.canvas_config || {},
+    };
+    // 'ko'는 DB 기본값으로 처리되므로, 'en'인 경우에만 명시적으로 반영
+    if (data.language === "en") {
+      updatePayload.language = "en";
+    }
     await getSupabase()
       .from("exams")
-      .update({
-        type: assignmentType,
-        deadline: examData.deadline,
-        close_at: data.close_at || examData.deadline,
-        assignment_prompt: examData.assignment_prompt,
-        initial_state: data.initial_state || {},
-        canvas_config: data.canvas_config || {},
-      })
+      .update(updatePayload)
       .eq("id", exam.id);
 
     // RAG dispatch

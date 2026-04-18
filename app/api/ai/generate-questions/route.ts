@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
       topics: data.topics,
       customInstructions: data.customInstructions,
       materialsContext,
+      language: data.language,
     });
 
     // Call OpenAI with extended timeout for generation

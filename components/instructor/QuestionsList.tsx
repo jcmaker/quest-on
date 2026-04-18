@@ -26,6 +26,7 @@ interface QuestionsListProps {
   highlightedIds?: Set<string>;
   defaultOpen?: boolean;
   mode?: "exam" | "assignment";
+  language?: "ko" | "en";
   onUpdate: (
     id: string,
     field: keyof Question,
@@ -41,7 +42,7 @@ interface AdjustResult {
   explanation: string;
 }
 
-export function QuestionsList({ questions, highlightedIds, defaultOpen = true, mode = "exam", onUpdate, onRemove, onAdd, onMove }: QuestionsListProps) {
+export function QuestionsList({ questions, highlightedIds, defaultOpen = true, mode = "exam", language, onUpdate, onRemove, onAdd, onMove }: QuestionsListProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [adjustHistories, setAdjustHistories] = useState<Map<string, ChatMessage[]>>(new Map());
@@ -67,7 +68,12 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, m
       const res = await fetch("/api/ai/adjust-question", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: sheetQuestionId, questionText: question.text, instruction }),
+        body: JSON.stringify({
+          questionId: sheetQuestionId,
+          questionText: question.text,
+          instruction,
+          ...(language ? { language } : {}),
+        }),
       });
       if (!res.ok) throw new Error("Failed");
       const data = await res.json() as AdjustResult;

@@ -64,6 +64,7 @@ export default function CreateExam() {
     duration: 60,
     code: "",
     materials: [] as File[],
+    language: "ko" as "ko" | "en",
   });
   const [disabledFiles, setDisabledFiles] = useState<Set<number>>(new Set());
   const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
@@ -483,6 +484,7 @@ export default function CreateExam() {
             .map((q) => ({ text: q.text, type: q.type })),
           ...(params?.topics ? { topics: params.topics } : {}),
           ...(params?.customInstructions ? { customInstructions: params.customInstructions } : {}),
+          language: examData.language,
         }),
       });
 
@@ -640,6 +642,7 @@ export default function CreateExam() {
         chat_weight: chatWeight, // 채점 가중치 (null = 기본값 50)
         materials: materialUrls, // Array of file URLs
         materials_text: materialsText, // 추출된 텍스트 배열
+        language: examData.language, // AI 시스템 프롬프트 언어 (ko | en)
         status: "draft", // Start as draft
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -752,6 +755,10 @@ export default function CreateExam() {
                 setExamData((prev) => ({ ...prev, duration: value }))
               }
               onGenerateCode={generateExamCode}
+              language={examData.language}
+              onLanguageChange={(value) =>
+                setExamData((prev) => ({ ...prev, language: value }))
+              }
             />
 
             <FileUpload
@@ -774,6 +781,7 @@ export default function CreateExam() {
               examTitle={examData.title}
               extractedTexts={fileUpload.extractedTexts}
               extractionStatus={fileUpload.fileStatus}
+              language={examData.language}
               onQuestionsAccepted={(newQuestions) => {
                 const newIds = newQuestions.map((q) => q.id);
                 setQuestions((prev) => {
@@ -819,6 +827,7 @@ export default function CreateExam() {
                 questions={questions}
                 highlightedIds={highlightedQuestionIds}
                 defaultOpen={false}
+                language={examData.language}
                 onUpdate={updateQuestion}
                 onRemove={(id) => {
                   setQuestions((prev) => prev.filter((q) => q.id !== id));

@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
     // Fetch exam info for context
     const { data: exam } = await getSupabase()
       .from("exams")
-      .select("id, title, code, questions, rubric, materials_text, assignment_prompt, type")
+      .select("id, title, code, questions, rubric, materials_text, assignment_prompt, type, language")
       .eq("id", examId)
       .single();
 
@@ -114,6 +114,7 @@ export async function POST(request: NextRequest) {
     }]);
 
     // Build system prompt
+    const examLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
     const systemPrompt = buildAssignmentChatSystemPrompt({
       examTitle: exam.title,
       assignmentPrompt: exam.assignment_prompt,
@@ -126,6 +127,7 @@ export async function POST(request: NextRequest) {
             .join("\n\n")
         : undefined,
       workspaceState: workspaceState ?? undefined,
+      language: examLanguage,
     });
 
     // Fetch previous response_id for conversation chaining

@@ -59,6 +59,7 @@ export async function createExam(data: {
   created_at: string;
   updated_at: string;
   parent_folder_id?: string | null;
+  language?: "ko" | "en";
 }) {
   try {
     // Get current user
@@ -199,6 +200,22 @@ export async function createExam(data: {
 
     const exam = rpcResult.exam;
     const examNode = rpcResult.exam_node;
+
+    // 언어 설정 (기본값 'ko'는 DB 기본값으로 처리되므로, 'en'인 경우에만 업데이트)
+    if (data.language === "en") {
+      const { error: languageError } = await getSupabase()
+        .from("exams")
+        .update({ language: "en" })
+        .eq("id", exam.id);
+
+      if (languageError) {
+        logError("[createExam] Failed to set exam language", languageError, {
+          path: "/api/supa/exam-handlers",
+        });
+      } else {
+        exam.language = "en";
+      }
+    }
 
     // RAG: materials_text가 있으면 비동기 RAG 처리 디스패치
     if (
@@ -373,7 +390,7 @@ export async function getExamById(data: { id: string }) {
     const { data: exam, error } = await getSupabase()
       .from("exams")
       .select(
-        "id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, type, deadline, assignment_prompt, grades_released"
+        "id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, type, deadline, assignment_prompt, grades_released, language"
       )
       .eq("id", data.id)
       .eq("instructor_id", user.id) // Only allow instructors to view their own exams
@@ -475,7 +492,7 @@ export async function copyExam(data: { exam_id: string }) {
     // Get the original exam
     const { data: originalExam, error: examError } = await getSupabase()
       .from("exams")
-      .select("id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at")
+      .select("id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at, language")
       .eq("id", data.exam_id)
       .eq("instructor_id", user.id)
       .single();
@@ -554,6 +571,7 @@ export async function copyExam(data: { exam_id: string }) {
       instructor_id: user.id,
       created_at: now,
       updated_at: now,
+      language: (originalExam as { language?: string }).language === "en" ? "en" : "ko",
     };
 
     // Create the new exam

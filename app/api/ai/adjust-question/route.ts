@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
       questionText: data.questionText,
       instruction: data.instruction,
       examTitle: data.examTitle,
+      language: data.language,
     };
     const cached = await getCachedAiResponse("adjust-question", cacheInput);
     if (cached) {
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
       instruction: data.instruction,
       conversationHistory: data.conversationHistory,
       examTitle: data.examTitle,
+      language: data.language,
     });
 
     // Call OpenAI

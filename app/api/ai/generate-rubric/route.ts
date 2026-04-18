@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const data = validation.data;
 
     // 캐시 확인: 동일 입력에 대한 이전 결과 재사용
-    const cacheInput = { examTitle: data.examTitle, questions: data.questions, topics: data.topics };
+    const cacheInput = { examTitle: data.examTitle, questions: data.questions, topics: data.topics, language: data.language };
     const cached = await getCachedAiResponse("generate-rubric", cacheInput);
     if (cached) {
       try {
@@ -55,6 +55,7 @@ export async function POST(request: NextRequest) {
       examTitle: data.examTitle,
       questions: data.questions,
       topics: data.topics,
+      language: data.language,
     });
 
     const tracked = await callTrackedChatCompletion(

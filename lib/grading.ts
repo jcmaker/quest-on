@@ -114,7 +114,7 @@ export async function autoGradeSession(
   // 2. 시험 정보 가져오기 (루브릭 포함)
   const { data: exam, error: examError } = await supabase
     .from("exams")
-    .select("id, title, questions, rubric, chat_weight, type")
+    .select("id, title, questions, rubric, chat_weight, type, language")
     .eq("id", session.exam_id)
     .single();
 
@@ -191,6 +191,7 @@ export async function autoGradeSession(
   const chatWeight = Math.max(0, Math.min(100, exam.chat_weight ?? 50));
 
   const isAssignment = exam.type === "assignment";
+  const examLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
   const failedGradeResults: FailedGradeResult[] = [];
 
   // For assignments, only grade q_idx=0 (single document)
@@ -252,6 +253,7 @@ export async function autoGradeSession(
           language: typeof ws?.language === "string" ? ws.language : undefined,
           erd: wsErd?.nodes?.length ? { nodes: wsErd.nodes, edges: wsErd.edges || [] } : undefined,
         } : null,
+        language: examLanguage,
       });
 
       // Use ai_summary instead of raw chat history (token reduction + prompt injection prevention)
@@ -265,6 +267,7 @@ export async function autoGradeSession(
         rubricText,
         rubricScoresSchema,
         chatWeightPercent: chatWeight,
+        language: examLanguage,
       });
 
       userPrompt = buildUnifiedGradingUserPrompt({
@@ -719,7 +722,7 @@ export async function autoGradeSession(
 async function generateSummary(
   sessionId: string,
   studentId: string,
-  exam: { id: string; title: string; rubric?: unknown },
+  exam: { id: string; title: string; rubric?: unknown; language?: string },
   questions: Array<{ idx: number; prompt?: string; ai_context?: string }>,
   submissionsByQuestion: Record<number, { answer: string }>,
   messagesByQuestion: Record<number, Array<{ role: string; content: string }>>,
@@ -793,7 +796,8 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
       })
       .join("\n---\n\n");
 
-    const systemPrompt = buildSummaryEvaluationSystemPrompt();
+    const summaryLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
+    const systemPrompt = buildSummaryEvaluationSystemPrompt(summaryLanguage);
 
     const userPrompt = `
       시험 제목: ${exam.title}

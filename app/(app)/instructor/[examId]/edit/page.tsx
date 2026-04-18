@@ -45,6 +45,7 @@ export default function EditExam({
     code: "",
     materials: [] as File[],
     existingMaterials: [] as string[], // 기존에 업로드된 파일 URL들
+    language: "ko" as "ko" | "en",
   });
   const [disabledFiles, setDisabledFiles] = useState<Set<number>>(new Set());
   const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
@@ -87,6 +88,7 @@ export default function EditExam({
           code: exam.code || "",
           materials: [],
           existingMaterials: exam.materials || [],
+          language: (exam.language === "en" ? "en" : "ko") as "ko" | "en",
         });
         setQuestions(exam.questions || []);
         setRubric(
@@ -506,6 +508,7 @@ export default function EditExam({
         chat_weight: chatWeight,
         materials: materialUrls,
         materials_text: materialsText,
+        language: examData.language,
         updated_at: new Date().toISOString(),
       };
 
@@ -605,6 +608,10 @@ export default function EditExam({
             setExamData((prev) => ({ ...prev, duration: value }))
           }
           onGenerateCode={generateExamCode}
+          language={examData.language}
+          onLanguageChange={(value) =>
+            setExamData((prev) => ({ ...prev, language: value }))
+          }
         />
 
         <FileUpload
@@ -633,6 +640,7 @@ export default function EditExam({
           examTitle={examData.title}
           extractedTexts={fileUpload.extractedTexts}
           extractionStatus={fileUpload.fileStatus}
+          language={examData.language}
           onQuestionsAccepted={(newQuestions) => {
             setQuestions((prev) => [
               ...prev,
@@ -658,6 +666,7 @@ export default function EditExam({
         <QuestionsList
           questions={questions}
           defaultOpen={true}
+          language={examData.language}
           onUpdate={updateQuestion}
           onRemove={(id) => {
             setQuestions((prev) => prev.filter((q) => q.id !== id));

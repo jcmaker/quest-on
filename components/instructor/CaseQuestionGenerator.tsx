@@ -50,6 +50,7 @@ interface CaseQuestionGeneratorProps {
   >;
   onQuestionsAccepted: (questions: Question[]) => void;
   onRubricSuggested: (rubric: RubricItem[]) => void;
+  language?: "ko" | "en";
 }
 
 function getStageMessage(
@@ -77,6 +78,7 @@ export function CaseQuestionGenerator({
   extractionStatus,
   onQuestionsAccepted,
   onRubricSuggested,
+  language,
 }: CaseQuestionGeneratorProps) {
   const [isOpen, setIsOpen] = useState(true);
   const difficulty = "basic" as const;
@@ -143,6 +145,7 @@ export function CaseQuestionGenerator({
       questionCount,
       customInstructions: freeformPrompt || undefined,
       materialsText: materialsText.length > 0 ? materialsText : undefined,
+      language,
     };
   };
 
@@ -421,6 +424,7 @@ export function CaseQuestionGenerator({
                             q.id,
                             instruction,
                             examTitle,
+                            language,
                           );
                         }}
                         onApplyAdjustment={(newText) =>

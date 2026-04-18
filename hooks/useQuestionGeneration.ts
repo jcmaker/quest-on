@@ -34,6 +34,7 @@ interface GenerateParams {
   topics?: string;
   customInstructions?: string;
   materialsText?: Array<{ url: string; text: string; fileName: string }>;
+  language?: "ko" | "en";
 }
 
 interface AdjustResult {
@@ -62,7 +63,8 @@ export interface UseQuestionGenerationReturn {
   adjustQuestion(
     questionId: string,
     instruction: string,
-    examTitle?: string
+    examTitle?: string,
+    language?: "ko" | "en"
   ): Promise<AdjustResult | null>;
   applyAdjustment(questionId: string, newText: string): void;
   getAdjustHistory(questionId: string): ChatMessage[];
@@ -321,7 +323,8 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
     async (
       questionId: string,
       instruction: string,
-      examTitle?: string
+      examTitle?: string,
+      language?: "ko" | "en"
     ): Promise<AdjustResult | null> => {
       setAdjustingId(questionId);
       setError(null);
@@ -346,6 +349,7 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
               .filter((m) => !m.questionText)
               .map((m) => ({ role: m.role, content: m.content })),
             examTitle,
+            ...(language ? { language } : {}),
           }),
         });
 

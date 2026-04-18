@@ -164,6 +164,7 @@ export async function POST(request: NextRequest) {
             topics: data.topics,
             customInstructions: data.customInstructions,
             materialsContext,
+            language: data.language,
           })
         );
 

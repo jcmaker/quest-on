@@ -21,6 +21,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { HelpCircle, AlertTriangle, CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
@@ -39,6 +46,8 @@ interface ExamInfoFormProps {
   onDeadlineChange?: (value: string) => void;
   titleError?: string;
   deadlineError?: string;
+  language?: "ko" | "en";
+  onLanguageChange?: (value: "ko" | "en") => void;
 }
 
 export function ExamInfoForm({
@@ -54,6 +63,8 @@ export function ExamInfoForm({
   onDeadlineChange,
   titleError,
   deadlineError,
+  language = "ko",
+  onLanguageChange,
 }: ExamInfoFormProps) {
   const [durationInput, setDurationInput] = useState<string>(
     duration === 0 ? "" : duration.toString()
@@ -201,6 +212,37 @@ export function ExamInfoForm({
             </div>
           </div>
         </div>
+
+        {onLanguageChange && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="language">AI 언어</Label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="max-w-xs">
+                    AI 튜터 및 자동 채점이 사용할 언어를 선택합니다. 학생 UI에는
+                    영향이 없습니다. 영어 강의/시험이면 English를 선택하세요.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            <Select
+              value={language}
+              onValueChange={(v) => onLanguageChange(v as "ko" | "en")}
+            >
+              <SelectTrigger id="language" className="w-full max-w-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ko">한국어 (기본)</SelectItem>
+                <SelectItem value="en">English</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
 
         {mode === "assignment" ? (
           <div className="space-y-2">
