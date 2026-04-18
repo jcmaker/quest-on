@@ -804,8 +804,8 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
       })
       .join("\n---\n\n");
 
-    const summaryLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
-    const systemPrompt = buildSummaryEvaluationSystemPrompt(summaryLanguage);
+    // Fix: summary is always in Korean regardless of exam language
+    const systemPrompt = buildSummaryEvaluationSystemPrompt("ko");
 
     const userPrompt = `
       시험 제목: ${exam.title}
@@ -854,6 +854,14 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
         "keyQuotes": ["인용구1", "인용구2"]
       }`;
 
+    // Deterministic seed from sessionId — stabilizes summary draws across calls
+    // (without seed, temperature 1.0 default caused re-grade to frequently produce
+    // noticeably better/worse summaries from identical inputs)
+    const summarySeed = Array.from(sessionId).reduce(
+      (h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0,
+      0
+    );
+
     const tracked = await callTrackedChatCompletion(
       () =>
         getOpenAI().chat.completions.create({
@@ -863,6 +871,8 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
             { role: "user", content: userPrompt },
           ],
           response_format: { type: "json_object" },
+          temperature: 0.3,
+          seed: summarySeed,
         }),
       {
         feature: "auto_grading_summary",
@@ -880,7 +890,13 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
       },
       {
         // P1-3: Dynamic timeout based on remaining Vercel budget (default 120s, capped to budget)
-        timeoutMs: timeBudgetMs ? Math.min(timeBudgetMs - 5_000, 120_000) : 120_000,
+        // Fix: guarantee minimum 60s for summary quality; cap at 120s
+        timeoutMs: (() => {
+          const SUMMARY_MIN_TIMEOUT_MS = 60_000;
+          const SUMMARY_MAX_TIMEOUT_MS = 120_000;
+          if (!timeBudgetMs) return SUMMARY_MAX_TIMEOUT_MS;
+          return Math.max(SUMMARY_MIN_TIMEOUT_MS, Math.min(timeBudgetMs - 5_000, SUMMARY_MAX_TIMEOUT_MS));
+        })(),
         metadataBuilder: (result) =>
           buildAiTextMetadata({
             outputText:
