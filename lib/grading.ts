@@ -854,6 +854,14 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
         "keyQuotes": ["인용구1", "인용구2"]
       }`;
 
+    // Deterministic seed from sessionId — stabilizes summary draws across calls
+    // (without seed, temperature 1.0 default caused re-grade to frequently produce
+    // noticeably better/worse summaries from identical inputs)
+    const summarySeed = Array.from(sessionId).reduce(
+      (h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0,
+      0
+    );
+
     const tracked = await callTrackedChatCompletion(
       () =>
         getOpenAI().chat.completions.create({
@@ -863,6 +871,8 @@ ${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
             { role: "user", content: userPrompt },
           ],
           response_format: { type: "json_object" },
+          temperature: 0.3,
+          seed: summarySeed,
         }),
       {
         feature: "auto_grading_summary",
