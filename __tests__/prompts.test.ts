@@ -199,4 +199,19 @@ describe("Prompt language branching (en)", () => {
     expect(ko).toMatch(/20\s*[~～-]\s*40\s*점/);
     expect(ko).toContain("감점");
   });
+
+  it("buildUnifiedGradingSystemPrompt English version forces overall_comment to Korean (regression)", () => {
+    const en = buildUnifiedGradingSystemPrompt({
+      rubricText: "Rubric body",
+      chatWeightPercent: 50,
+      language: "en",
+    });
+    // overall_comment must instruct Korean regardless of language=en
+    expect(en).toContain("한국어");
+    expect(en).toContain("overall_comment");
+    // The note at the top of English prompt
+    expect(en).toMatch(/overall_comment.*must always be written in Korean/i);
+    // The inline instruction in JSON response format
+    expect(en).toContain("IN KOREAN");
+  });
 });

@@ -599,8 +599,7 @@ export default function AssignmentGradePage({
           </div>
 
           {/* AI 재채점 경고 배너 */}
-          {(sessionData.overallScore === null ||
-            sessionData.overallScore === 0) &&
+          {sessionData.overallScore === null &&
             Object.keys(sessionData.grades).length === 0 && (
               <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">

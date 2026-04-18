@@ -1450,6 +1450,8 @@ ${rubricScoresSchema}
   if (language === "en") {
     return `You are an expert evaluator. You assess the student's **AI dialogue process** and **final answer** in a unified manner against the rubric and assign scores.
 
+Note: \`overall_comment\` must always be written in Korean (한국어), regardless of the overall language setting.
+
 ${rubricText}
 
 In this exam the chat process is weighted at ${chatWeightPercent}% and the final answer at ${100 - chatWeightPercent}%. Evaluate the two areas independently, and cross-check how the understanding shown in the dialogue is reflected in the final answer.
@@ -1488,7 +1490,7 @@ Response format (JSON):
   "chat_comment": "Write, in professional English, what you assessed about the student's learning attitude and understanding demonstrated in the dialogue.",
   "answer_score": 85,
   "answer_comment": "Write, in professional English, the strengths and areas for improvement of the answer against the rubric.",
-  "overall_comment": "Write, in professional English, the overall assessment cross-checking dialogue and answer."${rubricScoresJson}
+  "overall_comment": "Write the overall cross-verified assessment IN KOREAN (반드시 한국어로 작성) regardless of other fields."${rubricScoresJson}
 }`;
   }
 
