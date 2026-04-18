@@ -441,8 +441,13 @@ export async function autoGradeSession(
     const rubricScores: Record<string, number> = {};
     if (parsed.rubric_scores && typeof parsed.rubric_scores === "object" && rubricItems.length > 0) {
       const rawRubricScores = parsed.rubric_scores;
+      const normalizedRubric: Record<string, number> = {};
+      for (const [k, v] of Object.entries(rawRubricScores)) {
+        if (typeof k === "string") normalizedRubric[k.trim().toLowerCase()] = v as number;
+      }
       rubricItems.forEach((item) => {
-        const score = rawRubricScores[item.evaluationArea];
+        const normalizedKey = item.evaluationArea.trim().toLowerCase();
+        const score = normalizedRubric[normalizedKey];
         if (typeof score === "number" && Number.isFinite(score)) {
           rubricScores[item.evaluationArea] = Math.max(0, Math.min(5, Math.round(score)));
         }
@@ -455,8 +460,8 @@ export async function autoGradeSession(
 
     let scoreClamped = false;
 
-    if (questionMessages.length > 0) {
-      const chatClamp = clampAndLog(parsed.chat_score || 0, { sessionId, qIdx, field: "chat_score" });
+    if (questionMessages.length > 0 && hasChatScore) {
+      const chatClamp = clampAndLog(parsed.chat_score ?? 0, { sessionId, qIdx, field: "chat_score" });
       scoreClamped = scoreClamped || chatClamp.clamped;
       const adjustedChatScore = Math.max(0, Math.min(100, chatClamp.value - aiDependencyAssessment.penaltyApplied));
       stageGrading.chat = {
@@ -467,8 +472,8 @@ export async function autoGradeSession(
       };
     }
 
-    if (submission.answer) {
-      const answerClamp = clampAndLog(parsed.answer_score || 0, { sessionId, qIdx, field: "answer_score" });
+    if (submission.answer?.trim() && hasAnswerScore) {
+      const answerClamp = clampAndLog(parsed.answer_score ?? 0, { sessionId, qIdx, field: "answer_score" });
       scoreClamped = scoreClamped || answerClamp.clamped;
       stageGrading.answer = {
         score: answerClamp.value,
@@ -545,19 +550,22 @@ export async function autoGradeSession(
   const failedQuestions: number[] = [];
   gradeResults.forEach((r, idx) => {
     if (r.status === "rejected") {
-      failedQuestions.push(idx);
+      const question = questionsToGrade[idx];
+      const qIdx = question?.idx ?? idx;
       const reasonMsg = r.reason instanceof Error ? r.reason.message : String(r.reason);
-      failedGradeResults.push({ q_idx: idx, failureReason: reasonMsg });
+      failedQuestions.push(qIdx);
+      failedGradeResults.push({ q_idx: qIdx, failureReason: reasonMsg });
       logError("[AUTO_GRADE] Question grading failed", r.reason, {
         path: "lib/grading.ts",
         additionalData: { sessionId, failureReason: reasonMsg },
       });
     } else if (r.status === "fulfilled" && r.value === null && timedOut) {
       // Question was null due to timeout (not because it had no submission)
-      const question = questions[idx];
-      const submission = submissionsByQuestion[question?.idx];
+      const question = questionsToGrade[idx];
+      if (!question) return;
+      const submission = submissionsByQuestion[question.idx];
       if (submission) {
-        failedQuestions.push(idx);
+        failedQuestions.push(question.idx);
         failedGradeResults.push({ q_idx: question.idx, failureReason: "Timed out" });
       }
     }

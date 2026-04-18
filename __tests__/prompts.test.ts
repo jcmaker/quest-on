@@ -179,4 +179,24 @@ describe("Prompt language branching (en)", () => {
     expect(ko).toContain("역할(Role):");
     expect(ko).not.toMatch(/^You are/m);
   });
+
+  it("buildUnifiedGradingSystemPrompt no longer contains the 40-point hard cap (regression)", () => {
+    // Regression: "최대 40점" hard cap caused 40-point bias — replaced with relative deduction guide
+    const ko = buildUnifiedGradingSystemPrompt({
+      rubricText: "루브릭",
+      chatWeightPercent: 50,
+    });
+    expect(ko).not.toMatch(/최대\s*40\s*점/);
+    expect(ko).not.toMatch(/chat_score를 엄격히 제한하세요\s*\(최대/);
+  });
+
+  it("buildUnifiedGradingSystemPrompt uses relative deduction guide for low AI utilization (regression)", () => {
+    const ko = buildUnifiedGradingSystemPrompt({
+      rubricText: "루브릭",
+      chatWeightPercent: 50,
+    });
+    // New guidance uses relative deduction (20~40) rather than hard cap
+    expect(ko).toMatch(/20\s*[~～-]\s*40\s*점/);
+    expect(ko).toContain("감점");
+  });
 });

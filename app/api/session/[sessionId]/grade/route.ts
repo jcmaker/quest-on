@@ -342,13 +342,17 @@ export async function GET(
     // Calculate overall score if grades exist
     let overallScore = null;
     if (grades && grades.length > 0) {
-      const totalScore = (grades as Array<Record<string, unknown>>).reduce(
-        (sum: number, grade: Record<string, unknown>) =>
-          sum + ((grade.score as number) || 0),
-        0
+      const validGrades = (grades as Array<Record<string, unknown>>).filter(
+        (g) => g.grade_type !== "ai_failed"
       );
-      const questionCount = exam.questions?.length || 1;
-      overallScore = Math.round(totalScore / questionCount);
+      if (validGrades.length > 0) {
+        const totalScore = validGrades.reduce(
+          (sum: number, grade: Record<string, unknown>) =>
+            sum + ((grade.score as number) || 0),
+          0
+        );
+        overallScore = Math.round(totalScore / validGrades.length);
+      }
     }
 
     const responseData = {
@@ -598,10 +602,14 @@ export async function PUT(
     if (!forceRegrade) {
       const { data: existingGrades } = await supabase
         .from("grades")
-        .select("q_idx")
+        .select("q_idx, grade_type")
         .eq("session_id", sessionId);
 
-      if (existingGrades && existingGrades.length > 0) {
+      const hasSuccessfulGrade = existingGrades?.some(
+        (g) => g.grade_type !== "ai_failed"
+      );
+
+      if (hasSuccessfulGrade) {
         return successJson({ message: "Already graded", skipped: true });
       }
     }
