@@ -4,7 +4,7 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import {
   buildUnifiedGradingSystemPrompt,
   buildUnifiedGradingUserPrompt,
-  buildSummaryEvaluationSystemPrompt,
+  buildSummaryGenerationSystemPrompt,
   buildAssignmentGradingPrompt,
 } from "@/lib/prompts";
 import { logError } from "@/lib/logger";
@@ -527,44 +527,37 @@ async function generateQuestionSummary(params: {
       .filter(Boolean)
       .join("\n");
 
-    const systemPrompt = buildSummaryEvaluationSystemPrompt(examLanguage);
+    const systemPrompt = buildSummaryGenerationSystemPrompt(examLanguage);
 
     const userPrompt = `
 시험 제목: ${examTitle}
 ${rubricText}
-[학생의 답안, 채팅 대화 기록 및 점수 — 단일 문제]
+문제 ${question.idx + 1}: ${question.prompt || ""}
 
-문제 ${question.idx + 1}:
-${question.prompt || ""}
-
-답안:
+학생 답안:
 ${submission?.answer || "답안 없음"}
 ${chatHistoryText}
 
 점수: ${grade.score}점
 ${stageInfoText}
-${aiDependencyText}
 
-위 단일 문제에 대한 학생의 수행을 분석하여 다음 JSON 형식으로 응답하세요:
+위 문제에 대한 학생의 수행을 상세하게 분석하여 요약 평가해주세요.
+다음 항목을 반드시 포함해야 합니다:
+1. 전체적인 평가 (긍정적/부정적/중립적)
+2. 종합 의견: 답안과 대화의 논리성, 정확성, 이해도를 종합적으로 분석.
+3. 주요 강점 (3가지 이내): 구체적인 예시를 들어 설명하세요.
+4. 개선이 필요한 점 (3가지 이내): 구체적인 개선 방안과 함께 제시하세요.
+5. 핵심 인용구 (2가지): 평가에 결정적인 영향을 미친 문장을 원문 그대로 인용하세요.
+
+JSON 형식으로 응답해주세요:
 {
   "sentiment": "positive" | "negative" | "neutral",
-  "summary": "이 문제에 대한 종합 의견",
+  "summary": "상세한 종합 의견 텍스트",
   "strengths": ["강점1", "강점2", ...],
   "weaknesses": ["개선점1", "개선점2", ...],
   "keyQuotes": ["인용구1", "인용구2"]
 }
-제약:
-- strengths/weaknesses는 각각 최대 3개
-- keyQuotes는 원문 그대로 2개 (의역 금지). 감점 트리거가 있다면 그 문장을 반드시 포함.
-- JSON 객체 1개만 출력 (추가 텍스트/마크다운 금지).
 `;
-
-    // Deterministic seed per (session, q_idx) — stable across re-grades
-    const seedSource = `${sessionId}:${question.idx}`;
-    const summarySeed = Array.from(seedSource).reduce(
-      (h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0,
-      0
-    );
 
     const tracked = await callTrackedChatCompletion(
       () =>
@@ -576,8 +569,6 @@ ${aiDependencyText}
               { role: "user", content: userPrompt },
             ],
             response_format: { type: "json_object" },
-            temperature: 0.3,
-            seed: summarySeed,
           },
           { signal }
         ),
@@ -948,6 +939,7 @@ export async function autoGradeSession(
         session.student_id,
         exam,
         questions,
+        submissionsByQuestion,
         grades,
         remainingMs
       );
@@ -1025,106 +1017,87 @@ async function generateSummary(
   studentId: string,
   exam: { id: string; title: string; rubric?: unknown; language?: string },
   questions: Array<{ idx: number; prompt?: string; ai_context?: string }>,
+  submissionsByQuestion: Record<number, { answer: string }>,
   grades: GradeResult[],
   timeBudgetMs?: number
 ): Promise<SummaryData | null> {
   const supabase = getSupabaseServer();
+  const examLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
   try {
     const rubricText =
       exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
-        ? `
-[평가 루브릭]
-${exam.rubric
-  .map(
-    (
-      item: {
-        evaluationArea: string;
-        detailedCriteria: string;
-      },
-      index: number
-    ) =>
-      `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
-  )
-  .join("\n")}
-`
+        ? examLanguage === "en"
+          ? `\n[Evaluation rubric]\n${(exam.rubric as Array<{ evaluationArea: string; detailedCriteria: string }>)
+              .map((r) => `- ${r.evaluationArea}: ${r.detailedCriteria}`)
+              .join("\n")}\n`
+          : `\n[평가 루브릭]\n${(exam.rubric as Array<{ evaluationArea: string; detailedCriteria: string }>)
+              .map((r, i) => `${i + 1}. ${r.evaluationArea}\n   - 세부 기준: ${r.detailedCriteria}`)
+              .join("\n")}\n`
         : "";
 
-    // Lightened: per-question summaries + scores (no raw chat history)
+    // Use actual answers (same as /api/instructor/generate-summary)
     const questionsText = questions
       .map((q) => {
         const qIdx = q.idx;
+        const submission = submissionsByQuestion[qIdx];
         const grade = grades.find((g) => g.q_idx === qIdx);
-        const qs = grade?.ai_summary;
-        const aiDepText = grade?.stage_grading?.chat?.ai_dependency
-          ? `\nAI 활용/의존 신호:\n${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
-          : "";
+        const answer = submission?.answer || (examLanguage === "en" ? "No answer" : "답안 없음");
+        const scoreText = grade ? (examLanguage === "en" ? `Score: ${grade.score}` : `점수: ${grade.score}점`) : "";
 
-        if (!grade) {
-          return `문제 ${qIdx + 1}:\n${q.prompt || ""}\n(채점 결과 없음)`;
-        }
-
-        const stageInfo = [
-          grade.stage_grading?.chat ? `채팅 단계 점수: ${grade.stage_grading.chat.score}점` : "",
-          grade.stage_grading?.answer ? `답안 단계 점수: ${grade.stage_grading.answer.score}점` : "",
-        ]
-          .filter(Boolean)
-          .join("\n");
-
-        const summaryBlock = qs
-          ? `
-[문제별 요약 (sentiment=${qs.sentiment})]
-${qs.summary}
-
-강점: ${qs.strengths.join(" / ") || "없음"}
-개선점: ${qs.weaknesses.join(" / ") || "없음"}
-${qs.keyQuotes && qs.keyQuotes.length > 0 ? `핵심 인용: ${qs.keyQuotes.map((q) => `"${q}"`).join(" / ")}` : ""}`
-          : "\n(문제별 요약 없음)";
-
-        return `문제 ${qIdx + 1}:
-${q.prompt || ""}
-
-점수: ${grade.score}점
-${stageInfo}
-${aiDepText}
-${summaryBlock}
-`;
+        return examLanguage === "en"
+          ? `Question ${qIdx + 1}: ${q.prompt || ""}\nStudent answer: ${answer}\n${scoreText}`
+          : `문제 ${qIdx + 1}: ${q.prompt || ""}\n학생 답안: ${answer}\n${scoreText}`;
       })
-      .join("\n---\n\n");
+      .join("\n\n");
 
-    // Summary is always in Korean regardless of exam language
-    const systemPrompt = buildSummaryEvaluationSystemPrompt("ko");
+    const systemPrompt = buildSummaryGenerationSystemPrompt(examLanguage);
 
-    const userPrompt = `
-      시험 제목: ${exam.title}
+    const userPrompt =
+      examLanguage === "en"
+        ? `
+Exam title: ${exam.title}
+${rubricText}
+[Student's answers]
+${questionsText}
 
-      ${rubricText}
+Based on the content above, analyze the student's overall performance in depth and produce a summary evaluation.
+You must include all of the following:
+1. Overall sentiment (positive / negative / neutral)
+2. Comprehensive opinion: an in-depth analysis of the student's answers as a whole. Consider logical coherence, accuracy, and creativity together.
+3. Key strengths (up to 3): illustrate each with specific examples.
+4. Areas for improvement (up to 3): present each with a concrete improvement suggestion.
+5. Key quotes (exactly 2): pick two sentences or phrases from the student's answers that most decisively influenced the evaluation.
 
-      [문제별 요약과 점수 — 전체 채팅 기록은 이미 문제별 요약에 반영됨]
-      ${questionsText}
+Respond in JSON:
+{
+  "sentiment": "positive" | "negative" | "neutral",
+  "summary": "detailed comprehensive opinion text",
+  "strengths": ["strength 1", "strength 2", ...],
+  "weaknesses": ["weakness 1", "weakness 2", ...],
+  "keyQuotes": ["quote 1", "quote 2"]
+}`
+        : `
+시험 제목: ${exam.title}
+${rubricText}
+[학생의 답안]
+${questionsText}
 
-      위 문제별 요약들을 종합하여 학생의 전체 수행 능력을 평가하십시오.
+위 내용을 바탕으로 학생의 전체적인 수행 능력을 상세하게 분석하여 요약 평가해주세요.
+다음 항목을 반드시 포함해야 합니다:
+1. 전체적인 평가 (긍정적/부정적/중립적)
+2. 종합 의견: 학생의 답안 전반에 대한 깊이 있는 분석. 논리성, 정확성, 창의성 등을 종합적으로 고려하세요.
+3. 주요 강점 (3가지 이내): 구체적인 예시를 들어 설명하세요.
+4. 개선이 필요한 점 (3가지 이내): 구체적인 개선 방안과 함께 제시하세요.
+5. 핵심 인용구 (2가지): 학생의 답안 중 평가에 결정적인 영향을 미친 문장이나 구절을 원문 그대로 인용하세요.
 
-      다음 항목을 반드시 포함해야 합니다:
-      1. 전체적인 평가 (긍정적/부정적/중립적)
-      2. 종합 의견: 문제별 요약을 통합한 깊이 있는 분석.
-      3. 주요 강점 (3가지 이내)
-      4. 개선이 필요한 점 (3가지 이내)
-      5. 핵심 인용구 (2가지): 문제별 요약에 포함된 인용구 중 가장 결정적인 것을 선택.
-
-      JSON 형식으로 응답해주세요:
-      {
-        "sentiment": "positive" | "negative" | "neutral",
-        "summary": "상세한 종합 의견 텍스트",
-        "strengths": ["강점1", "강점2", ...],
-        "weaknesses": ["약점1", "약점2", ...],
-        "keyQuotes": ["인용구1", "인용구2"]
-      }`;
-
-    const summarySeed = Array.from(sessionId).reduce(
-      (h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0,
-      0
-    );
+JSON 형식으로 응답해주세요:
+{
+  "sentiment": "positive" | "negative" | "neutral",
+  "summary": "상세한 종합 의견 텍스트",
+  "strengths": ["강점1", "강점2", ...],
+  "weaknesses": ["약점1", "약점2", ...],
+  "keyQuotes": ["인용구1", "인용구2"]
+}`;
 
     const tracked = await callTrackedChatCompletion(
       () =>
@@ -1135,8 +1108,6 @@ ${summaryBlock}
             { role: "user", content: userPrompt },
           ],
           response_format: { type: "json_object" },
-          temperature: 0.3,
-          seed: summarySeed,
         }),
       {
         feature: "auto_grading_summary",
