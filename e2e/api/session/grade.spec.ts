@@ -181,11 +181,15 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
-    expect(body.gradesCount).toBeGreaterThanOrEqual(1);
+    expect(body.queued).toBe(true);
 
-    // Verify grades in DB
+    // Grading is async (QStash or in-process). Poll until DB has grades.
+    await expect(async () => {
+      const grades = await getGrades(session.id);
+      expect(grades.length).toBeGreaterThanOrEqual(1);
+    }).toPass({ timeout: 30_000, intervals: [1_000] });
+
     const grades = await getGrades(session.id);
-    expect(grades.length).toBeGreaterThanOrEqual(1);
     for (const g of grades) {
       expect(g.score).toBeGreaterThanOrEqual(0);
       expect(g.score).toBeLessThanOrEqual(100);

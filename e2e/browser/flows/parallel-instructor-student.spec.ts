@@ -44,7 +44,9 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
     const supabase = getTestSupabase();
 
     // ── Step 1: Seed exam (joinable, not yet started) & student profile ──
-    const exam = await seedExam({ status: "joinable" });
+    // grades_released: true — flow asserts overallScore on student report page,
+    // which is gated behind exam.grades_released in the report API.
+    const exam = await seedExam({ status: "joinable", grades_released: true });
     await seedStudentProfile(TEST_STUDENT.id);
 
     // ── Create two independent browser contexts (with baseURL) ──

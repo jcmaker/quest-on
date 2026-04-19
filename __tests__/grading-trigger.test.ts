@@ -92,7 +92,7 @@ describe("triggerGradingIfNeeded", () => {
 
     const result = await triggerGradingIfNeeded("session-1", "feedback");
 
-    expect(result).toEqual({ queued: true });
+    expect(result).toEqual({ queued: true, reason: "in_process" });
     expect(enqueueGradingMock).toHaveBeenCalledTimes(1);
   });
 
@@ -101,7 +101,7 @@ describe("triggerGradingIfNeeded", () => {
 
     const result = await triggerGradingIfNeeded("session-1", "heartbeat");
 
-    expect(result).toEqual({ queued: true });
+    expect(result).toEqual({ queued: true, reason: "in_process" });
     expect(enqueueGradingMock).toHaveBeenCalledTimes(1);
   });
 
@@ -116,7 +116,7 @@ describe("triggerGradingIfNeeded", () => {
       expect.anything()
     );
     // count is null → (null || 0) === 0 → proceeds to grading
-    expect(result).toEqual({ queued: true });
+    expect(result).toEqual({ queued: true, reason: "in_process" });
   });
 
   it("logs error but continues when session check fails", async () => {
@@ -129,7 +129,7 @@ describe("triggerGradingIfNeeded", () => {
       expect.anything(),
       expect.anything()
     );
-    expect(result).toEqual({ queued: true });
+    expect(result).toEqual({ queued: true, reason: "in_process" });
   });
 
   it("enqueues a retry function that calls autoGradeSession", async () => {
@@ -154,6 +154,6 @@ describe("triggerGradingIfNeeded", () => {
 
     const result = await triggerGradingIfNeeded("session-1", "submit_exam");
 
-    expect(result).toEqual({ queued: true });
+    expect(result).toEqual({ queued: true, reason: "in_process" });
   });
 });

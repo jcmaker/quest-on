@@ -42,6 +42,9 @@ export async function seedStudentExamScenario(
   const exam = await seedExam({
     status: examStatus,
     started_at: examStatus === "running" ? now : null,
+    // Report page only exposes scores when grades are released; mirror that
+    // state for scenarios that pre-seed grades.
+    grades_released: withGrades === true,
   });
 
   await seedStudentProfile("test-student-id");
@@ -133,6 +136,10 @@ export async function seedInstructorGradingScenario(
     started_at: now,
     questions,
     rubric,
+    // Scenario covers instructor grading → student report assertion, which
+    // requires grades to be released so /api/student/session/[id]/report
+    // exposes overallScore.
+    grades_released: true,
   });
 
   const students: Array<{

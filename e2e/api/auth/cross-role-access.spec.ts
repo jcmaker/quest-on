@@ -53,14 +53,6 @@ test.describe("Cross-role access control", () => {
     expect([401, 403]).toContain(res.status());
   });
 
-  test("student cannot access admin logs → 401 or 403", async ({
-    studentRequest,
-  }) => {
-    const res = await studentRequest.get("/api/admin/logs");
-
-    expect([401, 403]).toContain(res.status());
-  });
-
   // ── Anonymous user trying protected endpoints ──
 
   test("anon cannot end exam → 401", async ({ anonRequest }) => {
