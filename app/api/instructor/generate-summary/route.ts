@@ -52,10 +52,9 @@ export async function POST(request: NextRequest) {
       return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
     }
 
-    // Fetch exam (language 포함)
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, questions, rubric, instructor_id, language")
+      .select("id, title, questions, rubric, instructor_id")
       .eq("id", session.exam_id)
       .single();
 
@@ -66,8 +65,6 @@ export async function POST(request: NextRequest) {
     if (exam.instructor_id !== user.id) {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
-
-    const examLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
 
     // Fetch submissions and messages in parallel
     const [{ data: submissions, error: submissionsError }, { data: messages }] =
@@ -116,81 +113,30 @@ export async function POST(request: NextRequest) {
       messagesByQuestion[msg.q_idx].push({ role: msg.role, content: content ?? "" });
     }
 
-    const systemPrompt = buildSummaryGenerationSystemPrompt(examLanguage);
+    const systemPrompt = buildSummaryGenerationSystemPrompt();
 
-    // Construct user prompt (ko/en 분기)
-    let userPrompt: string;
-    if (examLanguage === "en") {
-      const questionsText = (exam.questions as Record<string, unknown>[])
-        .map((q: Record<string, unknown>, i: number) => {
-          const qIdx = (q.idx ?? i) as number;
-          const sub = processedSubmissions.find((s) => s.q_idx === qIdx);
-          const msgs = messagesByQuestion[qIdx] ?? [];
-          const chatText = msgs.length > 0
-            ? `\nChat transcript:\n${msgs.map((m) => `${m.role === "user" ? "Student" : "AI"}: ${m.content}`).join("\n\n")}`
-            : "";
-          return `Question ${i + 1}: ${q.prompt || q.text}\nStudent answer: ${sub ? sub.answer : "No answer"}${chatText}`;
-        })
-        .join("\n\n");
+    const questionsText = (exam.questions as Record<string, unknown>[])
+      .map((q: Record<string, unknown>, i: number) => {
+        const qIdx = (q.idx ?? i) as number;
+        const sub = processedSubmissions.find((s) => s.q_idx === qIdx);
+        const msgs = messagesByQuestion[qIdx] ?? [];
+        const chatText = msgs.length > 0
+          ? `\n\n**학생과 AI의 대화 기록:**\n${msgs.map((m) => `${m.role === "user" ? "학생" : "AI"}: ${m.content}`).join("\n\n")}`
+          : "";
+        return `문제 ${i + 1}: ${q.prompt || q.text}\n학생 답안: ${sub ? sub.answer : "답안 없음"}${chatText}`;
+      })
+      .join("\n\n");
 
-      const rubricText = Array.isArray(exam.rubric)
-        ? exam.rubric
-            .map(
-              (r: Record<string, unknown>) =>
-                `- ${r.evaluationArea}: ${r.detailedCriteria}`
-            )
-            .join("\n")
-        : "No rubric provided";
+    const rubricText = Array.isArray(exam.rubric)
+      ? exam.rubric
+          .map(
+            (r: Record<string, unknown>) =>
+              `- ${r.evaluationArea}: ${r.detailedCriteria}`
+          )
+          .join("\n")
+      : "별도의 루브릭 없음";
 
-      userPrompt = `
-Exam title: ${exam.title}
-
-[Evaluation rubric]
-${rubricText}
-
-[Student's answers]
-${questionsText}
-
-Based on the content above, analyze the student's overall performance in depth and produce a summary evaluation.
-You must include all of the following:
-1. Overall sentiment (positive / negative / neutral)
-2. Comprehensive opinion: an in-depth analysis of the student's answers as a whole. Consider logical coherence, accuracy, and creativity together.
-3. Key strengths (up to 3): illustrate each with specific examples.
-4. Areas for improvement (up to 3): present each with a concrete improvement suggestion.
-5. Key quotes (exactly 2): pick two sentences or phrases from the student's answers that most decisively influenced the evaluation (for highlighting).
-
-Respond in JSON:
-{
-  "sentiment": "positive" | "negative" | "neutral",
-  "summary": "detailed comprehensive opinion text (in English)",
-  "strengths": ["strength 1", "strength 2", ...],
-  "weaknesses": ["weakness 1", "weakness 2", ...],
-  "keyQuotes": ["quote 1", "quote 2"]
-}
-`;
-    } else {
-      const questionsText = (exam.questions as Record<string, unknown>[])
-        .map((q: Record<string, unknown>, i: number) => {
-          const qIdx = (q.idx ?? i) as number;
-          const sub = processedSubmissions.find((s) => s.q_idx === qIdx);
-          const msgs = messagesByQuestion[qIdx] ?? [];
-          const chatText = msgs.length > 0
-            ? `\n\n**학생과 AI의 대화 기록:**\n${msgs.map((m) => `${m.role === "user" ? "학생" : "AI"}: ${m.content}`).join("\n\n")}`
-            : "";
-          return `문제 ${i + 1}: ${q.prompt || q.text}\n학생 답안: ${sub ? sub.answer : "답안 없음"}${chatText}`;
-        })
-        .join("\n\n");
-
-      const rubricText = Array.isArray(exam.rubric)
-        ? exam.rubric
-            .map(
-              (r: Record<string, unknown>) =>
-                `- ${r.evaluationArea}: ${r.detailedCriteria}`
-            )
-            .join("\n")
-        : "별도의 루브릭 없음";
-
-      userPrompt = `
+    const userPrompt = `
 시험 제목: ${exam.title}
 
 [평가 루브릭]
@@ -205,7 +151,7 @@ ${questionsText}
 2. 종합 의견: 학생의 답안 전반에 대한 깊이 있는 분석. 답안의 논리성, 정확성, 창의성 등을 종합적으로 고려하세요.
 3. 주요 강점 (3가지 이내): 구체적인 예시를 들어 설명하세요.
 4. 개선이 필요한 점 (3가지 이내): 구체적인 개선 방안과 함께 제시하세요.
-5. 핵심 인용구 (2가지): 학생의 답안 중 평가에 결정적인 영향을 미친 문장이나 구절을 2개 뽑아주세요. (하이라이트용)
+5. 핵심 인용구 (2가지): 학생의 답안 또는 채팅 대화 중 평가에 결정적인 영향을 미친 문장이나 구절을 2개 뽑아주세요.
 
 JSON 형식으로 응답해주세요:
 {
@@ -216,7 +162,6 @@ JSON 형식으로 응답해주세요:
   "keyQuotes": ["인용구1", "인용구2"]
 }
 `;
-    }
 
     const tracked = await callTrackedChatCompletion(
       () =>
@@ -239,7 +184,6 @@ JSON 형식으로 응답해주세요:
           inputText: [systemPrompt, userPrompt],
           extra: {
             question_count: processedSubmissions.length,
-            language: examLanguage,
           },
         }),
       },

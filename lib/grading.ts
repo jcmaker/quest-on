@@ -161,7 +161,6 @@ async function gradeSingleQuestion(params: {
   rubricItems: ReturnType<typeof resolveQuestionRubric>;
   chatWeight: number;
   isAssignment: boolean;
-  examLanguage: "ko" | "en";
   sessionId: string;
   studentId: string;
   signal: AbortSignal;
@@ -174,7 +173,6 @@ async function gradeSingleQuestion(params: {
     rubricItems,
     chatWeight,
     isAssignment,
-    examLanguage,
     sessionId,
     studentId,
     signal,
@@ -238,7 +236,6 @@ async function gradeSingleQuestion(params: {
               : undefined,
           }
         : null,
-      language: examLanguage,
     });
 
     const aiSummaryText = aiDependencyAssessment.summary
@@ -251,7 +248,6 @@ async function gradeSingleQuestion(params: {
       rubricText,
       rubricScoresSchema,
       chatWeightPercent: chatWeight,
-      language: examLanguage,
     });
 
     userPrompt = buildUnifiedGradingUserPrompt({
@@ -538,7 +534,6 @@ async function generateQuestionSummary(params: {
   rubricItems: ReturnType<typeof resolveQuestionRubric>;
   examTitle: string;
   examId: string;
-  examLanguage: "ko" | "en";
   sessionId: string;
   studentId: string;
   signal: AbortSignal;
@@ -552,7 +547,6 @@ async function generateQuestionSummary(params: {
     rubricItems,
     examTitle,
     examId,
-    examLanguage,
     sessionId,
     studentId,
     signal,
@@ -588,7 +582,7 @@ async function generateQuestionSummary(params: {
       .filter(Boolean)
       .join("\n");
 
-    const systemPrompt = buildSummaryGenerationSystemPrompt(examLanguage);
+    const systemPrompt = buildSummaryGenerationSystemPrompt();
 
     const userPrompt = `
 시험 제목: ${examTitle}
@@ -803,7 +797,6 @@ export async function autoGradeSession(
   const questions = normalizeQuestions(exam.questions);
   const chatWeight = Math.max(0, Math.min(100, exam.chat_weight ?? 50));
   const isAssignment = exam.type === "assignment";
-  const examLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
 
   const questionsToGrade = isAssignment
     ? questions.filter((q) => q.idx === 0)
@@ -891,7 +884,6 @@ export async function autoGradeSession(
       rubricItems,
       chatWeight,
       isAssignment,
-      examLanguage,
       sessionId,
       studentId: session.student_id,
       signal: abortController.signal,
@@ -1019,7 +1011,6 @@ export async function autoGradeSession(
       rubricItems,
       examTitle: exam.title,
       examId: exam.id,
-      examLanguage,
       sessionId,
       studentId: session.student_id,
       signal: summaryPhaseAbort.signal,

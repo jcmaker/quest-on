@@ -148,18 +148,6 @@ describe("Prompt language branching (en)", () => {
     expect(en).not.toContain("규칙(Rules):");
   });
 
-  it("buildUnifiedGradingSystemPrompt returns English prompt when language=en", () => {
-    const en = buildUnifiedGradingSystemPrompt({
-      rubricText: "Rubric body",
-      chatWeightPercent: 50,
-      language: "en",
-    });
-    expect(en).toMatch(/You are/i);
-    expect(en).toMatch(/Rubric body/);
-    // Korean rubric header should be absent
-    expect(en).not.toContain("평가 루브릭");
-  });
-
   it("buildAssignmentChatSystemPrompt returns English prompt when language=en", () => {
     const en = buildAssignmentChatSystemPrompt({
       examTitle: "Assignment",
@@ -200,18 +188,12 @@ describe("Prompt language branching (en)", () => {
     expect(ko).toContain("감점");
   });
 
-  it("buildUnifiedGradingSystemPrompt English version forces overall_comment to Korean (regression)", () => {
-    const en = buildUnifiedGradingSystemPrompt({
-      rubricText: "Rubric body",
+  it("buildUnifiedGradingSystemPrompt always outputs Korean (grading has no language param)", () => {
+    const prompt = buildUnifiedGradingSystemPrompt({
+      rubricText: "루브릭 본문",
       chatWeightPercent: 50,
-      language: "en",
     });
-    // overall_comment must instruct Korean regardless of language=en
-    expect(en).toContain("한국어");
-    expect(en).toContain("overall_comment");
-    // The note at the top of English prompt
-    expect(en).toMatch(/overall_comment.*must always be written in Korean/i);
-    // The inline instruction in JSON response format
-    expect(en).toContain("IN KOREAN");
+    expect(prompt).toContain("평가 루브릭");
+    expect(prompt).toContain("overall_comment");
   });
 });
