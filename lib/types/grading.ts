@@ -54,3 +54,15 @@ export interface SummaryData {
   keyQuotes?: string[];
   aiDependency?: AiDependencySummary | null;
 }
+
+/**
+ * Per-question AI summary stored on grades.ai_summary.
+ * Lighter than SummaryData — scoped to a single question.
+ */
+export interface QuestionSummaryData {
+  sentiment: "positive" | "negative" | "neutral";
+  summary: string;
+  strengths: string[];
+  weaknesses: string[];
+  keyQuotes?: string[];
+}

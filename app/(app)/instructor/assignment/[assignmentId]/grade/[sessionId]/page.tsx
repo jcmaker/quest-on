@@ -39,7 +39,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { StageGrading, StageKey } from "@/lib/types/grading";
+import { StageGrading, StageKey, QuestionSummaryData } from "@/lib/types/grading";
 import { isAiGraded } from "@/lib/grading-utils";
 
 interface Conversation {
@@ -73,6 +73,7 @@ interface Grade {
   score: number;
   comment?: string;
   stage_grading?: StageGrading;
+  ai_summary?: QuestionSummaryData | null;
 }
 
 interface PasteLog {
@@ -696,6 +697,7 @@ export default function AssignmentGradePage({
                 isGraded={!!sessionData.grades[selectedQuestionIdx]}
                 isAiGradedOnly={isCurrentQuestionAiGradedOnly}
                 aiGradedScore={currentAiGradedScore}
+                aiSummary={sessionData.grades[selectedQuestionIdx]?.ai_summary || null}
                 saving={saveGradeMutation.isPending}
                 onStageScoreChange={handleStageScoreChange}
                 onStageCommentChange={handleStageCommentChange}

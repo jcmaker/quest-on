@@ -125,6 +125,7 @@ export async function GET(
           score,
           comment,
           stage_grading,
+          ai_summary,
           grade_type,
           created_at
         `

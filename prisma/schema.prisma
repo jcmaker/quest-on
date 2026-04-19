@@ -89,6 +89,7 @@ model grades {
   created_at    DateTime @default(now()) @db.Timestamptz(6)
   stage_grading Json?
   grade_type    String   @default("manual") // "auto" | "manual"
+  ai_summary    Json?
   sessions      sessions @relation(fields: [session_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([session_id, q_idx])

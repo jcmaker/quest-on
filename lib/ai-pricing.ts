@@ -7,6 +7,7 @@ export type AiFeature =
   | "instructor_chat"
   | "feedback_chat"
   | "auto_grading_question"
+  | "auto_grading_question_summary"
   | "auto_grading_summary"
   | "generate_questions"
   | "generate_questions_stream"
@@ -20,6 +21,7 @@ export const AI_FEATURES: AiFeature[] = [
   "instructor_chat",
   "feedback_chat",
   "auto_grading_question",
+  "auto_grading_question_summary",
   "auto_grading_summary",
   "generate_questions",
   "generate_questions_stream",
