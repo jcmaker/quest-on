@@ -183,6 +183,7 @@ model sessions {
   compressed_session_data  String?
   compression_metadata     Json?         @default("{}")
   ai_summary               Json? // AI 자동 채점 요약 평가
+  grading_progress         Json? // 채점 진행률 ({ status, total, completed, failed, updated_at })
   // Gate 방식 필드 추가
   status                   String?       @default("not_joined") // "not_joined" | "joined" | "waiting" | "in_progress" | "submitted" | "auto_submitted" | "locked"
   started_at               DateTime?     @db.Timestamptz(6) // Gate Start 신호 수신 시간 (InProgress 전환 시)

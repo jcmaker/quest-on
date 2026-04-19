@@ -95,6 +95,7 @@ export interface InstructorStudent {
   isGraded?: boolean;
   gradeType?: GradeStatus;
   aiComment?: string;
+  gradingProgress?: import("./grading").GradingProgress | null;
 }
 
 export type SortOption = "score" | "questionCount" | "answerLength" | "submittedAt";

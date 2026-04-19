@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@/lib/get-current-user";
-import { autoGradeSession } from "@/lib/grading";
+import { triggerGradingIfNeeded } from "@/lib/grading-trigger";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { batchGetUserInfo } from "@/lib/app-users";
@@ -51,7 +51,7 @@ export async function GET(
 
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, exam_id, student_id, submitted_at, used_clarifications, created_at, compressed_session_data, compression_metadata, ai_summary, auto_submitted")
+      .select("id, exam_id, student_id, submitted_at, used_clarifications, created_at, compressed_session_data, compression_metadata, ai_summary, auto_submitted, grading_progress")
       .eq("id", sessionId)
       .single();
 
@@ -367,6 +367,7 @@ export async function GET(
         decompressed: decompressedSessionData,
         ai_summary: session.ai_summary || null, // 서버 사이드 자동 채점 요약 평가
         auto_submitted: session.auto_submitted || false, // 강제 종료로 자동 제출된 세션
+        grading_progress: session.grading_progress || null, // QStash 진행률 상태 ({ status, total, completed, failed })
       },
       exam: exam,
       student: studentInfo,
@@ -376,6 +377,7 @@ export async function GET(
       pasteLogs: pasteLogsByQuestion, // 부정행위 의심 로그 (question_id별로 그룹화)
       overallScore,
       aiSummary: session.ai_summary || null, // 하위 호환성을 위해 유지
+      gradingProgress: session.grading_progress || null, // 실시간 채점 진행률
       ...(decompressionErrors.length > 0 && { decompressionErrors }),
     };
 
@@ -597,9 +599,7 @@ export async function PUT(
     }
 
     // Check if already graded (unless force regrade)
-    // P0-1: forceRegrade no longer deletes existing grades first.
-    // autoGradeSession uses upsert(onConflict: "session_id,q_idx") which safely overwrites.
-    // This prevents permanent grade loss if AI grading fails mid-way.
+    // forceRegrade path uses QStash re-publish; idempotency guard is skipped there.
     if (!forceRegrade) {
       const { data: existingGrades } = await supabase
         .from("grades")
@@ -615,26 +615,57 @@ export async function PUT(
       }
     }
 
-    // Delegate to centralized grading logic (parallel, retry, timeout)
-    const { grades, summary, failedQuestions, timedOut, decompressionWarnings } = await autoGradeSession(sessionId);
+    // Reset grading_progress to queued so the UI shows progress immediately
+    // while QStash (or in-process fallback) picks up the job.
+    await supabase
+      .from("sessions")
+      .update({
+        grading_progress: {
+          status: "queued",
+          total: 0,
+          completed: 0,
+          failed: 0,
+          updated_at: new Date().toISOString(),
+        },
+      })
+      .eq("id", sessionId);
 
-    const response: Record<string, unknown> = {
-      gradesCount: grades.length,
-      grades,
-      summary,
-    };
-
-    if (failedQuestions.length > 0 || timedOut) {
-      response.warning = `${grades.length}/${grades.length + failedQuestions.length} 문항 채점 완료, ${failedQuestions.length}문항 수동 채점 필요`;
-      response.failedQuestions = failedQuestions;
-      response.timedOut = timedOut;
+    // Clear prior grading_status marker so triggerGradingIfNeeded won't short-circuit
+    if (forceRegrade) {
+      const { data: sessForSummary } = await supabase
+        .from("sessions")
+        .select("ai_summary")
+        .eq("id", sessionId)
+        .maybeSingle();
+      const prior = (sessForSummary?.ai_summary as Record<string, unknown> | null) || null;
+      if (prior && "grading_status" in prior) {
+        // Strip grading_status fields but keep any human summary content for reference.
+        const {
+          grading_status: _s,
+          grading_failed_questions: _f,
+          grading_completed_count: _c,
+          grading_total_count: _t,
+          grading_timed_out: _to,
+          grading_failure_details: _d,
+          ...rest
+        } = prior;
+        void _s; void _f; void _c; void _t; void _to; void _d;
+        await supabase
+          .from("sessions")
+          .update({ ai_summary: Object.keys(rest).length > 0 ? rest : null })
+          .eq("id", sessionId);
+      }
     }
 
-    if (decompressionWarnings && decompressionWarnings.length > 0) {
-      response.decompressionWarnings = decompressionWarnings;
-    }
+    // Enqueue via QStash (durable) or in-process fallback
+    const triggerResult = await triggerGradingIfNeeded(sessionId, "manual_retry", {
+      skipIdempotency: true,
+    });
 
-    return successJson(response);
+    return successJson({
+      queued: triggerResult.queued,
+      reason: triggerResult.reason,
+    });
   } catch (error) {
     logError("Grade PUT handler error", error, {
       path: `/api/session/grade`,

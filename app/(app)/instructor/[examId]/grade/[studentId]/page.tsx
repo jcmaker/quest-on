@@ -75,7 +75,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { StageGrading, StageKey, QuestionSummaryData } from "@/lib/types/grading";
+import { StageGrading, StageKey, QuestionSummaryData, GradingProgress } from "@/lib/types/grading";
 import { isAiGraded } from "@/lib/grading-utils";
 
 interface Conversation {
@@ -110,6 +110,7 @@ interface Grade {
   comment?: string;
   stage_grading?: StageGrading;
   ai_summary?: QuestionSummaryData | null;
+  grade_type?: string;
 }
 
 interface PasteLog {
@@ -136,6 +137,7 @@ interface SessionData {
     created_at: string;
     ai_summary?: SummaryData;
     auto_submitted?: boolean;
+    grading_progress?: GradingProgress | null;
   };
   exam: {
     id: string;
@@ -154,6 +156,7 @@ interface SessionData {
   grades: Record<string, Grade>;
   pasteLogs?: Record<string, PasteLog[]>; // question_id별로 그룹화된 paste 로그
   overallScore: number | null;
+  gradingProgress?: GradingProgress | null;
 }
 
 export default function GradeStudentPage({
@@ -249,6 +252,11 @@ export default function GradeStudentPage({
       isSignedIn &&
       (profile?.role as string) === "instructor"
     ),
+    // 채점 큐 진행 중 (queued/running) 에는 5초 폴링으로 진행률 반영
+    refetchInterval: (query) => {
+      const status = query.state.data?.gradingProgress?.status;
+      return status === "queued" || status === "running" ? 5000 : false;
+    },
   });
 
   // AI 재채점 상태
@@ -276,10 +284,10 @@ export default function GradeStudentPage({
       toast.success(
         data.skipped
           ? "이미 채점이 완료되어 있습니다."
-          : `AI 재채점이 완료되었습니다. (${data.gradesCount || 0}개 문제)`
+          : "AI 재채점 요청을 큐에 등록했습니다. 완료되면 자동으로 결과가 표시됩니다."
       );
 
-      // 데이터 리프레시
+      // 데이터 리프레시 — 큐잉 직후부터 폴링으로 진행률 반영
       queryClient.invalidateQueries({
         queryKey: qk.session.grade(resolvedParams.studentId),
       });
@@ -884,41 +892,101 @@ export default function GradeStudentPage({
             </div>
           )}
 
-          {/* AI 재채점 경고 배너 */}
-          {sessionData.overallScore === null &&
-            Object.keys(sessionData.grades).length === 0 && (
-            <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
-                <div>
-                  <p className="font-medium text-amber-800 dark:text-amber-200">
-                    자동 채점 결과가 없습니다
-                  </p>
-                  <p className="text-sm text-amber-600 dark:text-amber-400">
-                    배경 자동 채점이 실패했을 수 있습니다. AI 재채점을 실행해주세요.
-                  </p>
+          {/* AI 채점 상태 배너: 진행 중 / 실패 / 부재 3가지 경우 모두 처리 */}
+          {(() => {
+            const gp = sessionData.gradingProgress;
+            const grades = Object.values(sessionData.grades) as Grade[];
+            const hasAiFailed = grades.some((g) => g.grade_type === "ai_failed");
+            const noGradesAtAll =
+              sessionData.overallScore === null && grades.length === 0;
+            const isQueued = gp?.status === "queued";
+            const isRunning = gp?.status === "running";
+            const isFailed = gp?.status === "failed" || hasAiFailed;
+            const inProgress = isQueued || isRunning;
+
+            // Nothing to surface when grading completed cleanly
+            if (!inProgress && !isFailed && !noGradesAtAll) return null;
+
+            const done = gp ? gp.completed + gp.failed : 0;
+            const total = gp?.total ?? 0;
+            const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+
+            // In-progress state — show progress bar, no retry button
+            if (inProgress) {
+              return (
+                <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 text-blue-600 dark:text-blue-400 shrink-0 animate-spin" />
+                    <div>
+                      <p className="font-medium text-blue-800 dark:text-blue-200">
+                        AI 채점이 진행 중입니다
+                      </p>
+                      <p className="text-sm text-blue-600 dark:text-blue-400">
+                        {total > 0 ? `${done}/${total} 문제 완료` : "채점 대기 중"}
+                        {gp && gp.failed > 0 && (
+                          <span className="ml-2 text-red-600 dark:text-red-400">
+                            (실패 {gp.failed})
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  {total > 0 && (
+                    <div className="h-2 w-full rounded-full bg-blue-100 dark:bg-blue-900/40 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
+              );
+            }
+
+            // Failed or no-grades — show retry button
+            const title = isFailed
+              ? "AI 채점 실패"
+              : "자동 채점 결과가 없습니다";
+            const desc = isFailed
+              ? `일부(또는 전체) 문제의 AI 채점이 실패했습니다.${
+                  total > 0 ? ` (${done}/${total})` : ""
+                } AI 재채점을 실행하거나 수동으로 채점해주세요.`
+              : "배경 자동 채점이 실행되지 않았거나 실패했습니다. AI 재채점을 실행해주세요.";
+
+            return (
+              <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <p className="font-medium text-amber-800 dark:text-amber-200">
+                      {title}
+                    </p>
+                    <p className="text-sm text-amber-600 dark:text-amber-400">
+                      {desc}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  onClick={handleRegrade}
+                  disabled={isRegrading}
+                  variant="outline"
+                  className="border-amber-300 dark:border-amber-700 shrink-0"
+                >
+                  {isRegrading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      큐 등록 중...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      AI 재채점
+                    </>
+                  )}
+                </Button>
               </div>
-              <Button
-                onClick={handleRegrade}
-                disabled={isRegrading}
-                variant="outline"
-                className="border-amber-300 dark:border-amber-700 shrink-0"
-              >
-                {isRegrading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    재채점 중...
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    AI 재채점
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
+            );
+          })()}
 
           {/* 데이터 표시 */}
           {examStats && (

@@ -11,7 +11,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 import { Radio } from "@/components/animate-ui/icons/radio";
 import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
@@ -117,10 +117,41 @@ export function StudentListItem({
                 <div className="text-[11px] text-muted-foreground">가채점</div>
               </>
             ) : student.status === "completed" ? (
-              <div className="flex items-center gap-1.5 justify-end">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">채점 중</span>
-              </div>
+              (() => {
+                const gp = student.gradingProgress;
+                const failedCount = gp?.failed ?? 0;
+                const done = gp ? gp.completed + gp.failed : 0;
+                const total = gp?.total ?? 0;
+                const gradingFailed = gp?.status === "failed";
+
+                if (gradingFailed) {
+                  return (
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                      <span className="text-xs text-red-600 dark:text-red-400">
+                        AI 채점 실패
+                        {total > 0 && ` (${done}/${total})`}
+                      </span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="flex flex-col items-end gap-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        {total > 0 ? `채점 중 ${done}/${total}` : "채점 중"}
+                      </span>
+                    </div>
+                    {failedCount > 0 && (
+                      <span className="text-[11px] text-red-600 dark:text-red-400">
+                        실패 {failedCount}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()
             ) : null}
           </div>
 

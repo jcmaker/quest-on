@@ -66,3 +66,23 @@ export interface QuestionSummaryData {
   weaknesses: string[];
   keyQuotes?: string[];
 }
+
+/**
+ * Real-time grading progress stored on sessions.grading_progress.
+ * Updated by autoGradeSession as each question finishes so the
+ * student report page and instructor grading list can show
+ * "n/m 채점 완료" progress bars instead of an opaque spinner.
+ */
+export type GradingProgressStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed";
+
+export interface GradingProgress {
+  status: GradingProgressStatus;
+  total: number;
+  completed: number;
+  failed: number;
+  updated_at: string;
+}

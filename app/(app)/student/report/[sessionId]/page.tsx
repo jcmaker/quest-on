@@ -22,7 +22,7 @@ import {
   Clock,
 } from "lucide-react";
 import { getScoreColor } from "@/lib/grading-utils";
-import type { StageGrading, SummaryData } from "@/lib/types/grading";
+import type { StageGrading, SummaryData, GradingProgress } from "@/lib/types/grading";
 
 interface Question {
   id: string;
@@ -72,6 +72,7 @@ interface ReportData {
   overallScore: number | null;
   aiSummary?: SummaryData;
   gradesReleased?: boolean;
+  gradingProgress?: GradingProgress | null;
 }
 
 export default function StudentReportPage() {
@@ -169,6 +170,12 @@ export default function StudentReportPage() {
     !gradesNotReleased && (!reportData.grades || Object.keys(reportData.grades).length === 0);
 
   if (gradingInProgress) {
+    const progress = reportData.gradingProgress;
+    const hasProgress = !!progress && progress.total > 0;
+    const done = progress ? progress.completed + progress.failed : 0;
+    const pct = hasProgress ? Math.min(100, Math.round((done / progress!.total) * 100)) : 0;
+    const isFailed = progress?.status === "failed";
+
     return (
       <div className="container mx-auto p-6 max-w-4xl">
         <div className="flex items-center gap-4 mb-8">
@@ -186,14 +193,42 @@ export default function StudentReportPage() {
             <Loader2 className="w-10 h-10 text-primary animate-spin" />
           </div>
           <h2 className="text-xl font-semibold mb-2">
-            AI 채점이 진행 중입니다
+            {isFailed ? "AI 채점 중 일부 문제가 실패했어요" : "AI 채점이 진행 중입니다"}
           </h2>
           <p className="text-muted-foreground mb-1">
-            채점이 완료되면 자동으로 리포트가 표시됩니다.
+            {isFailed
+              ? "강사가 확인하고 재채점을 진행할 예정입니다."
+              : "채점이 완료되면 자동으로 리포트가 표시됩니다."}
           </p>
-          <p className="text-sm text-muted-foreground">
-            보통 1~2분 내에 완료됩니다.
-          </p>
+          {!isFailed && (
+            <p className="text-sm text-muted-foreground">
+              보통 1~2분 내에 완료됩니다.
+            </p>
+          )}
+
+          {hasProgress && (
+            <div className="max-w-md mx-auto mt-8">
+              <div className="flex items-center justify-between text-sm mb-2">
+                <span className="text-muted-foreground">
+                  {done}/{progress!.total} 문제 채점 완료
+                  {progress!.failed > 0 && (
+                    <span className="text-red-600 dark:text-red-400 ml-2">
+                      (실패 {progress!.failed})
+                    </span>
+                  )}
+                </span>
+                <span className="font-medium">{pct}%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full transition-all ${
+                    isFailed ? "bg-red-500" : "bg-primary"
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );

@@ -95,7 +95,8 @@ export async function GET(
         created_at,
         status,
         is_active,
-        last_heartbeat_at
+        last_heartbeat_at,
+        grading_progress
       `,
       )
       .eq("exam_id", examId);
@@ -180,6 +181,7 @@ export async function GET(
           (session.submitted_at ? "submitted" : "in_progress"),
         is_active: session.is_active ?? true,
         last_heartbeat_at: session.last_heartbeat_at,
+        grading_progress: session.grading_progress || null,
       };
     });
 

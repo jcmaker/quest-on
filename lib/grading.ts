@@ -31,7 +31,67 @@ import type {
   SummaryData,
   QuestionSummaryData,
   AiDependencyAssessment,
+  GradingProgress,
+  GradingProgressStatus,
 } from "@/lib/types/grading";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * Merges a patch into sessions.grading_progress atomically in JS.
+ * Best-effort — failures are logged but do not abort grading.
+ */
+async function updateGradingProgress(
+  supabase: SupabaseClient,
+  sessionId: string,
+  patch: Partial<GradingProgress>
+): Promise<void> {
+  try {
+    const { data: current, error: readErr } = await supabase
+      .from("sessions")
+      .select("grading_progress")
+      .eq("id", sessionId)
+      .maybeSingle();
+
+    if (readErr) {
+      logError("[AUTO_GRADE] Failed to read grading_progress", readErr, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId },
+      });
+      return;
+    }
+
+    const existing = (current?.grading_progress as GradingProgress | null) || {
+      status: "queued" as GradingProgressStatus,
+      total: 0,
+      completed: 0,
+      failed: 0,
+      updated_at: new Date().toISOString(),
+    };
+
+    const merged: GradingProgress = {
+      ...existing,
+      ...patch,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error: updateErr } = await supabase
+      .from("sessions")
+      .update({ grading_progress: merged })
+      .eq("id", sessionId);
+
+    if (updateErr) {
+      logError("[AUTO_GRADE] Failed to update grading_progress", updateErr, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, patch },
+      });
+    }
+  } catch (err) {
+    logError("[AUTO_GRADE] Unexpected error in updateGradingProgress", err, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, patch },
+    });
+  }
+}
 
 /** Maximum time for the entire grading operation (240 seconds — must fit within Vercel maxDuration=300s with room for summary) */
 const GRADING_TIMEOUT_MS = 240_000;
@@ -569,6 +629,8 @@ JSON 형식으로 응답해주세요:
               { role: "user", content: userPrompt },
             ],
             response_format: { type: "json_object" },
+            temperature: 0.3,
+            seed: deriveSessionSeed(sessionId),
           },
           { signal }
         ),
@@ -755,6 +817,21 @@ export async function autoGradeSession(
   // 채점 루프 내에서 시간 초과 감시
   const deadline = requestStartTime + GRADING_TIMEOUT_MS;
 
+  // Progress tracking — counts only questions that actually entered the grading loop
+  // (i.e. had a submission). Matches `grades.length + failedQuestions.length` at the end.
+  let progressTotal = 0;
+  for (const q of questionsToGrade) {
+    if (submissionsByQuestion[q.idx]) progressTotal++;
+  }
+  let completedCount = 0;
+  let failedCount = 0;
+  await updateGradingProgress(supabase, sessionId, {
+    status: "running",
+    total: progressTotal,
+    completed: 0,
+    failed: 0,
+  });
+
   for (const question of questionsToGrade) {
     const qIdx = question.idx;
 
@@ -771,6 +848,11 @@ export async function autoGradeSession(
       if (submission) {
         failedGradeResults.push({ q_idx: qIdx, failureReason: "Timed out before processing" });
         failedQuestions.push(qIdx);
+        failedCount++;
+        await updateGradingProgress(supabase, sessionId, {
+          completed: completedCount,
+          failed: failedCount,
+        });
       }
       continue;
     }
@@ -817,6 +899,11 @@ export async function autoGradeSession(
     if (!gradeOutcome.ok) {
       failedGradeResults.push({ q_idx: qIdx, failureReason: gradeOutcome.failureReason });
       failedQuestions.push(qIdx);
+      failedCount++;
+      await updateGradingProgress(supabase, sessionId, {
+        completed: completedCount,
+        failed: failedCount,
+      });
       continue;
     }
 
@@ -880,10 +967,20 @@ export async function autoGradeSession(
         failureReason: `Grade upsert failed: ${upsertErr instanceof Error ? upsertErr.message : String(upsertErr)}`,
       });
       failedQuestions.push(qIdx);
+      failedCount++;
+      await updateGradingProgress(supabase, sessionId, {
+        completed: completedCount,
+        failed: failedCount,
+      });
       continue;
     }
 
     grades.push(grade);
+    completedCount++;
+    await updateGradingProgress(supabase, sessionId, {
+      completed: completedCount,
+      failed: failedCount,
+    });
   }
 
   // 8. Insert ai_failed grade records for failures
@@ -999,6 +1096,15 @@ export async function autoGradeSession(
     }
   }
 
+  // 11. Finalize grading_progress status
+  const finalStatus: GradingProgressStatus =
+    timedOut || failedQuestions.length > 0 ? "failed" : "completed";
+  await updateGradingProgress(supabase, sessionId, {
+    status: finalStatus,
+    completed: completedCount,
+    failed: failedCount,
+  });
+
   return {
     grades,
     summary,
@@ -1012,6 +1118,16 @@ export async function autoGradeSession(
  * 세션 레벨 종합 요약 평가 생성 (sessions.ai_summary에 저장).
  * 입력은 grades[].ai_summary 를 기반으로 경량화됨 — 전체 채팅 기록을 재포함하지 않음.
  */
+// Deterministic seed from sessionId — stabilizes summary draws across calls.
+// Without seed, temperature 1.0 default caused re-grade to produce noticeably
+// better/worse summaries from identical inputs (stochastic variance).
+function deriveSessionSeed(sessionId: string): number {
+  return Array.from(sessionId).reduce(
+    (h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0,
+    0
+  );
+}
+
 async function generateSummary(
   sessionId: string,
   studentId: string,
@@ -1108,6 +1224,8 @@ JSON 형식으로 응답해주세요:
             { role: "user", content: userPrompt },
           ],
           response_format: { type: "json_object" },
+          temperature: 0.3,
+          seed: deriveSessionSeed(sessionId),
         }),
       {
         feature: "auto_grading_summary",

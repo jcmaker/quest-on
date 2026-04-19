@@ -290,6 +290,9 @@ export async function GET(
       totalQuestionCount,
       aiSummary: gradesReleased ? (session.ai_summary || null) : null,
       gradesReleased,
+      // Progress is safe to expose even before grades_released — it only contains counts/status,
+      // no scores. Lets the student see "3/10 채점 중" progress while the AI runs.
+      gradingProgress: session.grading_progress || null,
     });
   } catch {
     return errorJson("FETCH_REPORT_FAILED", "Failed to get report", 500);

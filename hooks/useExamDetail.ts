@@ -138,6 +138,8 @@ export function useExamDetail({
               questionCount: undefined,
               answerLength: undefined,
               isGraded: false,
+              gradingProgress:
+                (selectedSession.grading_progress as InstructorStudent["gradingProgress"]) ?? null,
             } as InstructorStudent;
           }
         );
@@ -196,6 +198,8 @@ export function useExamDetail({
           aiComment: existing.aiComment ?? newStudent.aiComment,
           questionCount: existing.questionCount ?? newStudent.questionCount,
           answerLength: existing.answerLength ?? newStudent.answerLength,
+          // Always prefer freshest grading_progress snapshot from server
+          gradingProgress: newStudent.gradingProgress ?? existing.gradingProgress,
         };
       });
       return { ...prev, students: mergedStudents, grades_released: examDetailData.exam.grades_released };
