@@ -910,38 +910,7 @@ export async function autoGradeSession(
 
     const grade = gradeOutcome.result;
 
-    // 7-2. 문제별 종합평가 — 남은 시간 예산 내에서만 시도
-    const QUESTION_SUMMARY_MIN_MS = 10_000;
-    const QUESTION_SUMMARY_MAX_MS = 60_000;
-    const remainingMs = deadline - Date.now();
-    let questionSummary: QuestionSummaryData | null = null;
-
-    if (remainingMs > QUESTION_SUMMARY_MIN_MS) {
-      const summaryTimeout = Math.min(QUESTION_SUMMARY_MAX_MS, Math.max(QUESTION_SUMMARY_MIN_MS, remainingMs - 5_000));
-      questionSummary = await generateQuestionSummary({
-        question,
-        submission,
-        questionMessages,
-        grade,
-        rubricItems,
-        examTitle: exam.title,
-        examId: exam.id,
-        examLanguage,
-        sessionId,
-        studentId: session.student_id,
-        signal: abortController.signal,
-        timeoutMs: summaryTimeout,
-      });
-    } else {
-      logError("[AUTO_GRADE] Skipping per-question summary — insufficient time budget", null, {
-        path: "lib/grading.ts",
-        additionalData: { sessionId, qIdx, remainingMs },
-      });
-    }
-
-    grade.ai_summary = questionSummary;
-
-    // 7-3. grades 저장 (per-question upsert)
+    // 7-2. grades 저장 (per-question upsert) — ai_summary는 Phase 2에서 별도 저장
     try {
       await upsertGradesBySessionQuestion(
         supabase as never,
@@ -952,7 +921,7 @@ export async function autoGradeSession(
             score: grade.score,
             comment: grade.comment,
             stage_grading: grade.stage_grading || null,
-            ai_summary: grade.ai_summary || null,
+            ai_summary: null,
             grade_type: "auto",
           },
         ],
@@ -1013,9 +982,68 @@ export async function autoGradeSession(
     }
   }
 
-  // 9. 세션 레벨 종합평가 — 문제별 요약을 입력으로 받아 경량화
+  // 9. Phase 2: 문제별 요약 — 채점 루프 완료 후 별도 실행
+  // 채점이 모두 끝난 뒤에 요약을 생성하므로, 요약 지연이 채점을 막지 않음
   const VERCEL_BUDGET_MS = 280_000;
   const MIN_SUMMARY_TIME_MS = 30_000;
+  const QUESTION_SUMMARY_MIN_MS = 10_000;
+  const QUESTION_SUMMARY_MAX_MS = 60_000;
+  const summaryPhaseAbort = new AbortController();
+
+  for (const grade of grades) {
+    const elapsedForSummary = Date.now() - requestStartTime;
+    const budgetRemaining = VERCEL_BUDGET_MS - elapsedForSummary;
+    const availableForQuestion = budgetRemaining - MIN_SUMMARY_TIME_MS;
+
+    if (availableForQuestion < QUESTION_SUMMARY_MIN_MS) {
+      logError("[AUTO_GRADE] Skipping remaining question summaries — insufficient time budget", null, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx: grade.q_idx, budgetRemaining },
+      });
+      break;
+    }
+
+    const summaryTimeout = Math.min(QUESTION_SUMMARY_MAX_MS, availableForQuestion - 5_000);
+    const qIdx = grade.q_idx;
+    const question = questionsToGrade.find((q) => q.idx === qIdx);
+    if (!question) continue;
+    const submission = submissionsByQuestion[qIdx];
+    const questionMessages = messagesByQuestion[qIdx] || [];
+    const rubricItems = resolveQuestionRubric(question, exam.rubric);
+
+    const questionSummary = await generateQuestionSummary({
+      question,
+      submission,
+      questionMessages,
+      grade,
+      rubricItems,
+      examTitle: exam.title,
+      examId: exam.id,
+      examLanguage,
+      sessionId,
+      studentId: session.student_id,
+      signal: summaryPhaseAbort.signal,
+      timeoutMs: summaryTimeout,
+    });
+
+    if (questionSummary) {
+      grade.ai_summary = questionSummary;
+      try {
+        await (supabase as ReturnType<typeof getSupabaseServer>)
+          .from("grades")
+          .update({ ai_summary: questionSummary })
+          .eq("session_id", sessionId)
+          .eq("q_idx", qIdx);
+      } catch (summaryUpsertErr) {
+        logError("[AUTO_GRADE] Failed to save question summary", summaryUpsertErr, {
+          path: "lib/grading.ts",
+          additionalData: { sessionId, qIdx },
+        });
+      }
+    }
+  }
+
+  // 10. 세션 레벨 종합평가 — 문제별 요약을 입력으로 받아 경량화
   let summary: SummaryData | null = null;
   const elapsedMs = Date.now() - requestStartTime;
   const remainingMs = VERCEL_BUDGET_MS - elapsedMs;
@@ -1050,7 +1078,7 @@ export async function autoGradeSession(
     }
   }
 
-  // 10. Persist partial grading status on sessions
+  // 11. Persist partial grading status on sessions
   const isPartial = timedOut || failedQuestions.length > 0;
   if (isPartial) {
     const gradingFailureDetails = failedGradeResults.reduce<Record<number, string>>(
