@@ -69,18 +69,26 @@ export async function POST(request: NextRequest) {
 
     const examLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
 
-    // Fetch submissions
-    const { data: submissions, error: submissionsError } = await supabase
-      .from("submissions")
-      .select("q_idx, answer, compressed_answer_data")
-      .eq("session_id", sessionId);
+    // Fetch submissions and messages in parallel
+    const [{ data: submissions, error: submissionsError }, { data: messages }] =
+      await Promise.all([
+        supabase
+          .from("submissions")
+          .select("q_idx, answer, compressed_answer_data")
+          .eq("session_id", sessionId),
+        supabase
+          .from("messages")
+          .select("q_idx, role, content, compressed_content, created_at")
+          .eq("session_id", sessionId)
+          .order("created_at", { ascending: true }),
+      ]);
 
     if (submissionsError) {
       throw submissionsError;
     }
 
     // Process submissions
-    const processedSubmissions = submissions.map((sub) => {
+    const processedSubmissions = (submissions ?? []).map((sub) => {
       let answer = sub.answer;
       if (sub.compressed_answer_data) {
         try {
@@ -90,11 +98,23 @@ export async function POST(request: NextRequest) {
           // Use original answer on decompression failure
         }
       }
-      return {
-        q_idx: sub.q_idx,
-        answer,
-      };
+      return { q_idx: sub.q_idx, answer };
     });
+
+    // Process messages — decompress and group by q_idx
+    const messagesByQuestion: Record<number, Array<{ role: string; content: string }>> = {};
+    for (const msg of messages ?? []) {
+      let content = msg.content;
+      if (msg.compressed_content) {
+        try {
+          content = decompressData(msg.compressed_content) as string;
+        } catch {
+          // Use original content on decompression failure
+        }
+      }
+      if (!messagesByQuestion[msg.q_idx]) messagesByQuestion[msg.q_idx] = [];
+      messagesByQuestion[msg.q_idx].push({ role: msg.role, content: content ?? "" });
+    }
 
     const systemPrompt = buildSummaryGenerationSystemPrompt(examLanguage);
 
@@ -103,10 +123,13 @@ export async function POST(request: NextRequest) {
     if (examLanguage === "en") {
       const questionsText = (exam.questions as Record<string, unknown>[])
         .map((q: Record<string, unknown>, i: number) => {
-          const sub = processedSubmissions.find((s) => s.q_idx === (q.idx ?? i));
-          return `Question ${i + 1}: ${q.prompt || q.text}\nStudent answer: ${
-            sub ? sub.answer : "No answer"
-          }`;
+          const qIdx = (q.idx ?? i) as number;
+          const sub = processedSubmissions.find((s) => s.q_idx === qIdx);
+          const msgs = messagesByQuestion[qIdx] ?? [];
+          const chatText = msgs.length > 0
+            ? `\nChat transcript:\n${msgs.map((m) => `${m.role === "user" ? "Student" : "AI"}: ${m.content}`).join("\n\n")}`
+            : "";
+          return `Question ${i + 1}: ${q.prompt || q.text}\nStudent answer: ${sub ? sub.answer : "No answer"}${chatText}`;
         })
         .join("\n\n");
 
@@ -148,10 +171,13 @@ Respond in JSON:
     } else {
       const questionsText = (exam.questions as Record<string, unknown>[])
         .map((q: Record<string, unknown>, i: number) => {
-          const sub = processedSubmissions.find((s) => s.q_idx === (q.idx ?? i));
-          return `문제 ${i + 1}: ${q.prompt || q.text}\n학생 답안: ${
-            sub ? sub.answer : "답안 없음"
-          }`;
+          const qIdx = (q.idx ?? i) as number;
+          const sub = processedSubmissions.find((s) => s.q_idx === qIdx);
+          const msgs = messagesByQuestion[qIdx] ?? [];
+          const chatText = msgs.length > 0
+            ? `\n\n**학생과 AI의 대화 기록:**\n${msgs.map((m) => `${m.role === "user" ? "학생" : "AI"}: ${m.content}`).join("\n\n")}`
+            : "";
+          return `문제 ${i + 1}: ${q.prompt || q.text}\n학생 답안: ${sub ? sub.answer : "답안 없음"}${chatText}`;
         })
         .join("\n\n");
 
