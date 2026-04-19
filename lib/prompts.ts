@@ -671,6 +671,17 @@ When answering, consider the following:
 }
 
 /**
+ * 요약 생성 시스템 프롬프트 (강사 채점 페이지 전용 /api/instructor/generate-summary)
+ *
+ * 자동 채점 경로의 buildSummaryEvaluationSystemPrompt와 별도로,
+ * 강사가 채점 페이지에 진입했을 때 단일 GPT 호출로 강점/약점/인용구를 뽑아내는 간결한 프롬프트.
+ */
+export function buildSummaryGenerationSystemPrompt(language: PromptLanguage = "ko"): string {
+
+  return `당신은 학생의 시험 답안을 깊이 있게 평가하는 전문 교육가 AI입니다. 학생의 답안을 상세하게 분석하여 강점과 약점을 파악하고, 실질적인 조언을 제공해야 합니다. 단순한 나열이 아닌, 논리적 흐름과 근거를 바탕으로 분석해주세요.`;
+}
+
+/**
  * 종합 요약 평가 시스템 프롬프트
  */
 export function buildSummaryEvaluationSystemPrompt(language: PromptLanguage = "ko"): string {

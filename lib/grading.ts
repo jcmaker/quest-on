@@ -4,6 +4,7 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import {
   buildUnifiedGradingSystemPrompt,
   buildUnifiedGradingUserPrompt,
+  buildSummaryGenerationSystemPrompt,
   buildSummaryEvaluationSystemPrompt,
   buildAssignmentGradingPrompt,
 } from "@/lib/prompts";
@@ -587,7 +588,7 @@ async function generateQuestionSummary(params: {
       .filter(Boolean)
       .join("\n");
 
-    const systemPrompt = buildSummaryEvaluationSystemPrompt();
+    const systemPrompt = buildSummaryGenerationSystemPrompt(examLanguage);
 
     const userPrompt = `
 시험 제목: ${examTitle}

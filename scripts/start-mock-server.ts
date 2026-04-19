@@ -82,6 +82,17 @@ app.post("/v1/chat/completions", (req, res) => {
     })));
   }
 
+  if (sysPrompt.includes("전문 교육가")) {
+    // generate-summary
+    return res.json(chatCompletionResponse(JSON.stringify({
+      sentiment: "positive",
+      summary: "학생은 핵심 개념에 대한 이해도가 높으며, 논리적 전개가 우수합니다.",
+      strengths: ["개념 이해도가 높음", "논리적 전개력이 우수함", "구체적 사례 활용"],
+      weaknesses: ["일부 세부사항 누락", "결론 부분 보강 필요"],
+      keyQuotes: ["다형성은 OOP의 핵심 원칙입니다", "상속보다 합성을 선호해야 합니다"],
+    })));
+  }
+
   if (sysPrompt.includes("전문 평가위원")) {
     // auto-grade (unified grading expects chat_score/answer_score fields)
     // Must be checked BEFORE the rubric handler because grading prompts also contain "루브릭"
