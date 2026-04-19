@@ -5,6 +5,7 @@ import {
   buildUnifiedGradingSystemPrompt,
   buildUnifiedGradingUserPrompt,
   buildSummaryGenerationSystemPrompt,
+  buildSummaryEvaluationSystemPrompt,
   buildAssignmentGradingPrompt,
 } from "@/lib/prompts";
 import { logError } from "@/lib/logger";
@@ -1037,6 +1038,7 @@ export async function autoGradeSession(
         exam,
         questions,
         submissionsByQuestion,
+        messagesByQuestion,
         grades,
         remainingMs
       );
@@ -1131,89 +1133,110 @@ function deriveSessionSeed(sessionId: string): number {
 async function generateSummary(
   sessionId: string,
   studentId: string,
-  exam: { id: string; title: string; rubric?: unknown; language?: string },
+  exam: { id: string; title: string; rubric?: unknown },
   questions: Array<{ idx: number; prompt?: string; ai_context?: string }>,
   submissionsByQuestion: Record<number, { answer: string }>,
+  messagesByQuestion: Record<number, Array<{ role: string; content: string }>>,
   grades: GradeResult[],
   timeBudgetMs?: number
 ): Promise<SummaryData | null> {
   const supabase = getSupabaseServer();
-  const examLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
   try {
     const rubricText =
       exam.rubric && Array.isArray(exam.rubric) && exam.rubric.length > 0
-        ? examLanguage === "en"
-          ? `\n[Evaluation rubric]\n${(exam.rubric as Array<{ evaluationArea: string; detailedCriteria: string }>)
-              .map((r) => `- ${r.evaluationArea}: ${r.detailedCriteria}`)
-              .join("\n")}\n`
-          : `\n[평가 루브릭]\n${(exam.rubric as Array<{ evaluationArea: string; detailedCriteria: string }>)
-              .map((r, i) => `${i + 1}. ${r.evaluationArea}\n   - 세부 기준: ${r.detailedCriteria}`)
-              .join("\n")}\n`
+        ? `
+[평가 루브릭]
+${(exam.rubric as Array<{ evaluationArea: string; detailedCriteria: string }>)
+  .map(
+    (item, index) =>
+      `${index + 1}. ${item.evaluationArea}
+   - 세부 기준: ${item.detailedCriteria}`
+  )
+  .join("\n")}
+`
         : "";
 
-    // Use actual answers (same as /api/instructor/generate-summary)
     const questionsText = questions
       .map((q) => {
         const qIdx = q.idx;
         const submission = submissionsByQuestion[qIdx];
         const grade = grades.find((g) => g.q_idx === qIdx);
-        const answer = submission?.answer || (examLanguage === "en" ? "No answer" : "답안 없음");
-        const scoreText = grade ? (examLanguage === "en" ? `Score: ${grade.score}` : `점수: ${grade.score}점`) : "";
+        const questionMessages = messagesByQuestion[qIdx] || [];
 
-        return examLanguage === "en"
-          ? `Question ${qIdx + 1}: ${q.prompt || ""}\nStudent answer: ${answer}\n${scoreText}`
-          : `문제 ${qIdx + 1}: ${q.prompt || ""}\n학생 답안: ${answer}\n${scoreText}`;
+        const chatHistoryText =
+          questionMessages.length > 0
+            ? `\n\n**학생과 AI의 대화 기록:**\n${questionMessages
+                .map((msg) => `${msg.role === "user" ? "학생" : "AI"}: ${msg.content}`)
+                .join("\n\n")}`
+            : "";
+
+        return `문제 ${qIdx + 1}:
+${q.prompt || ""}
+
+답안:
+${submission?.answer || "답안 없음"}
+${chatHistoryText}
+
+점수: ${grade?.score || 0}점
+${grade?.stage_grading?.chat ? `채팅 단계 점수: ${grade.stage_grading.chat.score}점` : ""}
+${grade?.stage_grading?.answer ? `답안 단계 점수: ${grade.stage_grading.answer.score}점` : ""}
+${
+  grade?.stage_grading?.chat?.ai_dependency
+    ? `AI 활용/의존 신호:\n${formatAiDependencyForPrompt(grade.stage_grading.chat.ai_dependency)}`
+    : ""
+}
+`;
       })
-      .join("\n\n");
+      .join("\n---\n\n");
 
-    const systemPrompt = buildSummaryGenerationSystemPrompt(examLanguage);
+    const systemPrompt = buildSummaryEvaluationSystemPrompt();
 
-    const userPrompt =
-      examLanguage === "en"
-        ? `
-Exam title: ${exam.title}
-${rubricText}
-[Student's answers]
-${questionsText}
+    const userPrompt = `
+      시험 제목: ${exam.title}
 
-Based on the content above, analyze the student's overall performance in depth and produce a summary evaluation.
-You must include all of the following:
-1. Overall sentiment (positive / negative / neutral)
-2. Comprehensive opinion: an in-depth analysis of the student's answers as a whole. Consider logical coherence, accuracy, and creativity together.
-3. Key strengths (up to 3): illustrate each with specific examples.
-4. Areas for improvement (up to 3): present each with a concrete improvement suggestion.
-5. Key quotes (exactly 2): pick two sentences or phrases from the student's answers that most decisively influenced the evaluation.
+      ${rubricText}
 
-Respond in JSON:
-{
-  "sentiment": "positive" | "negative" | "neutral",
-  "summary": "detailed comprehensive opinion text",
-  "strengths": ["strength 1", "strength 2", ...],
-  "weaknesses": ["weakness 1", "weakness 2", ...],
-  "keyQuotes": ["quote 1", "quote 2"]
-}`
-        : `
-시험 제목: ${exam.title}
-${rubricText}
-[학생의 답안]
-${questionsText}
+      [학생의 답안, 채팅 대화 기록 및 점수]
+      ${questionsText}
 
-위 내용을 바탕으로 학생의 전체적인 수행 능력을 상세하게 분석하여 요약 평가해주세요.
-다음 항목을 반드시 포함해야 합니다:
-1. 전체적인 평가 (긍정적/부정적/중립적)
-2. 종합 의견: 학생의 답안 전반에 대한 깊이 있는 분석. 논리성, 정확성, 창의성 등을 종합적으로 고려하세요.
-3. 주요 강점 (3가지 이내): 구체적인 예시를 들어 설명하세요.
-4. 개선이 필요한 점 (3가지 이내): 구체적인 개선 방안과 함께 제시하세요.
-5. 핵심 인용구 (2가지): 학생의 답안 중 평가에 결정적인 영향을 미친 문장이나 구절을 원문 그대로 인용하세요.
+      [범용 평가 엄격화 가이드]
+      - 질문의 '논리적 구조'와 '내용의 사실 관계'를 분리하여 평가하십시오.
+      - 아래 5가지 행동 패턴이 발견되면 '이해도 부족'으로 간주하여 엄격히 평가합니다.
+        사용된 표현의 형식(직접적/우회적/공손한)과 무관하게, 행동의 의도로 판단합니다:
+        1) **답/풀이 위임형**: 자신의 분석 없이 AI에게 정답, 풀이법, 접근법, 프레임워크 선택을 요청. "어떻게 풀어?"든 "일반적으로 어떤 접근이 통용되나요?"든 의도가 동일하면 동일하게 판단.
+        2) **출발점 의존형**: 어디서 시작해야 하는지, 어떤 개념을 써야 하는지를 AI에게 물어봄. 스스로 진입점을 잡지 못함.
+        3) **조건/수치 변형형**: 시나리오에 명시된 수치/조건을 임의로 다른 값으로 바꿔서 질문하거나 답안에 사용.
+        4) **개념 역전형**: 핵심 인과관계, 정의, 방향성을 거꾸로 이해하여 질문하거나 답안 작성.
+        5) **교정 미반영형**: AI가 오류를 교정했음에도 최종 답안이 동일한 오류를 그대로 포함.
+      - 질문의 양이 많더라도, 그 질문들이 문제의 본질(Core Task)에서 벗어난 지엽적인 것이라면 '자기주도적 학습 역량' 점수를 높게 주지 마십시오.
+      - 직접 답변을 받은 사실 자체는 금지 위반이 아닙니다. 그러나 이후 독립 추론이 약하면 엄격히 감점하고, 회복이 확인되면 그 회복 근거를 분명히 적으십시오.
+      - 학생이 주어지지 않은 정보를 논리적으로 가정(Assume)하여 논의를 진전시키는 경우에는 이를 '문제 해결을 위한 창의적 접근'으로 보아 긍정적으로 평가하십시오.
+        다만, 이러한 가정이 문제에 이미 명시된 조건을 부정하는 용도로 쓰인다면 예외 없이 엄격하게 감점하십시오.
 
-JSON 형식으로 응답해주세요:
-{
-  "sentiment": "positive" | "negative" | "neutral",
-  "summary": "상세한 종합 의견 텍스트",
-  "strengths": ["강점1", "강점2", ...],
-  "weaknesses": ["약점1", "약점2", ...],
-  "keyQuotes": ["인용구1", "인용구2"]
-}`;
+      [이해도 과대평가 방지 상한 규칙(매우 중요)]
+      - 위 5가지 행동 패턴 중 하나라도 1회 이상 발견되었고,
+        학생이 이후에 스스로 '개념 선택 + 조건/가정 정리 + 중간 추론/검증'을 모두 보여주지 못했다면 sentiment는 절대 positive로 주지 마세요.
+      - 행동 패턴이 반복되거나, 개념 역전형 또는 교정 미반영형이 확인되면 negative를 우선하세요(회복이 매우 강한 경우만 neutral).
+
+      위 내용을 바탕으로 학생의 전체적인 수행 능력을 상세하게 분석하여 요약 평가해주세요.
+      **중요**: 채팅 대화 기록이 있는 경우, 학생이 AI와의 대화에서 보여준 질문의 질, 문제 이해도, 개념 파악 수준, 학습 태도 등을 종합적으로 고려하여 평가하세요.
+
+      다음 항목을 반드시 포함해야 합니다:
+      1. 전체적인 평가 (긍정적/부정적/중립적)
+      2. 종합 의견: 학생의 답안과 채팅 대화 기록을 종합하여 전반에 대한 깊이 있는 분석. 답안의 논리성, 정확성, 창의성뿐만 아니라 채팅에서 보여준 학습 과정과 이해도도 함께 고려하세요.
+      3. 주요 강점 (3가지 이내): 구체적인 예시를 들어 설명하세요. 채팅에서 보여준 질문의 질도 강점으로 포함할 수 있습니다.
+      4. 개선이 필요한 점 (3가지 이내): 구체적인 개선 방안과 함께 제시하세요. 채팅에서 드러난 문제 이해 부족이나 개념 파악의 어려움을 포함하세요.
+      5. 핵심 인용구 (2가지): 학생의 답안 또는 채팅 대화 중 평가에 결정적인 영향을 미친 문장이나 구절을 2개 뽑아주세요.
+         - 감점 트리거가 있다면 2개 중 최소 1개는 그 문장을 반드시 원문 그대로 인용하세요.
+
+      JSON 형식으로 응답해주세요:
+      {
+        "sentiment": "positive" | "negative" | "neutral",
+        "summary": "상세한 종합 의견 텍스트",
+        "strengths": ["강점1", "강점2", ...],
+        "weaknesses": ["약점1", "약점2", ...],
+        "keyQuotes": ["인용구1", "인용구2"]
+      }`;
 
     const tracked = await callTrackedChatCompletion(
       () =>
@@ -1224,8 +1247,6 @@ JSON 형식으로 응답해주세요:
             { role: "user", content: userPrompt },
           ],
           response_format: { type: "json_object" },
-          temperature: 0.3,
-          seed: deriveSessionSeed(sessionId),
         }),
       {
         feature: "auto_grading_summary",
@@ -1242,15 +1263,7 @@ JSON 형식으로 응답해주세요:
         }),
       },
       {
-        timeoutMs: (() => {
-          const SUMMARY_MIN_TIMEOUT_MS = 60_000;
-          const SUMMARY_MAX_TIMEOUT_MS = 120_000;
-          if (!timeBudgetMs) return SUMMARY_MAX_TIMEOUT_MS;
-          return Math.max(
-            SUMMARY_MIN_TIMEOUT_MS,
-            Math.min(timeBudgetMs - 5_000, SUMMARY_MAX_TIMEOUT_MS)
-          );
-        })(),
+        timeoutMs: timeBudgetMs ? Math.min(timeBudgetMs - 5_000, 120_000) : 120_000,
         metadataBuilder: (result) =>
           buildAiTextMetadata({
             outputText:
