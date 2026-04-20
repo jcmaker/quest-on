@@ -3,8 +3,30 @@ import { logError } from "@/lib/logger";
 import { enqueueGrading } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { getQStash, getWorkerBaseUrl, isQStashEnabled } from "@/lib/qstash";
+import type { GradingProgress } from "@/lib/types/grading";
 
 type TriggerSource = "feedback" | "heartbeat" | "force_end" | "submit_exam" | "manual_retry";
+
+async function markGradingQueued(sessionId: string): Promise<void> {
+  const supabase = getSupabaseServer();
+  const progress: GradingProgress = {
+    status: "queued",
+    total: 0,
+    completed: 0,
+    failed: 0,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase
+    .from("sessions")
+    .update({ grading_progress: progress })
+    .eq("id", sessionId);
+  if (error) {
+    logError("[GRADING_TRIGGER] Failed to mark grading_progress=queued", error, {
+      path: "lib/grading-trigger.ts",
+      additionalData: { sessionId },
+    });
+  }
+}
 
 /**
  * Idempotent grading trigger.
@@ -32,7 +54,7 @@ export async function triggerGradingIfNeeded(
           .eq("session_id", sessionId),
         supabase
           .from("sessions")
-          .select("ai_summary")
+          .select("ai_summary, grading_progress")
           .eq("id", sessionId)
           .maybeSingle(),
       ]);
@@ -59,6 +81,11 @@ export async function triggerGradingIfNeeded(
     if (aiSummary?.grading_status) {
       return { queued: false, reason: "already_marked" };
     }
+
+    const gradingProgress = (sessionMeta?.grading_progress as { status?: string } | null) || null;
+    if (gradingProgress?.status === "queued" || gradingProgress?.status === "running") {
+      return { queued: false, reason: "already_in_progress" };
+    }
   }
 
   // Preferred path: durable QStash queue
@@ -73,6 +100,7 @@ export async function triggerGradingIfNeeded(
           // QStash default retries = 3 (exponential backoff), sufficient.
           retries: 3,
         });
+        await markGradingQueued(sessionId);
         return { queued: true, reason: "qstash" };
       } catch (publishErr) {
         logError("[GRADING_TRIGGER] QStash publish failed — falling back to in-process", publishErr, {
@@ -108,6 +136,7 @@ export async function triggerGradingIfNeeded(
     }
   };
 
+  await markGradingQueued(sessionId);
   enqueueGrading(gradeWithRetry).catch((error) => {
     logError("[GRADING_TRIGGER] Background grading failed", error, {
       path: "lib/grading-trigger.ts",
