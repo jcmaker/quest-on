@@ -36,18 +36,40 @@ export function isQStashEnabled(): boolean {
 
 /**
  * Resolves the base URL the QStash worker should POST back to.
- * In production, VERCEL_URL or NEXT_PUBLIC_APP_URL; for local dev,
- * QSTASH_WORKER_BASE_URL (e.g. ngrok tunnel) is required.
+ *
+ * Priority (most → least preferred):
+ *   1. `QSTASH_WORKER_BASE_URL` — explicit override, useful for local dev (ngrok)
+ *      or pinning to a specific canary domain.
+ *   2. `NEXT_PUBLIC_APP_URL` — stable production domain (e.g. https://quest-on.app).
+ *      This is what we WANT on Vercel so QStash hits the latest production code
+ *      instead of a deployment-specific preview URL.
+ *   3. `VERCEL_URL` — deployment-specific preview URL (e.g. quest-xyz.vercel.app).
+ *      Changes on every deploy, which means old in-flight QStash retries end up
+ *      pinned to stale/paused deployments. Only used as a last-resort fallback
+ *      and emits a warning so misconfiguration is visible in logs.
+ *
+ * Returns null when nothing is configured (dev without tunnel).
  */
+let warnedVercelUrlFallback = false;
 export function getWorkerBaseUrl(): string | null {
   const explicit = process.env.QSTASH_WORKER_BASE_URL;
   if (explicit) return explicit.replace(/\/$/, "");
 
-  const vercel = process.env.VERCEL_URL;
-  if (vercel) return `https://${vercel}`;
-
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (appUrl) return appUrl.replace(/\/$/, "");
+
+  const vercel = process.env.VERCEL_URL;
+  if (vercel) {
+    if (!warnedVercelUrlFallback) {
+      warnedVercelUrlFallback = true;
+      logError(
+        "[QSTASH] Falling back to VERCEL_URL for worker base — set QSTASH_WORKER_BASE_URL or NEXT_PUBLIC_APP_URL to a stable production domain to avoid in-flight retries hitting preview deployments",
+        null,
+        { path: "lib/qstash.ts", additionalData: { vercelUrl: vercel } }
+      );
+    }
+    return `https://${vercel}`;
+  }
 
   return null;
 }

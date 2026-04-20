@@ -21,8 +21,13 @@ Quest-On is an AI-powered exam/assessment platform. Instructors create exams, st
   - `QSTASH_CURRENT_SIGNING_KEY` — QStash signature verification
   - `QSTASH_NEXT_SIGNING_KEY` — QStash signing key rotation
   - `CRON_SECRET` — bearer token that `/api/cron/grading-sweep` validates
-  - Optional: `QSTASH_WORKER_BASE_URL` — explicit worker URL (else derived from `VERCEL_URL`/`NEXT_PUBLIC_APP_URL`). Useful for local dev via tunnels.
+  - **Worker URL (pick ONE)** — QStash must POST back to a stable, production domain. Priority: `QSTASH_WORKER_BASE_URL` > `NEXT_PUBLIC_APP_URL` > `VERCEL_URL` (last-resort fallback, logs a warning because it's a deployment-specific preview URL that changes on every deploy).
+    - Recommended on Vercel: set `NEXT_PUBLIC_APP_URL=https://quest-on.app` (or your stable domain). Otherwise set `QSTASH_WORKER_BASE_URL` to the same.
+    - For local dev through a tunnel (e.g. ngrok), set `QSTASH_WORKER_BASE_URL=https://<your-tunnel>.ngrok-free.app`.
   - Without QStash configured, grading will run in-process inline ONLY when not on Vercel (dev). In Vercel/production, missing QStash causes the trigger to fail loudly with `reason: "qstash_not_configured"` rather than silently drop grading.
+  - **Emergency switches:**
+    - `GRADING_SWEEP_DISABLED=1` — flips `/api/cron/grading-sweep` into a no-op (returns 200 with `{disabled: true}`). Use when a stuck session is causing the sweeper to burn invocations; flip back to unset once root cause is fixed.
+    - Sweeper has built-in safeguards: per-session 60-min cooldown (`last_swept_at`), 3-attempt cap (`sweep_attempts`), 10-session-per-run limit, and auto-heal for sessions that already have a complete `ai_summary`. After 3 attempts a session is force-marked `failed` and requires the manual `PUT /api/session/[sessionId]/grade` retry endpoint.
 - When adding new env vars: update `.env.local`, Vercel env vars, AND CI secrets in `.github/workflows/ci.yml`
 
 ### Authentication & Authorization

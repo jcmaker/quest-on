@@ -50,10 +50,11 @@ function mockDb(params: {
   sessionMeta?: SessionMeta | null;
   sessionError?: unknown;
 }) {
-  // Called sequence (see trigger source):
-  //   1. from("grades").select().eq() → Promise<{ data, error }>
-  //   2. from("sessions").select().eq().maybeSingle() → Promise<...>
-  //   3. from("sessions").update(...).eq(...)  // markGradingQueued
+  // `from("sessions")` call sequence:
+  //   1. idempotency read (select ai_summary, grading_progress → maybeSingle)
+  //   2. markGradingQueued read (select grading_progress → maybeSingle)
+  //   3. markGradingQueued update (update → eq)
+  // `from("grades")` is always the idempotency grade lookup.
 
   const gradesBuilder = {
     select: vi.fn(() => gradesBuilder),
@@ -77,6 +78,21 @@ function mockDb(params: {
     }),
   };
 
+  // markGradingQueued's read of existing grading_progress — returns whatever
+  // sessionMeta.grading_progress was, so we preserve-and-merge cleanly.
+  const sessionReadForQueuedBuilder = {
+    select: vi.fn(() => sessionReadForQueuedBuilder),
+    eq: vi.fn(() => sessionReadForQueuedBuilder),
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: {
+        grading_progress:
+          (params.sessionMeta as { grading_progress?: unknown } | null)
+            ?.grading_progress ?? null,
+      },
+      error: null,
+    }),
+  };
+
   const sessionUpdateBuilder = {
     update: vi.fn(() => sessionUpdateBuilder),
     eq: vi.fn().mockResolvedValue({ error: null }),
@@ -87,7 +103,9 @@ function mockDb(params: {
     if (table === "grades") return gradesBuilder;
     if (table === "sessions") {
       call += 1;
-      return call === 1 ? sessionReadBuilder : sessionUpdateBuilder;
+      if (call === 1) return sessionReadBuilder;
+      if (call === 2) return sessionReadForQueuedBuilder;
+      return sessionUpdateBuilder;
     }
     throw new Error(`Unexpected table: ${table}`);
   });

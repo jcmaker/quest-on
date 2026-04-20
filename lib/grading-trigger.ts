@@ -17,14 +17,32 @@ type TriggerSource =
 
 async function markGradingQueued(sessionId: string): Promise<void> {
   const supabase = getSupabaseServer();
+
+  // Preserve prior counts/phase/sweep_attempts — only bump status + updated_at.
+  // The old behaviour of wiping {total, completed, failed} to 0 caused the UI
+  // to briefly show "0/N" in the middle of re-triggers and also dropped the
+  // sweep_attempts counter (defeating the sweeper cap).
+  const { data } = await supabase
+    .from("sessions")
+    .select("grading_progress")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  const existing = (data?.grading_progress as GradingProgress | null) || null;
+
   const progress: GradingProgress = {
     status: "queued",
-    total: 0,
-    completed: 0,
-    failed: 0,
+    total: existing?.total ?? 0,
+    completed: existing?.completed ?? 0,
+    failed: existing?.failed ?? 0,
     phase: "grade",
+    current_q_idx: existing?.current_q_idx,
+    last_error: existing?.last_error,
+    last_swept_at: existing?.last_swept_at,
+    sweep_attempts: existing?.sweep_attempts,
     updated_at: new Date().toISOString(),
   };
+
   const { error } = await supabase
     .from("sessions")
     .update({ grading_progress: progress })

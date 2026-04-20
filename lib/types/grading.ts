@@ -101,6 +101,20 @@ export interface GradingProgress {
   current_q_idx?: number;
   /** Last observed error message — surfaces silent failures for operators. */
   last_error?: string;
+  /**
+   * ISO timestamp of the last time the cron sweeper picked up this session.
+   * Used to enforce a per-session sweep cooldown — even if `updated_at` gets
+   * bumped by a stray partial update, the sweeper won't hot-loop on the same
+   * session every cron tick.
+   */
+  last_swept_at?: string;
+  /**
+   * Monotonically increasing counter of how many times the cron sweeper has
+   * re-triggered this session. Capped in the sweeper — after N attempts the
+   * session is force-marked as `failed` to require operator attention instead
+   * of burning budget indefinitely.
+   */
+  sweep_attempts?: number;
   updated_at: string;
 }
 
