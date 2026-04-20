@@ -194,29 +194,7 @@ export function ExamHeader({
                 height={32}
                 className={`h-8 w-auto ${disableLogoLink ? "pointer-events-none opacity-70" : ""}`}
               />
-              {duration === 0 ? (
-                <div className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-semibold bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                  <svg
-                    className="w-4 h-4 mr-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  <span className="whitespace-nowrap">
-                    시간 무제한 (과제형)
-                  </span>
-                  <span className="ml-2 text-xs opacity-75">
-                    제한 시간 없음
-                  </span>
-                </div>
-              ) : (
+              {duration !== 0 &&
                 timeRemaining !== null && (
                   <div
                     className={`inline-flex items-center rounded-lg font-semibold transition-all ${
@@ -246,8 +224,7 @@ export function ExamHeader({
                       ? "00:00"
                       : formatTime(timeRemaining)}
                   </div>
-                )
-              )}
+                )}
             </div>
 
             {/* Right: Exit Button (only on exam step) + Profile */}
