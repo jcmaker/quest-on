@@ -16,6 +16,13 @@ Quest-On is an AI-powered exam/assessment platform. Instructors create exams, st
 - NEVER hardcode secrets in source code. All secrets go in `.env.local` (excluded from git)
 - Server-only secrets must NOT use `NEXT_PUBLIC_` prefix
 - Required secrets: `CLERK_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `OPENAI_API_KEY`, `ADMIN_SESSION_SECRET`, `INTERNAL_API_SECRET`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
+- Grading pipeline (chained QStash jobs) additionally requires:
+  - `QSTASH_TOKEN` — QStash publish credential
+  - `QSTASH_CURRENT_SIGNING_KEY` — QStash signature verification
+  - `QSTASH_NEXT_SIGNING_KEY` — QStash signing key rotation
+  - `CRON_SECRET` — bearer token that `/api/cron/grading-sweep` validates
+  - Optional: `QSTASH_WORKER_BASE_URL` — explicit worker URL (else derived from `VERCEL_URL`/`NEXT_PUBLIC_APP_URL`). Useful for local dev via tunnels.
+  - Without QStash configured, grading will run in-process inline ONLY when not on Vercel (dev). In Vercel/production, missing QStash causes the trigger to fail loudly with `reason: "qstash_not_configured"` rather than silently drop grading.
 - When adding new env vars: update `.env.local`, Vercel env vars, AND CI secrets in `.github/workflows/ci.yml`
 
 ### Authentication & Authorization

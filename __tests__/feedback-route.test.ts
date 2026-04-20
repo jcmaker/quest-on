@@ -5,7 +5,6 @@ const {
   currentUserMock,
   checkRateLimitAsyncMock,
   compressDataMock,
-  enqueueGradingMock,
   autoGradeSessionMock,
   triggerGradingIfNeededMock,
   auditLogMock,
@@ -15,7 +14,6 @@ const {
   currentUserMock: vi.fn(),
   checkRateLimitAsyncMock: vi.fn(),
   compressDataMock: vi.fn(),
-  enqueueGradingMock: vi.fn(),
   autoGradeSessionMock: vi.fn(),
   triggerGradingIfNeededMock: vi.fn(),
   auditLogMock: vi.fn(),
@@ -43,10 +41,6 @@ vi.mock("@/lib/rate-limit", () => ({
 
 vi.mock("@/lib/compression", () => ({
   compressData: compressDataMock,
-}));
-
-vi.mock("@/lib/openai", () => ({
-  enqueueGrading: enqueueGradingMock,
 }));
 
 vi.mock("@/lib/grading", () => ({
@@ -147,7 +141,6 @@ describe("POST /api/feedback", () => {
       data: "compressed",
       metadata: { algorithm: "mock", compressedSize: 10, originalSize: 20 },
     });
-    enqueueGradingMock.mockReturnValue(Promise.resolve(undefined));
     autoGradeSessionMock.mockResolvedValue(undefined);
     triggerGradingIfNeededMock.mockResolvedValue({ queued: true });
     supabaseMock.rpc.mockResolvedValue({ error: null });

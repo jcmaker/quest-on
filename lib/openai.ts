@@ -2,6 +2,12 @@ import OpenAI from "openai";
 import pLimit from "p-limit";
 import { logError } from "@/lib/logger";
 
+// NOTE: The grading queue that used to live here (`enqueueGrading` +
+// `gradingLimiter = pLimit(60)`) was removed when the grading pipeline
+// moved to chained QStash jobs. QStash itself serializes work per
+// dedup-id and scales naturally — there is no longer any in-process
+// serverless promise to throttle.
+
 /**
  * IMPORTANT:
  * Do NOT throw at module import time.
@@ -142,16 +148,3 @@ export async function callOpenAI<T>(
   return data;
 }
 
-// ============================================================
-// Grading queue: max 60 concurrent autoGradeSession executions
-// Sized for 150-user classrooms where all students submit at once
-// ============================================================
-const gradingLimiter = pLimit(60);
-
-/**
- * Wraps a grading job so at most 60 run concurrently.
- * Combines with callOpenAI for double-throttling.
- */
-export function enqueueGrading<T>(fn: () => Promise<T>): Promise<T> {
-  return gradingLimiter(fn);
-}

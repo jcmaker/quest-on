@@ -34,8 +34,17 @@
       "maxDuration": 300
     },
     "app/api/internal/grading-worker/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 120
+    },
+    "app/api/cron/grading-sweep/route.ts": {
+      "maxDuration": 60
     }
   },
-  "regions": ["iad1", "icn1"]
+  "regions": ["iad1", "icn1"],
+  "crons": [
+    {
+      "path": "/api/cron/grading-sweep",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

@@ -733,22 +733,55 @@ JSON 형식으로 응답해주세요:
   }
 }
 
-/**
- * 서버 사이드 자동 채점 함수 — 순차 처리 (각 문제마다 채점 → 문제별 종합평가 → grades 저장 반복).
- * 전체 루프에 outer timeout (240s) 적용.
- */
-export async function autoGradeSession(
-  sessionId: string,
-  options?: { signal?: AbortSignal }
-): Promise<AutoGradeResult> {
-  const requestStartTime = Date.now();
-  const supabase = getSupabaseServer();
-  const abortController = new AbortController();
-  if (options?.signal) {
-    options.signal.addEventListener("abort", () => abortController.abort(), { once: true });
-  }
+// ============================================================
+// Phase-based grading pipeline (chained QStash jobs)
+// ------------------------------------------------------------
+// autoGradeSession is no longer the production path — QStash
+// runs `gradeOneQuestion`, then `generateOneQuestionSummary`,
+// then `generateSessionSummaryPhase` as independent jobs.
+// Each phase is idempotent (skip-if-done) to make QStash
+// retries cheap no-ops rather than cost bombs.
+// ============================================================
 
-  // 1. 세션 정보
+interface PhaseContext {
+  session: { id: string; exam_id: string; student_id: string };
+  exam: {
+    id: string;
+    title: string;
+    questions: unknown;
+    rubric?: unknown;
+    chat_weight?: number;
+    type?: string;
+    language?: string;
+  };
+  questions: Array<{
+    idx: number;
+    prompt?: string;
+    ai_context?: string;
+    rubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
+  }>;
+  questionsToGrade: Array<{
+    idx: number;
+    prompt?: string;
+    ai_context?: string;
+    rubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
+  }>;
+  submissionsByQuestion: Record<number, { answer: string; workspace_state?: unknown }>;
+  messagesByQuestion: Record<number, Array<{ role: string; content: string }>>;
+  chatWeight: number;
+  isAssignment: boolean;
+  decompressionWarnings: DecompressionWarning[];
+}
+
+/**
+ * Load everything a single phase job needs. Called once per job; a handful
+ * of extra DB queries per phase is the explicit trade-off we accept to make
+ * each job self-contained and safely retryable without shared state.
+ */
+async function loadPhaseContext(
+  sessionId: string,
+  supabase: SupabaseClient
+): Promise<PhaseContext> {
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
     .select("id, exam_id, student_id")
@@ -759,7 +792,6 @@ export async function autoGradeSession(
     throw new Error(`Session not found: ${sessionId}`);
   }
 
-  // 2. 시험 정보
   const { data: exam, error: examError } = await supabase
     .from("exams")
     .select("id, title, questions, rubric, chat_weight, type, language")
@@ -770,405 +802,568 @@ export async function autoGradeSession(
     throw new Error(`Exam not found for session: ${sessionId}`);
   }
 
-  // 3. 제출 답안
-  const { data: submissions, error: submissionsError } = await supabase
-    .from("submissions")
-    .select(
-      `
-      id,
-      q_idx,
-      answer,
-      compressed_answer_data,
-      workspace_state,
-      created_at
-    `
-    )
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: false });
+  const [submissionsResult, messagesResult] = await Promise.all([
+    supabase
+      .from("submissions")
+      .select(
+        "id, q_idx, answer, compressed_answer_data, workspace_state, created_at"
+      )
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("messages")
+      .select("id, q_idx, role, content, compressed_content, created_at")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: true }),
+  ]);
 
-  if (submissionsError) {
-    throw new Error(`Failed to fetch submissions: ${submissionsError.message}`);
+  if (submissionsResult.error) {
+    throw new Error(
+      `Failed to fetch submissions: ${submissionsResult.error.message}`
+    );
   }
 
-  // 4. 메시지
-  const { data: messages, error: messagesError } = await supabase
-    .from("messages")
-    .select(
-      `
-      id,
-      q_idx,
-      role,
-      content,
-      compressed_content,
-      created_at
-    `
-    )
-    .eq("session_id", sessionId)
-    .order("created_at", { ascending: true });
-
-  if (messagesError) {
-    logError("[AUTO_GRADE] Error fetching messages", messagesError, {
-      path: "lib/grading.ts",
-      additionalData: { sessionId },
-    });
-  }
-
-  if (messages && messages.length > 200) {
-    logError("[AUTO_GRADE] Large session detected — high message count", null, {
-      path: "lib/grading.ts",
-      additionalData: { sessionId, messageCount: messages.length },
-    });
-  }
-
-  // 5. 압축 해제
   const decompressionWarnings: DecompressionWarning[] = [];
-  const submissionsByQuestion = decompressSubmissions(submissions || [], decompressionWarnings);
-  const messagesByQuestion = decompressMessages(messages || [], decompressionWarnings);
+  const submissionsByQuestion = decompressSubmissions(
+    submissionsResult.data || [],
+    decompressionWarnings
+  );
+  const messagesByQuestion = decompressMessages(
+    messagesResult.data || [],
+    decompressionWarnings
+  );
 
-  // 6. 문제 정규화
   const questions = normalizeQuestions(exam.questions);
   const chatWeight = Math.max(0, Math.min(100, exam.chat_weight ?? 50));
   const isAssignment = exam.type === "assignment";
-
   const questionsToGrade = isAssignment
     ? questions.filter((q) => q.idx === 0)
     : questions;
 
-  // 7. 순차 처리 루프 — 각 문제마다: 채점 → 문제별 요약 → grades 저장
-  const grades: GradeResult[] = [];
-  const failedGradeResults: FailedGradeResult[] = [];
-  const failedQuestions: number[] = [];
-  let timedOut = false;
+  return {
+    session,
+    exam,
+    questions,
+    questionsToGrade,
+    submissionsByQuestion,
+    messagesByQuestion,
+    chatWeight,
+    isAssignment,
+    decompressionWarnings,
+  };
+}
 
-  // 채점 루프 내에서 시간 초과 감시
-  const deadline = requestStartTime + GRADING_TIMEOUT_MS;
+/**
+ * Ordered list of q_idxes that have a submission and are candidates for
+ * grading. Used by the worker to chain `grade_question` jobs.
+ */
+export async function listQuestionsToGrade(
+  sessionId: string
+): Promise<number[]> {
+  const supabase = getSupabaseServer();
+  const ctx = await loadPhaseContext(sessionId, supabase);
+  return ctx.questionsToGrade
+    .filter((q) => !!ctx.submissionsByQuestion[q.idx])
+    .map((q) => q.idx)
+    .sort((a, b) => a - b);
+}
 
-  // Progress tracking — counts only questions that actually entered the grading loop
-  // (i.e. had a submission). Matches `grades.length + failedQuestions.length` at the end.
-  let progressTotal = 0;
-  for (const q of questionsToGrade) {
-    if (submissionsByQuestion[q.idx]) progressTotal++;
+/**
+ * Ordered list of q_idxes that have a successful (non-`ai_failed`) grade
+ * row — these are the ones we generate per-question summaries for.
+ */
+export async function listGradedQuestionsForSummary(
+  sessionId: string
+): Promise<number[]> {
+  const supabase = getSupabaseServer();
+  const { data, error } = await supabase
+    .from("grades")
+    .select("q_idx, grade_type")
+    .eq("session_id", sessionId);
+
+  if (error) throw new Error(`Failed to list grades: ${error.message}`);
+
+  return (data || [])
+    .filter(
+      (g) =>
+        (g as { grade_type?: string }).grade_type !== "ai_failed" &&
+        typeof (g as { q_idx?: unknown }).q_idx === "number"
+    )
+    .map((g) => (g as { q_idx: number }).q_idx)
+    .sort((a, b) => a - b);
+}
+
+/**
+ * Phase 1: grade a single question.
+ *
+ * Idempotent: if a successful grade row (grade_type != "ai_failed") already
+ * exists for (sessionId, qIdx), returns immediately without any OpenAI call.
+ * This is the key cost-bomb prevention — QStash retries become cheap no-ops.
+ *
+ * On AI failure, an `ai_failed` row is upserted so the instructor UI can
+ * flag it. We do NOT throw on grading failure — the chain proceeds to the
+ * next question. Throwing would trigger QStash to replay a terminal failure.
+ */
+export async function gradeOneQuestion(
+  sessionId: string,
+  qIdx: number
+): Promise<{ skipped: boolean; graded: boolean; failureReason?: string }> {
+  const supabase = getSupabaseServer();
+
+  const { data: existing, error: existingErr } = await supabase
+    .from("grades")
+    .select("id, grade_type")
+    .eq("session_id", sessionId)
+    .eq("q_idx", qIdx)
+    .maybeSingle();
+
+  if (existingErr) {
+    logError("[PHASE_GRADE] Failed to check existing grade", existingErr, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, qIdx },
+    });
   }
-  let completedCount = 0;
-  let failedCount = 0;
+
+  if (
+    existing &&
+    (existing as { grade_type?: string }).grade_type &&
+    (existing as { grade_type?: string }).grade_type !== "ai_failed"
+  ) {
+    return { skipped: true, graded: true };
+  }
+
+  const ctx = await loadPhaseContext(sessionId, supabase);
+  const question = ctx.questionsToGrade.find((q) => q.idx === qIdx);
+  if (!question) {
+    return { skipped: true, graded: false, failureReason: "Question not in exam" };
+  }
+
+  const submission = ctx.submissionsByQuestion[qIdx];
+  if (!submission) {
+    return { skipped: true, graded: false, failureReason: "No submission" };
+  }
+
+  const questionMessages = ctx.messagesByQuestion[qIdx] || [];
+  const rubricItems = resolveQuestionRubric(question, ctx.exam.rubric);
+
   await updateGradingProgress(supabase, sessionId, {
     status: "running",
-    total: progressTotal,
-    completed: 0,
-    failed: 0,
+    phase: "grade",
+    current_q_idx: qIdx,
   });
 
-  for (const question of questionsToGrade) {
-    const qIdx = question.idx;
+  const abortController = new AbortController();
+  const deadline = Date.now() + 180_000;
+  const outcome = await gradeSingleQuestion({
+    question,
+    submission,
+    questionMessages,
+    exam: ctx.exam,
+    rubricItems,
+    chatWeight: ctx.chatWeight,
+    isAssignment: ctx.isAssignment,
+    sessionId,
+    studentId: ctx.session.student_id,
+    signal: abortController.signal,
+    deadline,
+  });
 
-    // Deadline check — stop processing further questions
-    if (Date.now() >= deadline) {
-      timedOut = true;
-      abortController.abort();
-      logError("[AUTO_GRADE] Deadline reached — stopping further questions", null, {
-        path: "lib/grading.ts",
-        additionalData: { sessionId, remainingFromIdx: qIdx },
-      });
-      // Remaining unprocessed questions → failed
-      const submission = submissionsByQuestion[qIdx];
-      if (submission) {
-        failedGradeResults.push({ q_idx: qIdx, failureReason: "Timed out before processing" });
-        failedQuestions.push(qIdx);
-        failedCount++;
-        await updateGradingProgress(supabase, sessionId, {
-          completed: completedCount,
-          failed: failedCount,
-        });
-      }
-      continue;
-    }
-
-    // Resolve rubric for this question
-    const rubricItems = resolveQuestionRubric(question, exam.rubric);
-    if (
-      rubricItems.length === 1 &&
-      rubricItems[0].evaluationArea === "전반적 답변 품질"
-    ) {
-      logError(
-        "[AUTO_GRADE] Using default rubric — no rubric configured for question or exam",
-        null,
+  if (!outcome.ok) {
+    await upsertGradesBySessionQuestion(
+      supabase as never,
+      [
         {
-          path: "lib/grading.ts",
-          additionalData: { sessionId, qIdx, examId: exam.id },
-        }
-      );
-    }
+          session_id: sessionId,
+          q_idx: qIdx,
+          score: 0,
+          comment: `[AI 채점 실패] ${outcome.failureReason} — 강사의 수동 채점이 필요합니다.`,
+          stage_grading: null,
+          ai_summary: null,
+          grade_type: "ai_failed",
+        },
+      ],
+      "phase_grade_failed"
+    );
+    await updateGradingProgress(supabase, sessionId, {
+      phase: "grade",
+      current_q_idx: qIdx,
+      last_error: `q${qIdx}: ${outcome.failureReason}`,
+    });
+    return { skipped: false, graded: false, failureReason: outcome.failureReason };
+  }
 
-    const submission = submissionsByQuestion[qIdx];
-    const questionMessages = messagesByQuestion[qIdx] || [];
+  const grade = outcome.result;
+  await upsertGradesBySessionQuestion(
+    supabase as never,
+    [
+      {
+        session_id: sessionId,
+        q_idx: grade.q_idx,
+        score: grade.score,
+        comment: grade.comment,
+        stage_grading: grade.stage_grading || null,
+        ai_summary: null,
+        grade_type: "auto",
+      },
+    ],
+    "phase_grade_success"
+  );
 
-    if (!submission) {
-      // No submission — skip (don't mark as failure)
-      continue;
-    }
+  return { skipped: false, graded: true };
+}
 
-    // 7-1. 채점
-    const gradeOutcome = await gradeSingleQuestion({
-      question,
-      submission,
-      questionMessages,
-      exam,
-      rubricItems,
-      chatWeight,
-      isAssignment,
-      sessionId,
-      studentId: session.student_id,
-      signal: abortController.signal,
-      deadline,
+/**
+ * Phase 2: generate per-question AI summary (stored on grades.ai_summary).
+ * Idempotent: skips if ai_summary already set, or if grade is `ai_failed`.
+ *
+ * Throws on summary generation failure so QStash retries — this specific
+ * phase is cheap to retry (one OpenAI call) and persistent failures will
+ * eventually be picked up by the cron sweeper.
+ */
+export async function generateOneQuestionSummary(
+  sessionId: string,
+  qIdx: number
+): Promise<{ skipped: boolean; generated: boolean }> {
+  const supabase = getSupabaseServer();
+
+  const { data: gradeRow, error: gradeErr } = await supabase
+    .from("grades")
+    .select("id, q_idx, score, comment, stage_grading, ai_summary, grade_type")
+    .eq("session_id", sessionId)
+    .eq("q_idx", qIdx)
+    .maybeSingle();
+
+  if (gradeErr) {
+    throw new Error(`Failed to fetch grade: ${gradeErr.message}`);
+  }
+  if (!gradeRow) {
+    return { skipped: true, generated: false };
+  }
+
+  const typedGrade = gradeRow as {
+    q_idx: number;
+    score: number;
+    comment: string | null;
+    stage_grading: StageGrading | null;
+    ai_summary: QuestionSummaryData | null;
+    grade_type: string | null;
+  };
+
+  if (typedGrade.ai_summary) {
+    return { skipped: true, generated: false };
+  }
+  if (typedGrade.grade_type === "ai_failed") {
+    return { skipped: true, generated: false };
+  }
+
+  const ctx = await loadPhaseContext(sessionId, supabase);
+  const question = ctx.questionsToGrade.find((q) => q.idx === qIdx);
+  if (!question) {
+    return { skipped: true, generated: false };
+  }
+
+  await updateGradingProgress(supabase, sessionId, {
+    status: "running",
+    phase: "qsummary",
+    current_q_idx: qIdx,
+  });
+
+  const submission = ctx.submissionsByQuestion[qIdx];
+  const questionMessages = ctx.messagesByQuestion[qIdx] || [];
+  const rubricItems = resolveQuestionRubric(question, ctx.exam.rubric);
+
+  const abortController = new AbortController();
+  const grade: GradeResult = {
+    q_idx: typedGrade.q_idx,
+    score: typedGrade.score,
+    comment: typedGrade.comment || "",
+    stage_grading: typedGrade.stage_grading || undefined,
+  };
+
+  const summary = await generateQuestionSummary({
+    question,
+    submission,
+    questionMessages,
+    grade,
+    rubricItems,
+    examTitle: ctx.exam.title,
+    examId: ctx.exam.id,
+    sessionId,
+    studentId: ctx.session.student_id,
+    signal: abortController.signal,
+    timeoutMs: 60_000,
+  });
+
+  if (!summary) {
+    await updateGradingProgress(supabase, sessionId, {
+      phase: "qsummary",
+      current_q_idx: qIdx,
+      last_error: `qsummary q${qIdx} returned null`,
+    });
+    throw new Error(`Failed to generate question summary for q_idx=${qIdx}`);
+  }
+
+  const { error: updateErr } = await supabase
+    .from("grades")
+    .update({ ai_summary: summary })
+    .eq("session_id", sessionId)
+    .eq("q_idx", qIdx);
+  if (updateErr) {
+    throw new Error(`Failed to save question summary: ${updateErr.message}`);
+  }
+
+  return { skipped: false, generated: true };
+}
+
+/**
+ * Phase 3: generate session-level AI summary (stored on sessions.ai_summary).
+ * Idempotent: skips if sessions.ai_summary.summary is already a non-empty string.
+ *
+ * Throws on failure so QStash retries — the "종합평가 빈칸" symptom is
+ * specifically the silent null return this phase now catches loudly.
+ */
+export async function generateSessionSummaryPhase(
+  sessionId: string
+): Promise<{ skipped: boolean; generated: boolean }> {
+  const supabase = getSupabaseServer();
+
+  const { data: sessionRow, error: sessionErr } = await supabase
+    .from("sessions")
+    .select("id, exam_id, student_id, ai_summary")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (sessionErr || !sessionRow) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  const existingSummary = (sessionRow as { ai_summary: unknown }).ai_summary as
+    | { summary?: unknown }
+    | null;
+  if (
+    existingSummary &&
+    typeof existingSummary.summary === "string" &&
+    existingSummary.summary.trim().length > 0
+  ) {
+    await updateGradingProgress(supabase, sessionId, {
+      status: "completed",
+      phase: "done",
+    });
+    return { skipped: true, generated: false };
+  }
+
+  await updateGradingProgress(supabase, sessionId, {
+    status: "running",
+    phase: "session_summary",
+  });
+
+  const ctx = await loadPhaseContext(sessionId, supabase);
+
+  const { data: gradesData, error: gradesErr } = await supabase
+    .from("grades")
+    .select("q_idx, score, comment, stage_grading, ai_summary, grade_type")
+    .eq("session_id", sessionId);
+  if (gradesErr) {
+    throw new Error(`Failed to load grades: ${gradesErr.message}`);
+  }
+
+  const grades: GradeResult[] = (gradesData || [])
+    .filter(
+      (g) => (g as { grade_type?: string }).grade_type !== "ai_failed"
+    )
+    .map((g) => {
+      const row = g as {
+        q_idx: number;
+        score: number | null;
+        comment: string | null;
+        stage_grading: StageGrading | null;
+        ai_summary: QuestionSummaryData | null;
+      };
+      return {
+        q_idx: row.q_idx,
+        score: row.score ?? 0,
+        comment: row.comment ?? "",
+        stage_grading: row.stage_grading || undefined,
+        ai_summary: row.ai_summary || undefined,
+      };
     });
 
-    if (!gradeOutcome.ok) {
-      failedGradeResults.push({ q_idx: qIdx, failureReason: gradeOutcome.failureReason });
-      failedQuestions.push(qIdx);
-      failedCount++;
-      await updateGradingProgress(supabase, sessionId, {
-        completed: completedCount,
-        failed: failedCount,
-      });
-      continue;
-    }
+  if (grades.length === 0) {
+    const fallback = {
+      grading_status: "failed" as const,
+      grading_failed_questions: ctx.questionsToGrade.map((q) => q.idx),
+      grading_completed_count: 0,
+      grading_total_count: ctx.questions.length,
+      grading_timed_out: false,
+    };
+    await supabase
+      .from("sessions")
+      .update({ ai_summary: fallback })
+      .eq("id", sessionId);
+    await updateGradingProgress(supabase, sessionId, {
+      status: "failed",
+      phase: "done",
+      last_error: "No successfully graded questions to summarize",
+    });
+    return { skipped: false, generated: false };
+  }
 
-    const grade = gradeOutcome.result;
+  const summary = await generateSummary(
+    sessionId,
+    ctx.session.student_id,
+    ctx.exam,
+    ctx.questions,
+    ctx.submissionsByQuestion,
+    ctx.messagesByQuestion,
+    grades,
+    120_000
+  );
 
-    // 7-2. grades 저장 (per-question upsert) — ai_summary는 Phase 2에서 별도 저장
+  if (!summary) {
+    await updateGradingProgress(supabase, sessionId, {
+      phase: "session_summary",
+      last_error: "generateSummary returned null",
+    });
+    throw new Error("Session summary generation returned null");
+  }
+
+  await updateGradingProgress(supabase, sessionId, {
+    status: "completed",
+    phase: "done",
+  });
+
+  return { skipped: false, generated: true };
+}
+
+/**
+ * Legacy monolithic wrapper — sequentially runs all phases in-process.
+ * Used by:
+ *   - Tests
+ *   - Local dev when QStash is not configured (via trigger's dev fallback)
+ *   - Manual reprocessing tools
+ *
+ * Production uses chained QStash jobs via the grading worker; this wrapper
+ * simply composes the same phase functions for environments where QStash
+ * isn't available. Each phase is already idempotent, so partial failure
+ * mid-wrapper (e.g. Vercel function timeout) can be resumed safely.
+ */
+export async function autoGradeSession(
+  sessionId: string,
+  options?: { signal?: AbortSignal }
+): Promise<AutoGradeResult> {
+  void options;
+  const supabase = getSupabaseServer();
+
+  const questionIdxs = await listQuestionsToGrade(sessionId);
+
+  await updateGradingProgress(supabase, sessionId, {
+    status: "running",
+    total: questionIdxs.length,
+    completed: 0,
+    failed: 0,
+    phase: "grade",
+  });
+
+  const grades: GradeResult[] = [];
+  const failedQuestions: number[] = [];
+
+  for (const qIdx of questionIdxs) {
     try {
-      await upsertGradesBySessionQuestion(
-        supabase as never,
-        [
-          {
-            session_id: sessionId,
-            q_idx: grade.q_idx,
-            score: grade.score,
-            comment: grade.comment,
-            stage_grading: grade.stage_grading || null,
-            ai_summary: null,
-            grade_type: "auto",
-          },
-        ],
-        "auto_grade_sequential"
-      );
-    } catch (upsertErr) {
-      logError("[AUTO_GRADE] Failed to upsert grade row", upsertErr, {
+      const res = await gradeOneQuestion(sessionId, qIdx);
+      if (res.graded) {
+        const { data } = await supabase
+          .from("grades")
+          .select("q_idx, score, comment, stage_grading, ai_summary")
+          .eq("session_id", sessionId)
+          .eq("q_idx", qIdx)
+          .maybeSingle();
+        if (data) {
+          const row = data as {
+            q_idx: number;
+            score: number | null;
+            comment: string | null;
+            stage_grading: StageGrading | null;
+            ai_summary: QuestionSummaryData | null;
+          };
+          grades.push({
+            q_idx: row.q_idx,
+            score: row.score ?? 0,
+            comment: row.comment ?? "",
+            stage_grading: row.stage_grading || undefined,
+            ai_summary: row.ai_summary || undefined,
+          });
+        }
+      } else if (res.failureReason) {
+        failedQuestions.push(qIdx);
+      }
+      await updateGradingProgress(supabase, sessionId, {
+        completed: grades.length,
+        failed: failedQuestions.length,
+      });
+    } catch (err) {
+      logError("[AUTO_GRADE] gradeOneQuestion threw", err, {
         path: "lib/grading.ts",
         additionalData: { sessionId, qIdx },
       });
-      failedGradeResults.push({
-        q_idx: qIdx,
-        failureReason: `Grade upsert failed: ${upsertErr instanceof Error ? upsertErr.message : String(upsertErr)}`,
-      });
       failedQuestions.push(qIdx);
-      failedCount++;
       await updateGradingProgress(supabase, sessionId, {
-        completed: completedCount,
-        failed: failedCount,
+        completed: grades.length,
+        failed: failedQuestions.length,
+        last_error: err instanceof Error ? err.message : String(err),
       });
-      continue;
     }
-
-    grades.push(grade);
-    completedCount++;
-    await updateGradingProgress(supabase, sessionId, {
-      completed: completedCount,
-      failed: failedCount,
-    });
   }
 
-  // 8. Insert ai_failed grade records for failures
-  if (failedGradeResults.length > 0) {
-    const failedGradeRecords = failedGradeResults.map((failed) => ({
-      session_id: sessionId,
-      q_idx: failed.q_idx,
-      score: 0,
-      comment: `[AI 채점 실패] ${failed.failureReason} — 강사의 수동 채점이 필요합니다.`,
-      stage_grading: null,
-      ai_summary: null,
-      grade_type: "ai_failed",
-    }));
-
+  const gradedIdxs = await listGradedQuestionsForSummary(sessionId);
+  for (const qIdx of gradedIdxs) {
     try {
-      await upsertGradesBySessionQuestion(
-        supabase as never,
-        failedGradeRecords,
-        "auto_grade_failed_records"
-      );
-    } catch (failedInsertError) {
-      logError("[AUTO_GRADE] Failed to insert ai_failed grade records", failedInsertError, {
-        path: "lib/grading.ts",
-        additionalData: {
-          sessionId,
-          failedQIdxes: failedGradeResults.map((f) => f.q_idx),
-        },
-      });
-    }
-  }
-
-  // 9. Phase 2: 문제별 요약 — 채점 루프 완료 후 별도 실행
-  // 채점이 모두 끝난 뒤에 요약을 생성하므로, 요약 지연이 채점을 막지 않음
-  const VERCEL_BUDGET_MS = 280_000;
-  // 세션 레벨 summary는 gpt-heavy 모델 사용 → 최소 60s 필요.
-  // 시간이 부족하면 skip → generate-summary API endpoint가 폴백으로 처리함.
-  const MIN_SUMMARY_TIME_MS = 60_000;
-  const QUESTION_SUMMARY_MIN_MS = 10_000;
-  const QUESTION_SUMMARY_MAX_MS = 60_000;
-  const summaryPhaseAbort = new AbortController();
-
-  for (const grade of grades) {
-    const elapsedForSummary = Date.now() - requestStartTime;
-    const budgetRemaining = VERCEL_BUDGET_MS - elapsedForSummary;
-    const availableForQuestion = budgetRemaining - MIN_SUMMARY_TIME_MS;
-
-    if (availableForQuestion < QUESTION_SUMMARY_MIN_MS) {
-      logError("[AUTO_GRADE] Skipping remaining question summaries — insufficient time budget", null, {
-        path: "lib/grading.ts",
-        additionalData: { sessionId, qIdx: grade.q_idx, budgetRemaining },
-      });
-      break;
-    }
-
-    const summaryTimeout = Math.min(QUESTION_SUMMARY_MAX_MS, availableForQuestion - 5_000);
-    const qIdx = grade.q_idx;
-    const question = questionsToGrade.find((q) => q.idx === qIdx);
-    if (!question) continue;
-    const submission = submissionsByQuestion[qIdx];
-    const questionMessages = messagesByQuestion[qIdx] || [];
-    const rubricItems = resolveQuestionRubric(question, exam.rubric);
-
-    const questionSummary = await generateQuestionSummary({
-      question,
-      submission,
-      questionMessages,
-      grade,
-      rubricItems,
-      examTitle: exam.title,
-      examId: exam.id,
-      sessionId,
-      studentId: session.student_id,
-      signal: summaryPhaseAbort.signal,
-      timeoutMs: summaryTimeout,
-    });
-
-    if (questionSummary) {
-      grade.ai_summary = questionSummary;
-      try {
-        await (supabase as ReturnType<typeof getSupabaseServer>)
-          .from("grades")
-          .update({ ai_summary: questionSummary })
-          .eq("session_id", sessionId)
-          .eq("q_idx", qIdx);
-      } catch (summaryUpsertErr) {
-        logError("[AUTO_GRADE] Failed to save question summary", summaryUpsertErr, {
-          path: "lib/grading.ts",
-          additionalData: { sessionId, qIdx },
-        });
-      }
-    }
-  }
-
-  // 10. 세션 레벨 종합평가 — 문제별 요약을 입력으로 받아 경량화
-  let summary: SummaryData | null = null;
-  const elapsedMs = Date.now() - requestStartTime;
-  const remainingMs = VERCEL_BUDGET_MS - elapsedMs;
-
-  if (timedOut) {
-    logError("[AUTO_GRADE] Skipping session summary — grading timed out", null, {
-      path: "lib/grading.ts",
-      additionalData: { sessionId, elapsedMs },
-    });
-  } else if (remainingMs < MIN_SUMMARY_TIME_MS) {
-    logError("[AUTO_GRADE] Skipping session summary — insufficient time budget", null, {
-      path: "lib/grading.ts",
-      additionalData: { sessionId, elapsedMs, remainingMs },
-    });
-  } else {
-    try {
-      summary = await generateSummary(
-        sessionId,
-        session.student_id,
-        exam,
-        questions,
-        submissionsByQuestion,
-        messagesByQuestion,
-        grades,
-        remainingMs
-      );
+      await generateOneQuestionSummary(sessionId, qIdx);
     } catch (err) {
-      logError("[AUTO_GRADE] Session summary generation failed", err, {
+      logError("[AUTO_GRADE] generateOneQuestionSummary threw", err, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx },
+      });
+    }
+  }
+
+  let summary: SummaryData | null = null;
+  if (gradedIdxs.length > 0) {
+    try {
+      await generateSessionSummaryPhase(sessionId);
+      const { data } = await supabase
+        .from("sessions")
+        .select("ai_summary")
+        .eq("id", sessionId)
+        .maybeSingle();
+      summary = (data?.ai_summary as SummaryData | null) || null;
+    } catch (err) {
+      logError("[AUTO_GRADE] generateSessionSummaryPhase threw", err, {
         path: "lib/grading.ts",
         additionalData: { sessionId },
       });
     }
   }
 
-  // 11. Persist partial grading status on sessions
-  const isPartial = timedOut || failedQuestions.length > 0;
-  if (isPartial) {
-    const gradingFailureDetails = failedGradeResults.reduce<Record<number, string>>(
-      (acc, f) => {
-        acc[f.q_idx] = f.failureReason;
-        return acc;
-      },
-      {}
-    );
-
-    const gradingStatusPayload = {
-      grading_status: "partial" as const,
-      grading_failed_questions: failedQuestions,
-      grading_completed_count: grades.length,
-      grading_total_count: questions.length,
-      grading_timed_out: timedOut,
-      grading_failure_details: gradingFailureDetails,
-    };
-    const mergedSummary = { ...(summary || {}), ...gradingStatusPayload };
-    const { error: statusError } = await supabase
-      .from("sessions")
-      .update({ ai_summary: mergedSummary })
-      .eq("id", sessionId);
-
-    if (statusError) {
-      logError("[AUTO_GRADE] Failed to save partial grading status — retrying once", statusError, {
-        path: "lib/grading.ts",
-        additionalData: { sessionId, failedQuestions },
-      });
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const { error: retryStatusError } = await supabase
-        .from("sessions")
-        .update({ ai_summary: mergedSummary })
-        .eq("id", sessionId);
-      if (retryStatusError) {
-        logError(
-          "[AUTO_GRADE] Retry also failed for partial grading status update",
-          retryStatusError,
-          {
-            path: "lib/grading.ts",
-            additionalData: { sessionId, failedQuestions },
-          }
-        );
-      }
-    }
-  }
-
-  // 11. Finalize grading_progress status
   const finalStatus: GradingProgressStatus =
-    timedOut || failedQuestions.length > 0 ? "failed" : "completed";
+    failedQuestions.length > 0 || gradedIdxs.length === 0
+      ? "failed"
+      : "completed";
+
   await updateGradingProgress(supabase, sessionId, {
     status: finalStatus,
-    completed: completedCount,
-    failed: failedCount,
+    completed: grades.length,
+    failed: failedQuestions.length,
+    phase: "done",
   });
 
   return {
     grades,
     summary,
     failedQuestions,
-    timedOut,
-    ...(decompressionWarnings.length > 0 && { decompressionWarnings }),
+    timedOut: false,
   };
 }
+
 
 /**
  * 세션 레벨 종합 요약 평가 생성 (sessions.ai_summary에 저장).

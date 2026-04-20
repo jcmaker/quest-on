@@ -79,10 +79,36 @@ export type GradingProgressStatus =
   | "completed"
   | "failed";
 
+/**
+ * Phase that the grading pipeline is currently executing.
+ * Chained QStash jobs progress through these in order:
+ *   grade → qsummary → session_summary → done
+ */
+export type GradingPhaseName =
+  | "grade"
+  | "qsummary"
+  | "session_summary"
+  | "done";
+
 export interface GradingProgress {
   status: GradingProgressStatus;
   total: number;
   completed: number;
   failed: number;
+  /** Which phase is currently executing (or was last executed). */
+  phase?: GradingPhaseName;
+  /** The q_idx currently being processed (omitted for session_summary). */
+  current_q_idx?: number;
+  /** Last observed error message — surfaces silent failures for operators. */
+  last_error?: string;
   updated_at: string;
 }
+
+/**
+ * Payload pushed to QStash for each chained grading phase job.
+ * Discriminated union keeps the worker type-safe and payloads small.
+ */
+export type GradingPhasePayload =
+  | { sessionId: string; phase: "grade_question"; qIdx: number }
+  | { sessionId: string; phase: "question_summary"; qIdx: number }
+  | { sessionId: string; phase: "session_summary" };
