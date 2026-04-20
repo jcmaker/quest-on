@@ -1006,7 +1006,9 @@ export async function autoGradeSession(
   // 9. Phase 2: 문제별 요약 — 채점 루프 완료 후 별도 실행
   // 채점이 모두 끝난 뒤에 요약을 생성하므로, 요약 지연이 채점을 막지 않음
   const VERCEL_BUDGET_MS = 280_000;
-  const MIN_SUMMARY_TIME_MS = 30_000;
+  // 세션 레벨 summary는 gpt-heavy 모델 사용 → 최소 60s 필요.
+  // 시간이 부족하면 skip → generate-summary API endpoint가 폴백으로 처리함.
+  const MIN_SUMMARY_TIME_MS = 60_000;
   const QUESTION_SUMMARY_MIN_MS = 10_000;
   const QUESTION_SUMMARY_MAX_MS = 60_000;
   const summaryPhaseAbort = new AbortController();
