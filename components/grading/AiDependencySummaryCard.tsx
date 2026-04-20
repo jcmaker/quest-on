@@ -7,12 +7,13 @@ import type {
   AiDependencySummary,
   AiDependencyRiskLevel,
 } from "@/lib/types/grading";
-import { Bot, RotateCcw } from "lucide-react";
+import { Bot, RotateCcw, Loader2 } from "lucide-react";
 
 interface AiDependencySummaryCardProps {
   mode: "instructor" | "student";
   questionAssessment?: AiDependencyAssessment | null;
   overallSummary?: AiDependencySummary | null;
+  loading?: boolean;
 }
 
 function getRiskLabel(risk: AiDependencyRiskLevel) {
@@ -41,7 +42,27 @@ export function AiDependencySummaryCard({
   mode,
   questionAssessment,
   overallSummary,
+  loading,
 }: AiDependencySummaryCardProps) {
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Bot className="h-4 w-4 text-primary" />
+            AI 의존 신호
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3 py-6 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin shrink-0" />
+            <p className="text-sm">채점 완료 후 분석 결과가 표시됩니다</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (!questionAssessment && !overallSummary) {
     return null;
   }

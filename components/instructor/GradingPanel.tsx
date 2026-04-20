@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Star, Check, Sparkles, Quote, Plus, Minus } from "lucide-react";
+import { Star, Check, Sparkles, Quote, Plus, Minus, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { StageKey, QuestionSummaryData } from "@/lib/types/grading";
 
@@ -22,6 +22,7 @@ interface GradingPanelProps {
   aiGradedScore?: number; // 가채점 점수
   aiSummary?: QuestionSummaryData | null; // 문제별 AI 종합평가 (read-only 표시)
   saving: boolean;
+  isGradingInProgress?: boolean;
   onStageScoreChange: (stage: StageKey, value: number) => void;
   onStageCommentChange: (stage: StageKey, value: string) => void;
   onOverallScoreChange: (value: number) => void;
@@ -48,6 +49,7 @@ export function GradingPanel({
   aiGradedScore,
   aiSummary,
   saving,
+  isGradingInProgress = false,
   // onStageScoreChange,
   // onStageCommentChange,
   onOverallScoreChange,
@@ -61,6 +63,28 @@ export function GradingPanel({
   useEffect(() => {
     setScoreInput(overallScore.toString());
   }, [overallScore]);
+
+  if (isGradingInProgress) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Star className="w-5 h-5 text-yellow-600" />
+            문제 {questionNumber} 채점
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+            <p className="text-sm font-medium">AI 채점이 진행 중입니다</p>
+            <p className="text-xs text-muted-foreground">
+              채점이 완료되면 점수와 피드백이 표시됩니다
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

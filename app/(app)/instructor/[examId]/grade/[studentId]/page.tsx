@@ -377,8 +377,11 @@ export default function GradeStudentPage({
       const data = await response.json();
       return data.summary as SummaryData;
     },
-    // Only fetch if session loaded AND no summary in DB
-    enabled: !!sessionData?.session?.id && !sessionData?.session?.ai_summary,
+    // Only fetch if session loaded AND no summary in DB AND grading is not in progress
+    enabled: !!sessionData?.session?.id &&
+      !sessionData?.session?.ai_summary &&
+      sessionData?.gradingProgress?.status !== "queued" &&
+      sessionData?.gradingProgress?.status !== "running",
     staleTime: 1000 * 60 * 5, // 5 minutes cache
   });
 
@@ -845,6 +848,10 @@ export default function GradeStudentPage({
 
   // For now, we'll assume all messages are AI conversations during the exam
   const duringExamMessages = aiConversations;
+
+  const isGradingInProgress =
+    sessionData.gradingProgress?.status === "queued" ||
+    sessionData.gradingProgress?.status === "running";
 
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
@@ -1798,7 +1805,7 @@ export default function GradeStudentPage({
           <div className="mb-6">
             <AIOverallSummary
               summary={overallSummary}
-              loading={summaryLoading}
+              loading={isGradingInProgress || summaryLoading}
             />
           </div>
 
@@ -1834,6 +1841,7 @@ export default function GradeStudentPage({
                 aiGradedScore={currentAiGradedScore}
                 aiSummary={sessionData.grades[selectedQuestionIdx]?.ai_summary || null}
                 saving={saveGradeMutation.isPending}
+                isGradingInProgress={isGradingInProgress}
                 onStageScoreChange={handleStageScoreChange}
                 onStageCommentChange={handleStageCommentChange}
                 onOverallScoreChange={(value) =>
@@ -1850,6 +1858,7 @@ export default function GradeStudentPage({
                 mode="instructor"
                 questionAssessment={currentAiDependency}
                 overallSummary={overallAiDependency}
+                loading={isGradingInProgress}
               />
 
               {/* PDF 기능 임시 숨김 — 고도화 후 복원 예정
