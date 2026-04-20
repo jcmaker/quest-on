@@ -338,6 +338,10 @@ async function gradeSingleQuestion(params: {
         },
         {
           timeoutMs: attemptTimeoutMs,
+          // Disable internal retries — gradeSingleQuestion's own deadline-aware
+          // retry loop handles all retry logic. Without this, callOpenAIWithTelemetry
+          // retries 3× on 5xx/429, multiplying per-question time up to 3× 225s = 675s.
+          maxAttempts: 1,
           metadataBuilder: (result) =>
             buildAiTextMetadata({
               outputText:
