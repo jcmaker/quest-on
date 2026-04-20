@@ -164,6 +164,8 @@ async function gradeSingleQuestion(params: {
   sessionId: string;
   studentId: string;
   signal: AbortSignal;
+  /** Absolute deadline timestamp (ms). Used to cap per-attempt timeout so retries never blow past the overall budget. */
+  deadline: number;
 }): Promise<GradeSingleQuestionOutcome> {
   const {
     question,
@@ -176,6 +178,7 @@ async function gradeSingleQuestion(params: {
     sessionId,
     studentId,
     signal,
+    deadline,
   } = params;
 
   const qIdx = question.idx;
@@ -261,6 +264,12 @@ async function gradeSingleQuestion(params: {
   // Retry loop: up to 2 retries (3 total attempts) with exponential backoff (1s, 2s)
   const MAX_GRADING_RETRIES = 2;
   const RETRY_DELAYS_MS = [1_000, 2_000];
+  /** Minimum useful timeout per attempt — below this it's not worth trying */
+  const MIN_ATTEMPT_TIMEOUT_MS = 15_000;
+  /** Hard cap per attempt */
+  const MAX_ATTEMPT_TIMEOUT_MS = 75_000;
+  /** Safety buffer before deadline (for DB writes, progress updates, etc.) */
+  const DEADLINE_SAFETY_BUFFER_MS = 10_000;
 
   let rawParsed: unknown = null;
   let lastError: unknown = null;
@@ -276,6 +285,24 @@ async function gradeSingleQuestion(params: {
         }
       );
     }
+
+    // Deadline-aware per-attempt timeout:
+    // Distribute remaining time evenly across remaining attempts so retries
+    // never push past the overall GRADING_TIMEOUT_MS budget.
+    const remainingMs = deadline - Date.now() - DEADLINE_SAFETY_BUFFER_MS;
+    if (remainingMs < MIN_ATTEMPT_TIMEOUT_MS) {
+      logError("[AUTO_GRADE] Insufficient time remaining — skipping attempt", null, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId, qIdx, attempt, remainingMs },
+      });
+      return { ok: false, failureReason: "Insufficient time remaining before deadline" };
+    }
+    const remainingAttempts = MAX_GRADING_RETRIES - attempt + 1;
+    const attemptTimeoutMs = Math.max(
+      MIN_ATTEMPT_TIMEOUT_MS,
+      Math.min(MAX_ATTEMPT_TIMEOUT_MS, Math.floor(remainingMs / remainingAttempts))
+    );
+
     try {
       const tracked = await callTrackedChatCompletion(
         () =>
@@ -305,11 +332,12 @@ async function gradeSingleQuestion(params: {
               rubric_item_count: rubricItems.length,
               message_count: questionMessages.length,
               attempt,
+              attemptTimeoutMs,
             },
           }),
         },
         {
-          timeoutMs: 90_000,
+          timeoutMs: attemptTimeoutMs,
           metadataBuilder: (result) =>
             buildAiTextMetadata({
               outputText:
@@ -887,6 +915,7 @@ export async function autoGradeSession(
       sessionId,
       studentId: session.student_id,
       signal: abortController.signal,
+      deadline,
     });
 
     if (!gradeOutcome.ok) {

@@ -32,6 +32,9 @@
     },
     "app/api/internal/process-rag/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/internal/grading-worker/route.ts": {
+      "maxDuration": 300
     }
   },
   "regions": ["iad1", "icn1"]
