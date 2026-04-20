@@ -82,9 +82,19 @@ export async function triggerGradingIfNeeded(
       return { queued: false, reason: "already_marked" };
     }
 
-    const gradingProgress = (sessionMeta?.grading_progress as { status?: string } | null) || null;
+    const gradingProgress = (sessionMeta?.grading_progress as { status?: string; updated_at?: string } | null) || null;
     if (gradingProgress?.status === "queued" || gradingProgress?.status === "running") {
-      return { queued: false, reason: "already_in_progress" };
+      // Stale check: running/queued but updated_at > 10 minutes ago → allow re-trigger
+      const STALE_THRESHOLD_MS = 10 * 60 * 1000;
+      const updatedAt = gradingProgress?.updated_at ? new Date(gradingProgress.updated_at).getTime() : 0;
+      const isStale = Date.now() - updatedAt > STALE_THRESHOLD_MS;
+      if (!isStale) {
+        return { queued: false, reason: "already_in_progress" };
+      }
+      logError("[GRADING_TRIGGER] Stale grading_progress detected — allowing re-trigger", null, {
+        path: "lib/grading-trigger.ts",
+        additionalData: { sessionId, status: gradingProgress.status, updatedAt: gradingProgress.updated_at },
+      });
     }
   }
 
