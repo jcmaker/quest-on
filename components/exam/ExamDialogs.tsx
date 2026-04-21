@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -12,6 +13,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { AlertCircle } from "lucide-react";
+
+const UNANSWERED_SUBMIT_COOLDOWN_SECONDS = 3;
+const UNANSWERED_SUBMIT_COOLDOWN_MS = UNANSWERED_SUBMIT_COOLDOWN_SECONDS * 1000;
 
 interface ExamDialogsProps {
   showExitConfirm: boolean;
@@ -48,6 +52,36 @@ export function ExamDialogs({
   onManualSubmitRetry,
   submitErrorMessage,
 }: ExamDialogsProps) {
+  const [now, setNow] = useState(() => Date.now());
+  const [unansweredSubmitDeadline, setUnansweredSubmitDeadline] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!unansweredDialog.open) {
+      const resetTimer = window.setTimeout(() => setUnansweredSubmitDeadline(null), 0);
+      return () => window.clearTimeout(resetTimer);
+    }
+
+    const deadline = Date.now() + UNANSWERED_SUBMIT_COOLDOWN_MS;
+    const startTimer = window.setTimeout(() => setUnansweredSubmitDeadline(deadline), 0);
+    const interval = window.setInterval(() => setNow(Date.now()), 250);
+
+    return () => {
+      window.clearTimeout(startTimer);
+      window.clearInterval(interval);
+    };
+  }, [unansweredDialog.open]);
+
+  let unansweredSubmitRemainingMs = 0;
+  if (unansweredDialog.open) {
+    if (unansweredSubmitDeadline === null) {
+      unansweredSubmitRemainingMs = UNANSWERED_SUBMIT_COOLDOWN_MS;
+    } else {
+      unansweredSubmitRemainingMs = Math.max(0, unansweredSubmitDeadline - now);
+    }
+  }
+  const unansweredSubmitRemainingSeconds = Math.ceil(unansweredSubmitRemainingMs / 1000);
+  const isUnansweredSubmitCoolingDown = unansweredSubmitRemainingSeconds > 0;
+
   return (
     <>
       {/* 그만두기 확인 다이얼로그 */}
@@ -100,12 +134,21 @@ export function ExamDialogs({
             <AlertDialogCancel>돌아가기</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
+                if (isUnansweredSubmitCoolingDown) return;
                 setUnansweredDialog({ open: false, indices: [] });
                 setShowSubmitConfirm(true);
               }}
+              disabled={isUnansweredSubmitCoolingDown}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              미작성 상태로 제출하기
+              {isUnansweredSubmitCoolingDown ? (
+                <>
+                  <span className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-destructive-foreground border-t-transparent" aria-hidden="true" />
+                  미작성 상태로 제출하기 ({unansweredSubmitRemainingSeconds}초)
+                </>
+              ) : (
+                "미작성 상태로 제출하기"
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

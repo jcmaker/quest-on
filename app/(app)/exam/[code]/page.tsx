@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type SetStateAction } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -107,6 +107,10 @@ export default function ExamPage() {
   const [hasOpenedQuestion, setHasOpenedQuestion] = useState(true);
   const [isQuestionVisible, setIsQuestionVisible] = useState(true);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const setCurrentQuestionWithReveal = useCallback((value: SetStateAction<number>) => {
+    setCurrentQuestion(value);
+    setIsQuestionVisible(true);
+  }, []);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const scrollToBottom = useCallback(() => {
@@ -170,7 +174,7 @@ export default function ExamPage() {
     examCode,
     currentQuestion,
     isOnline: autoSave.isOnline,
-    setCurrentQuestion,
+    setCurrentQuestion: setCurrentQuestionWithReveal,
     setShowExitConfirm,
   });
 
@@ -458,7 +462,7 @@ export default function ExamPage() {
 
                 <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
                   <div className="flex items-center gap-1.5 sm:gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentQuestion((prev) => Math.max(0, prev - 1))} disabled={currentQuestion === 0} className="h-8 w-8 shrink-0" aria-label="이전 문제">←</Button>
+                    <Button variant="ghost" size="icon" onClick={() => setCurrentQuestionWithReveal((prev) => Math.max(0, prev - 1))} disabled={currentQuestion === 0} className="h-8 w-8 shrink-0" aria-label="이전 문제">←</Button>
                     <div className="flex items-center gap-1 overflow-x-auto hide-scrollbar">
                       {exam.questions.map((_, idx) => {
                         const isCurrent = idx === currentQuestion;
@@ -467,7 +471,7 @@ export default function ExamPage() {
                         return (
                           <button
                             key={idx}
-                            onClick={() => setCurrentQuestion(idx)}
+                            onClick={() => setCurrentQuestionWithReveal(idx)}
                             className={cn(
                               "w-10 h-10 sm:w-8 sm:h-8 rounded-full text-xs font-medium border transition-all shrink-0 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 relative",
                               isCurrent ? "ring-2 ring-primary bg-primary text-primary-foreground border-primary"
@@ -482,7 +486,7 @@ export default function ExamPage() {
                         );
                       })}
                     </div>
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentQuestion((prev) => Math.min(exam.questions.length - 1, prev + 1))} disabled={currentQuestion === exam.questions.length - 1} className="h-8 w-8 shrink-0" aria-label="다음 문제">→</Button>
+                    <Button variant="ghost" size="icon" onClick={() => setCurrentQuestionWithReveal((prev) => Math.min(exam.questions.length - 1, prev + 1))} disabled={currentQuestion === exam.questions.length - 1} className="h-8 w-8 shrink-0" aria-label="다음 문제">→</Button>
                   </div>
                   <Button
                     onClick={submission.handleSubmitClick}
@@ -543,7 +547,7 @@ export default function ExamPage() {
         onExitConfirm={async () => { await autoSave.manualSave(); router.push("/student"); }}
         unansweredDialog={submission.unansweredDialog}
         setUnansweredDialog={submission.setUnansweredDialog}
-        setCurrentQuestion={setCurrentQuestion}
+        setCurrentQuestion={setCurrentQuestionWithReveal}
         setShowSubmitConfirm={submission.setShowSubmitConfirm}
         autoSubmitFailed={submission.autoSubmitFailed}
         setAutoSubmitFailed={submission.setAutoSubmitFailed}

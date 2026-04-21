@@ -84,6 +84,38 @@ test.describe("Student — Exam Flow", () => {
     ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
   });
 
+  test("reopens question panel when moving to next question", async ({
+    studentPage,
+  }) => {
+    const { exam } = await seedStudentExamScenario({
+      examStatus: "running",
+      sessionStatus: "in_progress",
+    });
+
+    const examPage = new StudentExamPage(studentPage);
+    await examPage.goto(exam.code);
+
+    await expect(
+      studentPage.getByText(/polymorphism/i),
+    ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
+
+    // Focus answer editor to collapse question panel first
+    await expect(examPage.answerArea).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
+    await examPage.answerArea.click();
+    await expect(
+      studentPage.getByRole("button", { name: "문제 보기" }),
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
+
+    // Moving to another question should reopen the panel
+    await examPage.nextBtn.click();
+    await expect(
+      studentPage.getByRole("button", { name: "문제 접기" }),
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
+    await expect(
+      studentPage.getByText(/stack|queue/i),
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
+  });
+
   test("can type an answer in the answer panel", async ({ studentPage }) => {
     const { exam } = await seedStudentExamScenario({
       examStatus: "running",
@@ -159,6 +191,14 @@ test.describe("Student — Exam Flow", () => {
     await expect(
       studentPage.locator("[data-testid='submit-confirm-dialog']"),
     ).toBeVisible({ timeout: TIMEOUTS.API_RESPONSE });
+
+    const submitDialog = studentPage.locator("[data-testid='submit-confirm-dialog']");
+    const finalSubmitButton = submitDialog.getByRole("button", {
+      name: /제출하기/i,
+    });
+
+    await expect(finalSubmitButton).toBeDisabled({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
+    await expect(finalSubmitButton).toBeEnabled({ timeout: TIMEOUTS.API_RESPONSE + 4000 });
   });
 
   test("shows waiting room when exam is not started", async ({
