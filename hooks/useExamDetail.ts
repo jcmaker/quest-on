@@ -28,7 +28,10 @@ export function useExamDetail({
   const { data: examDetailData, isLoading: examDetailLoading, isFetching: examDetailFetching, error: examDetailError } = useQuery({
     queryKey: qk.instructor.examDetail(examId),
     queryFn: async () => {
-      const [examResponse, sessionsResponse] = await Promise.all([
+      const PAGE_SIZE = 100; // API maximum per page
+
+      // exam fetch와 sessions 첫 페이지 fetch를 병렬로 실행
+      const [examResponse, firstPageResponse] = await Promise.all([
         fetch("/api/supa", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -37,28 +40,7 @@ export function useExamDetail({
             data: { id: examId },
           }),
         }),
-        (async () => {
-          // Fetch ALL pages to avoid the default 50-row cap
-          const PAGE_SIZE = 100; // API maximum
-          let page = 1;
-          let totalPages = 1;
-          const allSessions: Record<string, unknown>[] = [];
-          do {
-            const res = await fetch(
-              `/api/exam/${examId}/sessions?page=${page}&pageSize=${PAGE_SIZE}`
-            );
-            if (!res.ok) return res; // propagate error for outer ok-check
-            const data = await res.json();
-            allSessions.push(...(data.sessions ?? []));
-            totalPages = data.pagination?.totalPages ?? 1;
-            page++;
-          } while (page <= totalPages);
-          // Re-wrap as a synthetic Response so the outer .json() call works
-          return new Response(JSON.stringify({ sessions: allSessions }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        })(),
+        fetch(`/api/exam/${examId}/sessions?page=1&pageSize=${PAGE_SIZE}`),
       ]);
 
       if (!examResponse.ok) {
@@ -71,12 +53,23 @@ export function useExamDetail({
       const questionsArray = examResult.exam.questions || [];
       let students: InstructorStudent[] = [];
 
-      if (sessionsResponse.ok) {
-        const sessionsResult = await sessionsResponse.json();
+      if (firstPageResponse.ok) {
+        const firstPageData = await firstPageResponse.json();
+        const allSessions: Record<string, unknown>[] = [...(firstPageData.sessions ?? [])];
+
+        // 2페이지 이상 있으면 순차 fetch
+        const totalPages: number = firstPageData.pagination?.totalPages ?? 1;
+        for (let page = 2; page <= totalPages; page++) {
+          const pageRes = await fetch(`/api/exam/${examId}/sessions?page=${page}&pageSize=${PAGE_SIZE}`);
+          if (!pageRes.ok) break; // 실패 시 수집된 데이터까지만 사용
+          const pageData = await pageRes.json();
+          allSessions.push(...(pageData.sessions ?? []));
+        }
+
         const sessionsByStudent = new Map<string, Array<Record<string, unknown>>>();
 
         const ACTIVE_STATUSES = ['in_progress', 'submitted', 'auto_submitted'];
-        sessionsResult.sessions
+        allSessions
           .filter((session: Record<string, unknown>) => {
             const status = typeof session.status === 'string' ? session.status : '';
             return ACTIVE_STATUSES.includes(status);
