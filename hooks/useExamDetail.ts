@@ -37,7 +37,28 @@ export function useExamDetail({
             data: { id: examId },
           }),
         }),
-        fetch(`/api/exam/${examId}/sessions`),
+        (async () => {
+          // Fetch ALL pages to avoid the default 50-row cap
+          const PAGE_SIZE = 100; // API maximum
+          let page = 1;
+          let totalPages = 1;
+          const allSessions: Record<string, unknown>[] = [];
+          do {
+            const res = await fetch(
+              `/api/exam/${examId}/sessions?page=${page}&pageSize=${PAGE_SIZE}`
+            );
+            if (!res.ok) return res; // propagate error for outer ok-check
+            const data = await res.json();
+            allSessions.push(...(data.sessions ?? []));
+            totalPages = data.pagination?.totalPages ?? 1;
+            page++;
+          } while (page <= totalPages);
+          // Re-wrap as a synthetic Response so the outer .json() call works
+          return new Response(JSON.stringify({ sessions: allSessions }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          });
+        })(),
       ]);
 
       if (!examResponse.ok) {
