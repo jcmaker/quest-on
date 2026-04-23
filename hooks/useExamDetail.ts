@@ -22,6 +22,7 @@ export function useExamDetail({
   examId,
   isLoaded,
   isSignedIn,
+  userId,
 }: UseExamDetailOptions) {
   const [exam, setExam] = useState<InstructorExam | null>(null);
 
@@ -53,28 +54,37 @@ export function useExamDetail({
       const questionsArray = examResult.exam.questions || [];
       let students: InstructorStudent[] = [];
 
-      if (firstPageResponse.ok) {
-        const firstPageData = await firstPageResponse.json();
-        const allSessions: Record<string, unknown>[] = [...(firstPageData.sessions ?? [])];
+      if (!firstPageResponse.ok) {
+        throw new Error(
+          `Failed to fetch exam sessions: ${firstPageResponse.status} ${firstPageResponse.statusText}`
+        );
+      }
 
-        // 2페이지 이상 있으면 순차 fetch
-        const totalPages: number = firstPageData.pagination?.totalPages ?? 1;
-        for (let page = 2; page <= totalPages; page++) {
-          const pageRes = await fetch(`/api/exam/${examId}/sessions?page=${page}&pageSize=${PAGE_SIZE}`);
-          if (!pageRes.ok) break; // 실패 시 수집된 데이터까지만 사용
-          const pageData = await pageRes.json();
-          allSessions.push(...(pageData.sessions ?? []));
+      const firstPageData = await firstPageResponse.json();
+      const allSessions: Record<string, unknown>[] = [...(firstPageData.sessions ?? [])];
+
+      // 2페이지 이상 있으면 순차 fetch
+      const totalPages: number = firstPageData.pagination?.totalPages ?? 1;
+      for (let page = 2; page <= totalPages; page++) {
+        const pageRes = await fetch(`/api/exam/${examId}/sessions?page=${page}&pageSize=${PAGE_SIZE}`);
+        if (!pageRes.ok) {
+          throw new Error(
+            `Failed to fetch exam sessions page ${page}: ${pageRes.status} ${pageRes.statusText}`
+          );
         }
+        const pageData = await pageRes.json();
+        allSessions.push(...(pageData.sessions ?? []));
+      }
 
-        const sessionsByStudent = new Map<string, Array<Record<string, unknown>>>();
+      const sessionsByStudent = new Map<string, Array<Record<string, unknown>>>();
 
-        const ACTIVE_STATUSES = ['in_progress', 'submitted', 'auto_submitted'];
-        allSessions
-          .filter((session: Record<string, unknown>) => {
-            const status = typeof session.status === 'string' ? session.status : '';
-            return ACTIVE_STATUSES.includes(status);
-          })
-          .forEach((session: Record<string, unknown>) => {
+      const ACTIVE_STATUSES = ["in_progress", "submitted", "auto_submitted"];
+      allSessions
+        .filter((session: Record<string, unknown>) => {
+          const status = typeof session.status === "string" ? session.status : "";
+          return ACTIVE_STATUSES.includes(status);
+        })
+        .forEach((session: Record<string, unknown>) => {
           const studentId =
             typeof session.student_id === "string" ? session.student_id : "";
           if (!sessionsByStudent.has(studentId)) {
@@ -83,81 +93,80 @@ export function useExamDetail({
           sessionsByStudent.get(studentId)?.push(session);
         });
 
-        students = Array.from(sessionsByStudent.entries()).map(
-          ([studentId, sessions]) => {
-            const submittedSessions = sessions
-              .filter((s) => s.submitted_at != null)
-              .sort((a, b) => {
-                const aDate = a.submitted_at ? new Date(a.submitted_at as string).getTime() : 0;
-                const bDate = b.submitted_at ? new Date(b.submitted_at as string).getTime() : 0;
-                return bDate - aDate;
-              });
+      students = Array.from(sessionsByStudent.entries()).map(
+        ([studentId, sessions]) => {
+          const submittedSessions = sessions
+            .filter((s) => s.submitted_at != null)
+            .sort((a, b) => {
+              const aDate = a.submitted_at ? new Date(a.submitted_at as string).getTime() : 0;
+              const bDate = b.submitted_at ? new Date(b.submitted_at as string).getTime() : 0;
+              return bDate - aDate;
+            });
 
-            const unsubmittedSessions = sessions
-              .filter((s) => s.submitted_at == null)
-              .sort((a, b) => {
-                const aDate = a.created_at ? new Date(a.created_at as string).getTime() : 0;
-                const bDate = b.created_at ? new Date(b.created_at as string).getTime() : 0;
-                return bDate - aDate;
-              });
+          const unsubmittedSessions = sessions
+            .filter((s) => s.submitted_at == null)
+            .sort((a, b) => {
+              const aDate = a.created_at ? new Date(a.created_at as string).getTime() : 0;
+              const bDate = b.created_at ? new Date(b.created_at as string).getTime() : 0;
+              return bDate - aDate;
+            });
 
-            const selectedSession =
-              submittedSessions.length > 0
-                ? submittedSessions[0]
-                : unsubmittedSessions.length > 0
-                ? unsubmittedSessions[0]
-                : sessions[0];
+          const selectedSession =
+            submittedSessions.length > 0
+              ? submittedSessions[0]
+              : unsubmittedSessions.length > 0
+              ? unsubmittedSessions[0]
+              : sessions[0];
 
-            const sessionId = typeof selectedSession.id === "string" ? selectedSession.id : "";
-            const submittedAt =
-              selectedSession.submitted_at != null
-                ? typeof selectedSession.submitted_at === "string"
-                  ? selectedSession.submitted_at
-                  : String(selectedSession.submitted_at)
-                : undefined;
+          const sessionId = typeof selectedSession.id === "string" ? selectedSession.id : "";
+          const submittedAt =
+            selectedSession.submitted_at != null
+              ? typeof selectedSession.submitted_at === "string"
+                ? selectedSession.submitted_at
+                : String(selectedSession.submitted_at)
+              : undefined;
 
-            const studentName =
-              typeof selectedSession.student_name === "string"
-                ? selectedSession.student_name
-                : `Student ${studentId.slice(0, 8)}`;
-            const studentEmail =
-              typeof selectedSession.student_email === "string"
-                ? selectedSession.student_email
-                : `${studentId}@example.com`;
+          const studentName =
+            typeof selectedSession.student_name === "string"
+              ? selectedSession.student_name
+              : `Student ${studentId.slice(0, 8)}`;
+          const studentEmail =
+            typeof selectedSession.student_email === "string"
+              ? selectedSession.student_email
+              : `${studentId}@example.com`;
 
-            const createdAt =
-              selectedSession.created_at != null
-                ? typeof selectedSession.created_at === "string"
-                  ? selectedSession.created_at
-                  : String(selectedSession.created_at)
-                : undefined;
+          const createdAt =
+            selectedSession.created_at != null
+              ? typeof selectedSession.created_at === "string"
+                ? selectedSession.created_at
+                : String(selectedSession.created_at)
+              : undefined;
 
-            return {
-              id: sessionId,
-              name: studentName,
-              email: studentEmail,
-              status: submittedAt ? "completed" : "in-progress",
-              score: undefined,
-              finalScore: undefined,
-              submittedAt: submittedAt as string | undefined,
-              createdAt: createdAt as string | undefined,
-              student_number:
-                typeof selectedSession.student_number === "string"
-                  ? selectedSession.student_number
-                  : undefined,
-              school:
-                typeof selectedSession.student_school === "string"
-                  ? selectedSession.student_school
-                  : undefined,
-              questionCount: undefined,
-              answerLength: undefined,
-              isGraded: false,
-              gradingProgress:
-                (selectedSession.grading_progress as InstructorStudent["gradingProgress"]) ?? null,
-            } as InstructorStudent;
-          }
-        );
-      }
+          return {
+            id: sessionId,
+            name: studentName,
+            email: studentEmail,
+            status: submittedAt ? "completed" : "in-progress",
+            score: undefined,
+            finalScore: undefined,
+            submittedAt: submittedAt as string | undefined,
+            createdAt: createdAt as string | undefined,
+            student_number:
+              typeof selectedSession.student_number === "string"
+                ? selectedSession.student_number
+                : undefined,
+            school:
+              typeof selectedSession.student_school === "string"
+                ? selectedSession.student_school
+                : undefined,
+            questionCount: undefined,
+            answerLength: undefined,
+            isGraded: false,
+            gradingProgress:
+              (selectedSession.grading_progress as InstructorStudent["gradingProgress"]) ?? null,
+          } as InstructorStudent;
+        }
+      );
 
       return {
         exam: {
@@ -181,10 +190,17 @@ export function useExamDetail({
         questionsRaw: questionsArray as Question[],
       };
     },
-    enabled: !!examId,
+    enabled: !!examId && !!isLoaded && !!isSignedIn && !!userId,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
-  const loading = examDetailLoading || (!exam && !examDetailError);
+  const isSwitchingExam = !!exam && exam.id !== examId;
+  const loading =
+    examDetailLoading ||
+    examDetailFetching ||
+    isSwitchingExam ||
+    (!exam && !examDetailError);
   const error = examDetailError instanceof Error
     ? examDetailError.message
     : examDetailError
@@ -198,7 +214,7 @@ export function useExamDetail({
   useEffect(() => {
     if (!examDetailData?.exam) return;
     setExam((prev) => {
-      if (!prev) return examDetailData.exam;               // 최초 로드
+      if (!prev || prev.id !== examDetailData.exam.id) return examDetailData.exam; // 최초 로드/시험 전환
       // refetch: students를 갱신하되, 기존 score/finalScore 등 analytics 데이터 보존
       const mergedStudents = examDetailData.exam.students.map((newStudent) => {
         const existing = prev.students.find((s) => s.id === newStudent.id);

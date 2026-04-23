@@ -846,47 +846,13 @@ export default function InstructorHome() {
     </div>
   );
 
-  // 마우스 오버 시 시험 상세 데이터 프리페칭 (체감 네비게이션 속도 개선)
+  // 시험 상세는 sessions까지 포함한 완전한 payload가 필요하므로 hover prefetch 비활성화.
+  // (이전 구현은 동일 queryKey에 students: []를 저장해 상세 화면 stale 상태를 유발함)
   const handleExamNodeHover = useCallback(
     (node: ExamNode) => {
-      if (node.kind !== "folder" && node.exam_id) {
-        queryClient.prefetchQuery({
-          queryKey: qk.instructor.examDetail(node.exam_id),
-          queryFn: async () => {
-            const examRes = await fetch("/api/supa", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "get_exam_by_id", data: { id: node.exam_id } }),
-            });
-            if (!examRes.ok) throw new Error("Prefetch failed");
-            const examResult = await examRes.json();
-            const questionsArray = examResult.exam.questions || [];
-            return {
-              exam: {
-                id: examResult.exam.id,
-                title: examResult.exam.title,
-                code: examResult.exam.code,
-                description: examResult.exam.description,
-                duration: examResult.exam.duration,
-                status: examResult.exam.status,
-                createdAt: examResult.exam.created_at,
-                questions: [],
-                students: [],
-                open_at: examResult.exam.open_at || null,
-                close_at: examResult.exam.close_at || null,
-                started_at: examResult.exam.started_at || null,
-                deadline: examResult.exam.deadline || null,
-                assignment_prompt: examResult.exam.assignment_prompt || null,
-              },
-              questionsCount: questionsArray.length,
-              questionsRaw: questionsArray,
-            };
-          },
-          staleTime: 5 * 60 * 1000,
-        });
-      }
+      if (node.kind === "folder" || !node.exam_id) return;
     },
-    [queryClient]
+    []
   );
 
   // 노드 클릭 핸들러 최적화
