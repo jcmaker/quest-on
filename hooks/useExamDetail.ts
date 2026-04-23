@@ -25,7 +25,7 @@ export function useExamDetail({
 }: UseExamDetailOptions) {
   const [exam, setExam] = useState<InstructorExam | null>(null);
 
-  const { data: examDetailData, isLoading: examDetailLoading, error: examDetailError } = useQuery({
+  const { data: examDetailData, isLoading: examDetailLoading, isFetching: examDetailFetching, error: examDetailError } = useQuery({
     queryKey: qk.instructor.examDetail(examId),
     queryFn: async () => {
       const [examResponse, sessionsResponse] = await Promise.all([
@@ -336,6 +336,7 @@ export function useExamDetail({
     setExam,
     examDetailData,
     examDetailLoading,
+    examDetailFetching,
     examDetailError,
     loading,
     error,

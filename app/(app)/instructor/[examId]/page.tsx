@@ -58,6 +58,7 @@ export default function ExamDetail({
     setExam,
     examDetailData,
     examDetailLoading,
+    examDetailFetching,
     loading,
     error,
     analyticsData,
@@ -431,7 +432,7 @@ export default function ExamDetail({
               </div>
 
               {/* Graded students */}
-              {loading || !exam ? (
+              {loading || examDetailFetching || !exam ? (
                 <div className="border rounded-lg flex flex-col max-h-[300px]">
                   <div className="p-4 border-b bg-muted/50 flex-shrink-0">
                     <Skeleton className="h-6 w-40" />
@@ -474,13 +475,13 @@ export default function ExamDetail({
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="font-semibold">
-                        {loading || !exam ? (
+                        {loading || examDetailFetching || !exam ? (
                           <Skeleton className="h-6 w-32" />
                         ) : (
                           `학생 목록 (${nonGradedStudents.length}명)`
                         )}
                       </h3>
-                      {loading || !exam ? (
+                      {loading || examDetailFetching || !exam ? (
                         <div className="text-sm text-muted-foreground">
                           <Skeleton className="h-4 w-24 mt-2" />
                         </div>
@@ -544,7 +545,7 @@ export default function ExamDetail({
                   )}
                 </div>
                 <div className="divide-y overflow-y-auto flex-1">
-                  {loading || !exam ? (
+                  {loading || examDetailFetching || !exam ? (
                     <div className="p-4 space-y-4">
                       {Array.from({ length: 5 }).map((_, index) => (
                         <StudentListItemSkeleton key={index} />
