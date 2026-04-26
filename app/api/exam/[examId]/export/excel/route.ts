@@ -63,15 +63,6 @@ function average(values: number[]) {
   );
 }
 
-function getScoreFill(score: number | undefined) {
-  if (score === undefined) return undefined;
-  if (score >= 90) return "FFD1FAE5";
-  if (score >= 80) return "FFDBEAFE";
-  if (score >= 70) return "FFFEF3C7";
-  if (score >= 60) return "FFFFEDD5";
-  return "FFFEE2E2";
-}
-
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ examId: string }> }
@@ -397,22 +388,6 @@ export async function GET(
     worksheet.views = [
       { state: "frozen", ySplit: tableHeaderRowNumber, activeCell: "A13" },
     ];
-
-    for (
-      let rowNumber = tableHeaderRowNumber + 1;
-      rowNumber <= tableHeaderRowNumber + studentRows.length;
-      rowNumber++
-    ) {
-      const row = worksheet.getRow(rowNumber);
-      const finalScore = row.getCell(scoreTableColumns).value as number;
-      row.getCell(scoreTableColumns).fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: {
-          argb: getScoreFill(finalScore) ?? "FFFFFFFF",
-        },
-      };
-    }
 
     worksheet.eachRow((row) => {
       row.eachCell((cell) => {
