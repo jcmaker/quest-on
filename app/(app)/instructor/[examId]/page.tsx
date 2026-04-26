@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, ChevronDown, ChevronUp, RefreshCw, CheckCheck, Loader2, Eye, EyeOff } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, RefreshCw, CheckCheck, Loader2, Eye, EyeOff, Download } from "lucide-react";
 import { StudentLiveMonitoring } from "@/components/instructor/StudentLiveMonitoring";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
@@ -266,6 +266,12 @@ export default function ExamDetail({
                     Gate: {!!(exam.open_at || exam.close_at) ? "true" : "false"}
                   </div>
                 )}
+                <Button asChild variant="outline" size="sm">
+                  <a href={`/api/exam/${exam.id}/export/excel`}>
+                    <Download className="h-4 w-4 mr-1.5" />
+                    Excel 다운로드
+                  </a>
+                </Button>
                 <ExamControlButtons
                   examId={exam.id}
                   examStatus={exam.status || "draft"}

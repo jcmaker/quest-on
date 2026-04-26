@@ -14,7 +14,7 @@ import { QuestionPromptCard } from "@/components/instructor/QuestionPromptCard";
 import { AIConversationsCard } from "@/components/instructor/AIConversationsCard";
 import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
-// import { QuickActionsCard } from "@/components/instructor/QuickActionsCard"; // PDF 기능 임시 숨김
+import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import {
@@ -1861,7 +1861,6 @@ export default function GradeStudentPage({
                 loading={isGradingInProgress}
               />
 
-              {/* PDF 기능 임시 숨김 — 고도화 후 복원 예정
               <QuickActionsCard
                 sessionId={sessionData.session.id}
                 isGraded={
@@ -1898,6 +1897,8 @@ export default function GradeStudentPage({
                                   q_idx: typedGrade.q_idx,
                                   score: typedGrade.score,
                                   comment: typedGrade.comment,
+                                  stage_grading: typedGrade.stage_grading,
+                                  ai_summary: typedGrade.ai_summary,
                                 },
                               ];
                             }
@@ -1905,12 +1906,13 @@ export default function GradeStudentPage({
                         ),
                         overallScore: sessionData.overallScore,
                         studentName: sessionData.student.name,
-                        aiSummary: undefined,
+                        studentNumber: sessionData.student.student_number,
+                        school: sessionData.student.school,
+                        aiSummary: overallSummary,
                       }
                     : undefined
                 }
               />
-              */}
             </div>
           </div>
         </div>

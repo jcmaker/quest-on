@@ -1,4 +1,5 @@
 import React, { forwardRef } from "react";
+import type { QuestionSummaryData, StageGrading, SummaryData } from "@/lib/types/grading";
 
 interface Question {
   id: string;
@@ -12,14 +13,8 @@ interface Grade {
   q_idx: number;
   score: number;
   comment?: string;
-}
-
-interface AISummary {
-  sentiment?: "positive" | "negative" | "neutral";
-  summary?: string;
-  strengths?: string[];
-  weaknesses?: string[];
-  keyQuotes?: string[];
+  stage_grading?: StageGrading;
+  ai_summary?: QuestionSummaryData | null;
 }
 
 export interface ReportCardProps {
@@ -27,11 +22,13 @@ export interface ReportCardProps {
   examCode: string;
   examDescription?: string | null;
   studentName: string;
+  studentNumber?: string;
+  school?: string;
   submittedAt: string;
   overallScore: number | null;
   questions: Question[];
   grades: Record<number, Grade>;
-  aiSummary?: AISummary | null;
+  aiSummary?: SummaryData | null;
 }
 
 function stripHtml(html: string): string {
@@ -63,6 +60,8 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
       examCode,
       examDescription,
       studentName,
+      studentNumber,
+      school,
       submittedAt,
       overallScore,
       questions,
@@ -98,6 +97,7 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
       >
         {/* Header */}
         <div
+          data-pdf-block="true"
           style={{
             display: "flex",
             alignItems: "center",
@@ -137,6 +137,7 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
 
         {/* Info Grid */}
         <div
+          data-pdf-block="true"
           style={{
             display: "flex",
             gap: "24px",
@@ -187,6 +188,52 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
                 {studentName}
               </span>
             </div>
+            {studentNumber && (
+              <div style={{ display: "flex", marginBottom: "8px" }}>
+                <span
+                  style={{
+                    width: "64px",
+                    fontSize: "10px",
+                    fontWeight: "bold",
+                    color: "#64748b",
+                  }}
+                >
+                  학번
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    fontSize: "10px",
+                    color: "#334155",
+                  }}
+                >
+                  {studentNumber}
+                </span>
+              </div>
+            )}
+            {school && (
+              <div style={{ display: "flex", marginBottom: "8px" }}>
+                <span
+                  style={{
+                    width: "64px",
+                    fontSize: "10px",
+                    fontWeight: "bold",
+                    color: "#64748b",
+                  }}
+                >
+                  학교
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    fontSize: "10px",
+                    color: "#334155",
+                  }}
+                >
+                  {school}
+                </span>
+              </div>
+            )}
             <div style={{ display: "flex" }}>
               <span
                 style={{
@@ -284,6 +331,7 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
         {/* Overall Score */}
         {overallScore !== null && (
           <div
+            data-pdf-block="true"
             style={{
               marginBottom: "32px",
               display: "flex",
@@ -335,7 +383,7 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
 
         {/* AI Summary */}
         {aiSummary && (
-          <div style={{ marginBottom: "32px" }}>
+          <div data-pdf-block="true" style={{ marginBottom: "32px" }}>
             <h3
               style={{
                 fontSize: "18px",
@@ -401,6 +449,69 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
                 </div>
               )}
 
+              {aiSummary.weaknesses && aiSummary.weaknesses.length > 0 && (
+                <div style={{ marginTop: "16px" }}>
+                  <h4
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: "bold",
+                      color: "#92400e",
+                      marginBottom: "8px",
+                      margin: "0 0 8px 0",
+                    }}
+                  >
+                    개선점
+                  </h4>
+                  <ul style={{ listStyle: "disc inside", padding: 0, margin: 0 }}>
+                    {aiSummary.weaknesses.map((weakness, idx) => (
+                      <li
+                        key={idx}
+                        style={{
+                          fontSize: "10px",
+                          color: "#78350f",
+                          marginBottom: "4px",
+                        }}
+                      >
+                        {stripHtml(weakness)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {aiSummary.aiDependency?.summary && (
+                <div
+                  style={{
+                    marginTop: "16px",
+                    padding: "12px",
+                    backgroundColor: "rgba(255, 255, 255, 0.6)",
+                    borderRadius: "6px",
+                    border: "1px solid #fde68a",
+                  }}
+                >
+                  <h4
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: "bold",
+                      color: "#92400e",
+                      margin: "0 0 6px 0",
+                    }}
+                  >
+                    AI 의존도 종합 평가
+                  </h4>
+                  <p
+                    style={{
+                      fontSize: "9px",
+                      color: "#78350f",
+                      lineHeight: 1.5,
+                      margin: 0,
+                    }}
+                  >
+                    {stripHtml(aiSummary.aiDependency.summary)}
+                  </p>
+                </div>
+              )}
+
               {aiSummary.keyQuotes && aiSummary.keyQuotes.length > 0 && (
                 <div style={{ marginTop: "16px" }}>
                   {aiSummary.keyQuotes.map((quote, idx) => (
@@ -435,6 +546,7 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
         {/* Questions Detail */}
         <div style={{ marginBottom: "32px" }}>
           <h3
+            data-pdf-block="true"
             style={{
               fontSize: "18px",
               fontWeight: "bold",
@@ -454,6 +566,7 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
 
               return (
                 <div
+                  data-pdf-block="true"
                   key={question.id || idx}
                   style={{
                     border: "1px solid #e2e8f0",
@@ -535,6 +648,90 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
                         </p>
                       </div>
                     )}
+                    {(grade.stage_grading?.chat ||
+                      grade.stage_grading?.answer ||
+                      grade.ai_summary) && (
+                      <div
+                        style={{
+                          marginTop: "12px",
+                          backgroundColor: "#eff6ff",
+                          padding: "12px",
+                          borderRadius: "6px",
+                          border: "1px solid #bfdbfe",
+                        }}
+                      >
+                        <h4
+                          style={{
+                            fontSize: "9px",
+                            fontWeight: "bold",
+                            color: "#1e40af",
+                            margin: "0 0 8px 0",
+                          }}
+                        >
+                          AI 평가
+                        </h4>
+                        {grade.stage_grading?.chat && (
+                          <p
+                            style={{
+                              fontSize: "9px",
+                              color: "#1e3a8a",
+                              lineHeight: 1.4,
+                              margin: "0 0 8px 0",
+                            }}
+                          >
+                            <strong>AI 대화 평가:</strong>{" "}
+                            {grade.stage_grading.chat.score}점
+                            {grade.stage_grading.chat.comment
+                              ? ` - ${stripHtml(grade.stage_grading.chat.comment)}`
+                              : ""}
+                          </p>
+                        )}
+                        {grade.stage_grading?.answer && (
+                          <p
+                            style={{
+                              fontSize: "9px",
+                              color: "#1e3a8a",
+                              lineHeight: 1.4,
+                              margin: "0 0 8px 0",
+                            }}
+                          >
+                            <strong>최종 답안 평가:</strong>{" "}
+                            {grade.stage_grading.answer.score}점
+                            {grade.stage_grading.answer.comment
+                              ? ` - ${stripHtml(grade.stage_grading.answer.comment)}`
+                              : ""}
+                          </p>
+                        )}
+                        {grade.stage_grading?.answer?.ai_dependency?.summary && (
+                          <p
+                            style={{
+                              fontSize: "9px",
+                              color: "#1e3a8a",
+                              lineHeight: 1.4,
+                              margin: "0 0 8px 0",
+                            }}
+                          >
+                            <strong>AI 의존도:</strong>{" "}
+                            {stripHtml(
+                              grade.stage_grading.answer.ai_dependency.summary
+                            )}
+                          </p>
+                        )}
+                        {grade.ai_summary?.summary && (
+                          <p
+                            style={{
+                              fontSize: "9px",
+                              color: "#1e3a8a",
+                              lineHeight: 1.4,
+                              margin: 0,
+                            }}
+                          >
+                            <strong>문항 요약:</strong>{" "}
+                            {stripHtml(grade.ai_summary.summary)}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -544,6 +741,7 @@ export const ReportCardTemplate = forwardRef<HTMLDivElement, ReportCardProps>(
 
         {/* Footer */}
         <div
+          data-pdf-block="true"
           style={{
             textAlign: "center",
             fontSize: "10px",

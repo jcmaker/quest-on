@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import { ReportCardTemplate } from "@/components/report/ReportCardTemplate";
+import type { QuestionSummaryData, StageGrading, SummaryData } from "@/lib/types/grading";
 
 interface ReportData {
   exam: {
@@ -28,17 +29,15 @@ interface ReportData {
       q_idx: number;
       score: number;
       comment?: string;
+      stage_grading?: StageGrading;
+      ai_summary?: QuestionSummaryData | null;
     }
   >;
   overallScore: number | null;
   studentName: string;
-  aiSummary?: {
-    sentiment?: "positive" | "negative" | "neutral";
-    summary?: string;
-    strengths?: string[];
-    weaknesses?: string[];
-    keyQuotes?: string[];
-  };
+  studentNumber?: string;
+  school?: string;
+  aiSummary?: SummaryData | null;
 }
 
 interface QuickActionsCardProps {
@@ -46,6 +45,110 @@ interface QuickActionsCardProps {
   isGraded?: boolean;
   // Optional: If provided, use this data instead of fetching
   reportData?: ReportData;
+}
+
+function sanitizeCanvasClone(clonedDoc: Document) {
+  try {
+    const styleSheets = Array.from(clonedDoc.styleSheets);
+    styleSheets.forEach((sheet) => {
+      try {
+        if (sheet.ownerNode && sheet.ownerNode.parentNode) {
+          sheet.ownerNode.parentNode.removeChild(sheet.ownerNode);
+        }
+      } catch {
+        // Ignore cross-origin or detached stylesheet errors.
+      }
+    });
+  } catch {
+    // Ignore stylesheet access errors.
+  }
+
+  const clonedElements = clonedDoc.querySelectorAll(
+    `[data-pdf-template="true"], [data-pdf-page="true"]`
+  );
+
+  clonedElements.forEach((clonedElement) => {
+    if (!clonedDoc.defaultView) return;
+    const allElements = [
+      clonedElement,
+      ...clonedElement.querySelectorAll("*"),
+    ];
+    allElements.forEach((el) => {
+      const htmlEl = el as HTMLElement;
+      try {
+        const computedStyle = clonedDoc.defaultView!.getComputedStyle(htmlEl);
+        const bgColor = computedStyle.backgroundColor;
+        const color = computedStyle.color;
+        const borderColor = computedStyle.borderColor;
+
+        if (
+          bgColor &&
+          !bgColor.includes("lab") &&
+          bgColor !== "rgba(0, 0, 0, 0)" &&
+          bgColor !== "transparent"
+        ) {
+          htmlEl.style.backgroundColor = bgColor;
+        }
+        if (color && !color.includes("lab")) {
+          htmlEl.style.color = color;
+        }
+        if (
+          borderColor &&
+          !borderColor.includes("lab") &&
+          borderColor !== "rgba(0, 0, 0, 0)" &&
+          borderColor !== "transparent"
+        ) {
+          htmlEl.style.borderColor = borderColor;
+        }
+      } catch {
+        // Ignore individual element style errors.
+      }
+    });
+  });
+}
+
+function createPaginatedReportPages(template: HTMLElement) {
+  const host = document.createElement("div");
+  host.style.position = "absolute";
+  host.style.left = "-9999px";
+  host.style.top = "0";
+  host.style.width = "210mm";
+  document.body.appendChild(host);
+
+  const createPage = () => {
+    const page = template.cloneNode(false) as HTMLElement;
+    page.removeAttribute("data-pdf-template");
+    page.setAttribute("data-pdf-page", "true");
+    page.style.height = "297mm";
+    page.style.minHeight = "297mm";
+    page.style.margin = "0";
+    page.style.overflow = "hidden";
+    page.innerHTML = "";
+    host.appendChild(page);
+    return page;
+  };
+
+  const blocks = Array.from(
+    template.querySelectorAll<HTMLElement>("[data-pdf-block='true']")
+  );
+  const pages: HTMLElement[] = [];
+  let currentPage = createPage();
+  pages.push(currentPage);
+
+  blocks.forEach((block) => {
+    const clonedBlock = block.cloneNode(true) as HTMLElement;
+    currentPage.appendChild(clonedBlock);
+
+    const overflowed = currentPage.scrollHeight > currentPage.clientHeight;
+    if (overflowed && currentPage.children.length > 1) {
+      currentPage.removeChild(clonedBlock);
+      currentPage = createPage();
+      pages.push(currentPage);
+      currentPage.appendChild(clonedBlock);
+    }
+  });
+
+  return { host, pages };
 }
 
 export function QuickActionsCard({
@@ -58,6 +161,7 @@ export function QuickActionsCard({
     providedReportData || null
   );
   const reportTemplateRef = useRef<HTMLDivElement>(null);
+  const effectiveReportData = providedReportData ?? reportData;
 
   const handleDownloadReportCard = async () => {
     if (!isGraded) {
@@ -69,7 +173,7 @@ export function QuickActionsCard({
       setDownloading(true);
 
       // Use provided data or fetch if not available
-      let dataToUse = reportData;
+      let dataToUse = providedReportData ?? reportData;
       if (!dataToUse) {
         const response = await fetch(
           `/api/student/session/${sessionId}/report`
@@ -96,93 +200,31 @@ export function QuickActionsCard({
       // Wait a bit to ensure styles are loaded
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      const canvas = await html2canvas(reportTemplateRef.current, {
-        scale: 2,
-        logging: false,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        foreignObjectRendering: false, // Disable foreignObject rendering which may cause lab() issues
-        onclone: (clonedDoc) => {
-          // Remove all stylesheets before html2canvas processes them
-          try {
-            const styleSheets = Array.from(clonedDoc.styleSheets);
-            styleSheets.forEach((sheet) => {
-              try {
-                if (sheet.ownerNode && sheet.ownerNode.parentNode) {
-                  sheet.ownerNode.parentNode.removeChild(sheet.ownerNode);
-                }
-              } catch {
-                // Ignore cross-origin or other errors
-              }
-            });
-          } catch {
-            // Ignore errors
-          }
-
-          // Convert all computed styles to inline RGB
-          const clonedElement = clonedDoc.querySelector(
-            `[data-pdf-template="true"]`
-          ) as HTMLElement;
-
-          if (clonedElement && clonedDoc.defaultView) {
-            const allElements = [
-              clonedElement,
-              ...clonedElement.querySelectorAll("*"),
-            ];
-            allElements.forEach((el) => {
-              const htmlEl = el as HTMLElement;
-              try {
-                const computedStyle =
-                  clonedDoc.defaultView!.getComputedStyle(htmlEl);
-
-                // Get computed RGB values and set as inline styles
-                const bgColor = computedStyle.backgroundColor;
-                const color = computedStyle.color;
-                const borderColor = computedStyle.borderColor;
-
-                if (
-                  bgColor &&
-                  !bgColor.includes("lab") &&
-                  bgColor !== "rgba(0, 0, 0, 0)" &&
-                  bgColor !== "transparent"
-                ) {
-                  htmlEl.style.backgroundColor = bgColor;
-                }
-                if (color && !color.includes("lab")) {
-                  htmlEl.style.color = color;
-                }
-                if (
-                  borderColor &&
-                  !borderColor.includes("lab") &&
-                  borderColor !== "rgba(0, 0, 0, 0)" &&
-                  borderColor !== "transparent"
-                ) {
-                  htmlEl.style.borderColor = borderColor;
-                }
-              } catch {
-                // Ignore errors
-              }
-            });
-          }
-        },
-      });
-
-      const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
       const imgWidth = 210;
-      const pageHeight = 295;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      let heightLeft = imgHeight;
-      let position = 0;
+      const pageHeight = 297;
+      const { host, pages } = createPaginatedReportPages(
+        reportTemplateRef.current
+      );
 
-      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
-
-      while (heightLeft >= 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+      try {
+        for (const [index, page] of pages.entries()) {
+          const canvas = await html2canvas(page, {
+            scale: 2,
+            logging: false,
+            useCORS: true,
+            backgroundColor: "#ffffff",
+            foreignObjectRendering: false,
+            onclone: sanitizeCanvasClone,
+          });
+          const imgData = canvas.toDataURL("image/png");
+          if (index > 0) {
+            pdf.addPage();
+          }
+          pdf.addImage(imgData, "PNG", 0, 0, imgWidth, pageHeight);
+        }
+      } finally {
+        host.remove();
       }
 
       const filename = `${dataToUse.exam.title || "시험"}_${
@@ -222,7 +264,7 @@ export function QuickActionsCard({
             ) : (
               <>
                 <Download className="w-4 h-4 mr-2" />
-                리포트 카드 다운로드
+                PDF 다운로드
               </>
             )}
           </Button>
@@ -234,23 +276,21 @@ export function QuickActionsCard({
       </Card>
 
       {/* Hidden Report Card Template for PDF Generation */}
-      {(reportData || providedReportData) && (
+      {effectiveReportData && (
         <div style={{ position: "absolute", left: "-9999px", top: 0 }}>
           <ReportCardTemplate
             ref={reportTemplateRef}
-            examTitle={(reportData || providedReportData)!.exam.title}
-            examCode={(reportData || providedReportData)!.exam.code}
-            examDescription={
-              (reportData || providedReportData)!.exam.description
-            }
-            studentName={(reportData || providedReportData)!.studentName}
-            submittedAt={
-              (reportData || providedReportData)!.session.submitted_at
-            }
-            overallScore={(reportData || providedReportData)!.overallScore}
-            questions={(reportData || providedReportData)!.exam.questions}
-            grades={(reportData || providedReportData)!.grades}
-            aiSummary={(reportData || providedReportData)!.aiSummary}
+            examTitle={effectiveReportData.exam.title}
+            examCode={effectiveReportData.exam.code}
+            examDescription={effectiveReportData.exam.description}
+            studentName={effectiveReportData.studentName}
+            studentNumber={effectiveReportData.studentNumber}
+            school={effectiveReportData.school}
+            submittedAt={effectiveReportData.session.submitted_at}
+            overallScore={effectiveReportData.overallScore}
+            questions={effectiveReportData.exam.questions}
+            grades={effectiveReportData.grades}
+            aiSummary={effectiveReportData.aiSummary}
           />
         </div>
       )}
