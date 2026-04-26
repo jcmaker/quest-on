@@ -9,6 +9,10 @@ const DemoExperienceSection = dynamic(
   () => import("@/components/landing/DemoExperienceSection"),
   { loading: () => <div className="min-h-[600px]" /> }
 );
+const ProductValueSection = dynamic(
+  () => import("@/components/landing/ProductValueSection"),
+  { loading: () => <div className="min-h-[600px]" /> }
+);
 const TestimonialSection = dynamic(
   () => import("@/components/landing/TestimonialSection"),
   { loading: () => <div className="min-h-[600px]" /> }
@@ -76,6 +80,8 @@ export default async function LandingPage() {
       {/* <section id="demo-experience">
         <DemoExperienceSection mode="light" />
       </section> */}
+      {/* Bento Grid Section */}
+      <ProductValueSection />
       {/* Features Section - 실시간 평가 시스템 */}
       <section id="features">
         <TestimonialSection mode="light" />
