@@ -266,7 +266,11 @@ export default function ExamDetail({
                     Gate: {!!(exam.open_at || exam.close_at) ? "true" : "false"}
                   </div>
                 )}
-                <Button asChild variant="outline" size="sm">
+                <Button
+                  asChild
+                  size="sm"
+                  className="bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:ring-emerald-500"
+                >
                   <a href={`/api/exam/${exam.id}/export/excel`}>
                     <Download className="h-4 w-4 mr-1.5" />
                     Excel 다운로드
