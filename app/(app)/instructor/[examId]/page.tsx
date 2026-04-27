@@ -193,6 +193,21 @@ export default function ExamDetail({
     }
   };
 
+  const hasIncompleteGrading = useMemo(() => {
+    return exam?.students.some(
+      (student) => student.status === "completed" && !student.isGraded
+    ) ?? false;
+  }, [exam?.students]);
+
+  const handleExcelDownload = useCallback(() => {
+    if (!exam) return;
+    if (hasIncompleteGrading) {
+      window.alert("채점이 완료돼지 않았습니다. 채점을 완료한 후에 이용해주세요");
+      return;
+    }
+    window.location.href = `/api/exam/${exam.id}/export/excel`;
+  }, [exam, hasIncompleteGrading]);
+
   const examContext = useMemo(() => {
     if (!exam) return "";
     return buildInstructorExamContext(exam, questions);
@@ -267,14 +282,12 @@ export default function ExamDetail({
                   </div>
                 )}
                 <Button
-                  asChild
                   size="sm"
                   className="bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:ring-emerald-500"
+                  onClick={handleExcelDownload}
                 >
-                  <a href={`/api/exam/${exam.id}/export/excel`}>
-                    <Download className="h-4 w-4 mr-1.5" />
-                    Excel 다운로드
-                  </a>
+                  <Download className="h-4 w-4 mr-1.5" />
+                  Excel 다운로드
                 </Button>
                 <ExamControlButtons
                   examId={exam.id}
