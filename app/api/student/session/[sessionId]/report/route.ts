@@ -124,7 +124,8 @@ export async function GET(
       logError("Error fetching messages", messagesError);
     }
 
-    // Get grades (include grade_type for deduplication)
+    // Get grades (include grade_type for deduplication). Student reports only
+    // expose numeric scores; qualitative feedback stays instructor-only.
     const { data: grades, error: gradesError } = await getSupabase()
       .from("grades")
       .select(
@@ -132,8 +133,6 @@ export async function GET(
         id,
         q_idx,
         score,
-        comment,
-        stage_grading,
         grade_type,
         created_at
       `
@@ -242,8 +241,6 @@ export async function GET(
         id: string;
         q_idx: number;
         score: number;
-        comment?: string;
-        stage_grading?: unknown;
       }
     > = {};
 
@@ -258,8 +255,6 @@ export async function GET(
           id: grade.id,
           q_idx: grade.q_idx,
           score: grade.score,
-          comment: grade.comment || undefined,
-          stage_grading: grade.stage_grading || undefined,
         };
       });
 
@@ -288,7 +283,7 @@ export async function GET(
       overallScore: gradesReleased ? overallScore : null,
       gradedCount: gradesReleased ? gradedCount : 0,
       totalQuestionCount,
-      aiSummary: gradesReleased ? (session.ai_summary || null) : null,
+      aiSummary: null,
       gradesReleased,
       // Progress is safe to expose even before grades_released — it only contains counts/status,
       // no scores. Lets the student see "3/10 채점 중" progress while the AI runs.

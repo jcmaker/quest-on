@@ -409,7 +409,7 @@ export default function ExamDetail({
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {exam.grades_released
-                      ? "학생들이 성적과 리포트를 볼 수 있습니다"
+                      ? "학생들이 점수와 응시 내용을 볼 수 있습니다"
                       : "학생들은 답안만 확인할 수 있습니다"}
                   </span>
                 </div>

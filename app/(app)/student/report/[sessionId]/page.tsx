@@ -10,7 +10,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
-import { AiDependencySummaryCard } from "@/components/grading/AiDependencySummaryCard";
 import {
   ArrowLeft,
   FileText,
@@ -21,8 +20,7 @@ import {
   Loader2,
   Clock,
 } from "lucide-react";
-import { getScoreColor } from "@/lib/grading-utils";
-import type { StageGrading, SummaryData, GradingProgress } from "@/lib/types/grading";
+import type { GradingProgress } from "@/lib/types/grading";
 
 interface Question {
   id: string;
@@ -43,8 +41,6 @@ interface Grade {
   id: string;
   q_idx: number;
   score: number;
-  comment?: string;
-  stage_grading?: StageGrading;
 }
 
 interface ReportData {
@@ -70,7 +66,6 @@ interface ReportData {
   >;
   grades: Record<number, Grade>;
   overallScore: number | null;
-  aiSummary?: SummaryData;
   gradesReleased?: boolean;
   gradingProgress?: GradingProgress | null;
 }
@@ -131,7 +126,7 @@ export default function StudentReportPage() {
       router.push("/student");
       return;
     }
-  }, [isLoaded, isSignedIn, user, sessionId, router]);
+  }, [isLoaded, isSignedIn, profile?.role, router]);
 
   if (!isLoaded || isLoading) {
     return (
@@ -238,8 +233,6 @@ export default function StudentReportPage() {
   const currentSubmission = reportData.submissions?.[selectedQuestionIdx];
   const currentGrade = gradesNotReleased ? undefined : reportData.grades?.[selectedQuestionIdx];
   const currentMessages = reportData.messages?.[selectedQuestionIdx] || [];
-  const currentAiDependency = currentGrade?.stage_grading?.chat?.ai_dependency;
-  const overallAiDependency = gradesNotReleased ? null : (reportData.aiSummary?.aiDependency || null);
 
   return (
     <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
@@ -268,9 +261,7 @@ export default function StudentReportPage() {
                 <Award className="w-5 h-5 text-primary" />
                 <p
                   data-testid="report-overall-score"
-                  className={`text-2xl font-bold ${getScoreColor(
-                    reportData.overallScore
-                  )}`}
+                  className="text-2xl font-bold text-foreground"
                 >
                   전체 점수: {reportData.overallScore}/100점
                 </p>
@@ -322,9 +313,7 @@ export default function StudentReportPage() {
                   {grade && (
                     <Badge
                       variant="secondary"
-                      className={`ml-2 ${getScoreColor(
-                        grade.score
-                      )} bg-opacity-20`}
+                      className="ml-2 text-foreground"
                     >
                       {grade.score}점
                     </Badge>
@@ -436,27 +425,10 @@ export default function StudentReportPage() {
               <CardContent className="space-y-4">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">점수</p>
-                  <p
-                    className={`text-3xl font-bold ${getScoreColor(
-                      currentGrade.score
-                    )}`}
-                  >
+                  <p className="text-3xl font-bold text-foreground">
                     {currentGrade.score}점
                   </p>
                 </div>
-                {currentGrade.comment && (
-                  <div>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      강사 평가
-                    </p>
-                    <div className="bg-muted p-3 rounded-lg">
-                      <RichTextViewer
-                        content={currentGrade.comment}
-                        className="text-sm leading-relaxed"
-                      />
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
           )}
@@ -489,31 +461,8 @@ export default function StudentReportPage() {
               )}
             </CardContent>
           </Card>
-
-          <AiDependencySummaryCard
-            mode="student"
-            questionAssessment={currentAiDependency}
-            overallSummary={overallAiDependency}
-          />
         </div>
       </div>
-
-      {/* PDF 기능 임시 숨김 — 고도화 후 복원 예정
-      <div style={{ position: "absolute", left: "-9999px", top: 0 }}>
-        <ReportCardTemplate
-          ref={reportTemplateRef}
-          examTitle={reportData.exam.title}
-          examCode={reportData.exam.code}
-          examDescription={reportData.exam.description}
-          studentName={profile?.fullName || "학생"}
-          submittedAt={reportData.session.submitted_at}
-          overallScore={reportData.overallScore}
-          questions={reportData.exam.questions}
-          grades={reportData.grades}
-          aiSummary={reportData.aiSummary}
-        />
-      </div>
-      */}
     </div>
   );
 }
