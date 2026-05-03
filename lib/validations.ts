@@ -423,6 +423,7 @@ export const generateCaseQuestionsSchema = z.object({
   })).optional(),
   existingRubric: z.array(examRubricItemSchema).optional(),
   language: z.enum(["ko", "en"]).default("ko"),
+  generationMode: z.enum(["case", "research-assignment"]).default("case"),
 });
 
 // AI Case Question Adjustment
@@ -435,6 +436,7 @@ export const adjustCaseQuestionSchema = z.object({
   })).optional(),
   examTitle: z.string().optional(),
   language: z.enum(["ko", "en"]).default("ko"),
+  generationMode: z.enum(["case", "research-assignment"]).default("case"),
 });
 
 // Helper to validate and return typed result or error response

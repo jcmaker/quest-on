@@ -31,6 +31,12 @@ const BASE_PRESETS = [
   { label: "보기 추가", instruction: "각 하위 질문에 4개의 선택지(보기)를 추가하여 객관식으로 변환해주세요." },
 ];
 
+const ASSIGNMENT_PRESETS = [
+  { label: "더 어렵게", instruction: "리서치 범위와 비교 기준을 더 정교하게 만들어주세요." },
+  { label: "더 쉽게", instruction: "조사 대상과 요구 기준을 더 단순하고 명확하게 만들어주세요." },
+  { label: "더 구체적으로", instruction: "학생이 조사해야 할 대상, 기간, 비교 기준을 더 구체적으로 제시해주세요." },
+];
+
 interface AdjustResult {
   questionText: string;
   explanation: string;
@@ -48,6 +54,7 @@ interface GeneratedQuestionCardProps {
   onAdjust: (instruction: string) => Promise<AdjustResult | null>;
   onApplyAdjustment: (newText: string) => void;
   isAnyAdjusting: boolean;
+  generationMode?: "case" | "research-assignment";
 }
 
 export function GeneratedQuestionCard({
@@ -61,6 +68,7 @@ export function GeneratedQuestionCard({
   onAdjust,
   onApplyAdjustment,
   isAnyAdjusting,
+  generationMode = "case",
 }: GeneratedQuestionCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
@@ -69,13 +77,16 @@ export function GeneratedQuestionCard({
   const [isEnglish, setIsEnglish] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
+  const isAssignmentMode = generationMode === "research-assignment";
   const PREVIEW_HEIGHT = 300;
 
   const langPreset = isEnglish
-    ? { label: "한국어로", instruction: "이 문제를 한국어로 번역해주세요. 시나리오와 질문 모두 한국어로 작성해주세요." }
-    : { label: "영어로", instruction: "이 문제를 영어로 번역해주세요. 시나리오와 질문 모두 영어로 작성해주세요." };
+    ? { label: "한국어로", instruction: isAssignmentMode ? "이 리서치 과제를 한국어로 번역해주세요." : "이 문제를 한국어로 번역해주세요. 시나리오와 질문 모두 한국어로 작성해주세요." }
+    : { label: "영어로", instruction: isAssignmentMode ? "이 리서치 과제를 영어로 번역해주세요." : "이 문제를 영어로 번역해주세요. 시나리오와 질문 모두 영어로 작성해주세요." };
 
-  const presets = [...BASE_PRESETS.slice(0, 3), langPreset, BASE_PRESETS[3]];
+  const presets = isAssignmentMode
+    ? [...ASSIGNMENT_PRESETS, langPreset]
+    : [...BASE_PRESETS.slice(0, 3), langPreset, BASE_PRESETS[3]];
 
   useEffect(() => {
     if (contentRef.current) {
@@ -243,6 +254,7 @@ export function GeneratedQuestionCard({
         isAdjusting={isAdjusting}
         onSendInstruction={onAdjust}
         onApply={onApplyAdjustment}
+        generationMode={generationMode}
       />
     </>
   );

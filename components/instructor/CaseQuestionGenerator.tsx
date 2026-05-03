@@ -43,7 +43,7 @@ import type { Question } from "./QuestionEditor";
 
 interface CaseQuestionGeneratorProps {
   examTitle: string;
-  extractedTexts: Map<string, { text: string; fileName: string }>;
+  extractedTexts?: Map<string, { text: string; fileName: string }>;
   extractionStatus?: Map<
     string,
     "uploading" | "extracting" | "done" | "failed"
@@ -51,6 +51,7 @@ interface CaseQuestionGeneratorProps {
   onQuestionsAccepted: (questions: Question[]) => void;
   onRubricSuggested: (rubric: RubricItem[]) => void;
   language?: "ko" | "en";
+  mode?: "exam" | "assignment";
 }
 
 function getStageMessage(
@@ -79,11 +80,14 @@ export function CaseQuestionGenerator({
   onQuestionsAccepted,
   onRubricSuggested,
   language,
+  mode = "exam",
 }: CaseQuestionGeneratorProps) {
   const [isOpen, setIsOpen] = useState(true);
   const difficulty = "basic" as const;
   const [questionCount, setQuestionCount] = useState(1);
   const [freeformPrompt, setFreeformPrompt] = useState("");
+  const isAssignmentMode = mode === "assignment";
+  const availableTexts = extractedTexts ?? new Map<string, { text: string; fileName: string }>();
 
   const {
     generatedQuestions,
@@ -131,7 +135,7 @@ export function CaseQuestionGenerator({
   }, [isGenerating, generationProgress.stage, error]);
 
   const getGenerateParams = () => {
-    const materialsText = Array.from(extractedTexts.entries()).map(
+    const materialsText = Array.from(availableTexts.entries()).map(
       ([url, { text, fileName }]) => ({
         url,
         text,
@@ -144,14 +148,20 @@ export function CaseQuestionGenerator({
       difficulty,
       questionCount,
       customInstructions: freeformPrompt || undefined,
-      materialsText: materialsText.length > 0 ? materialsText : undefined,
+      materialsText: !isAssignmentMode && materialsText.length > 0 ? materialsText : undefined,
       language,
+      generationMode: isAssignmentMode ? "research-assignment" as const : "case" as const,
     };
   };
 
   const handleGenerate = async () => {
     if (!examTitle.trim()) {
-      toast.error("시험 제목을 먼저 입력해주세요.");
+      toast.error(isAssignmentMode ? "과제 제목을 먼저 입력해주세요." : "시험 제목을 먼저 입력해주세요.");
+      return;
+    }
+
+    if (isAssignmentMode && !freeformPrompt.trim()) {
+      toast.error("학생에게 시킬 리서치 주제를 입력해주세요.");
       return;
     }
 
@@ -162,14 +172,14 @@ export function CaseQuestionGenerator({
   const rubricSuggestedRef = useRef(false);
 
   const applyRubricIfNeeded = () => {
-    if (suggestedRubric.length > 0 && !rubricSuggestedRef.current) {
+    if (!isAssignmentMode && suggestedRubric.length > 0 && !rubricSuggestedRef.current) {
       onRubricSuggested(suggestedRubric);
       rubricSuggestedRef.current = true;
       toast("AI 루브릭 제안을 확인하세요.", { icon: "📋" });
     }
   };
 
-  const isDisabled = !examTitle.trim();
+  const isDisabled = !examTitle.trim() || (isAssignmentMode && !freeformPrompt.trim());
 
   // Calculate how many skeleton cards to show (based on batch progress, not total questions)
   const skeletonCount = isGenerating
@@ -189,6 +199,9 @@ export function CaseQuestionGenerator({
         generationProgress.total,
       )
     : "";
+  const displayStageMessage = isAssignmentMode
+    ? stageMessage.replace("시험 내용", "리서치 과제")
+    : stageMessage;
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
@@ -197,7 +210,7 @@ export function CaseQuestionGenerator({
           <CardHeader className="cursor-pointer hover:bg-muted/50 transition-colors rounded-t-xl">
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
-              AI 사례형 문제 생성
+              {isAssignmentMode ? "AI 리서치 과제 생성" : "AI 사례형 문제 생성"}
               {generatedQuestions.length > 0 && (
                 <span className="text-xs font-normal bg-primary/10 text-primary px-2 py-0.5 rounded-full">
                   {generatedQuestions.length}개 생성됨
@@ -239,22 +252,28 @@ export function CaseQuestionGenerator({
             {/* Freeform prompt */}
             <div className="space-y-1.5">
               <Label className="text-sm">
-                어떤 문제를 만들어드릴까요?
-                <span className="text-muted-foreground font-normal ml-1">
-                  (선택)
-                </span>
+                {isAssignmentMode ? "학생에게 어떤 리서치를 시킬까요?" : "어떤 문제를 만들어드릴까요?"}
+                {!isAssignmentMode && (
+                  <span className="text-muted-foreground font-normal ml-1">
+                    (선택)
+                  </span>
+                )}
               </Label>
               <Textarea
                 value={freeformPrompt}
                 onChange={(e) => setFreeformPrompt(e.target.value)}
-                placeholder="예: 시장조사 과제, 한국 기업 사례 중심, 난이도 높게..."
+                placeholder={
+                  isAssignmentMode
+                    ? "예: 국내 배달앱 3사의 최근 수익성 변화를 조사해오시오"
+                    : "예: 시장조사 과제, 한국 기업 사례 중심, 난이도 높게..."
+                }
                 maxLength={2000}
                 className="min-h-[80px] resize-none"
               />
             </div>
 
             {/* Materials info - P2-2: Show file details */}
-            {(extractedTexts.size > 0 ||
+            {!isAssignmentMode && (availableTexts.size > 0 ||
               (extractionStatus && extractionStatus.size > 0)) && (
               <Collapsible>
                 <CollapsibleTrigger asChild>
@@ -264,7 +283,7 @@ export function CaseQuestionGenerator({
                   >
                     <FileText className="w-3.5 h-3.5" />
                     업로드된 자료{" "}
-                    {extractionStatus?.size || extractedTexts.size}개가 문제
+                    {extractionStatus?.size || availableTexts.size}개가 문제
                     생성에 활용됩니다.
                     <ChevronDown className="w-3 h-3" />
                   </button>
@@ -302,7 +321,7 @@ export function CaseQuestionGenerator({
                             </div>
                           ),
                         )
-                      : Array.from(extractedTexts.values()).map(
+                      : Array.from(availableTexts.values()).map(
                           ({ fileName }) => (
                             <div
                               key={fileName}
@@ -332,7 +351,7 @@ export function CaseQuestionGenerator({
                 className="gap-2"
               >
                 <Sparkles className="w-4 h-4" />
-                문제 생성하기
+                {isAssignmentMode ? "리서치 과제 생성하기" : "문제 생성하기"}
               </Button>
               {isGenerating && (
                 <Button
@@ -349,7 +368,9 @@ export function CaseQuestionGenerator({
             </div>
             {isDisabled && (
               <p className="text-xs text-muted-foreground">
-                시험 제목을 먼저 입력해야 문제를 생성할 수 있습니다.
+                {isAssignmentMode
+                  ? "과제 제목과 리서치 주제를 입력해야 과제를 생성할 수 있습니다."
+                  : "시험 제목을 먼저 입력해야 문제를 생성할 수 있습니다."}
               </p>
             )}
 
@@ -357,7 +378,7 @@ export function CaseQuestionGenerator({
             {isGenerating && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{stageMessage}</span>
+                  <span>{displayStageMessage}</span>
                   {isMultiQuestion && (
                     <span>{Math.round(progressPercent)}%</span>
                   )}
@@ -415,6 +436,7 @@ export function CaseQuestionGenerator({
                         isRegenerating={regeneratingId === q.id}
                         isAdjusting={adjustingId === q.id}
                         adjustHistory={getAdjustHistory(q.id)}
+                        generationMode={isAssignmentMode ? "research-assignment" : "case"}
                         onRegenerate={() =>
                           regenerateOne(q.id, getGenerateParams())
                         }
@@ -425,6 +447,7 @@ export function CaseQuestionGenerator({
                             instruction,
                             examTitle,
                             language,
+                            isAssignmentMode ? "research-assignment" : "case",
                           );
                         }}
                         onApplyAdjustment={(newText) =>

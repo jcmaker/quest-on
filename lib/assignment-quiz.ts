@@ -74,7 +74,6 @@ type ExamRow = {
   type: string | null;
   assignment_prompt: string | null;
   questions: Array<{ text: string; type?: string }> | null;
-  materials_text: Array<{ text: string; fileName?: string; url?: string }> | null;
   language?: string | null;
 };
 
@@ -161,7 +160,7 @@ function fallbackQuestions(): AssignmentQuizQuestion[] {
         "AI 답변의 근거를 다시 질문한다",
         "AI가 제시한 내용을 반례로 검토한다",
         "자기 분석 없이 정답만 요청한다",
-        "수업 자료와 AI 답변을 비교한다",
+        "웹 검색 근거와 AI 답변을 비교한다",
       ],
       correctOptionIndex: 2,
       rationale: "자기 분석 없이 정답만 요청하는 행동은 직접 답 의존 신호입니다.",
@@ -217,7 +216,7 @@ async function loadSessionAndExam(
 
   const { data: exam, error: examError } = await supabase
     .from("exams")
-    .select("id, title, code, type, assignment_prompt, questions, materials_text, language")
+    .select("id, title, code, type, assignment_prompt, questions, language")
     .eq("id", sessionRow.exam_id)
     .maybeSingle();
 
@@ -253,18 +252,6 @@ async function buildChatTranscript(sessionId: string): Promise<string> {
     .slice(0, 18000);
 }
 
-function buildMaterialsContext(exam: ExamRow): string {
-  if (!Array.isArray(exam.materials_text) || exam.materials_text.length === 0) {
-    return "";
-  }
-
-  return exam.materials_text
-    .slice(0, 5)
-    .map((material) => `[${material.fileName || material.url || "자료"}]\n${material.text}`)
-    .join("\n\n")
-    .slice(0, 12000);
-}
-
 async function generateQuizQuestions(params: {
   sessionId: string;
   studentId: string;
@@ -276,7 +263,6 @@ async function generateQuizQuestions(params: {
     assignmentPrompt: params.exam.assignment_prompt,
     questions: params.exam.questions || undefined,
     chatTranscript: params.chatTranscript,
-    materialsContext: buildMaterialsContext(params.exam),
     language: params.exam.language === "en" ? "en" : "ko",
     questionCount: ASSIGNMENT_QUIZ_QUESTION_COUNT,
   });

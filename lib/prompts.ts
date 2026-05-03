@@ -945,6 +945,7 @@ export function buildCaseQuestionGenerationPrompt(params: {
   customInstructions?: string;
   materialsContext?: string;
   language?: PromptLanguage;
+  generationMode?: "case" | "research-assignment";
 }): { system: string; user: string } {
   const {
     examTitle,
@@ -954,7 +955,17 @@ export function buildCaseQuestionGenerationPrompt(params: {
     customInstructions,
     materialsContext,
     language = "ko",
+    generationMode = "case",
   } = params;
+
+  if (generationMode === "research-assignment") {
+    return buildResearchAssignmentGenerationPrompt({
+      examTitle,
+      questionCount,
+      customInstructions,
+      language,
+    });
+  }
 
   if (language === "en") {
     return buildCaseQuestionGenerationPromptEn({
@@ -1113,6 +1124,100 @@ ${difficultyGuide[difficulty]}
   userPrompt += `\n\n위 조건에 맞는 사례형 문제를 JSON 형식으로 생성해주세요.`;
 
   return { system, user: userPrompt };
+}
+
+/**
+ * Research assignment generation prompt.
+ */
+export function buildResearchAssignmentGenerationPrompt(params: {
+  examTitle: string;
+  questionCount: number;
+  customInstructions?: string;
+  language?: PromptLanguage;
+}): { system: string; user: string } {
+  const { examTitle, questionCount, customInstructions, language = "ko" } = params;
+
+  if (language === "en") {
+    const system = `You are an expert university assignment designer. Generate research-task assignment prompts, not case-based exam questions.
+
+## Rules
+- Do NOT create case scenarios, role-play setups, fictional companies, or solved examples.
+- Base every assignment on the instructor's prompt.
+- Each assignment must be phrased as a task the student must research, such as "Research ...", "Investigate ...", or "Compare ... through research".
+- Make the research target, time period, comparison criteria, evidence students should find, and final judgment clear.
+- Do not provide the answer, detailed findings, revenue numbers, market-share numbers, or conclusions inside the assignment text.
+- The student should need to use AI chat and web research to gather evidence.
+- Output valid JSON only.
+
+## Output format
+{
+  "questions": [
+    {
+      "text": "<complete HTML assignment prompt>",
+      "type": "essay",
+      "rubric": [
+        {
+          "evaluationArea": "Evaluation area",
+          "detailedCriteria": "Detailed criteria"
+        }
+      ]
+    }
+  ]
+}`;
+
+    const user = `Assignment title: "${examTitle}"
+Number of assignments to generate: ${questionCount}
+Instructor prompt: <<<${sanitizeForPrompt(customInstructions || "", "question")}>>>
+
+Generate research-task assignment prompts in JSON.`;
+
+    return { system, user };
+  }
+
+  const system = `당신은 대학 과제 출제 전문가입니다. 사례형 시험 문제가 아니라, 학생이 AI와 웹 리서치를 통해 수행할 **리서치 과제 지시문**을 설계합니다.
+
+## 규칙
+- CASE, 사례형 시나리오, 역할극, 가상 기업/가상 상황, 정답이 포함된 예시는 만들지 않습니다.
+- 모든 과제는 교수자가 입력한 프롬프트를 중심으로 생성합니다.
+- 각 과제는 반드시 "~에 대해 리서치해오시오", "~를 조사해오시오", "~를 비교 조사해오시오" 같은 수행 지시문 형태여야 합니다.
+- 조사 대상, 기간, 비교 기준, 찾아야 할 근거 유형, 최종적으로 내려야 할 판단을 명확히 제시합니다.
+- 문제 본문에 정답, 세부 조사 결과, 매출/점유율 같은 실제 수치, 결론을 미리 제공하지 않습니다.
+- 학생이 AI 채팅과 웹 검색을 통해 직접 근거를 찾고 이해해야 하는 구조로 만듭니다.
+- 모든 출력은 한국어로 작성하고, JSON 객체 외의 텍스트는 절대 출력하지 않습니다.
+
+## 출력 형식
+{
+  "questions": [
+    {
+      "text": "<완전한 HTML 과제 지시문>",
+      "type": "essay",
+      "rubric": [
+        {
+          "evaluationArea": "평가 영역명",
+          "detailedCriteria": "세부 평가 기준 설명"
+        }
+      ]
+    }
+  ]
+}
+
+## HTML 작성 가이드
+- \`<h3>\`로 과제 제목을 작성합니다.
+- \`<p>\`로 리서치 지시문을 작성합니다.
+- 필요하면 \`<ul>\` 또는 \`<ol>\`로 조사 기준을 3-5개 제시합니다.
+- 제목이나 본문에 "CASE", "사례", "시나리오"라는 표현을 쓰지 않습니다.
+
+## 루브릭 가이드
+- 각 question 객체의 rubric은 2-4개 항목으로 작성합니다.
+- 반드시 "리서치 근거의 구체성", "AI 활용 및 자기주도 탐구" 관련 평가 기준을 포함합니다.`;
+
+  const user = `과제 제목: "${examTitle}"
+생성할 과제 수: ${questionCount}개
+교수자 프롬프트: <<<${sanitizeForPrompt(customInstructions || "", "question")}>>>
+
+위 프롬프트를 바탕으로 리서치 수행형 과제를 JSON 형식으로 생성해주세요.`;
+
+  return { system, user };
 }
 
 /**
@@ -1297,21 +1402,33 @@ export function buildSingleCaseQuestionPrompt(params: {
   customInstructions?: string;
   materialsContext?: string;
   language?: PromptLanguage;
+  generationMode?: "case" | "research-assignment";
 }): { system: string; user: string } {
-  const { questionIndex, totalQuestions, language = "ko", ...baseParams } = params;
+  const {
+    questionIndex,
+    totalQuestions,
+    language = "ko",
+    generationMode = "case",
+    ...baseParams
+  } = params;
 
   const base = buildCaseQuestionGenerationPrompt({
     ...baseParams,
     questionCount: 1,
     language,
+    generationMode,
   });
 
   let user = base.user;
   if (totalQuestions > 1) {
     user +=
       language === "en"
-        ? `\n\n[Diversity instruction] This is question ${questionIndex + 1} of ${totalQuestions}. Use a different scenario, industry, and analytical perspective from the previous questions.`
-        : `\n\n[다양성 지시] 이 문제는 총 ${totalQuestions}개 중 ${questionIndex + 1}번째입니다. 이전 문제들과 다른 시나리오, 산업, 분석 관점을 사용하세요.`;
+        ? generationMode === "research-assignment"
+          ? `\n\n[Diversity instruction] This is assignment ${questionIndex + 1} of ${totalQuestions}. Use a different research scope, comparison frame, and evidence focus from the previous assignments.`
+          : `\n\n[Diversity instruction] This is question ${questionIndex + 1} of ${totalQuestions}. Use a different scenario, industry, and analytical perspective from the previous questions.`
+        : generationMode === "research-assignment"
+          ? `\n\n[다양성 지시] 이 과제는 총 ${totalQuestions}개 중 ${questionIndex + 1}번째입니다. 이전 과제들과 다른 조사 범위, 비교 기준, 근거 탐색 관점을 사용하세요.`
+          : `\n\n[다양성 지시] 이 문제는 총 ${totalQuestions}개 중 ${questionIndex + 1}번째입니다. 이전 문제들과 다른 시나리오, 산업, 분석 관점을 사용하세요.`;
   }
 
   return { system: base.system, user };
@@ -1326,6 +1443,7 @@ export function buildCaseQuestionAdjustmentPrompt(params: {
   conversationHistory?: Array<{ role: string; content: string }>;
   examTitle?: string;
   language?: PromptLanguage;
+  generationMode?: "case" | "research-assignment";
 }): { system: string; user: string } {
   const {
     currentQuestionText,
@@ -1333,10 +1451,32 @@ export function buildCaseQuestionAdjustmentPrompt(params: {
     conversationHistory,
     examTitle,
     language = "ko",
+    generationMode = "case",
   } = params;
 
   if (language === "en") {
-    const system = `You are a question-editing assistant for exams. Following the instructor's instruction, you edit an existing case-based question.
+    const system =
+      generationMode === "research-assignment"
+        ? `You are an assignment-editing assistant. Following the instructor's instruction, edit an existing research-task assignment prompt.
+
+## Rules
+1. Change only the indicated parts; preserve the rest of the structure and content as much as possible.
+2. The result must remain a research task, not a case scenario, role-play, fictional company setup, or solved example.
+3. The assignment must ask the student to research, investigate, or compare using AI chat and web research.
+4. Do not add answers, detailed findings, revenue numbers, market-share numbers, or conclusions that students should discover themselves.
+5. Preserve valid HTML structure.
+6. Write in professional English.
+
+## Output format
+Respond strictly in the JSON format below. Do not output text outside the JSON.
+
+\`\`\`json
+{
+  "questionText": "<edited complete HTML>",
+  "explanation": "Summary of changes (1–2 sentences)"
+}
+\`\`\``
+        : `You are a question-editing assistant for exams. Following the instructor's instruction, you edit an existing case-based question.
 
 ## Rules
 1. Change only the indicated parts; preserve the rest of the structure and content as much as possible.
@@ -1374,7 +1514,28 @@ Respond strictly in the JSON format below. Do not output text outside the JSON.
     return { system, user: userPrompt };
   }
 
-  const system = `당신은 시험 문제 편집 어시스턴트입니다. 교수자의 지시에 따라 기존 사례형 문제를 수정합니다.
+  const system =
+    generationMode === "research-assignment"
+      ? `당신은 과제 편집 어시스턴트입니다. 교수자의 지시에 따라 기존 리서치 과제 지시문을 수정합니다.
+
+## 규칙
+1. 지시된 부분만 정확히 변경하고, 나머지 구조와 내용은 최대한 유지
+2. 수정 후에도 리서치 수행형 과제여야 하며, CASE/사례형 시나리오/역할극/가상 기업 설정/정답 포함 예시로 바꾸지 않습니다.
+3. 학생이 AI 채팅과 웹 검색으로 조사, 비교, 검증해야 하는 과제 구조를 유지합니다.
+4. 학생이 직접 찾아야 할 정답, 세부 조사 결과, 매출/점유율 같은 실제 수치, 결론을 문제 본문에 추가하지 않습니다.
+5. HTML 구조를 유지하되, 필요시 개선 가능
+6. 반드시 한국어로 작성
+
+## 출력 형식
+반드시 아래 JSON 형식으로 응답하세요. 추가 텍스트 없이 JSON만 출력합니다.
+
+\`\`\`json
+{
+  "questionText": "<수정된 완전한 HTML>",
+  "explanation": "변경 사항 요약 (1-2문장)"
+}
+\`\`\``
+      : `당신은 시험 문제 편집 어시스턴트입니다. 교수자의 지시에 따라 기존 사례형 문제를 수정합니다.
 
 ## 규칙
 1. 지시된 부분만 정확히 변경하고, 나머지 구조와 내용은 최대한 유지
@@ -1571,8 +1732,6 @@ export function buildAssignmentChatSystemPrompt(params: {
     assignmentPrompt,
     questions,
     rubric,
-    relevantMaterialsText,
-    fullMaterialsText,
     workspaceState,
     language = "ko",
   } = params;
@@ -1595,7 +1754,7 @@ export function buildAssignmentChatSystemPrompt(params: {
       .trim();
 
   const questionsSection = hasQuestions
-    ? `\n**[과제 문제 시나리오]** — 모든 답변은 아래 문제를 기반으로 해야 합니다:
+    ? `\n**[과제 문제]** — 모든 답변은 아래 과제를 기반으로 해야 합니다:
 ${(questions || []).map((q, i) => `문제 ${i + 1}. ${stripHtml(q.text)}`).join("\n\n")}`
     : "";
 
@@ -1608,12 +1767,6 @@ ${(rubric || [])
    - 세부 기준: ${item.detailedCriteria}`,
   )
   .join("\n")}`
-    : "";
-
-  // Prefer RAG-retrieved relevant chunks; fall back to full materials text
-  const materialsText = relevantMaterialsText || fullMaterialsText || "";
-  const materialsSection = materialsText
-    ? `\n**[강의 자료]:**\n<<<${sanitizeForPrompt(materialsText, "materials")}>>>`
     : "";
 
   // Build workspace context section for hybrid assignments
@@ -1667,13 +1820,12 @@ ${roleDescription}
 ${examTitle ? `과제 제목: <<<${sanitizeForPrompt(examTitle, "title")}>>>` : ""}
 ${assignmentPrompt ? `\n**[과제 설명]:** <<<${sanitizeForPrompt(assignmentPrompt, "question")}>>>` : ""}
 ${questionsSection}
-${materialsSection}
 ${rubricSection}
 ${workspaceSection}
 
 **역할 및 응답 원칙:**
-- 항상 위 **[과제 문제 시나리오]**를 머릿속에 숙지한 채로 답변합니다. 학생의 질문이 짧거나 맥락이 없어도, 해당 문제 시나리오의 맥락에서 해석하여 답변하세요.
-- 강의 자료가 있을 경우 자료의 내용을 우선적으로 근거로 사용합니다.
+- 항상 위 **[과제 문제]**를 머릿속에 숙지한 채로 답변합니다. 학생의 질문이 짧거나 맥락이 없어도, 해당 과제의 맥락에서 해석하여 답변하세요.
+- 학생이 직접 웹 검색과 AI 대화를 통해 리서치 근거를 찾고 검증하도록 안내합니다.
 - 바로 정답을 주기보다 유도 질문이나 힌트로 안내합니다. 단, 학생이 명시적으로 답을 요청하면 직접 답변합니다.${
     hasWorkspace
       ? `
@@ -1695,8 +1847,7 @@ ${workspaceSection}
 - 항상 **마크다운** 형식으로 답변합니다.
 - 수학 식은 LaTeX 달러 기호 구분자로 감싸서 작성합니다.
 - 웹 검색을 적극적으로 활용하여 최신 정보와 다양한 관점을 제공합니다.
-- 웹 검색 결과를 인용할 때는 반드시 출처를 명시합니다.
-- 강의 자료가 있을 경우 강의 자료를 우선하되, 부족한 부분은 웹 검색으로 보완합니다.`.trim();
+- 웹 검색 결과를 인용할 때는 반드시 출처를 명시합니다.`.trim();
 }
 
 /**
@@ -1740,8 +1891,6 @@ function buildAssignmentChatSystemPromptEn(params: {
     assignmentPrompt,
     questions,
     rubric,
-    relevantMaterialsText,
-    fullMaterialsText,
     workspaceState,
   } = params;
   const hasRubric = !!(rubric && Array.isArray(rubric) && rubric.length > 0);
@@ -1757,7 +1906,7 @@ function buildAssignmentChatSystemPromptEn(params: {
       .trim();
 
   const questionsSection = hasQuestions
-    ? `\n**[Assignment Question Scenario]** — All answers must be grounded in the question(s) below:
+    ? `\n**[Assignment Task]** — All answers must be grounded in the assignment task(s) below:
 ${(questions || []).map((q, i) => `Question ${i + 1}. ${stripHtml(q.text)}`).join("\n\n")}`
     : "";
 
@@ -1770,11 +1919,6 @@ ${(rubric || [])
    - Detailed criteria: ${item.detailedCriteria}`,
   )
   .join("\n")}`
-    : "";
-
-  const materialsText = relevantMaterialsText || fullMaterialsText || "";
-  const materialsSection = materialsText
-    ? `\n**[Course Materials]:**\n<<<${sanitizeForPrompt(materialsText, "materials")}>>>`
     : "";
 
   let workspaceSection = "";
@@ -1826,13 +1970,12 @@ ${roleDescription}
 ${examTitle ? `Assignment title: <<<${sanitizeForPrompt(examTitle, "title")}>>>` : ""}
 ${assignmentPrompt ? `\n**[Assignment Description]:** <<<${sanitizeForPrompt(assignmentPrompt, "question")}>>>` : ""}
 ${questionsSection}
-${materialsSection}
 ${rubricSection}
 ${workspaceSection}
 
 **Role and response principles:**
-- Always keep the **[Assignment Question Scenario]** above in mind when answering. Even when the student's question is short or lacks context, interpret it within the scenario.
-- When course materials are provided, use them as the primary source of evidence.
+- Always keep the **[Assignment Task]** above in mind when answering. Even when the student's question is short or lacks context, interpret it within the assignment task.
+- Guide the student to find and verify research evidence through web search and AI dialogue.
 - Prefer guiding questions and hints over direct answers. However, if the student explicitly requests the answer, provide it directly.${
     hasWorkspace
       ? `
@@ -1854,8 +1997,7 @@ ${workspaceSection}
 - Always respond in **Markdown**.
 - Wrap mathematical expressions in LaTeX dollar delimiters.
 - Make active use of web search to provide up-to-date information and diverse perspectives.
-- When citing web-search results, always include the source.
-- When course materials are provided, prioritize them; use web search to supplement gaps.`.trim();
+- When citing web-search results, always include the source.`.trim();
 }
 
 /**
@@ -1866,7 +2008,6 @@ export function buildAssignmentQuizGenerationPrompt(params: {
   assignmentPrompt?: string | null;
   questions?: Array<{ text: string; type?: string }>;
   chatTranscript: string;
-  materialsContext?: string;
   language?: PromptLanguage;
   questionCount?: number;
 }): string {
@@ -1875,7 +2016,6 @@ export function buildAssignmentQuizGenerationPrompt(params: {
     assignmentPrompt,
     questions,
     chatTranscript,
-    materialsContext,
     language = "ko",
     questionCount = 3,
   } = params;
@@ -1932,9 +2072,6 @@ Prompt: <<<${sanitizeForPrompt(assignmentPrompt || "", "question")}>>>
 Questions:
 <<<${questionText}>>>
 
-[Materials Context]
-<<<${sanitizeForPrompt(materialsContext || "", "materials")}>>>
-
 [Student AI Chat / Research Trail]
 <<<${sanitizeForPrompt(chatTranscript, "materials")}>>>`;
   }
@@ -1971,9 +2108,6 @@ JSON만 반환하세요. 마크다운 코드블록은 쓰지 마세요.
 설명: <<<${sanitizeForPrompt(assignmentPrompt || "", "question")}>>>
 문제:
 <<<${questionText}>>>
-
-[수업/리서치 자료 맥락]
-<<<${sanitizeForPrompt(materialsContext || "", "materials")}>>>
 
 [학생-AI 채팅/리서치 흐름]
 <<<${sanitizeForPrompt(chatTranscript, "materials")}>>>`;

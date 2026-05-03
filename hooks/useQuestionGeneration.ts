@@ -35,6 +35,7 @@ interface GenerateParams {
   customInstructions?: string;
   materialsText?: Array<{ url: string; text: string; fileName: string }>;
   language?: "ko" | "en";
+  generationMode?: "case" | "research-assignment";
 }
 
 interface AdjustResult {
@@ -64,7 +65,8 @@ export interface UseQuestionGenerationReturn {
     questionId: string,
     instruction: string,
     examTitle?: string,
-    language?: "ko" | "en"
+    language?: "ko" | "en",
+    generationMode?: "case" | "research-assignment"
   ): Promise<AdjustResult | null>;
   applyAdjustment(questionId: string, newText: string): void;
   getAdjustHistory(questionId: string): ChatMessage[];
@@ -281,7 +283,9 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
             questionCount: 1,
             customInstructions: [
               params.customInstructions,
-              "이전 문제와 다른 시나리오와 관점으로 생성해주세요.",
+              params.generationMode === "research-assignment"
+                ? "이전 과제와 다른 조사 관점과 리서치 범위로 생성해주세요."
+                : "이전 문제와 다른 시나리오와 관점으로 생성해주세요.",
             ]
               .filter(Boolean)
               .join(" "),
@@ -324,7 +328,8 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
       questionId: string,
       instruction: string,
       examTitle?: string,
-      language?: "ko" | "en"
+      language?: "ko" | "en",
+      generationMode?: "case" | "research-assignment"
     ): Promise<AdjustResult | null> => {
       setAdjustingId(questionId);
       setError(null);
@@ -350,6 +355,7 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
               .map((m) => ({ role: m.role, content: m.content })),
             examTitle,
             ...(language ? { language } : {}),
+            ...(generationMode ? { generationMode } : {}),
           }),
         });
 

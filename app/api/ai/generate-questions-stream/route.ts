@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
 
   // Combine materials text with char limit
   let materialsContext: string | undefined;
-  if (data.materialsText && data.materialsText.length > 0) {
+  if (data.generationMode !== "research-assignment" && data.materialsText && data.materialsText.length > 0) {
     const combined = data.materialsText
       .map((m) => `[${m.fileName}]\n${m.text}`)
       .join("\n\n---\n\n");
@@ -165,6 +165,7 @@ export async function POST(request: NextRequest) {
             customInstructions: data.customInstructions,
             materialsContext,
             language: data.language,
+            generationMode: data.generationMode,
           })
         );
 

@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     // Fetch exam info for context
     const { data: exam } = await getSupabase()
       .from("exams")
-      .select("id, title, code, questions, rubric, materials_text, assignment_prompt, type, language")
+      .select("id, title, code, questions, rubric, assignment_prompt, type, language")
       .eq("id", examId)
       .single();
 
@@ -67,28 +67,6 @@ export async function POST(request: NextRequest) {
         JSON.stringify({ error: "NOT_FOUND", message: "Assignment not found" }),
         { status: 404, headers: { "Content-Type": "application/json" } }
       );
-    }
-
-    // RAG context (reuse existing pattern)
-    let relevantMaterialsText = "";
-    try {
-      const { searchMaterialChunks, formatSearchResultsAsContext } = await import(
-        "@/lib/search-chunks"
-      );
-      const searchResults = await searchMaterialChunks(message, {
-        examId,
-        matchThreshold: 0.2,
-        matchCount: 5,
-        route: "/api/assignment-chat",
-        userId: user.id,
-        sessionId,
-        qIdx: 0,
-      });
-      if (searchResults.length > 0) {
-        relevantMaterialsText = formatSearchResultsAsContext(searchResults);
-      }
-    } catch {
-      // RAG failure is non-fatal
     }
 
     // Save user message
@@ -106,12 +84,6 @@ export async function POST(request: NextRequest) {
       assignmentPrompt: exam.assignment_prompt,
       questions: (exam.questions as Array<{ text: string; type: string }> | null) ?? undefined,
       rubric: exam.rubric as Array<{ evaluationArea: string; detailedCriteria: string }> | undefined,
-      relevantMaterialsText,
-      fullMaterialsText: Array.isArray(exam.materials_text)
-        ? (exam.materials_text as Array<{ text: string; fileName: string }>)
-            .map((m) => `[${m.fileName}]\n${m.text}`)
-            .join("\n\n")
-        : undefined,
       language: examLanguage,
     });
 

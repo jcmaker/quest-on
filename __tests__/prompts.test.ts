@@ -6,6 +6,7 @@ import {
   buildUnifiedGradingSystemPrompt,
   buildAssignmentChatSystemPrompt,
   buildAssignmentQuizGenerationPrompt,
+  buildCaseQuestionGenerationPrompt,
 } from "@/lib/prompts";
 
 describe("sanitizeForPrompt", () => {
@@ -160,6 +161,18 @@ describe("Prompt language branching (en)", () => {
     expect(en).not.toContain("역할(Role):");
   });
 
+  it("buildAssignmentChatSystemPrompt does not prioritize course materials for assignments", () => {
+    const ko = buildAssignmentChatSystemPrompt({
+      examTitle: "리서치 과제",
+      assignmentPrompt: "국내 배달앱 수익성을 조사해오시오",
+      questions: [{ text: "<p>배달앱 3사를 비교 조사해오시오</p>", type: "essay" }],
+    });
+
+    expect(ko).toContain("웹 검색과 AI 대화");
+    expect(ko).not.toContain("[강의 자료]");
+    expect(ko).not.toContain("강의 자료가 있을 경우");
+  });
+
   it("buildStudentChatSystemPrompt defaults to Korean when language is omitted (regression)", () => {
     const ko = buildStudentChatSystemPrompt({
       examTitle: "시험",
@@ -206,7 +219,6 @@ describe("buildAssignmentQuizGenerationPrompt", () => {
       assignmentPrompt: "AI와 리서치하며 우선순위를 판단하세요",
       questions: [{ text: "<p>Canvas 없이 채팅으로만 진행</p>" }],
       chatTranscript: "학생: A사의 상반기 매출은 어땠나요?\nAI: A사의 상반기 매출은 전년 대비 12% 증가했습니다.",
-      materialsContext: "A사 상반기 매출 자료",
     });
 
     expect(prompt).toContain("JSON만 반환하세요");
@@ -214,6 +226,7 @@ describe("buildAssignmentQuizGenerationPrompt", () => {
     expect(prompt).toContain("정확히 생성합니다");
     expect(prompt).toContain("상반기 매출");
     expect(prompt).toContain("회사/인물/제품명");
+    expect(prompt).not.toContain("수업/리서치 자료 맥락");
     expect(prompt).not.toContain("CANVAS_START");
   });
 
@@ -229,5 +242,23 @@ describe("buildAssignmentQuizGenerationPrompt", () => {
     expect(prompt).toContain("company/person/product names");
     expect(prompt).toContain("Student AI Chat / Research Trail");
     expect(prompt).not.toContain("JSON만 반환하세요");
+  });
+});
+
+describe("buildCaseQuestionGenerationPrompt research assignment mode", () => {
+  it("generates a research-task prompt instead of a case prompt", () => {
+    const { system, user } = buildCaseQuestionGenerationPrompt({
+      examTitle: "플랫폼 전략",
+      difficulty: "basic",
+      questionCount: 1,
+      customInstructions: "국내 배달앱 3사의 최근 수익성 변화를 조사해오시오",
+      generationMode: "research-assignment",
+    });
+
+    expect(system).toContain("리서치 과제 지시문");
+    expect(system).toContain("~에 대해 리서치해오시오");
+    expect(system).toContain("CASE, 사례형 시나리오");
+    expect(user).toContain("국내 배달앱 3사의 최근 수익성 변화");
+    expect(user).not.toContain("사례형 문제");
   });
 });

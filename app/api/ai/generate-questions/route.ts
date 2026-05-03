@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     // Combine materials text with char limit
     let materialsContext: string | undefined;
-    if (data.materialsText && data.materialsText.length > 0) {
+    if (data.generationMode !== "research-assignment" && data.materialsText && data.materialsText.length > 0) {
       const combined = data.materialsText
         .map((m) => `[${m.fileName}]\n${m.text}`)
         .join("\n\n---\n\n");
@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
       customInstructions: data.customInstructions,
       materialsContext,
       language: data.language,
+      generationMode: data.generationMode,
     });
 
     // Call OpenAI with extended timeout for generation
@@ -112,6 +113,7 @@ export async function POST(request: NextRequest) {
               question_count: data.questionCount ?? 2,
               difficulty: data.difficulty ?? "intermediate",
               has_materials: !!materialsContext,
+              generation_mode: data.generationMode,
             },
           }),
         },

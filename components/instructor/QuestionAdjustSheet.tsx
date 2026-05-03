@@ -26,6 +26,13 @@ const PRESETS = [
   { label: "더 길게", instruction: "시나리오를 더 상세하게 만들고 하위 질문을 추가해주세요." },
 ];
 
+const ASSIGNMENT_PRESETS = [
+  { label: "더 어렵게", instruction: "리서치 범위와 비교 기준을 더 정교하게 만들어주세요." },
+  { label: "더 쉽게", instruction: "조사 대상과 요구 기준을 더 단순하고 명확하게 만들어주세요." },
+  { label: "더 구체적으로", instruction: "학생이 조사해야 할 대상, 기간, 비교 기준을 더 구체적으로 제시해주세요." },
+  { label: "더 길게", instruction: "리서치 지시문을 더 자세하게 풀어 쓰되 정답이나 조사 결과는 포함하지 마세요." },
+];
+
 interface QuestionAdjustSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -34,6 +41,7 @@ interface QuestionAdjustSheetProps {
   isAdjusting: boolean;
   onSendInstruction: (instruction: string) => Promise<unknown>;
   onApply: (newText: string) => void;
+  generationMode?: "case" | "research-assignment";
 }
 
 export function QuestionAdjustSheet({
@@ -44,12 +52,14 @@ export function QuestionAdjustSheet({
   isAdjusting,
   onSendInstruction,
   onApply,
+  generationMode = "case",
 }: QuestionAdjustSheetProps) {
   const [input, setInput] = useState("");
   const [appliedIdx, setAppliedIdx] = useState<number | null>(null);
   const [isPreviewExpanded, setIsPreviewExpanded] = useState(false);
   const [loadingPreset, setLoadingPreset] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const presets = generationMode === "research-assignment" ? ASSIGNMENT_PRESETS : PRESETS;
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -77,7 +87,7 @@ export function QuestionAdjustSheet({
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="w-full sm:max-w-lg flex flex-col gap-0 p-0">
         <SheetHeader className="px-6 py-4 border-b shrink-0">
-          <SheetTitle>AI로 문제 다듬기</SheetTitle>
+          <SheetTitle>{generationMode === "research-assignment" ? "AI로 과제 다듬기" : "AI로 문제 다듬기"}</SheetTitle>
         </SheetHeader>
 
         {/* P0-2: Current question preview with expand/collapse toggle */}
@@ -189,7 +199,7 @@ export function QuestionAdjustSheet({
 
         {/* Preset buttons */}
         <div className="px-6 py-2 border-t shrink-0 flex flex-wrap gap-1.5">
-          {PRESETS.map((preset) => (
+              {presets.map((preset) => (
             <Button
               key={preset.label}
               type="button"

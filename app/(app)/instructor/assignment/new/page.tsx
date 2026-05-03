@@ -4,15 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  FileText,
-  Presentation,
-  FileSpreadsheet,
-  FileImage,
-  File,
-  ClipboardList,
-} from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import toast from "react-hot-toast";
 import { extractErrorMessage } from "@/lib/error-messages";
 import { useAppUser } from "@/components/providers/AppAuthProvider";
@@ -27,7 +19,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ExamInfoForm } from "@/components/instructor/ExamInfoForm";
-import { FileUpload } from "@/components/instructor/FileUpload";
 import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { CaseQuestionGenerator } from "@/components/instructor/CaseQuestionGenerator";
@@ -35,7 +26,6 @@ import {
   ScrollProgressProvider,
   ScrollProgress,
 } from "@/components/animate-ui/primitives/animate/scroll-progress";
-import { useFileUpload } from "@/hooks/useFileUpload";
 
 function isQuestionContentEmpty(text: string): boolean {
   return text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
@@ -54,14 +44,9 @@ export default function CreateAssignment() {
     duration: 0,
     code: "",
     deadline: "",
-    materials: [] as File[],
     language: "ko" as "ko" | "en",
   });
-  const [disabledFiles, setDisabledFiles] = useState<Set<number>>(new Set());
-  const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
-  const [isDragOver, setIsDragOver] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const fileUpload = useFileUpload();
   const questionsListRef = useRef<HTMLDivElement>(null);
   const examInfoRef = useRef<HTMLDivElement>(null);
   const [highlightedQuestionIds, setHighlightedQuestionIds] = useState<Set<string>>(new Set());
@@ -76,103 +61,9 @@ export default function CreateAssignment() {
     setExamData((prev) => ({ ...prev, code: result }));
   };
 
-  const calculateTotalSize = (files: File[]) => {
-    return files.reduce((total, file) => total + file.size, 0);
-  };
-
-  const validateAndManageFileSize = (files: File[]) => {
-    const MAX_SIZE = 50 * 1024 * 1024;
-    const totalSize = calculateTotalSize(files);
-    if (totalSize <= MAX_SIZE) {
-      setDisabledFiles(new Set());
-      setCanAddMoreFiles(true);
-      return true;
-    }
-    setCanAddMoreFiles(false);
-    toast.error("파일 용량이 50MB를 초과했습니다.");
-    return false;
-  };
-
   useEffect(() => {
     generateExamCode();
   }, []);
-
-  const validateFile = (file: File): boolean => {
-    const allowedTypes = [
-      "application/pdf",
-      "application/vnd.ms-powerpoint",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.ms-excel",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "text/csv",
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-    ];
-    const maxSize = 50 * 1024 * 1024;
-    const extension = file.name.split(".").pop()?.toLowerCase();
-    const allowedExtensions = ["pdf", "ppt", "pptx", "doc", "docx", "xls", "xlsx", "csv", "hwp", "hwpx", "jpg", "jpeg", "png", "gif", "webp"];
-    if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(extension || "")) {
-      toast.error("지원되지 않는 파일 형식입니다.");
-      return false;
-    }
-    if (file.size > maxSize) {
-      toast.error("파일 크기가 50MB를 초과합니다.");
-      return false;
-    }
-    return true;
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!canAddMoreFiles) { e.target.value = ""; return; }
-    const files = Array.from(e.target.files || []);
-    const validFiles = files.filter(validateFile);
-    if (validFiles.length === 0) { e.target.value = ""; return; }
-    const newMaterials = [...examData.materials, ...validFiles];
-    validateAndManageFileSize(newMaterials);
-    setExamData((prev) => ({ ...prev, materials: newMaterials }));
-    validFiles.forEach((file) => fileUpload.upload(file));
-    e.target.value = "";
-  };
-
-  const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); if (canAddMoreFiles) setIsDragOver(true); };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setIsDragOver(false); };
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
-    if (!canAddMoreFiles) return;
-    const files = Array.from(e.dataTransfer.files);
-    const validFiles = files.filter(validateFile);
-    if (validFiles.length === 0) return;
-    const newMaterials = [...examData.materials, ...validFiles];
-    validateAndManageFileSize(newMaterials);
-    setExamData((prev) => ({ ...prev, materials: newMaterials }));
-    validFiles.forEach((file) => fileUpload.upload(file));
-  };
-  const handleDragAreaClick = () => { if (canAddMoreFiles) document.getElementById("materials")?.click(); };
-  const removeFile = (index: number) => {
-    const removedFile = examData.materials[index];
-    const newMaterials = examData.materials.filter((_, i) => i !== index);
-    validateAndManageFileSize(newMaterials);
-    setExamData((prev) => ({ ...prev, materials: newMaterials }));
-    if (removedFile) fileUpload.removeFile(removedFile.name);
-  };
-
-  const getFileIcon = (fileName: string) => {
-    const extension = fileName.split(".").pop()?.toLowerCase();
-    const iconClass = "w-4 h-4 shrink-0";
-    switch (extension) {
-      case "pdf": return <FileText className={`${iconClass} text-red-500`} />;
-      case "ppt": case "pptx": return <Presentation className={`${iconClass} text-orange-500`} />;
-      case "doc": case "docx": return <FileText className={`${iconClass} text-blue-500`} />;
-      case "xls": case "xlsx": case "csv": return <FileSpreadsheet className={`${iconClass} text-green-500`} />;
-      case "hwp": case "hwpx": return <ClipboardList className={`${iconClass} text-sky-500`} />;
-      case "jpg": case "jpeg": case "png": case "gif": case "webp": return <FileImage className={`${iconClass} text-purple-500`} />;
-      default: return <File className={`${iconClass} text-muted-foreground`} />;
-    }
-  };
 
   const updateQuestion = (id: string, field: keyof Question, value: string | boolean) => {
     setQuestions(questions.map((q) => (q.id === id ? { ...q, [field]: value } : q)));
@@ -241,8 +132,6 @@ export default function CreateAssignment() {
 
     setIsLoading(true);
     try {
-      const materialUrls = fileUpload.getUploadedUrls();
-      const materialsText = fileUpload.getMaterialsText();
       // date input gives "YYYY-MM-DD", auto-set to 23:59 KST
       const deadlineDate = new Date(examData.deadline + "T23:59:00+09:00");
       const deadlineISO = deadlineDate.toISOString();
@@ -256,8 +145,8 @@ export default function CreateAssignment() {
         rubric: [],
         rubric_public: false,
         chat_weight: null,
-        materials: materialUrls,
-        materials_text: materialsText,
+        materials: [],
+        materials_text: [],
         language: examData.language,
         status: "draft",
         created_at: new Date().toISOString(),
@@ -320,26 +209,9 @@ export default function CreateAssignment() {
               />
             </div>
 
-            <FileUpload
-              files={examData.materials}
-              disabledFiles={disabledFiles}
-              canAddMoreFiles={canAddMoreFiles}
-              isDragOver={isDragOver}
-              totalSize={calculateTotalSize(examData.materials)}
-              onFileSelect={handleFileSelect}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onDragAreaClick={handleDragAreaClick}
-              onRemoveFile={removeFile}
-              getFileIcon={getFileIcon}
-              extractionStatus={fileUpload.fileStatus}
-            />
-
             <CaseQuestionGenerator
               examTitle={examData.title}
-              extractedTexts={fileUpload.extractedTexts}
-              extractionStatus={fileUpload.fileStatus}
+              mode="assignment"
               language={examData.language}
               onQuestionsAccepted={(newQuestions) => {
                 const newIds = newQuestions.map((q) => q.id);
@@ -400,7 +272,7 @@ export default function CreateAssignment() {
                     <p className="text-sm text-muted-foreground mt-2">이 코드를 학생들에게 공유하세요.</p>
                   </div>
                   <div className="text-sm text-muted-foreground space-y-1 border-t pt-3">
-                    <p>문제 {questions.length}개{examData.materials.length > 0 && ` · 자료 ${examData.materials.length}개`}</p>
+                    <p>문제 {questions.length}개</p>
                     <p>제출 기한: {examData.deadline ? `${examData.deadline} 23:59까지` : "-"}</p>
                   </div>
                 </div>
