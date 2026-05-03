@@ -30,7 +30,6 @@ export function useAssignmentSession(code: string) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [canvasContent, setCanvasContent] = useState("");
 
   const initSession = useCallback(async () => {
     if (!isLoaded || !isSignedIn || !user) return;
@@ -91,28 +90,7 @@ export function useAssignmentSession(code: string) {
         submitted_at: sessionData.session?.submitted_at || null,
       });
 
-      // Load existing canvas content
       if (sessionId) {
-        const subRes = await fetch("/api/supa", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "get_session_submissions",
-            data: { sessionId },
-          }),
-        });
-
-        if (subRes.ok) {
-          const subData = await subRes.json();
-          const submissions = subData.submissions || [];
-          const canvasSub = submissions.find(
-            (s: { q_idx: number }) => s.q_idx === 0
-          );
-          if (canvasSub?.answer) {
-            setCanvasContent(canvasSub.answer);
-          }
-        }
-
         // Load existing messages
         const msgRes = await fetch("/api/supa", {
           method: "POST",
@@ -150,8 +128,6 @@ export function useAssignmentSession(code: string) {
     session,
     isLoading,
     error,
-    canvasContent,
-    setCanvasContent,
     userId: user?.id || "",
   };
 }

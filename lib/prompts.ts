@@ -1682,17 +1682,10 @@ ${workspaceSection}
       : ""
   }
 
-**문서 생성/수정 모드**: 학생이 "문서로 만들기", "문서 작성해줘", "보고서 작성" 등을 요청하면:
-- <!-- CANVAS_START --> 마커와 <!-- CANVAS_END --> 마커 사이에 전체 마크다운 문서를 출력합니다.
-- 문서는 다음 구조를 따릅니다:
-  1. 제목 (# 제목)
-  2. 개요 (핵심 주장 2-3문장)
-  3. 본론 (## 소제목별 단락, 근거와 출처 포함)
-  4. 결론 (핵심 내용 요약)
-  5. 참고문헌 (웹 검색 출처가 있을 경우 APA 형식으로 목록화)
-- 문서 수정 시 항상 전체 문서를 다시 출력합니다 (부분 수정 X).
-- 마커 밖에는 "문서를 생성했습니다. 우측 캔버스에서 확인하세요." 한 줄만 출력합니다.
-- 문서 품질 기준: 대학교 보고서 수준. 개조식 나열 금지, 단락 중심 서술.
+**채팅 전용 과제 모드:**
+- 학생이 문서 작성, 보고서 대필, 최종 제출물 생성을 요청해도 별도 문서나 완성 답안을 생성하지 않습니다.
+- 대신 학생이 스스로 이해를 정리할 수 있도록 핵심 쟁점, 확인 질문, 근거 탐색 방향, 반례/검증 포인트를 짧게 제시합니다.
+- 학생이 제출 전에 직접 정리해야 할 내용을 물으면, 완성문이 아니라 체크리스트나 사고 과정 중심으로 안내합니다.
 
 **응답 규칙:**
 - 답변은 **간결하고 핵심 중심**으로 작성합니다. 불필요한 서론, 반복, 친절한 마무리 문구를 생략합니다.
@@ -1848,17 +1841,10 @@ ${workspaceSection}
       : ""
   }
 
-**Document creation / edit mode**: When the student asks to "turn this into a document", "write a report", or similar:
-- Output the full markdown document between \`<!-- CANVAS_START -->\` and \`<!-- CANVAS_END -->\` markers.
-- The document must follow this structure:
-  1. Title (\`# Title\`)
-  2. Overview (the thesis in 2–3 sentences)
-  3. Body (\`## Subheading\` paragraphs with evidence and citations)
-  4. Conclusion (summary of key points)
-  5. References (APA-style list when web-search sources are used)
-- On document edits, always re-emit the entire document (no partial edits).
-- Outside the markers, output only a single line such as "I've generated the document. Please check the canvas on the right."
-- Document quality must match a university-level report: avoid bullet-dump enumeration; prefer paragraph-based prose.
+**Chat-only assignment mode:**
+- When the student asks you to create a document, write a report, or produce final submission text, do not create a separate document or polished final answer.
+- Instead, help the student organize their own understanding with key issues, guiding questions, evidence directions, and verification points.
+- If the student asks what to review before submission, provide a concise checklist or reasoning scaffold, not a finished report.
 
 **Response rules:**
 - Keep answers **concise and focused**. Skip unnecessary introductions, repetitions, or courteous closings.
@@ -1870,6 +1856,121 @@ ${workspaceSection}
 - Make active use of web search to provide up-to-date information and diverse perspectives.
 - When citing web-search results, always include the source.
 - When course materials are provided, prioritize them; use web search to supplement gaps.`.trim();
+}
+
+/**
+ * 채팅/리서치 기반 타임어택 퀴즈 생성 프롬프트
+ */
+export function buildAssignmentQuizGenerationPrompt(params: {
+  examTitle?: string;
+  assignmentPrompt?: string | null;
+  questions?: Array<{ text: string; type?: string }>;
+  chatTranscript: string;
+  materialsContext?: string;
+  language?: PromptLanguage;
+  questionCount?: number;
+}): string {
+  const {
+    examTitle,
+    assignmentPrompt,
+    questions,
+    chatTranscript,
+    materialsContext,
+    language = "ko",
+    questionCount = 4,
+  } = params;
+
+  const stripHtml = (html: string) =>
+    html
+      .replace(/<[^>]*>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .trim();
+
+  const questionText =
+    questions && questions.length > 0
+      ? questions
+          .map((q, index) => `${index + 1}. ${sanitizeForPrompt(stripHtml(q.text), "question")}`)
+          .join("\n")
+      : "";
+
+  const isEnglish = language === "en";
+
+  if (isEnglish) {
+    return `Generate a short time-attack quiz that checks whether the student actually read and understood the AI chat and research evidence.
+
+Return JSON only. No markdown fences.
+
+Schema:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "Question text",
+      "options": ["A", "B", "C", "D"],
+      "correctOptionIndex": 0,
+      "rationale": "One sentence explaining the evidence"
+    }
+  ]
+}
+
+Rules:
+- Generate exactly ${questionCount} multiple-choice questions.
+- Each question must be answerable from the chat/research trail below, not from generic common sense.
+- Prefer questions about why a source/evidence mattered, what condition changed the conclusion, or which idea the student and AI corrected.
+- Avoid trick questions and avoid asking for URLs or citation formatting.
+- Options must be concise and mutually exclusive.
+
+[Assignment]
+Title: <<<${sanitizeForPrompt(examTitle || "", "title")}>>>
+Prompt: <<<${sanitizeForPrompt(assignmentPrompt || "", "question")}>>>
+Questions:
+<<<${questionText}>>>
+
+[Materials Context]
+<<<${sanitizeForPrompt(materialsContext || "", "materials")}>>>
+
+[Student AI Chat / Research Trail]
+<<<${sanitizeForPrompt(chatTranscript, "materials")}>>>`;
+  }
+
+  return `학생이 AI와 나눈 대화 및 리서치 근거를 실제로 읽고 이해했는지 확인하는 짧은 타임어택 퀴즈를 생성하세요.
+
+JSON만 반환하세요. 마크다운 코드블록은 쓰지 마세요.
+
+스키마:
+{
+  "questions": [
+    {
+      "id": "q1",
+      "question": "문항",
+      "options": ["A", "B", "C", "D"],
+      "correctOptionIndex": 0,
+      "rationale": "근거를 설명하는 한 문장"
+    }
+  ]
+}
+
+규칙:
+- 객관식 ${questionCount}문항을 정확히 생성합니다.
+- 각 문항은 일반상식이 아니라 아래 채팅/리서치 흐름을 읽어야 풀 수 있어야 합니다.
+- 출처가 왜 중요했는지, 어떤 조건이 결론을 바꿨는지, 학생과 AI가 어떤 오해를 교정했는지 확인하는 문항을 우선합니다.
+- 함정 문제, URL 암기, 인용 형식 암기는 피합니다.
+- 선택지는 짧고 서로 명확히 구분되어야 합니다.
+
+[과제]
+제목: <<<${sanitizeForPrompt(examTitle || "", "title")}>>>
+설명: <<<${sanitizeForPrompt(assignmentPrompt || "", "question")}>>>
+문제:
+<<<${questionText}>>>
+
+[수업/리서치 자료 맥락]
+<<<${sanitizeForPrompt(materialsContext || "", "materials")}>>>
+
+[학생-AI 채팅/리서치 흐름]
+<<<${sanitizeForPrompt(chatTranscript, "materials")}>>>`;
 }
 
 /**
@@ -1979,8 +2080,8 @@ ${workspaceSection}
 **채점 규칙:**
 - 각 루브릭 항목별로 0-100점 사이의 점수를 부여하세요.
 - 점수와 함께 구체적인 피드백을 제공하세요.
-- 문서의 구조, 논리성, 창의성, 정확성을 종합적으로 평가하세요.
-- AI 채팅 이력을 참고하여 학생의 학습 과정도 고려하세요.
+- 채팅 과정에서 드러난 논리성, 정확성, 근거 활용, 자기주도 탐구 역량을 종합적으로 평가하세요.
+- 타임어택 퀴즈 결과가 제공되면 학생이 AI 답변과 리서치 내용을 실제로 읽고 이해했는지 판단하는 보조 근거로 활용하세요.
 ${workspaceContext?.code && (workspaceContext?.erd?.nodes?.length ?? 0) > 0 ? "- 코드와 ERD의 일관성을 반드시 확인하고 불일치 사항을 피드백에 포함하세요." : ""}
 
 **응답 형식 (JSON):**

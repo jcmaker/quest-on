@@ -14,6 +14,7 @@ export type AiFeature =
   | "adjust_question"
   | "generate_rubric"
   | "generate_summary"
+  | "assignment_quiz"
   | "embedding";
 
 export const AI_FEATURES: AiFeature[] = [
@@ -28,6 +29,7 @@ export const AI_FEATURES: AiFeature[] = [
   "adjust_question",
   "generate_rubric",
   "generate_summary",
+  "assignment_quiz",
   "embedding",
 ];
 

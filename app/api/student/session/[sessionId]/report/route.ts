@@ -144,6 +144,28 @@ export async function GET(
       logError("Error fetching grades", gradesError);
     }
 
+    const { data: quizAttempt, error: quizError } = await getSupabase()
+      .from("session_quiz_attempts")
+      .select(
+        `
+        id,
+        questions,
+        answers,
+        score,
+        total_questions,
+        time_limit_seconds,
+        started_at,
+        submitted_at,
+        status
+      `
+      )
+      .eq("session_id", sessionId)
+      .maybeSingle();
+
+    if (quizError) {
+      logError("Error fetching assignment quiz attempt", quizError);
+    }
+
     // Decompress session data if available
     let decompressedSessionData = null;
     if (
@@ -283,7 +305,8 @@ export async function GET(
       overallScore: gradesReleased ? overallScore : null,
       gradedCount: gradesReleased ? gradedCount : 0,
       totalQuestionCount,
-      aiSummary: null,
+      aiSummary: session.ai_summary || null,
+      assignmentQuiz: quizAttempt || null,
       gradesReleased,
       // Progress is safe to expose even before grades_released — it only contains counts/status,
       // no scores. Lets the student see "3/10 채점 중" progress while the AI runs.

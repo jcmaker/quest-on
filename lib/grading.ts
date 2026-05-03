@@ -245,7 +245,7 @@ async function gradeSingleQuestion(params: {
       ? `\n\n[AI 활용 요약]\n${aiDependencyAssessment.summary}`
       : "";
 
-    userPrompt = `[학생이 작성한 문서]\n${submission.answer || "(문서 없음)"}${aiSummaryText}`;
+    userPrompt = `[학생의 채팅 기반 과제 수행 기록]\n${submission.answer || "(기록 없음)"}${aiSummaryText}`;
   } else {
     systemPrompt = buildUnifiedGradingSystemPrompt({
       rubricText,

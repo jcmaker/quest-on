@@ -363,8 +363,6 @@ export const submitAssignmentSchema = z.object({
   sessionId: z.string().uuid("Invalid session ID"),
   examId: z.string().uuid("Invalid exam ID"),
   studentId: z.string().min(1),
-  canvasContent: z.string().max(500000).optional(),
-  workspace_state: workspaceStateSchema.optional(),
 });
 
 // Drive operations

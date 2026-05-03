@@ -12,6 +12,7 @@ type TriggerSource =
   | "heartbeat"
   | "force_end"
   | "submit_exam"
+  | "submit_assignment"
   | "manual_retry"
   | "cron_sweeper";
 

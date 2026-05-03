@@ -1,23 +1,16 @@
 "use client";
 
-import { use, useState, useCallback, useEffect, useRef } from "react";
-import { motion } from "motion/react";
+import { use, useState, useCallback, useEffect } from "react";
 import { AssignmentHeader } from "@/components/assignment/AssignmentHeader";
 import { AssignmentChatPanel } from "@/components/assignment/AssignmentChatPanel";
-import { AssignmentCanvas } from "@/components/assignment/AssignmentCanvas";
 import { AssignmentSubmitDialog } from "@/components/assignment/AssignmentSubmitDialog";
-import { HybridWorkspace } from "@/components/canvas/HybridWorkspace";
 import { useAssignmentSession } from "@/hooks/useAssignmentSession";
 import { useAssignmentChat } from "@/hooks/useAssignmentChat";
-import { useCanvasAutoSave } from "@/hooks/useCanvasAutoSave";
 import { Loader2, AlertCircle, FileX } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
-import { marked } from "marked";
 import toast from "react-hot-toast";
-import type { WorkspaceState, CanvasConfig, InitialState } from "@/lib/types/workspace";
-import { createDefaultWorkspaceState } from "@/lib/types/workspace";
 
 export default function AssignmentPage({
   params,
@@ -33,94 +26,21 @@ export default function AssignmentPage({
     session,
     isLoading: isSessionLoading,
     error,
-    canvasContent,
-    setCanvasContent,
     userId,
   } = useAssignmentSession(code);
 
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
-  const [isCanvasOpen, setIsCanvasOpen] = useState(false);
-  const [activeCanvasMarkdown, setActiveCanvasMarkdown] = useState<string>("");
-
-  // Hybrid workspace state
-  const [workspaceState, setWorkspaceState] = useState<WorkspaceState | null>(null);
-  const workspaceInitialized = useRef(false);
-
-  // Determine if this is a hybrid workspace assignment
-  const examRecord = exam as unknown as Record<string, unknown> | null;
-  const examType = examRecord?.type as string | undefined;
-  const canvasConfig = examRecord?.canvas_config as CanvasConfig | undefined;
-  const initialState = examRecord?.initial_state as InitialState | undefined;
-  const isHybridWorkspace =
-    examType === "code" ||
-    examType === "erd" ||
-    examType === "mindmap" ||
-    canvasConfig?.secondaryCanvas === true;
-
-  // Initialize workspace state from initial_state on first load
-  useEffect(() => {
-    if (!isHybridWorkspace || workspaceInitialized.current) return;
-    workspaceInitialized.current = true;
-
-    // Try to load existing workspace_state from submission (if resuming)
-    // For now, initialize from exam's initial_state
-    setWorkspaceState(createDefaultWorkspaceState(initialState));
-  }, [isHybridWorkspace, initialState]);
 
   // Detect if already submitted
   useEffect(() => {
     if (session?.submitted_at || session?.status === "submitted") {
       setIsSubmitted(true);
+    } else if (session?.status === "quiz_pending") {
+      router.replace(`/student/session/${session.id}/quiz`);
     }
-  }, [session]);
-
-  // Open canvas if there's existing content on load
-  useEffect(() => {
-    if (canvasContent && canvasContent.replace(/<[^>]*>/g, "").trim().length > 0) {
-      setIsCanvasOpen(true);
-    }
-  }, [canvasContent]);
-
-  // Convert markdown from AI to HTML for TipTap
-  const handleCanvasUpdate = useCallback(
-    (markdownContent: string) => {
-      try {
-        const html = marked.parse(markdownContent, { async: false }) as string;
-        setCanvasContent(html);
-        setActiveCanvasMarkdown(markdownContent);
-      } catch {
-        setCanvasContent(`<p>${markdownContent}</p>`);
-      }
-    },
-    [setCanvasContent]
-  );
-
-  const handleCanvasOpen = useCallback(
-    (markdown?: string) => {
-      if (!markdown) {
-        // Called from hook after new canvas_update — always open
-        setIsCanvasOpen(true);
-        return;
-      }
-      if (isCanvasOpen && activeCanvasMarkdown === markdown) {
-        // Same document already showing — toggle close
-        setIsCanvasOpen(false);
-      } else {
-        // Different content or canvas closed — load and open
-        try {
-          const html = marked.parse(markdown, { async: false }) as string;
-          setCanvasContent(html);
-        } catch {
-          setCanvasContent(`<p>${markdown}</p>`);
-        }
-        setActiveCanvasMarkdown(markdown);
-        setIsCanvasOpen(true);
-      }
-    },
-    [isCanvasOpen, activeCanvasMarkdown, setCanvasContent]
-  );
+  }, [session, router]);
 
   const {
     messages,
@@ -132,8 +52,6 @@ export default function AssignmentPage({
     sessionId: session?.id || "",
     examId: exam?.id || "",
     studentId: userId,
-    onCanvasUpdate: handleCanvasUpdate,
-    onCanvasOpen: handleCanvasOpen,
   });
 
   // Load existing messages when session initializes
@@ -153,29 +71,15 @@ export default function AssignmentPage({
           const data = await res.json();
           const existingMsgs = data.messages || [];
           if (existingMsgs.length > 0) {
-            const CANVAS_START_MARKER = "<!-- CANVAS_START -->";
-            const CANVAS_END_MARKER = "<!-- CANVAS_END -->";
-            const extractCanvasMarkdown = (content: string) => {
-              const start = content.indexOf(CANVAS_START_MARKER);
-              const end = content.indexOf(CANVAS_END_MARKER);
-              if (start !== -1 && end !== -1) {
-                return content.slice(start + CANVAS_START_MARKER.length, end).trim();
-              }
-              return undefined;
-            };
             setMessages(
               existingMsgs.map(
                 (m: { id: string; role: string; content: string }) => {
                   const isAssistant = m.role === "ai";
-                  const hasCanvas =
-                    isAssistant && m.content.includes(CANVAS_START_MARKER);
                   return {
                     id: m.id,
                     role: isAssistant ? "assistant" as const : "user" as const,
                     content: m.content,
                     isStreaming: false,
-                    hasCanvasUpdate: hasCanvas,
-                    canvasContent: hasCanvas ? extractCanvasMarkdown(m.content) : undefined,
                   };
                 }
               )
@@ -188,14 +92,6 @@ export default function AssignmentPage({
     };
     loadMessages();
   }, [session?.id, setMessages]);
-
-  // Auto-save canvas (includes workspace_state for hybrid assignments)
-  useCanvasAutoSave({
-    sessionId: session?.id || "",
-    content: canvasContent,
-    enabled: !!session?.id && !isSubmitted,
-    workspaceState: workspaceState ?? undefined,
-  });
 
   // Auto-submit when deadline expires
   const handleDeadlineExpired = useCallback(async () => {
@@ -214,21 +110,20 @@ export default function AssignmentPage({
             sessionId: session.id,
             examId: exam.id,
             studentId: userId,
-            canvasContent: canvasContent,
-            ...(workspaceState ? { workspace_state: workspaceState } : {}),
           },
         }),
       });
       if (res.ok || res.status === 409) {
         setIsSubmitted(true);
         toast.success("과제가 자동 제출되었습니다.");
+        router.push(`/student/session/${session.id}/quiz`);
       }
     } catch {
       // Silent — deadline already passed
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitted, isSubmitting, session?.id, exam?.id, userId, canvasContent, workspaceState]);
+  }, [isSubmitted, isSubmitting, session?.id, exam?.id, userId, router]);
 
   // Handle submit
   const handleSubmit = async () => {
@@ -245,8 +140,6 @@ export default function AssignmentPage({
             sessionId: session.id,
             examId: exam.id,
             studentId: userId,
-            canvasContent: canvasContent,
-            ...(workspaceState ? { workspace_state: workspaceState } : {}),
           },
         }),
       });
@@ -258,7 +151,8 @@ export default function AssignmentPage({
 
       setIsSubmitted(true);
       setShowSubmitDialog(false);
-      toast.success("과제가 성공적으로 제출되었습니다.");
+      toast.success("타임어택 퀴즈로 이동합니다.");
+      router.push(`/student/session/${session.id}/quiz`);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "제출 중 오류가 발생했습니다."
@@ -321,56 +215,6 @@ export default function AssignmentPage({
     );
   }
 
-  const hasCanvasContent =
-    canvasContent.replace(/<[^>]*>/g, "").trim().length > 0;
-
-  // Hybrid workspace rendering
-  if (isHybridWorkspace && workspaceState && canvasConfig) {
-    return (
-      <div className="flex flex-col h-screen">
-        <AssignmentHeader
-          title={exam.title}
-          deadline={exam.deadline}
-          isSubmitted={isSubmitted}
-          onSubmit={() => setShowSubmitDialog(true)}
-          isSubmitting={isSubmitting}
-          onDeadlineExpired={handleDeadlineExpired}
-        />
-
-        <div className="flex-1 overflow-hidden">
-          <HybridWorkspace
-            workspaceState={workspaceState}
-            canvasConfig={canvasConfig}
-            onWorkspaceChange={setWorkspaceState}
-            readOnly={isSubmitted}
-            chatPanel={
-              <AssignmentChatPanel
-                messages={messages}
-                isLoading={isChatLoading}
-                onSendMessage={sendMessage}
-                isSubmitted={isSubmitted}
-                assignmentPrompt={exam.assignment_prompt || ""}
-                questions={(exam.questions || []) as { id: string; text: string; type: string }[]}
-                onOpenCanvas={handleCanvasOpen}
-                isCanvasOpen={true}
-                citations={citations}
-              />
-            }
-          />
-        </div>
-
-        <AssignmentSubmitDialog
-          open={showSubmitDialog}
-          onOpenChange={setShowSubmitDialog}
-          onConfirm={handleSubmit}
-          isSubmitting={isSubmitting}
-          hasCanvasContent={hasCanvasContent}
-        />
-      </div>
-    );
-  }
-
-  // Default TipTap canvas rendering (report type / backward compatible)
   return (
     <div className="flex flex-col h-screen">
       <AssignmentHeader
@@ -382,46 +226,16 @@ export default function AssignmentPage({
         onDeadlineExpired={handleDeadlineExpired}
       />
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Chat Panel */}
-        <motion.div
-          className="flex flex-col overflow-hidden"
-          animate={{ flex: isCanvasOpen ? "0 0 60%" : "1 1 100%" }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        >
-          <AssignmentChatPanel
-            messages={messages}
-            isLoading={isChatLoading}
-            onSendMessage={sendMessage}
-            isSubmitted={isSubmitted}
-            assignmentPrompt={exam.assignment_prompt || ""}
-            questions={(exam.questions || []) as { id: string; text: string; type: string }[]}
-            onOpenCanvas={handleCanvasOpen}
-            isCanvasOpen={isCanvasOpen}
-            citations={citations}
-          />
-        </motion.div>
-
-        {/* Canvas Panel — always mounted, width animates 0 ↔ 40% */}
-        <motion.div
-          className="flex flex-col overflow-hidden border-l"
-          initial={false}
-          animate={{
-            width: isCanvasOpen ? "40%" : "0%",
-            opacity: isCanvasOpen ? 1 : 0,
-          }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          style={{ minWidth: 0 }}
-        >
-          <AssignmentCanvas
-            content={canvasContent}
-            onChange={setCanvasContent}
-            isSubmitted={isSubmitted}
-            onClose={() => setIsCanvasOpen(false)}
-            title={exam.title}
-            examType={examType}
-          />
-        </motion.div>
+      <div className="flex-1 overflow-hidden">
+        <AssignmentChatPanel
+          messages={messages}
+          isLoading={isChatLoading}
+          onSendMessage={sendMessage}
+          isSubmitted={isSubmitted}
+          assignmentPrompt={exam.assignment_prompt || ""}
+          questions={(exam.questions || []) as { id: string; text: string; type: string }[]}
+          citations={citations}
+        />
       </div>
 
       <AssignmentSubmitDialog
@@ -429,7 +243,6 @@ export default function AssignmentPage({
         onOpenChange={setShowSubmitDialog}
         onConfirm={handleSubmit}
         isSubmitting={isSubmitting}
-        hasCanvasContent={hasCanvasContent}
       />
     </div>
   );

@@ -3,15 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Send,
-  FileEdit,
-  Loader2,
-  User,
-  Bot,
-  FileText,
-  ArrowRight,
-} from "lucide-react";
+import { Send, Loader2, User, Bot } from "lucide-react";
 import type { ChatMessage } from "@/hooks/useAssignmentChat";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
@@ -24,8 +16,6 @@ interface AssignmentChatPanelProps {
   isSubmitted: boolean;
   assignmentPrompt: string;
   questions: { id: string; text: string; type: string }[];
-  onOpenCanvas: (content?: string) => void;
-  isCanvasOpen: boolean;
   citations?: Array<{ title: string; url: string }>;
 }
 
@@ -36,8 +26,6 @@ export function AssignmentChatPanel({
   isSubmitted,
   assignmentPrompt,
   questions,
-  onOpenCanvas,
-  isCanvasOpen,
   citations,
 }: AssignmentChatPanelProps) {
   const [input, setInput] = useState("");
@@ -54,13 +42,6 @@ export function AssignmentChatPanel({
     setInput("");
   };
 
-  const QUICK_DOCUMENT_MESSAGE = "대화 내용 기반 문서 작성";
-
-  const handleMakeDocument = () => {
-    if (isLoading || isSubmitted) return;
-    onSendMessage(QUICK_DOCUMENT_MESSAGE);
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -69,7 +50,7 @@ export function AssignmentChatPanel({
   };
 
   const hasMessages = messages.length > 0;
-  const maxW = isCanvasOpen ? "max-w-full" : "max-w-3xl";
+  const maxW = "max-w-3xl";
 
   // ---------- Initial (no messages) layout ----------
   if (!hasMessages && !isSubmitted) {
@@ -136,19 +117,9 @@ export function AssignmentChatPanel({
                 disabled={isLoading}
               />
               <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleMakeDocument}
-                    disabled={isLoading}
-                    className="h-8 px-2 text-xs"
-                  >
-                    <FileEdit className="w-3.5 h-3.5 mr-1" />
-                    대화 내용 기반 문서 작성
-                  </Button>
-                </div>
+                <p className="text-xs text-muted-foreground px-2">
+                  AI와 대화하며 리서치 내용을 정리하세요.
+                </p>
                 <Button
                   onClick={handleSend}
                   disabled={!input.trim() || isLoading}
@@ -289,26 +260,6 @@ export function AssignmentChatPanel({
                 </div>
               )}
 
-              {/* Canvas artifact card */}
-              {msg.hasCanvasUpdate && (
-                <div className="ml-11 mt-2">
-                  <button
-                    onClick={() => onOpenCanvas(msg.canvasContent)}
-                    className="flex items-center gap-3 w-full max-w-xs px-4 py-3 bg-muted/50 hover:bg-muted border border-border rounded-xl transition-colors group text-left"
-                  >
-                    <div className="shrink-0 w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <FileText className="w-4 h-4 text-primary" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">과제 문서</p>
-                      <p className="text-xs text-muted-foreground">
-                        클릭하여 문서 보기
-                      </p>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
-                  </button>
-                </div>
-              )}
             </div>
           ))}
           <div ref={messagesEndRef} />
@@ -330,19 +281,9 @@ export function AssignmentChatPanel({
                 disabled={isLoading}
               />
               <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                <div className="flex items-center gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleMakeDocument}
-                    disabled={isLoading}
-                    className="h-8 px-2 text-xs"
-                  >
-                    <FileEdit className="w-3.5 h-3.5 mr-1" />
-                    대화 내용 기반 문서 작성
-                  </Button>
-                </div>
+                <p className="text-xs text-muted-foreground px-2">
+                  제출 후 대화/리서치 기반 타임어택 퀴즈가 진행됩니다.
+                </p>
                 <Button
                   onClick={handleSend}
                   disabled={!input.trim() || isLoading}

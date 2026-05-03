@@ -286,8 +286,6 @@ export async function submitAssignment(data: {
   sessionId: string;
   examId: string;
   studentId: string;
-  canvasContent?: string;
-  workspace_state?: Record<string, unknown>;
 }) {
   try {
     const user = await currentUser();
@@ -302,7 +300,7 @@ export async function submitAssignment(data: {
     // Verify session
     const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
-      .select("id, student_id, submitted_at, exam_id")
+      .select("id, student_id, submitted_at, exam_id, status")
       .eq("id", data.sessionId)
       .single();
 
@@ -318,29 +316,22 @@ export async function submitAssignment(data: {
       return errorJson("ALREADY_SUBMITTED", "Already submitted", 409);
     }
 
-    // Save final canvas content if provided
-    if (data.canvasContent || data.workspace_state) {
-      const submitData: Record<string, unknown> = {
-        session_id: data.sessionId,
-        q_idx: 0,
-        answer: data.canvasContent || "",
-        updated_at: new Date().toISOString(),
-      };
-      if (data.workspace_state) {
-        submitData.workspace_state = data.workspace_state;
-      }
-      await getSupabase()
-        .from("submissions")
-        .upsert(submitData, { onConflict: "session_id,q_idx" });
+    if (session.exam_id !== data.examId) {
+      return errorJson("EXAM_MISMATCH", "Session does not belong to this assignment", 400);
     }
 
-    // Update session status
+    if (session.status === "quiz_pending") {
+      return successJson({ quizPending: true, sessionId: data.sessionId });
+    }
+
+    // Submission intent freezes the chat and moves the student into the required quiz.
     const now = new Date().toISOString();
     const { error: updateError } = await getSupabase()
       .from("sessions")
       .update({
-        status: "submitted",
-        submitted_at: now,
+        status: "quiz_pending",
+        is_active: false,
+        last_heartbeat_at: now,
       })
       .eq("id", data.sessionId);
 
@@ -349,21 +340,7 @@ export async function submitAssignment(data: {
       return errorJson("SUBMIT_FAILED", "Failed to submit assignment", 500);
     }
 
-    // Trigger auto-grading asynchronously
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000";
-
-    fetch(`${baseUrl}/api/grade/auto`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-internal-secret": process.env.INTERNAL_API_SECRET || "",
-      },
-      body: JSON.stringify({ sessionId: data.sessionId }),
-    }).catch((err) => logError("Failed to dispatch auto-grade", err));
-
-    return successJson({ submitted: true, submittedAt: now });
+    return successJson({ quizPending: true, sessionId: data.sessionId, quizStartedAt: now });
   } catch (error) {
     logError("[submitAssignment] Failed", error, { path: "/api/supa/assignment-handlers" });
     return errorJson("SUBMIT_ASSIGNMENT_FAILED", "Failed to submit assignment", 500);

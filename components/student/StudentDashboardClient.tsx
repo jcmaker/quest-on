@@ -59,7 +59,7 @@ interface ExamSession {
   examType: string | null;
   duration: number;
   deadline: string | null;
-  status: "completed" | "in-progress";
+  status: "completed" | "in-progress" | "quiz-pending";
   submittedAt: string | null;
   createdAt: string;
   submissionCount: number;
@@ -277,7 +277,8 @@ export default function StudentDashboard() {
   );
   const unsubmittedAssignments = allSessions.filter(
     (session) =>
-      session.status === "in-progress" && session.examType === "assignment"
+      (session.status === "in-progress" || session.status === "quiz-pending") &&
+      session.examType !== "exam"
   );
 
   // ✅ 같은 시험 코드에 제출된 세션이 있으면 미제출 세션 제외
@@ -291,7 +292,7 @@ export default function StudentDashboard() {
   const filteredSessions = allSessions.filter((session) => {
     // ✅ 추가 보안: 같은 시험 코드에 제출된 세션이 있으면 미제출 세션 숨기기
     if (
-      session.status === "in-progress" &&
+      (session.status === "in-progress" || session.status === "quiz-pending") &&
       examCodesWithSubmittedSessions.has(session.examCode)
     ) {
       return false; // 제출된 세션이 있는 시험의 미제출 세션은 표시하지 않음
@@ -303,11 +304,11 @@ export default function StudentDashboard() {
     } else if (filter === "pending") {
       if (session.status !== "completed" || session.isGraded) return false;
     } else if (filter === "in-progress") {
-      if (session.status !== "in-progress") return false;
+      if (session.status !== "in-progress" && session.status !== "quiz-pending") return false;
     } else if (filter === "unsubmitted") {
       if (
-        session.status !== "in-progress" ||
-        session.examType !== "assignment"
+        (session.status !== "in-progress" && session.status !== "quiz-pending") ||
+        session.examType === "exam"
       ) {
         return false;
       }
@@ -388,6 +389,8 @@ export default function StudentDashboard() {
         return <CheckCircle2 className="w-4 h-4" />;
       case "in-progress":
         return <Circle className="w-4 h-4" />;
+      case "quiz-pending":
+        return <Clock className="w-4 h-4" />;
       default:
         return <Circle className="w-4 h-4" />;
     }
@@ -500,6 +503,19 @@ export default function StudentDashboard() {
           <Button size="sm" className="min-h-[36px] px-4">
             <PlayCircle className="w-4 h-4 mr-1.5" aria-hidden="true" />
             계속하기
+          </Button>
+        </Link>
+      );
+    }
+    if (session.status === "quiz-pending") {
+      return (
+        <Link
+          href={`/student/session/${session.id}/quiz`}
+          className="focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-md"
+        >
+          <Button size="sm" className="min-h-[36px] px-4">
+            <Clock className="w-4 h-4 mr-1.5" aria-hidden="true" />
+            퀴즈 풀기
           </Button>
         </Link>
       );
@@ -1001,14 +1017,18 @@ export default function StudentDashboard() {
                                 aria-label={`상태: ${
                                   session.status === "completed"
                                     ? "완료"
-                                    : "진행 중"
+                                    : session.status === "quiz-pending"
+                                      ? "퀴즈 대기"
+                                      : "진행 중"
                                 }`}
                               >
                                 {getStatusIcon(session.status)}
                                 <span>
                                   {session.status === "completed"
                                     ? "완료"
-                                    : "진행 중"}
+                                    : session.status === "quiz-pending"
+                                      ? "퀴즈 대기"
+                                      : "진행 중"}
                                 </span>
                               </Badge>
                               {session.status === "completed" &&
@@ -1080,14 +1100,18 @@ export default function StudentDashboard() {
                                   aria-label={`상태: ${
                                     session.status === "completed"
                                       ? "완료"
-                                      : "진행 중"
+                                      : session.status === "quiz-pending"
+                                        ? "퀴즈 대기"
+                                        : "진행 중"
                                   }`}
                                 >
                                   {getStatusIcon(session.status)}
                                   <span>
                                     {session.status === "completed"
                                       ? "완료"
-                                      : "진행 중"}
+                                      : session.status === "quiz-pending"
+                                        ? "퀴즈 대기"
+                                        : "진행 중"}
                                   </span>
                                 </Badge>
                               </div>

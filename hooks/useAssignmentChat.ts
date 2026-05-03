@@ -7,24 +7,18 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
-  hasCanvasUpdate?: boolean;
-  canvasContent?: string;
 }
 
 interface UseAssignmentChatOptions {
   sessionId: string;
   examId: string;
   studentId: string;
-  onCanvasUpdate?: (content: string) => void;
-  onCanvasOpen?: () => void;
 }
 
 export function useAssignmentChat({
   sessionId,
   examId,
   studentId,
-  onCanvasUpdate,
-  onCanvasOpen,
 }: UseAssignmentChatOptions) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -118,16 +112,6 @@ export function useAssignmentChat({
                   );
                 } else if (currentEventType === "citations" && Array.isArray(data.citations)) {
                   setCitations(data.citations);
-                } else if (currentEventType === "canvas_update" && data.content) {
-                  onCanvasUpdate?.(data.content);
-                  onCanvasOpen?.();
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === assistantMsg.id
-                        ? { ...m, hasCanvasUpdate: true, canvasContent: data.content }
-                        : m
-                    )
-                  );
                 } else if (currentEventType === "done") {
                   if (data.responseId) {
                     previousResponseIdRef.current = data.responseId;
@@ -167,7 +151,7 @@ export function useAssignmentChat({
         abortControllerRef.current = null;
       }
     },
-    [sessionId, examId, studentId, isLoading, onCanvasUpdate, onCanvasOpen]
+    [sessionId, examId, studentId, isLoading]
   );
 
   const cancelStream = useCallback(() => {

@@ -22,6 +22,8 @@ export function getStatusColor(status: string): string {
       return "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20";
     case "in-progress":
       return "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20";
+    case "quiz-pending":
+      return "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20";
     default:
       return "bg-muted text-muted-foreground";
   }

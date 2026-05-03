@@ -86,6 +86,13 @@ export const qk = {
       }
       return ["student-stats"] as const;
     },
+
+    assignmentQuiz: (sessionId: string, userId?: string) => {
+      if (userId) {
+        return ["student-assignment-quiz", sessionId, userId] as const;
+      }
+      return ["student-assignment-quiz", sessionId] as const;
+    },
   },
 
   session: {

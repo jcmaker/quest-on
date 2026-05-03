@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     // 1. All submitted sessions (these are always included)
     const submittedPromise = supabase
       .from("sessions")
-      .select("id, exam_id, submitted_at, created_at")
+      .select("id, exam_id, submitted_at, created_at, status")
       .eq("student_id", user.id)
       .not("submitted_at", "is", null)
       .order("created_at", { ascending: false });
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     // 2. Unsubmitted sessions (need deduplication per exam)
     const unsubmittedPromise = supabase
       .from("sessions")
-      .select("id, exam_id, submitted_at, created_at")
+      .select("id, exam_id, submitted_at, created_at, status")
       .eq("student_id", user.id)
       .is("submitted_at", null)
       .order("created_at", { ascending: false });
@@ -190,7 +190,11 @@ export async function GET(request: NextRequest) {
         examType: exam?.type || null,
         duration: exam?.duration || 0,
         deadline: exam?.deadline || null,
-        status: session.submitted_at ? "completed" : "in-progress",
+        status: session.submitted_at
+          ? "completed"
+          : session.status === "quiz_pending"
+            ? "quiz-pending"
+            : "in-progress",
         submittedAt: session.submitted_at || null,
         createdAt: session.created_at,
         submissionCount: submissions.length,

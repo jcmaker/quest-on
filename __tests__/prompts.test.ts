@@ -5,6 +5,7 @@ import {
   buildStudentChatSystemPrompt,
   buildUnifiedGradingSystemPrompt,
   buildAssignmentChatSystemPrompt,
+  buildAssignmentQuizGenerationPrompt,
 } from "@/lib/prompts";
 
 describe("sanitizeForPrompt", () => {
@@ -193,7 +194,36 @@ describe("Prompt language branching (en)", () => {
       rubricText: "루브릭 본문",
       chatWeightPercent: 50,
     });
-    expect(prompt).toContain("평가 루브릭");
+    expect(prompt).toContain("루브릭 본문");
     expect(prompt).toContain("overall_comment");
+  });
+});
+
+describe("buildAssignmentQuizGenerationPrompt", () => {
+  it("requires JSON-only chat/research comprehension questions", () => {
+    const prompt = buildAssignmentQuizGenerationPrompt({
+      examTitle: "CPO 우선순위",
+      assignmentPrompt: "AI와 리서치하며 우선순위를 판단하세요",
+      questions: [{ text: "<p>Canvas 없이 채팅으로만 진행</p>" }],
+      chatTranscript: "학생: 자료 A가 왜 중요한가요?\nAI: 근거는 시장 규모입니다.",
+      materialsContext: "시장 규모 자료",
+    });
+
+    expect(prompt).toContain("JSON만 반환하세요");
+    expect(prompt).toContain("채팅/리서치 흐름");
+    expect(prompt).toContain("정확히 생성합니다");
+    expect(prompt).not.toContain("CANVAS_START");
+  });
+
+  it("returns an English quiz prompt when language=en", () => {
+    const prompt = buildAssignmentQuizGenerationPrompt({
+      examTitle: "Research",
+      chatTranscript: "Student: What evidence matters?\nAI: Compare the source.",
+      language: "en",
+    });
+
+    expect(prompt).toContain("Return JSON only");
+    expect(prompt).toContain("Student AI Chat / Research Trail");
+    expect(prompt).not.toContain("JSON만 반환하세요");
   });
 });
