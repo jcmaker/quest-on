@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
@@ -28,10 +28,6 @@ import {
 } from "@/components/ui/dialog";
 import { ExamInfoForm } from "@/components/instructor/ExamInfoForm";
 import { FileUpload } from "@/components/instructor/FileUpload";
-import {
-  RubricTable,
-  type RubricItem,
-} from "@/components/instructor/RubricTable";
 import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { CaseQuestionGenerator } from "@/components/instructor/CaseQuestionGenerator";
@@ -47,7 +43,7 @@ function isQuestionContentEmpty(text: string): boolean {
 
 export default function CreateAssignment() {
   const router = useRouter();
-  const { user, profile, isLoaded, isSignedIn } = useAppUser();
+  const { user, isLoaded, isSignedIn } = useAppUser();
   const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -65,16 +61,11 @@ export default function CreateAssignment() {
   const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [rubric, setRubric] = useState<RubricItem[]>([]);
-  const [pendingRubricSuggestions, setPendingRubricSuggestions] = useState<RubricItem[]>([]);
-  const [isRubricPublic, setIsRubricPublic] = useState(false);
-  const [chatWeight, setChatWeight] = useState<number | null>(null);
   const fileUpload = useFileUpload();
   const questionsListRef = useRef<HTMLDivElement>(null);
   const examInfoRef = useRef<HTMLDivElement>(null);
   const [highlightedQuestionIds, setHighlightedQuestionIds] = useState<Set<string>>(new Set());
   const [fieldErrors, setFieldErrors] = useState<{ title?: string; deadline?: string; questions?: string }>({});
-  const [isAIGeneratingRubric, setIsAIGeneratingRubric] = useState(false);
 
   const generateExamCode = () => {
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -196,38 +187,6 @@ export default function CreateAssignment() {
       [n[index], n[t]] = [n[t], n[index]]; return n;
     });
   };
-  const addRubricItem = () => { setRubric([...rubric, { id: Date.now().toString(), evaluationArea: "", detailedCriteria: "" }]); };
-  const updateRubricItem = (id: string, field: keyof RubricItem, value: string) => { setRubric(rubric.map((item) => (item.id === id ? { ...item, [field]: value } : item))); };
-  const removeRubricItem = (id: string) => { setRubric(rubric.filter((item) => item.id !== id)); };
-
-  const handleAIGenerateRubric = useCallback(async (params?: { topics?: string; customInstructions?: string }) => {
-    if (questions.length === 0 || questions.every((q) => isQuestionContentEmpty(q.text))) {
-      toast.error("AI 루브릭을 생성하려면 문제를 먼저 작성해주세요."); return;
-    }
-    if (!examData.title.trim()) { toast.error("AI 루브릭을 생성하려면 제목을 먼저 입력해주세요."); return; }
-    setIsAIGeneratingRubric(true);
-    try {
-      const response = await fetch("/api/ai/generate-rubric", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          examTitle: examData.title,
-          questions: questions.filter((q) => !isQuestionContentEmpty(q.text)).map((q) => ({ text: q.text, type: q.type })),
-          ...(params?.topics ? { topics: params.topics } : {}),
-          language: examData.language,
-        }),
-      });
-      if (!response.ok) throw new Error("루브릭 생성에 실패했습니다.");
-      const result = await response.json();
-      if (result.rubric && Array.isArray(result.rubric)) {
-        setPendingRubricSuggestions(result.rubric.map((r: { evaluationArea: string; detailedCriteria: string }) => ({
-          id: Date.now().toString() + Math.random().toString(36).slice(2), evaluationArea: r.evaluationArea, detailedCriteria: r.detailedCriteria,
-        })));
-        toast.success("AI 평가 기준이 제안되었습니다.");
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "루브릭 생성 중 오류가 발생했습니다.");
-    } finally { setIsAIGeneratingRubric(false); }
-  }, [examData.title, questions]);
 
   const createAssignmentMutation = useMutation({
     mutationFn: async (dataForDB: Record<string, unknown>) => {
@@ -294,9 +253,9 @@ export default function CreateAssignment() {
         deadline: deadlineISO,
         close_at: deadlineISO,
         questions: questions,
-        rubric: rubric,
-        rubric_public: isRubricPublic,
-        chat_weight: chatWeight,
+        rubric: [],
+        rubric_public: false,
+        chat_weight: null,
         materials: materialUrls,
         materials_text: materialsText,
         language: examData.language,
@@ -338,7 +297,7 @@ export default function CreateAssignment() {
                 대시보드
               </Button>
             </div>
-            <p className="text-muted-foreground">AI 캔버스가 포함된 과제를 구성하세요</p>
+            <p className="text-muted-foreground">AI 리서치 채팅 기반 과제를 구성하세요</p>
           </div>
 
           <form onSubmit={handleSubmit} onKeyDown={(e) => { if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA") e.preventDefault(); }} className="space-y-6">
@@ -392,11 +351,7 @@ export default function CreateAssignment() {
                 setTimeout(() => setHighlightedQuestionIds(new Set()), 3000);
                 setTimeout(() => questionsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
               }}
-              onRubricSuggested={(newRubric) => {
-                setPendingRubricSuggestions(newRubric.map((r) => ({
-                  id: Date.now().toString() + Math.random().toString(36).slice(2), evaluationArea: r.evaluationArea, detailedCriteria: r.detailedCriteria,
-                })));
-              }}
+              onRubricSuggested={() => {}}
             />
 
             <div ref={questionsListRef} className={fieldErrors.questions ? "rounded-lg ring-2 ring-red-500 ring-offset-2" : ""}>
@@ -415,29 +370,6 @@ export default function CreateAssignment() {
                 onMove={moveQuestion}
               />
             </div>
-
-            <RubricTable
-              rubric={rubric}
-              onAdd={addRubricItem}
-              onUpdate={updateRubricItem}
-              onRemove={removeRubricItem}
-              isPublic={isRubricPublic}
-              onPublicChange={setIsRubricPublic}
-              chatWeight={chatWeight}
-              onChatWeightChange={setChatWeight}
-              onAIGenerate={handleAIGenerateRubric}
-              isAIGenerating={isAIGeneratingRubric}
-              pendingAISuggestions={pendingRubricSuggestions}
-              onAcceptAISuggestions={() => {
-                setRubric((prev) => {
-                  const nonEmpty = prev.filter((r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== "");
-                  return [...nonEmpty, ...pendingRubricSuggestions];
-                });
-                setPendingRubricSuggestions([]);
-                toast.success("AI 루브릭이 적용되었습니다.");
-              }}
-              onDismissAISuggestions={() => setPendingRubricSuggestions([])}
-            />
 
             <div className="space-y-2">
               <div className="flex gap-4">

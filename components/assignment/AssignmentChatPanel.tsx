@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, type KeyboardEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Send, Loader2, User, Bot } from "lucide-react";
 import type { ChatMessage } from "@/hooks/useAssignmentChat";
 import AIMessageRenderer from "@/components/chat/AIMessageRenderer";
 import { RichTextViewer } from "@/components/ui/rich-text-viewer";
-import { Badge } from "@/components/ui/badge";
 
 interface AssignmentChatPanelProps {
   messages: ChatMessage[];
@@ -42,158 +41,58 @@ export function AssignmentChatPanel({
     setInput("");
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
 
-  const hasMessages = messages.length > 0;
   const maxW = "max-w-3xl";
 
-  // ---------- Initial (no messages) layout ----------
-  if (!hasMessages && !isSubmitted) {
-    return (
-      <div className="flex flex-col h-full">
-        {/* Scrollable area with the assignment prompt bubble */}
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className={`mx-auto w-full ${maxW}`}>
-            {/* Assignment prompt */}
-            {assignmentPrompt && (
-              <div className="flex gap-3 mb-4">
-                <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted">
-                  <Bot className="w-4 h-4" />
-                </div>
-                <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-4 py-3">
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <AIMessageRenderer
-                      content={assignmentPrompt}
-                      timestamp={new Date().toISOString()}
-                      variant="plain"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-            {/* Questions */}
-            {questions.length > 0 && (
-              <div className="flex gap-3 mb-6">
-                <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted">
-                  <Bot className="w-4 h-4" />
-                </div>
-                <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-4 py-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-2">과제 문제</p>
-                  <div className="space-y-3">
-                    {questions.map((q, i) => (
-                      <div key={q.id} className="border rounded-lg p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium">문제 {i + 1}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {q.type === "essay" ? "서술형" : q.type === "short-answer" ? "단답형" : "객관식"}
-                          </Badge>
-                        </div>
-                        <RichTextViewer content={q.text} className="text-sm" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Centered input area */}
-        <div className="p-4 pb-8">
-          <div className={`mx-auto w-full ${maxW} space-y-3`}>
-            <div className="relative rounded-2xl border border-border bg-muted/30 shadow-sm focus-within:border-primary/50 focus-within:shadow-md transition-all">
-              <Textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="과제에 대해 질문하거나 도움을 요청하세요..."
-                className="min-h-[80px] max-h-[160px] resize-none border-0 bg-transparent rounded-2xl px-4 pt-4 pb-12 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm"
-                disabled={isLoading}
-              />
-              <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
-                <p className="text-xs text-muted-foreground px-2">
-                  AI와 대화하며 리서치 내용을 정리하세요.
-                </p>
-                <Button
-                  onClick={handleSend}
-                  disabled={!input.trim() || isLoading}
-                  size="icon"
-                  className="shrink-0 h-8 w-8 rounded-full"
-                >
-                  {isLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+  const renderAssistantBubble = (key: string, content: ReactNode) => (
+    <div key={key} className="flex gap-3">
+      <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted">
+        <Bot className="w-4 h-4" />
       </div>
-    );
-  }
+      <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-4 py-3">
+        {content}
+      </div>
+    </div>
+  );
+
+  const introMessages = (
+    <>
+      {assignmentPrompt &&
+        renderAssistantBubble(
+          "assignment-prompt",
+          <div className="prose prose-sm dark:prose-invert max-w-none">
+            <p className="text-xs font-medium text-muted-foreground">과제 안내</p>
+            <AIMessageRenderer
+              content={assignmentPrompt}
+              timestamp={new Date().toISOString()}
+              variant="plain"
+            />
+          </div>
+        )}
+      {questions.map((q, i) =>
+        renderAssistantBubble(
+          `assignment-question-${q.id}`,
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-muted-foreground">문제 {i + 1}</p>
+            <RichTextViewer content={q.text} className="text-sm" />
+          </div>
+        )
+      )}
+    </>
+  );
 
   // ---------- Conversation layout ----------
   return (
     <div className="flex flex-col h-full">
-      {/* Questions header - pinned at top, independently scrollable */}
-      {(assignmentPrompt || questions.length > 0) && (
-        <div className="overflow-y-auto border-b border-border/40 max-h-[45%] p-4 pb-2 shrink-0">
-          <div className={`mx-auto space-y-3 ${maxW}`}>
-            {assignmentPrompt && (
-              <div className="flex gap-3">
-                <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted">
-                  <Bot className="w-4 h-4" />
-                </div>
-                <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-4 py-3">
-                  <div className="prose prose-sm dark:prose-invert max-w-none">
-                    <AIMessageRenderer
-                      content={assignmentPrompt}
-                      timestamp={new Date().toISOString()}
-                      variant="plain"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-            {questions.length > 0 && (
-              <div className="flex gap-3 pb-2">
-                <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-muted">
-                  <Bot className="w-4 h-4" />
-                </div>
-                <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-4 py-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-2">과제 문제</p>
-                  <div className="space-y-3">
-                    {questions.map((q, i) => (
-                      <div key={q.id} className="border rounded-lg p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-xs font-medium">문제 {i + 1}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {q.type === "essay" ? "서술형" : q.type === "short-answer" ? "단답형" : "객관식"}
-                          </Badge>
-                        </div>
-                        <RichTextViewer content={q.text} className="text-sm" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className={`mx-auto space-y-4 ${maxW}`}>
-          {/* Chat messages */}
+          {introMessages}
           {messages.map((msg, idx) => (
             <div key={msg.id}>
               <div
@@ -282,7 +181,9 @@ export function AssignmentChatPanel({
               />
               <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between">
                 <p className="text-xs text-muted-foreground px-2">
-                  제출 후 대화/리서치 기반 타임어택 퀴즈가 진행됩니다.
+                  {messages.length > 0
+                    ? "제출 후 대화/리서치 기반 타임어택 퀴즈가 진행됩니다."
+                    : "AI와 대화하며 리서치 내용을 정리하세요."}
                 </p>
                 <Button
                   onClick={handleSend}

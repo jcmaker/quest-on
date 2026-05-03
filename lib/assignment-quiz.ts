@@ -8,7 +8,7 @@ import { triggerGradingIfNeeded } from "@/lib/grading-trigger";
 import { logError } from "@/lib/logger";
 
 export const ASSIGNMENT_QUIZ_TIME_LIMIT_SECONDS = 15;
-const ASSIGNMENT_QUIZ_QUESTION_COUNT = 4;
+const ASSIGNMENT_QUIZ_QUESTION_COUNT = 3;
 
 const quizQuestionSchema = z.object({
   id: z.string().min(1),
@@ -177,18 +177,6 @@ function fallbackQuestions(): AssignmentQuizQuestion[] {
       ],
       correctOptionIndex: 1,
       rationale: "좋은 리서치는 근거와 가정을 비교하고 수정하는 과정입니다.",
-    },
-    {
-      id: "q4",
-      question: "타임어택 퀴즈의 주된 목적은 무엇인가요?",
-      options: [
-        "문서 작성 속도를 측정하기 위해",
-        "AI 답변과 리서치 내용을 실제로 이해했는지 확인하기 위해",
-        "채팅 메시지 수를 늘리기 위해",
-        "과제 제출을 자동으로 취소하기 위해",
-      ],
-      correctOptionIndex: 1,
-      rationale: "퀴즈는 AI 의존도와 실제 이해도를 확인하기 위한 장치입니다.",
     },
   ];
 }

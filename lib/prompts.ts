@@ -1877,7 +1877,7 @@ export function buildAssignmentQuizGenerationPrompt(params: {
     chatTranscript,
     materialsContext,
     language = "ko",
-    questionCount = 4,
+    questionCount = 3,
   } = params;
 
   const stripHtml = (html: string) =>
@@ -1918,10 +1918,13 @@ Schema:
 
 Rules:
 - Generate exactly ${questionCount} multiple-choice questions.
-- Each question must be answerable from the chat/research trail below, not from generic common sense.
-- Prefer questions about why a source/evidence mattered, what condition changed the conclusion, or which idea the student and AI corrected.
+- Each question must be answerable from specific facts in the chat/research trail below, not from generic common sense.
+- Prioritize concrete researched information the student encountered: company/person/product names, time periods, revenue or market numbers, rankings, comparisons, source-specific findings, causes, and conclusions.
+- Good question style: "What was Company A's first-half revenue trend?" or "Which factor did the research identify as the reason for the decline?"
+- Prefer questions about factual details first, then why a source/evidence mattered, what condition changed the conclusion, or which idea the student and AI corrected.
 - Avoid trick questions and avoid asking for URLs or citation formatting.
 - Options must be concise and mutually exclusive.
+- Do not invent facts that are not present in the chat/research trail.
 
 [Assignment]
 Title: <<<${sanitizeForPrompt(examTitle || "", "title")}>>>
@@ -1955,10 +1958,13 @@ JSON만 반환하세요. 마크다운 코드블록은 쓰지 마세요.
 
 규칙:
 - 객관식 ${questionCount}문항을 정확히 생성합니다.
-- 각 문항은 일반상식이 아니라 아래 채팅/리서치 흐름을 읽어야 풀 수 있어야 합니다.
-- 출처가 왜 중요했는지, 어떤 조건이 결론을 바꿨는지, 학생과 AI가 어떤 오해를 교정했는지 확인하는 문항을 우선합니다.
+- 각 문항은 일반상식이 아니라 아래 채팅/리서치 흐름에 나온 구체 정보로만 풀 수 있어야 합니다.
+- 학생이 리서치 과정에서 접한 회사/인물/제품명, 기간, 매출/점유율/순위 같은 수치, 비교 대상, 출처별 발견점, 원인과 결론을 우선적으로 물어보세요.
+- 좋은 문항 예시: "모 회사의 상반기 매출 흐름은 어땠나요?", "리서치에서 하락 원인으로 지목한 요인은 무엇이었나요?"
+- 구체적인 사실 확인 문항을 먼저 만들고, 그 다음 출처가 왜 중요했는지, 어떤 조건이 결론을 바꿨는지, 학생과 AI가 어떤 오해를 교정했는지 확인하세요.
 - 함정 문제, URL 암기, 인용 형식 암기는 피합니다.
 - 선택지는 짧고 서로 명확히 구분되어야 합니다.
+- 채팅/리서치 흐름에 없는 사실은 만들어내지 마세요.
 
 [과제]
 제목: <<<${sanitizeForPrompt(examTitle || "", "title")}>>>

@@ -205,13 +205,15 @@ describe("buildAssignmentQuizGenerationPrompt", () => {
       examTitle: "CPO 우선순위",
       assignmentPrompt: "AI와 리서치하며 우선순위를 판단하세요",
       questions: [{ text: "<p>Canvas 없이 채팅으로만 진행</p>" }],
-      chatTranscript: "학생: 자료 A가 왜 중요한가요?\nAI: 근거는 시장 규모입니다.",
-      materialsContext: "시장 규모 자료",
+      chatTranscript: "학생: A사의 상반기 매출은 어땠나요?\nAI: A사의 상반기 매출은 전년 대비 12% 증가했습니다.",
+      materialsContext: "A사 상반기 매출 자료",
     });
 
     expect(prompt).toContain("JSON만 반환하세요");
     expect(prompt).toContain("채팅/리서치 흐름");
     expect(prompt).toContain("정확히 생성합니다");
+    expect(prompt).toContain("상반기 매출");
+    expect(prompt).toContain("회사/인물/제품명");
     expect(prompt).not.toContain("CANVAS_START");
   });
 
@@ -223,6 +225,8 @@ describe("buildAssignmentQuizGenerationPrompt", () => {
     });
 
     expect(prompt).toContain("Return JSON only");
+    expect(prompt).toContain("Generate exactly 3 multiple-choice questions");
+    expect(prompt).toContain("company/person/product names");
     expect(prompt).toContain("Student AI Chat / Research Trail");
     expect(prompt).not.toContain("JSON만 반환하세요");
   });
