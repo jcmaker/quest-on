@@ -5,7 +5,10 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { decompressData } from "@/lib/compression";
 import { currentUser } from "@/lib/get-current-user";
 import { getOpenAI, AI_MODEL_HEAVY } from "@/lib/openai";
-import { buildSummaryGenerationSystemPrompt } from "@/lib/prompts";
+import {
+  buildAssignmentResearchSummarySystemPrompt,
+  buildSummaryGenerationSystemPrompt,
+} from "@/lib/prompts";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
@@ -54,7 +57,7 @@ export async function POST(request: NextRequest) {
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, questions, rubric, instructor_id")
+      .select("id, title, questions, rubric, instructor_id, type")
       .eq("id", session.exam_id)
       .single();
 
@@ -113,7 +116,10 @@ export async function POST(request: NextRequest) {
       messagesByQuestion[msg.q_idx].push({ role: msg.role, content: content ?? "" });
     }
 
-    const systemPrompt = buildSummaryGenerationSystemPrompt();
+    const isAssignment = exam.type && exam.type !== "exam";
+    const systemPrompt = isAssignment
+      ? buildAssignmentResearchSummarySystemPrompt()
+      : buildSummaryGenerationSystemPrompt();
 
     const questionsText = (exam.questions as Record<string, unknown>[])
       .map((q: Record<string, unknown>, i: number) => {
@@ -123,6 +129,13 @@ export async function POST(request: NextRequest) {
         const chatText = msgs.length > 0
           ? `\n\n**학생과 AI의 대화 기록:**\n${msgs.map((m) => `${m.role === "user" ? "학생" : "AI"}: ${m.content}`).join("\n\n")}`
           : "";
+        if (isAssignment) {
+          return `과제 ${i + 1}: ${q.prompt || q.text}
+
+학생의 채팅 기반 리서치 수행 기록:
+${sub ? sub.answer : "기록 없음"}${chatText}`;
+        }
+
         return `문제 ${i + 1}: ${q.prompt || q.text}\n학생 답안: ${sub ? sub.answer : "답안 없음"}${chatText}`;
       })
       .join("\n\n");
@@ -136,7 +149,34 @@ export async function POST(request: NextRequest) {
           .join("\n")
       : "별도의 루브릭 없음";
 
-    const userPrompt = `
+    const userPrompt = isAssignment
+      ? `
+과제 제목: ${exam.title}
+
+[평가 루브릭]
+${rubricText}
+
+[학생의 채팅 기반 리서치 과정]
+${questionsText}
+
+위 내용을 바탕으로 학생의 리서치 대화 과정을 상세하게 분석하여 요약 평가해주세요.
+다음 항목을 반드시 포함해야 합니다:
+1. 전체적인 평가 (긍정적/부정적/중립적)
+2. 종합 의견: 질문 흐름이 개념 확인, 적용 사례 탐색, 성과 지표 확인, 출처 검증, 교차검증으로 어떻게 발전했는지 분석.
+3. 주요 강점 (3가지 이내): 후속 질문, 출처 요청, 자료 신뢰도 판단, AI 답변 검증, 방향 전환이 드러난 구체적 행동을 제시하세요.
+4. 개선이 필요한 점 (3가지 이내): 부족한 리서치 행동을 다음 대화에서 해야 할 행동으로 제시하세요.
+5. 핵심 인용구 (2가지): 학생의 좋은 질문, 검증 시도, 방향 전환, 자료 판단이 드러나는 채팅 또는 퀴즈 기록을 원문 그대로 인용하세요.
+
+JSON 형식으로 응답해주세요:
+{
+  "sentiment": "positive" | "negative" | "neutral",
+  "summary": "상세한 종합 의견 텍스트",
+  "strengths": ["강점1", "강점2", ...],
+  "weaknesses": ["약점1", "약점2", ...],
+  "keyQuotes": ["인용구1", "인용구2"]
+}
+`
+      : `
 시험 제목: ${exam.title}
 
 [평가 루브릭]

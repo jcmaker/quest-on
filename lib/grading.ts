@@ -6,6 +6,7 @@ import {
   buildUnifiedGradingUserPrompt,
   buildSummaryGenerationSystemPrompt,
   buildSummaryEvaluationSystemPrompt,
+  buildAssignmentResearchSummarySystemPrompt,
   buildAssignmentGradingPrompt,
 } from "@/lib/prompts";
 import { logError } from "@/lib/logger";
@@ -627,7 +628,9 @@ async function generateQuestionSummary(params: {
       .filter(Boolean)
       .join("\n");
 
-    const systemPrompt = buildSummaryGenerationSystemPrompt();
+    const systemPrompt = isAssignment
+      ? buildAssignmentResearchSummarySystemPrompt()
+      : buildSummaryGenerationSystemPrompt();
     const assignmentLabel = isAssignment ? scoreToAssignmentLabel(grade.score) : null;
 
     const userPrompt = isAssignment
@@ -646,10 +649,10 @@ ${stageInfoText}
 위 과제에 대한 학생의 채팅 기반 리서치 과정을 요약 평가해주세요.
 다음 항목을 반드시 포함해야 합니다:
 1. 전체적인 평가 (긍정적/부정적/중립적)
-2. 종합 의견: 최종 답안 요소는 제외하고, 채팅에서 드러난 리서치 방향 설정, 근거 탐색, AI 답변 검증, 퀴즈 이해도 신호를 종합적으로 분석.
-3. 주요 강점 (3가지 이내): 채팅 리서치 과정에서 확인되는 구체적인 강점을 제시하세요.
-4. 개선이 필요한 점 (3가지 이내): 리서치 과정, 근거 검증, 이해도 측면의 개선 방안을 제시하세요.
-5. 핵심 인용구 (2가지): 평가에 결정적인 영향을 미친 채팅 또는 퀴즈 기록의 문장을 원문 그대로 인용하세요.
+2. 종합 의견: 학생의 질문 흐름이 개념 확인, 적용 사례 탐색, 성과 지표 확인, 출처 검증, 교차검증으로 어떻게 발전했는지 분석.
+3. 주요 강점 (3가지 이내): 후속 질문, 출처 요청, 자료 신뢰도 판단, AI 답변 검증, 방향 전환이 드러난 구체적 행동을 제시하세요.
+4. 개선이 필요한 점 (3가지 이내): 부족한 리서치 행동을 다음 대화에서 해야 할 행동으로 제시하세요.
+5. 핵심 인용구 (2가지): 학생의 좋은 질문, 검증 시도, 방향 전환, 자료 판단이 드러나는 채팅 또는 퀴즈 기록을 원문 그대로 인용하세요.
 
 JSON 형식으로 응답해주세요:
 {
@@ -1497,7 +1500,9 @@ ${
       })
       .join("\n---\n\n");
 
-    const systemPrompt = buildSummaryEvaluationSystemPrompt();
+    const systemPrompt = isAssignment
+      ? buildAssignmentResearchSummarySystemPrompt()
+      : buildSummaryEvaluationSystemPrompt();
 
     const userPrompt = isAssignment
       ? `
@@ -1509,14 +1514,14 @@ ${
       ${questionsText}
 
       위 내용을 바탕으로 학생의 전체적인 과제 수행을 요약 평가해주세요.
-      **중요**: 최종 답안 또는 보고서 완성도 요소는 제외하고, 학생이 채팅을 통해 리서치 내용을 얼마나 잘 탐색·검증·이해했는지 평가하세요.
+      **중요**: AI 채팅 기록 자체가 평가 자료입니다. 이 대화형 수행 방식을 부족한 점으로 쓰지 말고, 학생이 채팅을 통해 리서치 내용을 얼마나 잘 탐색·검증·이해했는지 평가하세요.
 
       다음 항목을 반드시 포함해야 합니다:
       1. 전체적인 평가 (긍정적/부정적/중립적)
-      2. 종합 의견: 채팅에서 보여준 리서치 방향 설정, 근거 탐색, AI 답변 검증, 퀴즈 이해도 신호를 중심으로 분석.
-      3. 주요 강점 (3가지 이내): 채팅 리서치 과정의 구체적 강점을 제시하세요.
-      4. 개선이 필요한 점 (3가지 이내): 근거 검증, 질문 구체화, 이해도 측면의 개선 방안을 제시하세요.
-      5. 핵심 인용구 (2가지): 채팅 또는 퀴즈 기록 중 평가에 결정적인 문장을 원문 그대로 인용하세요.
+      2. 종합 의견: 질문 흐름이 개념 확인, 적용 사례 탐색, 성과 지표 확인, 출처 검증, 교차검증으로 어떻게 발전했는지 분석.
+      3. 주요 강점 (3가지 이내): 후속 질문, 출처 요청, 자료 신뢰도 판단, AI 답변 검증, 방향 전환이 드러난 구체적 행동을 제시하세요.
+      4. 개선이 필요한 점 (3가지 이내): 부족한 리서치 행동을 다음 대화에서 해야 할 행동으로 제시하세요.
+      5. 핵심 인용구 (2가지): 학생의 좋은 질문, 검증 시도, 방향 전환, 자료 판단이 드러나는 채팅 또는 퀴즈 기록을 원문 그대로 인용하세요.
 
       JSON 형식으로 응답해주세요:
       {

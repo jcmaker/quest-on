@@ -6,6 +6,7 @@ import {
   buildUnifiedGradingSystemPrompt,
   buildAssignmentChatSystemPrompt,
   buildAssignmentGradingPrompt,
+  buildAssignmentResearchSummarySystemPrompt,
   buildAssignmentQuizGenerationPrompt,
   buildCaseQuestionGenerationPrompt,
 } from "@/lib/prompts";
@@ -276,11 +277,26 @@ describe("buildAssignmentGradingPrompt", () => {
     expect(prompt).toContain("우수 / 평범 / 미흡");
     expect(prompt).toContain("우수: 85");
     expect(prompt).toContain("overall_score는 반드시 85, 70, 45 중 하나만 반환하세요");
-    expect(prompt).toContain("최종 답안의 완성도");
+    expect(prompt).toContain("AI 채팅 기록 자체가 평가 자료");
     expect(prompt).toContain("반드시 JSON 객체만 반환하세요");
     expect(prompt).toContain("overall_score");
     expect(prompt).not.toContain("Code-ERD 일관성 검사");
     expect(prompt).not.toContain("CREATE TABLE old_workspace");
+  });
+});
+
+describe("buildAssignmentResearchSummarySystemPrompt", () => {
+  it("frames assignment reports around research conversation behavior", () => {
+    const prompt = buildAssignmentResearchSummarySystemPrompt();
+
+    expect(prompt).toContain("평가 대상은 학생이 AI와 대화하면서 리서치를 진행한 과정");
+    expect(prompt).toContain("질문 흐름");
+    expect(prompt).toContain("출처 검증");
+    expect(prompt).toContain("교차검증");
+    expect(prompt).toContain("자료의 작성 주체");
+    expect(prompt).toContain("좋은 질문, 검증 시도, 방향 전환, 자료 판단");
+    expect(prompt).not.toContain("제출된 글이 부족하다");
+    expect(prompt).not.toContain("정리된 산출물이 없다");
   });
 });
 
