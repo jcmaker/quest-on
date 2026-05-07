@@ -8,9 +8,22 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Star, Check, Sparkles, Quote, Plus, Minus, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { StageKey, QuestionSummaryData } from "@/lib/types/grading";
+import {
+  assignmentLabelToScore,
+  getAssignmentGradeDescription,
+  scoreToAssignmentLabel,
+  type AssignmentGradeLabel,
+} from "@/lib/grading-utils";
 
 interface GradingPanelProps {
   questionNumber: number;
@@ -23,6 +36,7 @@ interface GradingPanelProps {
   aiSummary?: QuestionSummaryData | null; // 문제별 AI 종합평가 (read-only 표시)
   saving: boolean;
   isGradingInProgress?: boolean;
+  mode?: "exam" | "assignment";
   onStageScoreChange: (stage: StageKey, value: number) => void;
   onStageCommentChange: (stage: StageKey, value: string) => void;
   onOverallScoreChange: (value: number) => void;
@@ -50,6 +64,7 @@ export function GradingPanel({
   aiSummary,
   saving,
   isGradingInProgress = false,
+  mode = "exam",
   // onStageScoreChange,
   // onStageCommentChange,
   onOverallScoreChange,
@@ -58,6 +73,8 @@ export function GradingPanel({
 }: GradingPanelProps) {
   // 입력 중에는 문자열로 관리하여 "020" 같은 문제 방지
   const [scoreInput, setScoreInput] = useState<string>(overallScore.toString());
+  const isAssignmentMode = mode === "assignment";
+  const assignmentLabel = scoreToAssignmentLabel(overallScore);
 
   // overallScore가 외부에서 변경되면 (예: 다른 문제로 이동) input 값 업데이트
   useEffect(() => {
@@ -94,7 +111,9 @@ export function GradingPanel({
           문제 {questionNumber} 채점
         </CardTitle>
         <CardDescription>
-          {isAiGradedOnly
+          {isAssignmentMode
+            ? "AI 요약 평가를 참고해 등급을 확정하세요."
+            : isAiGradedOnly
             ? "가채점만 있습니다. 반드시 점수를 직접 입력해야 합니다."
             : isGraded && overallScore > 0
             ? "AI 가채점 완료. 점수와 피드백을 수정할 수 있습니다."
@@ -177,79 +196,97 @@ export function GradingPanel({
         <div className="space-y-4">
           <div>
             <Label htmlFor="score" className="text-sm font-medium">
-              종합 점수 (0-100)
+              {isAssignmentMode ? "종합 등급" : "종합 점수 (0-100)"}
             </Label>
             <div className="mt-1 flex gap-2">
-              <input
-                type="number"
-                id="score"
-                data-testid="grade-score-input"
-                min="0"
-                max="100"
-                value={scoreInput}
-                onFocus={(e) => {
-                  // 값이 0일 때만 전체 선택하여 쉽게 삭제되도록 함
-                  if (scoreInput === "0") {
-                    e.target.select();
+              {isAssignmentMode ? (
+                <Select
+                  value={assignmentLabel}
+                  onValueChange={(value) =>
+                    onOverallScoreChange(assignmentLabelToScore(value as AssignmentGradeLabel))
                   }
-                }}
-                onChange={(e) => {
-                  let value = e.target.value;
-
-                  // 빈 문자열 허용 (입력 중)
-                  if (value === "") {
-                    setScoreInput("");
-                    return;
-                  }
-
-                  // 숫자가 아닌 문자는 무시
-                  if (!/^\d*$/.test(value)) {
-                    return;
-                  }
-
-                  // "020", "002" 같은 경우를 방지: 0으로 시작하는 여러 자리 숫자는 첫 번째 0 제거
-                  // 단, "0" 자체는 허용
-                  if (value.length > 1 && value.startsWith("0")) {
-                    value = value.replace(/^0+/, "") || "0";
-                  }
-
-                  // 입력 중에는 문자열로 유지
-                  setScoreInput(value);
-
-                  // 숫자로 변환하여 범위 체크 및 부모 컴포넌트에 전달
-                  const numValue = Number(value);
-                  if (!Number.isNaN(numValue)) {
-                    // 0-100 범위로 제한
-                    const clampedValue = Math.max(0, Math.min(100, numValue));
-                    onOverallScoreChange(clampedValue);
-
-                    // 클램핑된 값이 원래 값과 다르면 input 업데이트
-                    if (clampedValue !== numValue) {
-                      setScoreInput(clampedValue.toString());
+                >
+                  <SelectTrigger id="score" data-testid="assignment-grade-select" className="flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="우수">우수</SelectItem>
+                    <SelectItem value="평범">평범</SelectItem>
+                    <SelectItem value="미흡">미흡</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <input
+                  type="number"
+                  id="score"
+                  data-testid="grade-score-input"
+                  min="0"
+                  max="100"
+                  value={scoreInput}
+                  onFocus={(e) => {
+                    // 값이 0일 때만 전체 선택하여 쉽게 삭제되도록 함
+                    if (scoreInput === "0") {
+                      e.target.select();
                     }
-                  }
-                }}
-                onBlur={(e) => {
-                  const value = e.target.value;
+                  }}
+                  onChange={(e) => {
+                    let value = e.target.value;
 
-                  // blur 시 빈 값이거나 유효하지 않은 값이면 0으로 설정
-                  if (value === "" || Number.isNaN(Number(value))) {
-                    setScoreInput("0");
-                    onOverallScoreChange(0);
-                    return;
-                  }
+                    // 빈 문자열 허용 (입력 중)
+                    if (value === "") {
+                      setScoreInput("");
+                      return;
+                    }
 
-                  const numValue = Number(value);
-                  // 0-100 범위로 제한하고 정규화
-                  const clampedValue = Math.max(0, Math.min(100, numValue));
-                  setScoreInput(clampedValue.toString());
-                  onOverallScoreChange(clampedValue);
-                }}
-                className={`flex-1 rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                  isAiGradedOnly ? "bg-gray-100 text-gray-500" : ""
-                }`}
-              />
-              {isAiGradedOnly && aiGradedScore !== undefined && onAcceptAiScore && (
+                    // 숫자가 아닌 문자는 무시
+                    if (!/^\d*$/.test(value)) {
+                      return;
+                    }
+
+                    // "020", "002" 같은 경우를 방지: 0으로 시작하는 여러 자리 숫자는 첫 번째 0 제거
+                    // 단, "0" 자체는 허용
+                    if (value.length > 1 && value.startsWith("0")) {
+                      value = value.replace(/^0+/, "") || "0";
+                    }
+
+                    // 입력 중에는 문자열로 유지
+                    setScoreInput(value);
+
+                    // 숫자로 변환하여 범위 체크 및 부모 컴포넌트에 전달
+                    const numValue = Number(value);
+                    if (!Number.isNaN(numValue)) {
+                      // 0-100 범위로 제한
+                      const clampedValue = Math.max(0, Math.min(100, numValue));
+                      onOverallScoreChange(clampedValue);
+
+                      // 클램핑된 값이 원래 값과 다르면 input 업데이트
+                      if (clampedValue !== numValue) {
+                        setScoreInput(clampedValue.toString());
+                      }
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const value = e.target.value;
+
+                    // blur 시 빈 값이거나 유효하지 않은 값이면 0으로 설정
+                    if (value === "" || Number.isNaN(Number(value))) {
+                      setScoreInput("0");
+                      onOverallScoreChange(0);
+                      return;
+                    }
+
+                    const numValue = Number(value);
+                    // 0-100 범위로 제한하고 정규화
+                    const clampedValue = Math.max(0, Math.min(100, numValue));
+                    setScoreInput(clampedValue.toString());
+                    onOverallScoreChange(clampedValue);
+                  }}
+                  className={`flex-1 rounded-md border border-gray-300 px-3 py-2 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    isAiGradedOnly ? "bg-gray-100 text-gray-500" : ""
+                  }`}
+                />
+              )}
+              {!isAssignmentMode && isAiGradedOnly && aiGradedScore !== undefined && onAcceptAiScore && (
                 <Button
                   type="button"
                   variant="outline"
@@ -262,7 +299,11 @@ export function GradingPanel({
                 </Button>
               )}
             </div>
-            {isAiGradedOnly && aiGradedScore !== undefined && (
+            {isAssignmentMode ? (
+              <p className="text-xs text-muted-foreground mt-1">
+                {getAssignmentGradeDescription(assignmentLabel)}
+              </p>
+            ) : isAiGradedOnly && aiGradedScore !== undefined && (
               <p className="text-xs text-gray-500 mt-1">
                 가채점 점수: {aiGradedScore}점. 체크 버튼을 눌러 가채점 점수로 채점하거나 직접 입력해주세요.
               </p>
@@ -342,14 +383,16 @@ export function GradingPanel({
 
         <Button
           onClick={onSave}
-          disabled={saving || isAiGradedOnly}
+          disabled={saving || (!isAssignmentMode && isAiGradedOnly)}
           className="w-full"
           data-testid="grade-save-btn"
         >
           {saving
             ? "저장 중..."
-            : isAiGradedOnly
+            : !isAssignmentMode && isAiGradedOnly
             ? "점수를 입력해주세요"
+            : isAssignmentMode
+            ? "등급 확정 저장"
             : "문제 채점 저장"}
         </Button>
 
@@ -363,7 +406,9 @@ export function GradingPanel({
                 : "text-green-600"
             }`}
           >
-            {isAiGradedOnly
+            {isAssignmentMode
+              ? `현재 등급: ${assignmentLabel}`
+              : isAiGradedOnly
               ? "⚠ 가채점만 있습니다"
               : overallScore > 0
               ? "✓ AI 가채점 완료"

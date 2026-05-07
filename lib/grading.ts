@@ -27,6 +27,10 @@ import {
 } from "@/lib/ai-tracking";
 import { sanitizeUserInput } from "@/lib/sanitize";
 import { upsertGradesBySessionQuestion } from "@/lib/grades-upsert";
+import {
+  normalizeAssignmentGradeScore,
+  scoreToAssignmentLabel,
+} from "@/lib/grading-utils";
 import type {
   StageGrading,
   SummaryData,
@@ -422,7 +426,9 @@ async function gradeSingleQuestion(params: {
     }
 
     const assignmentParsed = assignmentResult.data;
-    const scoreClamp = clampAndLog(assignmentParsed.overall_score, {
+    const normalizedScore = normalizeAssignmentGradeScore(assignmentParsed.overall_score);
+    const assignmentLabel = scoreToAssignmentLabel(normalizedScore);
+    const scoreClamp = clampAndLog(normalizedScore, {
       sessionId,
       qIdx,
       field: "overall_score",
@@ -431,14 +437,19 @@ async function gradeSingleQuestion(params: {
     const assignmentRubricScores: Record<string, number> = {};
     if (assignmentParsed.rubric_scores) {
       for (const rs of assignmentParsed.rubric_scores) {
-        assignmentRubricScores[rs.area] = Math.max(0, Math.min(100, Math.round(rs.score)));
+        assignmentRubricScores[rs.area] = normalizeAssignmentGradeScore(rs.score);
       }
     }
+    const assignmentComment = sanitizeComment(
+      assignmentParsed.overall_comment?.includes("등급:")
+        ? assignmentParsed.overall_comment
+        : `등급: ${assignmentLabel}. ${assignmentParsed.overall_comment || "과제 평가 완료"}`
+    );
 
     const stageGrading: StageGrading = {
       answer: {
         score: scoreClamp.value,
-        comment: sanitizeComment(assignmentParsed.overall_comment || "과제 평가 완료"),
+        comment: assignmentComment,
         rubric_scores:
           Object.keys(assignmentRubricScores).length > 0 ? assignmentRubricScores : undefined,
       },
@@ -450,7 +461,7 @@ async function gradeSingleQuestion(params: {
       result: {
         q_idx: qIdx,
         score: scoreClamp.value,
-        comment: sanitizeComment(assignmentParsed.overall_comment || "과제 평가 완료"),
+        comment: assignmentComment,
         stage_grading: scoreClamp.clamped
           ? { ...stageGrading, _score_clamped: true }
           : stageGrading,
@@ -565,6 +576,7 @@ async function generateQuestionSummary(params: {
   grade: GradeResult;
   rubricItems: ReturnType<typeof resolveQuestionRubric>;
   examTitle: string;
+  isAssignment?: boolean;
   examId: string;
   sessionId: string;
   studentId: string;
@@ -578,6 +590,7 @@ async function generateQuestionSummary(params: {
     grade,
     rubricItems,
     examTitle,
+    isAssignment = false,
     examId,
     sessionId,
     studentId,
@@ -615,8 +628,39 @@ async function generateQuestionSummary(params: {
       .join("\n");
 
     const systemPrompt = buildSummaryGenerationSystemPrompt();
+    const assignmentLabel = isAssignment ? scoreToAssignmentLabel(grade.score) : null;
 
-    const userPrompt = `
+    const userPrompt = isAssignment
+      ? `
+과제 제목: ${examTitle}
+${rubricText}
+과제 ${question.idx + 1}: ${question.prompt || ""}
+
+학생의 채팅 기반 리서치 수행 기록:
+${submission?.answer || "기록 없음"}
+${chatHistoryText}
+
+평가 등급: ${assignmentLabel}
+${stageInfoText}
+
+위 과제에 대한 학생의 채팅 기반 리서치 과정을 요약 평가해주세요.
+다음 항목을 반드시 포함해야 합니다:
+1. 전체적인 평가 (긍정적/부정적/중립적)
+2. 종합 의견: 최종 답안 요소는 제외하고, 채팅에서 드러난 리서치 방향 설정, 근거 탐색, AI 답변 검증, 퀴즈 이해도 신호를 종합적으로 분석.
+3. 주요 강점 (3가지 이내): 채팅 리서치 과정에서 확인되는 구체적인 강점을 제시하세요.
+4. 개선이 필요한 점 (3가지 이내): 리서치 과정, 근거 검증, 이해도 측면의 개선 방안을 제시하세요.
+5. 핵심 인용구 (2가지): 평가에 결정적인 영향을 미친 채팅 또는 퀴즈 기록의 문장을 원문 그대로 인용하세요.
+
+JSON 형식으로 응답해주세요:
+{
+  "sentiment": "positive" | "negative" | "neutral",
+  "summary": "상세한 종합 의견 텍스트",
+  "strengths": ["강점1", "강점2", ...],
+  "weaknesses": ["개선점1", "개선점2", ...],
+  "keyQuotes": ["인용구1", "인용구2"]
+}
+`
+      : `
 시험 제목: ${examTitle}
 ${rubricText}
 문제 ${question.idx + 1}: ${question.prompt || ""}
@@ -1087,6 +1131,7 @@ export async function generateOneQuestionSummary(
     grade,
     rubricItems,
     examTitle: ctx.exam.title,
+    isAssignment: ctx.isAssignment,
     examId: ctx.exam.id,
     sessionId,
     studentId: ctx.session.student_id,
@@ -1216,7 +1261,8 @@ export async function generateSessionSummaryPhase(
     ctx.submissionsByQuestion,
     ctx.messagesByQuestion,
     grades,
-    120_000
+    120_000,
+    ctx.isAssignment
   );
 
   if (!summary) {
@@ -1387,7 +1433,8 @@ async function generateSummary(
   submissionsByQuestion: Record<number, { answer: string }>,
   messagesByQuestion: Record<number, Array<{ role: string; content: string }>>,
   grades: GradeResult[],
-  timeBudgetMs?: number
+  timeBudgetMs?: number,
+  isAssignment = false
 ): Promise<SummaryData | null> {
   const supabase = getSupabaseServer();
   try {
@@ -1419,6 +1466,18 @@ ${(exam.rubric as Array<{ evaluationArea: string; detailedCriteria: string }>)
                 .join("\n\n")}`
             : "";
 
+        if (isAssignment) {
+          return `과제 ${qIdx + 1}:
+${q.prompt || ""}
+
+채팅 기반 리서치 수행 기록:
+${submission?.answer || "기록 없음"}
+${chatHistoryText}
+
+평가 등급: ${grade ? scoreToAssignmentLabel(grade.score) : "미흡"}
+`;
+        }
+
         return `문제 ${qIdx + 1}:
 ${q.prompt || ""}
 
@@ -1440,7 +1499,34 @@ ${
 
     const systemPrompt = buildSummaryEvaluationSystemPrompt();
 
-    const userPrompt = `
+    const userPrompt = isAssignment
+      ? `
+      과제 제목: ${exam.title}
+
+      ${rubricText}
+
+      [학생의 채팅 기반 리서치 과정 및 평가 등급]
+      ${questionsText}
+
+      위 내용을 바탕으로 학생의 전체적인 과제 수행을 요약 평가해주세요.
+      **중요**: 최종 답안 또는 보고서 완성도 요소는 제외하고, 학생이 채팅을 통해 리서치 내용을 얼마나 잘 탐색·검증·이해했는지 평가하세요.
+
+      다음 항목을 반드시 포함해야 합니다:
+      1. 전체적인 평가 (긍정적/부정적/중립적)
+      2. 종합 의견: 채팅에서 보여준 리서치 방향 설정, 근거 탐색, AI 답변 검증, 퀴즈 이해도 신호를 중심으로 분석.
+      3. 주요 강점 (3가지 이내): 채팅 리서치 과정의 구체적 강점을 제시하세요.
+      4. 개선이 필요한 점 (3가지 이내): 근거 검증, 질문 구체화, 이해도 측면의 개선 방안을 제시하세요.
+      5. 핵심 인용구 (2가지): 채팅 또는 퀴즈 기록 중 평가에 결정적인 문장을 원문 그대로 인용하세요.
+
+      JSON 형식으로 응답해주세요:
+      {
+        "sentiment": "positive" | "negative" | "neutral",
+        "summary": "상세한 종합 의견 텍스트",
+        "strengths": ["강점1", "강점2", ...],
+        "weaknesses": ["약점1", "약점2", ...],
+        "keyQuotes": ["인용구1", "인용구2"]
+      }`
+      : `
       시험 제목: ${exam.title}
 
       ${rubricText}

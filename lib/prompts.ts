@@ -2223,89 +2223,59 @@ export function buildAssignmentGradingPrompt(params: {
     examTitle,
     assignmentPrompt,
     rubricText,
-    workspaceContext,
   } = params;
 
-  // Serialize ERD to readable text for the AI prompt
-  let workspaceSection = "";
-  if (workspaceContext) {
-    const hasCode = !!workspaceContext.code?.trim();
-    const hasErd = (workspaceContext.erd?.nodes?.length ?? 0) > 0;
-
-    if (hasCode || hasErd) {
-      workspaceSection += "\n\n**학생 작업 환경 (Workspace):**\n";
-
-      if (hasCode) {
-        const truncatedCode =
-          workspaceContext.code!.length > 10000
-            ? workspaceContext.code!.slice(0, 10000) + "\n... (코드 일부 생략)"
-            : workspaceContext.code!;
-        workspaceSection += `\n[코드 (${workspaceContext.language || "plaintext"})]\n\`\`\`${workspaceContext.language || ""}\n${truncatedCode}\n\`\`\`\n`;
-      }
-
-      if (hasErd) {
-        const nodes = workspaceContext.erd!.nodes.slice(0, 50);
-        const erdText = nodes
-          .map((node) => {
-            const cols = node.data.columns
-              .map((col) => {
-                const flags = [
-                  col.isPrimary ? "PK" : "",
-                  col.isForeignKey ? "FK" : "",
-                  col.references ? `→ ${col.references}` : "",
-                ]
-                  .filter(Boolean)
-                  .join(", ");
-                return `  - ${col.name}: ${col.type}${flags ? ` (${flags})` : ""}`;
-              })
-              .join("\n");
-            return `**${node.data.tableName}**\n${cols}`;
-          })
-          .join("\n\n");
-        workspaceSection += `\n[ERD 다이어그램]\n${erdText}\n`;
-
-        if (workspaceContext.erd!.nodes.length > 50) {
-          workspaceSection += `\n... (총 ${workspaceContext.erd!.nodes.length}개 테이블 중 50개만 표시)\n`;
-        }
-      }
-
-      // Add consistency check instructions when both code and ERD are present
-      if (hasCode && hasErd) {
-        workspaceSection += `
-**Code-ERD 일관성 검사:**
-학생이 제출한 코드와 ERD를 비교하여 다음을 확인하세요:
-- ERD의 테이블이 코드의 CREATE TABLE/모델 정의와 일치하는지
-- ERD의 관계(1:1, 1:N, N:M)가 코드의 FK 제약조건과 일치하는지
-- 컬럼 이름, 데이터 타입이 코드와 ERD 간에 일관성이 있는지
-- 불일치가 있으면 어떤 부분이 다른지 구체적으로 피드백에 포함하세요
-`;
-      }
-    }
-  }
-
   return `
-당신은 대학 과제를 채점하는 교수자입니다.
+당신은 대학의 채팅 기반 리서치 과제를 채점하는 교수자입니다.
+
+**채점 대상**
+- 학생은 별도의 최종 보고서나 완성 답안을 제출하지 않았습니다.
+- 채점 입력에는 학생-AI 채팅/리서치 과정, 타임어택 퀴즈 결과, 문항별 학생 선택, 정답, 근거가 포함됩니다.
+- 따라서 최종 답안의 문장 완성도나 보고서 품질이 아니라, 채팅 과정에서 드러난 리서치 수행, 근거 검증, 이해도, 자기주도적 판단을 평가합니다.
 
 ${examTitle ? `과제 제목: ${sanitizeForPrompt(examTitle, "title")}` : ""}
 ${assignmentPrompt ? `과제 설명: ${sanitizeForPrompt(assignmentPrompt, "question")}` : ""}
 
-**평가 기준:**
-${rubricText}
-${workspaceSection}
+**평가 루브릭:**
+${sanitizeForPrompt(rubricText, "context")}
+
 **채점 규칙:**
-- 각 루브릭 항목별로 0-100점 사이의 점수를 부여하세요.
-- 점수와 함께 구체적인 피드백을 제공하세요.
-- 채팅 과정에서 드러난 논리성, 정확성, 근거 활용, 자기주도 탐구 역량을 종합적으로 평가하세요.
-- 타임어택 퀴즈 결과가 제공되면 학생이 AI 답변과 리서치 내용을 실제로 읽고 이해했는지 판단하는 보조 근거로 활용하세요.
-${workspaceContext?.code && (workspaceContext?.erd?.nodes?.length ?? 0) > 0 ? "- 코드와 ERD의 일관성을 반드시 확인하고 불일치 사항을 피드백에 포함하세요." : ""}
+1. 학생에게 보여줄 평가는 숫자 점수가 아니라 **우수 / 평범 / 미흡** 등급입니다.
+2. JSON 호환을 위해 숫자 필드는 유지하지만, 내부 매핑값으로만 사용합니다.
+   - 우수: 85
+   - 평범: 70
+   - 미흡: 45
+3. overall_score는 반드시 85, 70, 45 중 하나만 반환하세요. 다른 숫자는 반환하지 마세요.
+4. rubric_scores[].score도 가능하면 85, 70, 45 중 하나로 반환하세요.
+5. 루브릭 항목이 추상적이어도 반드시 채팅 기록과 퀴즈 결과에서 관찰 가능한 행동 근거를 찾아 평가하세요.
+6. 학생이 과제 요구를 이해하고 리서치 질문을 구체화했는지 평가하세요.
+7. 학생이 AI 답변을 그대로 수용하지 않고 출처, 수치, 비교 기준, 반례, 한계 조건을 확인했는지 평가하세요.
+8. 학생이 웹 검색/AI 응답에서 얻은 근거를 서로 연결하고, 자신의 판단이나 우선순위를 형성했는지 평가하세요.
+9. 학생이 최종 답안 대필이나 결론 위임만 요구하고 검증 과정이 부족하면 **미흡**으로 평가하세요.
+10. 타임어택 퀴즈는 학생이 채팅/리서치 내용을 실제로 읽고 이해했는지 판단하는 보조 근거입니다. 퀴즈 결과만으로 등급을 기계적으로 결정하지 말고, 채팅 과정의 질과 함께 해석하세요.
+11. 퀴즈 고득점이어도 채팅 리서치 과정이 빈약하거나 AI 의존적이면 **우수**를 주지 마세요.
+12. 퀴즈 저득점이면 핵심 사실 이해 부족 또는 읽기 부족 가능성을 피드백에 반영하세요.
+13. 제공된 기록에 없는 사실을 추정하거나 새로 만들어 평가하지 마세요.
+
+**등급 해석 가이드:**
+- 우수(85): 과제 요구를 정확히 이해하고, 구체 근거와 출처를 검증하며, AI 응답을 비판적으로 활용해 독립적 판단을 형성함. 퀴즈도 대체로 이해를 뒷받침함.
+- 평범(70): 기본적인 리서치 수행과 정보 수집은 보이나, 일부 근거 검증·비교·자기 판단이 부족하거나 퀴즈 이해도 신호가 불안정함.
+- 미흡(45): 과제 수행 기록이 부족하거나, AI 답변 수용/결론 위임 중심이며, 출처 확인·반례 검토·핵심 사실 이해가 부족함.
+
+**피드백 작성 방식:**
+- overall_comment 첫 문장에 반드시 "등급: 우수", "등급: 평범", "등급: 미흡" 중 하나를 포함하세요.
+- 요약 보고서처럼 학생이 채팅을 통해 리서치 내용을 얼마나 잘 탐색하고 검증했는지 중심으로 작성하세요.
+- "최종 답안의 완성도"나 "보고서 작성 품질"을 평가했다는 표현은 쓰지 마세요.
+- 강점과 개선점은 채팅 리서치 과정, 근거 탐색, AI 답변 검증, 퀴즈 이해도 신호에서만 도출하세요.
 
 **응답 형식 (JSON):**
+반드시 JSON 객체만 반환하세요. 마크다운 코드블록이나 추가 설명을 쓰지 마세요.
 {
   "rubric_scores": [
-    { "area": "평가 영역", "score": 점수, "comment": "피드백" }
+    { "area": "평가 영역", "score": 85 | 70 | 45, "comment": "피드백" }
   ],
-  "overall_score": 종합점수,
-  "overall_comment": "종합 피드백"
+  "overall_score": 85 | 70 | 45,
+  "overall_comment": "등급: 우수/평범/미흡. 종합 피드백"
 }
 `.trim();
 }

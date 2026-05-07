@@ -5,6 +5,7 @@ import {
   buildStudentChatSystemPrompt,
   buildUnifiedGradingSystemPrompt,
   buildAssignmentChatSystemPrompt,
+  buildAssignmentGradingPrompt,
   buildAssignmentQuizGenerationPrompt,
   buildCaseQuestionGenerationPrompt,
 } from "@/lib/prompts";
@@ -245,6 +246,44 @@ describe("buildAssignmentQuizGenerationPrompt", () => {
   });
 });
 
+describe("buildAssignmentGradingPrompt", () => {
+  it("grades chat-only research assignments with quiz comprehension signals", () => {
+    const prompt = buildAssignmentGradingPrompt({
+      examTitle: "시장 진입 전략",
+      assignmentPrompt: "AI와 웹 검색으로 시장 진입 우선순위를 판단하세요.",
+      rubricText: "근거 활용: 출처와 수치를 비교한다.\n자기주도성: AI 답변을 검증한다.",
+      workspaceContext: {
+        code: "CREATE TABLE old_workspace(id int);",
+        language: "sql",
+        erd: {
+          nodes: [
+            {
+              data: {
+                tableName: "old_workspace",
+                columns: [{ name: "id", type: "int", isPrimary: true }],
+              },
+            },
+          ],
+          edges: [],
+        },
+      },
+    });
+
+    expect(prompt).toContain("채팅 기반 리서치 과제");
+    expect(prompt).toContain("타임어택 퀴즈");
+    expect(prompt).toContain("학생-AI 채팅/리서치 과정");
+    expect(prompt).toContain("근거 활용: 출처와 수치를 비교한다.");
+    expect(prompt).toContain("우수 / 평범 / 미흡");
+    expect(prompt).toContain("우수: 85");
+    expect(prompt).toContain("overall_score는 반드시 85, 70, 45 중 하나만 반환하세요");
+    expect(prompt).toContain("최종 답안의 완성도");
+    expect(prompt).toContain("반드시 JSON 객체만 반환하세요");
+    expect(prompt).toContain("overall_score");
+    expect(prompt).not.toContain("Code-ERD 일관성 검사");
+    expect(prompt).not.toContain("CREATE TABLE old_workspace");
+  });
+});
+
 describe("buildCaseQuestionGenerationPrompt research assignment mode", () => {
   it("generates a research-task prompt instead of a case prompt", () => {
     const { system, user } = buildCaseQuestionGenerationPrompt({
@@ -255,9 +294,9 @@ describe("buildCaseQuestionGenerationPrompt research assignment mode", () => {
       generationMode: "research-assignment",
     });
 
-    expect(system).toContain("리서치 과제 지시문");
-    expect(system).toContain("~에 대해 리서치해오시오");
-    expect(system).toContain("CASE, 사례형 시나리오");
+    expect(system).toContain("Quest-On 리서치 과제");
+    expect(system).toContain("조사하시오");
+    expect(system).toContain("CASE");
     expect(user).toContain("국내 배달앱 3사의 최근 수익성 변화");
     expect(user).not.toContain("사례형 문제");
   });

@@ -40,7 +40,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { StageGrading, StageKey, QuestionSummaryData, GradingProgress } from "@/lib/types/grading";
-import { isAiGraded } from "@/lib/grading-utils";
+import {
+  assignmentLabelToScore,
+  isAiGraded,
+  scoreToAssignmentLabel,
+} from "@/lib/grading-utils";
 
 interface Conversation {
   id: string;
@@ -248,7 +252,7 @@ export default function AssignmentGradePage({
 
       Object.entries(sessionData.grades).forEach(([qIdx, grade]) => {
         const typedGrade = grade as Grade;
-        initialScores[parseInt(qIdx)] = typedGrade.score;
+        initialScores[parseInt(qIdx)] = assignmentLabelToScore(scoreToAssignmentLabel(typedGrade.score));
         initialFeedbacks[parseInt(qIdx)] = typedGrade.comment || "";
         if (typedGrade.stage_grading) {
           if (typedGrade.stage_grading.chat) {
@@ -407,34 +411,12 @@ export default function AssignmentGradePage({
   });
 
   const handleSaveGrade = (questionIdx: number) => {
-    const currentGrade = sessionData?.grades?.[questionIdx] as Grade | undefined;
-    if (currentGrade && isAiGraded(currentGrade)) {
-      const originalScore = currentGrade.score;
-      const currentScore = scores[questionIdx] || 0;
-      const isAccepted = acceptedAiScores[questionIdx] || false;
-      if (originalScore === currentScore && !isAccepted) {
-        toast.error(
-          "가채점 점수를 승인하거나 직접 입력한 후 저장할 수 있습니다.",
-          { duration: 4000 }
-        );
-        return;
-      }
-    }
     saveGradeMutation.mutate(questionIdx);
   };
 
   const isCurrentQuestionAiGradedOnly = useMemo(() => {
-    if (!sessionData) return false;
-    const currentGrade = sessionData.grades?.[selectedQuestionIdx] as Grade | undefined;
-    if (!currentGrade) return false;
-    if (isAiGraded(currentGrade)) {
-      const originalScore = currentGrade.score;
-      const currentScore = scores[selectedQuestionIdx] || 0;
-      const isAccepted = acceptedAiScores[selectedQuestionIdx] || false;
-      return originalScore === currentScore && !isAccepted;
-    }
     return false;
-  }, [sessionData, selectedQuestionIdx, scores, acceptedAiScores]);
+  }, []);
 
   const currentAiGradedScore = useMemo(() => {
     if (!sessionData) return undefined;
@@ -448,28 +430,14 @@ export default function AssignmentGradePage({
       setScores({ ...scores, [selectedQuestionIdx]: currentAiGradedScore });
       setAcceptedAiScores({ ...acceptedAiScores, [selectedQuestionIdx]: true });
       toast.success(
-        `가채점 점수 ${currentAiGradedScore}점으로 설정되었습니다. 저장 버튼을 눌러 채점을 완료하세요.`,
+        `AI 추천 등급 ${scoreToAssignmentLabel(currentAiGradedScore)}으로 설정되었습니다. 저장 버튼을 눌러 확정하세요.`,
         { duration: 3000 }
       );
     }
   };
 
   const handleBackClick = () => {
-    const hasAiGradedOnly = Object.entries(sessionData?.grades || {}).some(
-      ([qIdx, grade]) => {
-        const typedGrade = grade as Grade;
-        if (!isAiGraded(typedGrade)) return false;
-        const originalScore = typedGrade.score;
-        const currentScore = scores[parseInt(qIdx)] || 0;
-        const isAccepted = acceptedAiScores[parseInt(qIdx)] || false;
-        return originalScore === currentScore && !isAccepted;
-      }
-    );
-    if (hasAiGradedOnly) {
-      setShowBackConfirm(true);
-    } else {
-      window.location.href = `/instructor/assignment/${resolvedParams.assignmentId}`;
-    }
+    window.location.href = `/instructor/assignment/${resolvedParams.assignmentId}`;
   };
 
   const handleStageScoreChange = (stage: StageKey, value: number) => {
@@ -500,10 +468,10 @@ export default function AssignmentGradePage({
         ? `문항 프롬프트: ${currentQuestion.prompt}`
         : "현재 문항 정보를 찾을 수 없습니다.",
       currentSubmission?.answer
-        ? `학생 답안:\n${currentSubmission.answer}`
-        : "학생 답안이 비어 있습니다.",
+        ? `학생의 채팅 기반 리서치 수행 기록:\n${currentSubmission.answer}`
+        : "학생의 채팅 기반 리서치 수행 기록이 비어 있습니다.",
       sessionData.overallScore !== null
-        ? `현재 전체 점수: ${sessionData.overallScore}`
+        ? `현재 전체 등급: ${scoreToAssignmentLabel(sessionData.overallScore)}`
         : "",
     ]
       .filter(Boolean)
@@ -620,7 +588,7 @@ export default function AssignmentGradePage({
                 </div>
                 {sessionData.overallScore !== null && (
                   <p className="text-lg font-semibold mt-2">
-                    전체 점수: {sessionData.overallScore}점
+                    전체 등급: {scoreToAssignmentLabel(sessionData.overallScore)}
                   </p>
                 )}
               </div>
@@ -727,6 +695,7 @@ export default function AssignmentGradePage({
             selectedQuestionIdx={selectedQuestionIdx}
             onSelectQuestion={setSelectedQuestionIdx}
             grades={sessionData.grades}
+            hideScores
           />
 
           <div className="grid gap-6 lg:grid-cols-3">
@@ -761,6 +730,7 @@ export default function AssignmentGradePage({
                 aiGradedScore={currentAiGradedScore}
                 aiSummary={sessionData.grades[selectedQuestionIdx]?.ai_summary || null}
                 saving={saveGradeMutation.isPending}
+                mode="assignment"
                 onStageScoreChange={handleStageScoreChange}
                 onStageCommentChange={handleStageCommentChange}
                 onOverallScoreChange={(value) =>

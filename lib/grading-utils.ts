@@ -1,5 +1,46 @@
 /** Shared grading/score utility functions */
 
+export const ASSIGNMENT_GRADE_SCORES = {
+  excellent: 85,
+  average: 70,
+  insufficient: 45,
+} as const;
+
+export type AssignmentGradeLabel = "우수" | "평범" | "미흡";
+
+export function scoreToAssignmentLabel(score: number | null | undefined): AssignmentGradeLabel {
+  if (typeof score !== "number" || !Number.isFinite(score)) return "미흡";
+  if (score >= 78) return "우수";
+  if (score >= 58) return "평범";
+  return "미흡";
+}
+
+export function assignmentLabelToScore(label: AssignmentGradeLabel): number {
+  switch (label) {
+    case "우수":
+      return ASSIGNMENT_GRADE_SCORES.excellent;
+    case "평범":
+      return ASSIGNMENT_GRADE_SCORES.average;
+    case "미흡":
+      return ASSIGNMENT_GRADE_SCORES.insufficient;
+  }
+}
+
+export function normalizeAssignmentGradeScore(score: number): number {
+  return assignmentLabelToScore(scoreToAssignmentLabel(score));
+}
+
+export function getAssignmentGradeDescription(label: AssignmentGradeLabel): string {
+  switch (label) {
+    case "우수":
+      return "채팅 리서치 과정, 근거 검증, 퀴즈 이해도 신호가 전반적으로 좋습니다.";
+    case "평범":
+      return "기본적인 리서치 수행은 보이나 근거 검증이나 자기주도적 판단이 일부 부족합니다.";
+    case "미흡":
+      return "리서치 과정, 근거 확인, 이해도 신호가 부족하거나 AI 의존이 큽니다.";
+  }
+}
+
 /** Returns Tailwind color class based on score percentage (0-100) */
 export function getScoreColor(score: number): string {
   if (score >= 90) return "text-green-600 dark:text-green-400";

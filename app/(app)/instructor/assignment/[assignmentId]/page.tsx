@@ -98,6 +98,12 @@ export default function AssignmentDashboard({
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    if (sortOption === "score") {
+      setSortOption("submittedAt");
+    }
+  }, [sortOption, setSortOption]);
+
+  useEffect(() => {
     if (
       isLoaded &&
       (!isSignedIn || (profile?.role as string) !== "instructor")
@@ -340,7 +346,6 @@ export default function AssignmentDashboard({
                   <SelectValue placeholder="정렬 기준" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="score">가채점 순</SelectItem>
                   <SelectItem value="submittedAt">제출 빠른 순</SelectItem>
                   <SelectItem value="answerLength">답안 길이 순</SelectItem>
                 </SelectContent>
@@ -364,11 +369,10 @@ export default function AssignmentDashboard({
             <div className="border rounded-lg overflow-hidden">
               {/* Table Header */}
               <div className="bg-muted/50 border-b px-4 py-3">
-                <div className="grid grid-cols-[1fr_140px_100px_120px_80px] gap-4 items-center text-sm font-medium text-muted-foreground">
+                <div className="grid grid-cols-[1fr_140px_100px_80px] gap-4 items-center text-sm font-medium text-muted-foreground">
                   <span>학생</span>
                   <span>제출일시</span>
                   <span>상태</span>
-                  <span className="text-right">점수</span>
                   <span className="text-center">액션</span>
                 </div>
               </div>
@@ -430,7 +434,7 @@ function StudentRow({
   analyticsData?: Record<string, unknown> | null;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_140px_100px_120px_80px] gap-4 items-center px-4 py-3 hover:bg-muted/50 transition-colors">
+    <div className="grid grid-cols-[1fr_140px_100px_80px] gap-4 items-center px-4 py-3 hover:bg-muted/50 transition-colors">
       {/* Student info */}
       <div className="flex items-center gap-3 min-w-0">
         <Avatar className="h-8 w-8 border flex-shrink-0">
@@ -466,25 +470,6 @@ function StudentRow({
       {/* Status */}
       <div>
         {getStatusBadge(student.status, student.submittedAt, student.isGraded)}
-      </div>
-
-      {/* Score */}
-      <div className="text-right">
-        {student.isGraded && student.finalScore !== undefined ? (
-          <div>
-            <span className="font-semibold text-primary">
-              {student.finalScore}점
-            </span>
-            <div className="text-xs text-muted-foreground">최종</div>
-          </div>
-        ) : student.score !== undefined && student.score !== null ? (
-          <div>
-            <span className="font-semibold">{student.score}점</span>
-            <div className="text-xs text-muted-foreground">가채점</div>
-          </div>
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        )}
       </div>
 
       {/* Action */}

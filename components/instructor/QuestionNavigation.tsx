@@ -20,6 +20,7 @@ interface QuestionNavigationProps {
   selectedQuestionIdx: number;
   onSelectQuestion: (idx: number) => void;
   grades: Record<number, Grade>;
+  hideScores?: boolean;
 }
 
 export function QuestionNavigation({
@@ -27,6 +28,7 @@ export function QuestionNavigation({
   selectedQuestionIdx,
   onSelectQuestion,
   grades,
+  hideScores = false,
 }: QuestionNavigationProps) {
   if (!questions || !Array.isArray(questions)) {
     return (
@@ -48,7 +50,7 @@ export function QuestionNavigation({
             data-testid={`question-nav-${idx}`}
           >
             문제 {idx + 1}
-            {grades[idx] && (
+            {grades[idx] && !hideScores && (
               <Badge
                 variant="secondary"
                 className="ml-2 bg-green-100 text-green-800"
