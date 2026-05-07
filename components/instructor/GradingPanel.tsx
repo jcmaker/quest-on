@@ -34,6 +34,7 @@ interface GradingPanelProps {
   isAiGradedOnly?: boolean; // 가채점만 있는 경우
   aiGradedScore?: number; // 가채점 점수
   aiSummary?: QuestionSummaryData | null; // 문제별 AI 종합평가 (read-only 표시)
+  showAiSummary?: boolean;
   saving: boolean;
   isGradingInProgress?: boolean;
   mode?: "exam" | "assignment";
@@ -62,6 +63,7 @@ export function GradingPanel({
   isAiGradedOnly = false,
   aiGradedScore,
   aiSummary,
+  showAiSummary = true,
   saving,
   isGradingInProgress = false,
   mode = "exam",
@@ -312,7 +314,7 @@ export function GradingPanel({
 
         </div>
 
-        {aiSummary && (
+        {showAiSummary && aiSummary && (
           <div
             className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3"
             data-testid="grade-ai-summary"

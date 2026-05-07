@@ -7,11 +7,13 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { qk } from "@/lib/query-keys";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { QuestionNavigation } from "@/components/instructor/QuestionNavigation";
 import { QuestionPromptCard } from "@/components/instructor/QuestionPromptCard";
 import { AIConversationsCard } from "@/components/instructor/AIConversationsCard";
-import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
+// Assignment research flow: final answer card intentionally hidden.
+// import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
@@ -27,6 +29,7 @@ import {
   RefreshCw,
   Loader2,
   ArrowLeft,
+  ShieldQuestion,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -81,6 +84,26 @@ interface Grade {
   grade_type?: string;
 }
 
+interface AssignmentQuizQuestion {
+  id: string;
+  question: string;
+  options: string[];
+  correctOptionIndex?: number;
+  rationale?: string;
+}
+
+interface AssignmentQuiz {
+  id: string;
+  questions: AssignmentQuizQuestion[];
+  answers: Record<string, number>;
+  score: number | null;
+  total_questions: number;
+  time_limit_seconds: number;
+  started_at: string | null;
+  submitted_at: string | null;
+  status: string;
+}
+
 interface PasteLog {
   id: string;
   question_id: string;
@@ -125,6 +148,7 @@ interface SessionData {
   pasteLogs?: Record<string, PasteLog[]>;
   overallScore: number | null;
   gradingProgress?: GradingProgress | null;
+  assignmentQuiz?: AssignmentQuiz | null;
 }
 
 export default function AssignmentGradePage({
@@ -533,14 +557,12 @@ export default function AssignmentGradePage({
   }
 
   const currentQuestion = sessionData.exam?.questions?.[selectedQuestionIdx];
-  const currentSubmission = sessionData.submissions?.[selectedQuestionIdx] as
-    | Submission
-    | undefined;
   const currentGrade = sessionData.grades?.[selectedQuestionIdx] as
     | Grade
     | undefined;
   const currentAiDependency = currentGrade?.stage_grading?.chat?.ai_dependency;
   const overallAiDependency = overallSummary?.aiDependency || null;
+  const assignmentQuiz = sessionData.assignmentQuiz;
 
   let currentMessages = (sessionData.messages?.[selectedQuestionIdx] || []) as Conversation[];
   if (currentMessages.length === 0 && currentQuestion?.id) {
@@ -707,16 +729,94 @@ export default function AssignmentGradePage({
 
               <AIConversationsCard messages={duringExamMessages} />
 
-              <FinalAnswerCard
-                submission={currentSubmission}
-                pasteLogs={
-                  currentQuestion
-                    ? sessionData.pasteLogs?.[currentQuestion.id] ||
-                      sessionData.pasteLogs?.[String(selectedQuestionIdx)]
-                    : undefined
-                }
-                questionId={currentQuestion?.id}
-              />
+              {assignmentQuiz && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <ShieldQuestion className="w-5 h-5 text-amber-600" />
+                      타임어택 퀴즈 결과
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Badge
+                        variant="outline"
+                        className="bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                      >
+                        점수 {assignmentQuiz.score ?? 0}/100
+                      </Badge>
+                      <Badge variant="secondary">
+                        {assignmentQuiz.total_questions}문항 · {assignmentQuiz.time_limit_seconds}초
+                      </Badge>
+                      {assignmentQuiz.submitted_at && (
+                        <span className="text-sm text-muted-foreground">
+                          완료: {new Date(assignmentQuiz.submitted_at).toLocaleString("ko-KR")}
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      {assignmentQuiz.questions.map((question, index) => {
+                        const selectedIndex = assignmentQuiz.answers?.[question.id];
+                        const correctIndex = question.correctOptionIndex;
+                        const isCorrect =
+                          typeof correctIndex === "number" && selectedIndex === correctIndex;
+
+                        return (
+                          <div key={question.id} className="rounded-lg border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="font-medium text-sm">
+                                {index + 1}. {question.question}
+                              </p>
+                              {typeof correctIndex === "number" && (
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    isCorrect
+                                      ? "bg-green-500/10 text-green-700 dark:text-green-400"
+                                      : "bg-red-500/10 text-red-700 dark:text-red-400"
+                                  }
+                                >
+                                  {isCorrect ? "정답" : "오답"}
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="mt-2 text-sm text-muted-foreground">
+                              선택:{" "}
+                              {typeof selectedIndex === "number"
+                                ? question.options[selectedIndex] || "무응답"
+                                : "무응답"}
+                            </p>
+                            {typeof correctIndex === "number" && (
+                              <p className="text-sm text-muted-foreground">
+                                정답: {question.options[correctIndex]}
+                              </p>
+                            )}
+                            {question.rationale && (
+                              <p className="mt-2 text-sm text-muted-foreground">
+                                근거: {question.rationale}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Assignment research flow: final answer card intentionally hidden.
+                  Re-enable this block if assignment grading needs to inspect a submitted final answer again.
+                  <FinalAnswerCard
+                    submission={currentSubmission}
+                    pasteLogs={
+                      currentQuestion
+                        ? sessionData.pasteLogs?.[currentQuestion.id] ||
+                          sessionData.pasteLogs?.[String(selectedQuestionIdx)]
+                        : undefined
+                    }
+                    questionId={currentQuestion?.id}
+                  />
+              */}
             </div>
 
             <div className="space-y-6">
@@ -729,6 +829,7 @@ export default function AssignmentGradePage({
                 isAiGradedOnly={isCurrentQuestionAiGradedOnly}
                 aiGradedScore={currentAiGradedScore}
                 aiSummary={sessionData.grades[selectedQuestionIdx]?.ai_summary || null}
+                showAiSummary={false}
                 saving={saveGradeMutation.isPending}
                 mode="assignment"
                 onStageScoreChange={handleStageScoreChange}

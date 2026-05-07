@@ -504,22 +504,25 @@ export default function StudentReportPage() {
             </Card>
           )}
 
-          {/* Student Answer */}
-          <Card>
-            <CardHeader>
-              <CardTitle>{assignmentQuiz ? "채팅 기반 응시 기록" : "내 답안"}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {currentSubmission ? (
-                <RichTextViewer
-                  content={currentSubmission.answer}
-                  className="text-base leading-relaxed whitespace-pre-wrap"
-                />
-              ) : (
-                <p className="text-muted-foreground">제출된 답안이 없습니다.</p>
-              )}
-            </CardContent>
-          </Card>
+          {/* Assignment research flow: final answer card intentionally hidden.
+              Re-enable this block for non-chat assignment/report flows that need a submitted answer view. */}
+          {!assignmentQuiz && (
+            <Card>
+              <CardHeader>
+                <CardTitle>내 답안</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {currentSubmission ? (
+                  <RichTextViewer
+                    content={currentSubmission.answer}
+                    className="text-base leading-relaxed whitespace-pre-wrap"
+                  />
+                ) : (
+                  <p className="text-muted-foreground">제출된 답안이 없습니다.</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
         </div>
 

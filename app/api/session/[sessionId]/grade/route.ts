@@ -86,8 +86,8 @@ export async function GET(
       }));
     }
 
-    // Optimized: Fetch submissions, messages, grades, and paste_logs in parallel
-    const [submissionsResult, messagesResult, gradesResult, pasteLogsResult] =
+    // Optimized: Fetch submissions, messages, grades, paste_logs, and assignment quiz in parallel
+    const [submissionsResult, messagesResult, gradesResult, pasteLogsResult, quizResult] =
       await Promise.all([
         supabase
           .from("submissions")
@@ -150,18 +150,37 @@ export async function GET(
           )
           .eq("session_id", sessionId)
           .order("timestamp", { ascending: true }),
+        supabase
+          .from("session_quiz_attempts")
+          .select(
+            `
+          id,
+          questions,
+          answers,
+          score,
+          total_questions,
+          time_limit_seconds,
+          started_at,
+          submitted_at,
+          status
+        `
+          )
+          .eq("session_id", sessionId)
+          .maybeSingle(),
       ]);
 
     const { data: submissions, error: submissionsError } = submissionsResult;
     const { data: messages, error: messagesError } = messagesResult;
     const { data: grades, error: gradesError } = gradesResult;
     const { data: pasteLogs, error: pasteLogsError } = pasteLogsResult;
+    const { data: quizAttempt, error: quizError } = quizResult;
 
     const path = `/api/session/${sessionId}/grade`;
     if (submissionsError) logError("Submissions query failed", submissionsError, { path, additionalData: { sessionId } });
     if (messagesError) logError("Messages query failed", messagesError, { path, additionalData: { sessionId } });
     if (gradesError) logError("Grades query failed", gradesError, { path, additionalData: { sessionId } });
     if (pasteLogsError) logError("PasteLogs query failed", pasteLogsError, { path, additionalData: { sessionId } });
+    if (quizError) logError("Assignment quiz query failed", quizError, { path, additionalData: { sessionId } });
 
     // Check if instructor owns the exam
     if (exam.instructor_id !== user.id) {
@@ -377,6 +396,7 @@ export async function GET(
       pasteLogs: pasteLogsByQuestion, // 부정행위 의심 로그 (question_id별로 그룹화)
       overallScore,
       aiSummary: session.ai_summary || null, // 하위 호환성을 위해 유지
+      assignmentQuiz: quizAttempt || null,
       gradingProgress: session.grading_progress || null, // 실시간 채점 진행률
       ...(decompressionErrors.length > 0 && { decompressionErrors }),
     };
