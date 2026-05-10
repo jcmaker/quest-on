@@ -4,8 +4,11 @@ import { use, useState, useCallback, useEffect } from "react";
 import { AssignmentHeader } from "@/components/assignment/AssignmentHeader";
 import { AssignmentChatPanel } from "@/components/assignment/AssignmentChatPanel";
 import { AssignmentSubmitDialog } from "@/components/assignment/AssignmentSubmitDialog";
+import { FinalAnswerButton } from "@/components/assignment/FinalAnswerButton";
+import { FinalAnswerSheet } from "@/components/assignment/FinalAnswerSheet";
 import { useAssignmentSession } from "@/hooks/useAssignmentSession";
 import { useAssignmentChat } from "@/hooks/useAssignmentChat";
+import { useFinalAnswer } from "@/hooks/useFinalAnswer";
 import { Loader2, AlertCircle, FileX } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -32,6 +35,23 @@ export default function AssignmentPage({
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSubmitDialog, setShowSubmitDialog] = useState(false);
+  const [finalAnswerSheetOpen, setFinalAnswerSheetOpen] = useState(false);
+  const [finalAnswerAttention, setFinalAnswerAttention] = useState(false);
+
+  const finalAnswer = useFinalAnswer({
+    sessionId: session?.id,
+    examId: exam?.id,
+    studentId: userId || undefined,
+    initialValue: session?.final_answer,
+    disabled: isSubmitted,
+  });
+
+  // attention 상태는 1.5s 뒤 자동 해제 (shake 애니메이션은 0.6s)
+  useEffect(() => {
+    if (!finalAnswerAttention) return;
+    const t = setTimeout(() => setFinalAnswerAttention(false), 1500);
+    return () => clearTimeout(t);
+  }, [finalAnswerAttention]);
 
   // Detect if already submitted
   useEffect(() => {
@@ -101,6 +121,13 @@ export default function AssignmentPage({
     // Trigger submit directly
     setIsSubmitting(true);
     try {
+      // Best-effort: flush any pending typing before auto-submit so the last
+      // 0~2.5s of input lands in DB. We don't await failure; deadline already passed.
+      try {
+        await finalAnswer.flush();
+      } catch {
+        // ignore — server will accept empty final_answer past deadline
+      }
       const res = await fetch("/api/supa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -123,14 +150,32 @@ export default function AssignmentPage({
     } finally {
       setIsSubmitting(false);
     }
-  }, [isSubmitted, isSubmitting, session?.id, exam?.id, userId, router]);
+  }, [isSubmitted, isSubmitting, session?.id, exam?.id, userId, router, finalAnswer]);
 
-  // Handle submit
+  // Pre-flight: header "제출하기" 클릭 시 호출 — 미작성이면 sheet 열고 어필
+  const handleHeaderSubmitClick = () => {
+    if (!finalAnswer.value.trim()) {
+      setFinalAnswerSheetOpen(true);
+      setFinalAnswerAttention(true);
+      toast.error("최종답안을 먼저 작성해주세요.");
+      return;
+    }
+    setShowSubmitDialog(true);
+  };
+
+  // Handle submit (dialog confirm)
   const handleSubmit = async () => {
     if (!session?.id || !exam?.id || !userId) return;
 
     setIsSubmitting(true);
     try {
+      // 1) Flush any pending auto-save first
+      const flushRes = await finalAnswer.flush();
+      if (!flushRes.ok && flushRes.error && flushRes.error !== "aborted") {
+        throw new Error("최종답안 저장에 실패했습니다. 다시 시도해주세요.");
+      }
+
+      // 2) Submit
       const res = await fetch("/api/supa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -146,6 +191,13 @@ export default function AssignmentPage({
 
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
+        // 서버측 final_answer_missing 가드에 대한 친절한 처리
+        if (errData?.details?.reason === "final_answer_missing") {
+          setShowSubmitDialog(false);
+          setFinalAnswerSheetOpen(true);
+          setFinalAnswerAttention(true);
+          throw new Error("최종답안을 먼저 작성해주세요.");
+        }
         throw new Error(errData.message || "제출에 실패했습니다.");
       }
 
@@ -221,7 +273,7 @@ export default function AssignmentPage({
         title={exam.title}
         deadline={exam.deadline}
         isSubmitted={isSubmitted}
-        onSubmit={() => setShowSubmitDialog(true)}
+        onSubmit={handleHeaderSubmitClick}
         isSubmitting={isSubmitting}
         onDeadlineExpired={handleDeadlineExpired}
       />
@@ -238,11 +290,37 @@ export default function AssignmentPage({
         />
       </div>
 
+      {!isSubmitted && (
+        <FinalAnswerButton
+          hasContent={!!finalAnswer.value.trim()}
+          attention={finalAnswerAttention}
+          onClick={() => setFinalAnswerSheetOpen(true)}
+        />
+      )}
+
+      <FinalAnswerSheet
+        open={finalAnswerSheetOpen}
+        onOpenChange={setFinalAnswerSheetOpen}
+        value={finalAnswer.value}
+        onChange={finalAnswer.setValue}
+        onFlush={finalAnswer.flush}
+        isSaving={finalAnswer.isSaving}
+        lastSavedAt={finalAnswer.lastSavedAt}
+        error={finalAnswer.error}
+        savedValue={finalAnswer.savedValue}
+        disabled={isSubmitted}
+      />
+
       <AssignmentSubmitDialog
         open={showSubmitDialog}
         onOpenChange={setShowSubmitDialog}
         onConfirm={handleSubmit}
         isSubmitting={isSubmitting}
+        finalAnswer={finalAnswer.value}
+        onEditFinalAnswer={() => {
+          setShowSubmitDialog(false);
+          setFinalAnswerSheetOpen(true);
+        }}
       />
     </div>
   );

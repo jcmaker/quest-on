@@ -166,6 +166,11 @@ async function gradeSingleQuestion(params: {
   rubricItems: ReturnType<typeof resolveQuestionRubric>;
   chatWeight: number;
   isAssignment: boolean;
+  /**
+   * 과제(assignment)의 학생 작성 최종답안. exam 모드에선 무시.
+   * submission.answer(채팅 스냅샷)와는 별개의 입력이다.
+   */
+  sessionFinalAnswer?: string | null;
   sessionId: string;
   studentId: string;
   signal: AbortSignal;
@@ -180,6 +185,7 @@ async function gradeSingleQuestion(params: {
     rubricItems,
     chatWeight,
     isAssignment,
+    sessionFinalAnswer,
     sessionId,
     studentId,
     signal,
@@ -199,9 +205,14 @@ async function gradeSingleQuestion(params: {
     return { ok: false, failureReason: "No submission for question" };
   }
 
+  // 과제 모드에선 학생이 직접 작성한 최종답안과 AI 응답의 유사도를 비교해야 한다.
+  // 기존엔 submission.answer(채팅 스냅샷)가 들어가서 사실상 "채팅 vs 채팅"이 됐었음 — 정정.
+  const aiDependencyFinalAnswer = isAssignment
+    ? sessionFinalAnswer ?? ""
+    : submission.answer || "";
   const aiDependencyAssessment = analyzeAiDependency({
     messages: questionMessages,
-    finalAnswer: submission.answer || "",
+    finalAnswer: aiDependencyFinalAnswer,
   });
 
   // Build prompts: assignment uses dedicated grading prompt, exam uses unified grading
@@ -250,7 +261,10 @@ async function gradeSingleQuestion(params: {
       ? `\n\n[AI 활용 요약]\n${aiDependencyAssessment.summary}`
       : "";
 
-    userPrompt = `[학생의 채팅 기반 과제 수행 기록]\n${submission.answer || "(기록 없음)"}${aiSummaryText}`;
+    const finalAnswerText = (sessionFinalAnswer ?? "").trim();
+    const finalAnswerSection = `\n\n[학생이 작성한 최종답안]\n${finalAnswerText || "(작성되지 않음)"}`;
+
+    userPrompt = `[학생의 채팅 기반 과제 수행 기록]\n${submission.answer || "(기록 없음)"}${finalAnswerSection}${aiSummaryText}`;
   } else {
     systemPrompt = buildUnifiedGradingSystemPrompt({
       rubricText,
@@ -791,7 +805,7 @@ JSON 형식으로 응답해주세요:
 // ============================================================
 
 interface PhaseContext {
-  session: { id: string; exam_id: string; student_id: string };
+  session: { id: string; exam_id: string; student_id: string; final_answer?: string | null };
   exam: {
     id: string;
     title: string;
@@ -831,7 +845,7 @@ async function loadPhaseContext(
 ): Promise<PhaseContext> {
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
-    .select("id, exam_id, student_id")
+    .select("id, exam_id, student_id, final_answer")
     .eq("id", sessionId)
     .single();
 
@@ -1009,6 +1023,7 @@ export async function gradeOneQuestion(
     rubricItems,
     chatWeight: ctx.chatWeight,
     isAssignment: ctx.isAssignment,
+    sessionFinalAnswer: ctx.session.final_answer,
     sessionId,
     studentId: ctx.session.student_id,
     signal: abortController.signal,

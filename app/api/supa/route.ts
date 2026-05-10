@@ -23,6 +23,7 @@ import {
   createAssignmentSchema,
   saveCanvasSchema,
   submitAssignmentSchema,
+  saveFinalAnswerSchema,
   validateRequest,
 } from "@/lib/validations";
 import type { z } from "zod";
@@ -67,6 +68,7 @@ import {
   createAssignment,
   saveCanvas,
   submitAssignment,
+  saveFinalAnswer,
 } from "./handlers/assignment-handlers";
 
 // Default-deny: all actions require auth unless explicitly listed as public.
@@ -102,6 +104,7 @@ export async function POST(request: NextRequest) {
       create_assignment: RATE_LIMITS.examControl,
       submit_assignment: RATE_LIMITS.examControl,
       save_canvas: RATE_LIMITS.general,
+      save_final_answer: RATE_LIMITS.finalAnswerSave,
       create_exam: RATE_LIMITS.examControl,
       submit_exam: RATE_LIMITS.examControl,
       save_draft: RATE_LIMITS.general,
@@ -127,6 +130,7 @@ export async function POST(request: NextRequest) {
       create_assignment: createAssignmentSchema,
       save_canvas: saveCanvasSchema,
       submit_assignment: submitAssignmentSchema,
+      save_final_answer: saveFinalAnswerSchema,
       create_exam: createExamSchema,
       update_exam: updateExamSchema,
       init_exam_session: initExamSessionSchema,
@@ -160,6 +164,8 @@ export async function POST(request: NextRequest) {
         return await saveCanvas(data);
       case "submit_assignment":
         return await submitAssignment(data);
+      case "save_final_answer":
+        return await saveFinalAnswer(data);
       case "create_exam":
         return await createExam(data);
       case "update_exam":

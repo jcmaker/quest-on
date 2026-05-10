@@ -365,6 +365,13 @@ export const submitAssignmentSchema = z.object({
   studentId: z.string().min(1),
 });
 
+export const saveFinalAnswerSchema = z.object({
+  sessionId: z.string().uuid("Invalid session ID"),
+  examId: z.string().uuid("Invalid exam ID"),
+  studentId: z.string().min(1),
+  finalAnswer: z.string().max(50000, "Final answer too long"),
+});
+
 // Drive operations
 export const createFolderSchema = z.object({
   name: z.string().min(1, "Folder name is required").max(255),

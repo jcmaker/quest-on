@@ -15,6 +15,13 @@ function mapQuizError(error: string) {
       return errorJson("FORBIDDEN", "Forbidden", 403);
     case "NOT_ASSIGNMENT":
       return errorJson("NOT_ASSIGNMENT", "This session is not an assignment", 400);
+    case "FINAL_ANSWER_REQUIRED":
+      return errorJson(
+        "FINAL_ANSWER_REQUIRED",
+        "Final answer is required before quiz",
+        400,
+        { reason: "final_answer_missing" }
+      );
     default:
       return errorJson(error, "Failed to load quiz", 500);
   }

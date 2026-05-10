@@ -170,7 +170,7 @@ export async function promoteSessionToInProgress(
 
   // CAS failed (concurrent request already promoted) — re-read current state
   if (!updatedSession) {
-    const sessionSelectFields = "id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at, preflight_accepted_at";
+    const sessionSelectFields = "id, exam_id, student_id, submitted_at, is_active, status, started_at, attempt_timer_started_at, device_fingerprint, created_at, used_clarifications, compressed_session_data, compression_metadata, last_heartbeat_at, preflight_accepted_at, final_answer, final_answer_updated_at";
 
     const { data: currentSession, error: readError } = await getSupabase()
       .from("sessions")

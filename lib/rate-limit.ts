@@ -231,4 +231,6 @@ export const RATE_LIMITS = {
   submission: { limit: 30, windowSec: 60 } satisfies RateLimitConfig,
   /** Paste log endpoints: 120 requests per minute per user (high frequency during exams) */
   pasteLog: { limit: 120, windowSec: 60 } satisfies RateLimitConfig,
+  /** Final answer auto-save (assignment): 60 saves per minute (debounced 2.5s on client) */
+  finalAnswerSave: { limit: 60, windowSec: 60 } satisfies RateLimitConfig,
 } as const;

@@ -51,7 +51,7 @@ export async function GET(
 
     const { data: session, error: sessionError } = await supabase
       .from("sessions")
-      .select("id, exam_id, student_id, submitted_at, used_clarifications, created_at, compressed_session_data, compression_metadata, ai_summary, auto_submitted, grading_progress")
+      .select("id, exam_id, student_id, submitted_at, used_clarifications, created_at, compressed_session_data, compression_metadata, ai_summary, auto_submitted, grading_progress, final_answer, final_answer_updated_at")
       .eq("id", sessionId)
       .single();
 
@@ -387,6 +387,8 @@ export async function GET(
         ai_summary: session.ai_summary || null, // 서버 사이드 자동 채점 요약 평가
         auto_submitted: session.auto_submitted || false, // 강제 종료로 자동 제출된 세션
         grading_progress: session.grading_progress || null, // QStash 진행률 상태 ({ status, total, completed, failed })
+        final_answer: session.final_answer ?? null,
+        final_answer_updated_at: session.final_answer_updated_at ?? null,
       },
       exam: exam,
       student: studentInfo,

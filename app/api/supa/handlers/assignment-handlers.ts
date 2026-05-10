@@ -2,6 +2,15 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
+import { sanitizeUserInput } from "@/lib/sanitize";
+
+const FINAL_ANSWER_MAX_LEN = 50_000;
+const STATUS_BLOCKING_FINAL_ANSWER_EDIT = new Set([
+  "quiz_pending",
+  "submitted",
+  "auto_submitted",
+  "locked",
+]);
 
 function getSupabase() {
   return getSupabaseServer();
@@ -297,10 +306,10 @@ export async function submitAssignment(data: {
       return errorJson("FORBIDDEN", "Student ID mismatch", 403);
     }
 
-    // Verify session
+    // Verify session (final_answer 포함)
     const { data: session, error: sessionError } = await getSupabase()
       .from("sessions")
-      .select("id, student_id, submitted_at, exam_id, status")
+      .select("id, student_id, submitted_at, exam_id, status, final_answer")
       .eq("id", data.sessionId)
       .single();
 
@@ -324,15 +333,42 @@ export async function submitAssignment(data: {
       return successJson({ quizPending: true, sessionId: data.sessionId });
     }
 
+    // 마감 시각 확인 (서버에서 직접 — 클라이언트 플래그 신뢰 금지)
+    const { data: examRow, error: examFetchError } = await getSupabase()
+      .from("exams")
+      .select("id, deadline")
+      .eq("id", data.examId)
+      .single();
+
+    if (examFetchError || !examRow) {
+      return errorJson("EXAM_NOT_FOUND", "Assignment not found", 404);
+    }
+
+    const finalAnswer = (session.final_answer ?? "").trim();
+    const deadlinePassed = !!examRow.deadline && new Date(examRow.deadline as string).getTime() < Date.now();
+
+    // 마감 전인데 최종답안이 비어 있으면 차단 (클라이언트가 sheet를 자동으로 열어 작성을 강제)
+    if (!finalAnswer && !deadlinePassed) {
+      return errorJson("FINAL_ANSWER_REQUIRED", "Final answer is required before submission", 400, {
+        reason: "final_answer_missing",
+      });
+    }
+
     // Submission intent freezes the chat and moves the student into the required quiz.
     const now = new Date().toISOString();
+    const updatePayload: Record<string, unknown> = {
+      status: "quiz_pending",
+      is_active: false,
+      last_heartbeat_at: now,
+    };
+    // 마감 후 빈 답안이면 auto_submitted=true 표시 (마감 자동제출 경로)
+    if (deadlinePassed && !finalAnswer) {
+      updatePayload.auto_submitted = true;
+    }
+
     const { error: updateError } = await getSupabase()
       .from("sessions")
-      .update({
-        status: "quiz_pending",
-        is_active: false,
-        last_heartbeat_at: now,
-      })
+      .update(updatePayload)
       .eq("id", data.sessionId);
 
     if (updateError) {
@@ -344,5 +380,71 @@ export async function submitAssignment(data: {
   } catch (error) {
     logError("[submitAssignment] Failed", error, { path: "/api/supa/assignment-handlers" });
     return errorJson("SUBMIT_ASSIGNMENT_FAILED", "Failed to submit assignment", 500);
+  }
+}
+
+export async function saveFinalAnswer(data: {
+  sessionId: string;
+  examId: string;
+  studentId: string;
+  finalAnswer: string;
+}) {
+  try {
+    const user = await currentUser();
+    if (!user) {
+      return errorJson("UNAUTHORIZED", "Unauthorized", 401);
+    }
+
+    if (user.id !== data.studentId) {
+      return errorJson("FORBIDDEN", "Student ID mismatch", 403);
+    }
+
+    // Verify session ownership + not already in quiz/submitted phase
+    const { data: session, error: sessionError } = await getSupabase()
+      .from("sessions")
+      .select("id, student_id, exam_id, status, submitted_at")
+      .eq("id", data.sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      return errorJson("SESSION_NOT_FOUND", "Session not found", 404);
+    }
+
+    if (session.student_id !== user.id) {
+      return errorJson("FORBIDDEN", "Session does not belong to this user", 403);
+    }
+
+    if (session.exam_id !== data.examId) {
+      return errorJson("EXAM_MISMATCH", "Session does not belong to this assignment", 400);
+    }
+
+    if (session.submitted_at || (session.status && STATUS_BLOCKING_FINAL_ANSWER_EDIT.has(session.status))) {
+      return errorJson("FINAL_ANSWER_LOCKED", "Final answer cannot be edited after submission", 409);
+    }
+
+    // Sanitize HTML & enforce length on sanitized text (UI 카운터 mismatch 방지)
+    const sanitized = sanitizeUserInput(data.finalAnswer ?? "");
+    if (sanitized.length > FINAL_ANSWER_MAX_LEN) {
+      return errorJson("FINAL_ANSWER_TOO_LONG", "Final answer too long", 400);
+    }
+
+    const now = new Date().toISOString();
+    const { error: updateError } = await getSupabase()
+      .from("sessions")
+      .update({
+        final_answer: sanitized,
+        final_answer_updated_at: now,
+      })
+      .eq("id", data.sessionId);
+
+    if (updateError) {
+      logError("[saveFinalAnswer] Update error", updateError, { path: "/api/supa/assignment-handlers" });
+      return errorJson("SAVE_FINAL_ANSWER_FAILED", "Failed to save final answer", 500);
+    }
+
+    return successJson({ saved: true, finalAnswerUpdatedAt: now, length: sanitized.length });
+  } catch (error) {
+    logError("[saveFinalAnswer] Failed", error, { path: "/api/supa/assignment-handlers" });
+    return errorJson("SAVE_FINAL_ANSWER_FAILED", "Failed to save final answer", 500);
   }
 }

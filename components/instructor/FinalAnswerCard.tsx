@@ -281,16 +281,52 @@ interface PasteLog {
 }
 
 interface FinalAnswerCardProps {
-  submission: Submission | undefined;
+  submission?: Submission | undefined;
   pasteLogs?: PasteLog[];
   questionId?: string;
+  /**
+   * 과제(assignment) 흐름의 sessions.final_answer 본문.
+   * 주어지면 paste 하이라이트/`dangerouslySetInnerHTML` 분기를 타지 않고
+   * plain text로 안전하게 렌더한다. (XSS 안전)
+   */
+  finalAnswerText?: string;
 }
 
 export function FinalAnswerCard({
   submission,
   pasteLogs,
   questionId,
+  finalAnswerText,
 }: FinalAnswerCardProps) {
+  // assignment(plain text) 분기 — paste log 미적용
+  if (finalAnswerText !== undefined) {
+    const text = finalAnswerText.trim();
+    return (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-green-600" />
+            <CardTitle>최종 답안</CardTitle>
+          </div>
+          <CardDescription>학생이 작성한 최종답안입니다</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {text ? (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <pre className="text-sm whitespace-pre-wrap break-words font-sans">
+                {text}
+              </pre>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>아직 작성되지 않음</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
   // 현재 문제에 해당하는 로그만 필터링
   const relevantLogs =
     pasteLogs?.filter((log) => !questionId || log.question_id === questionId) ||

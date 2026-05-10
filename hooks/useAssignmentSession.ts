@@ -21,6 +21,8 @@ interface Session {
   id: string;
   status: string;
   submitted_at: string | null;
+  final_answer: string | null;
+  final_answer_updated_at: string | null;
 }
 
 export function useAssignmentSession(code: string) {
@@ -88,6 +90,8 @@ export function useAssignmentSession(code: string) {
         id: sessionId,
         status: sessionData.sessionStatus || sessionData.session?.status || "in_progress",
         submitted_at: sessionData.session?.submitted_at || null,
+        final_answer: sessionData.session?.final_answer ?? null,
+        final_answer_updated_at: sessionData.session?.final_answer_updated_at ?? null,
       });
 
       if (sessionId) {

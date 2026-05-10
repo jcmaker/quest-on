@@ -9,6 +9,7 @@ import {
   sessionHeartbeatSchema,
   createFolderSchema,
   gradeUpdateSchema,
+  saveFinalAnswerSchema,
 } from "@/lib/validations";
 
 describe("validateRequest helper", () => {
@@ -195,5 +196,50 @@ describe("createFolderSchema", () => {
   it("rejects empty folder name", () => {
     const result = createFolderSchema.safeParse({ name: "" });
     expect(result.success).toBe(false);
+  });
+});
+
+describe("saveFinalAnswerSchema", () => {
+  const validBase = {
+    sessionId: "550e8400-e29b-41d4-a716-446655440000",
+    examId: "550e8400-e29b-41d4-a716-446655440001",
+    studentId: "user_abc123",
+    finalAnswer: "내가 정리한 리서치 내용입니다.",
+  };
+
+  it("validates well-formed input", () => {
+    const result = saveFinalAnswerSchema.safeParse(validBase);
+    expect(result.success).toBe(true);
+  });
+
+  it("allows empty string finalAnswer (clear-to-empty case)", () => {
+    const result = saveFinalAnswerSchema.safeParse({ ...validBase, finalAnswer: "" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects non-uuid sessionId", () => {
+    const result = saveFinalAnswerSchema.safeParse({ ...validBase, sessionId: "not-a-uuid" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects empty studentId", () => {
+    const result = saveFinalAnswerSchema.safeParse({ ...validBase, studentId: "" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects finalAnswer over 50,000 chars", () => {
+    const result = saveFinalAnswerSchema.safeParse({
+      ...validBase,
+      finalAnswer: "a".repeat(50_001),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts finalAnswer at exactly 50,000 chars", () => {
+    const result = saveFinalAnswerSchema.safeParse({
+      ...validBase,
+      finalAnswer: "a".repeat(50_000),
+    });
+    expect(result.success).toBe(true);
   });
 });

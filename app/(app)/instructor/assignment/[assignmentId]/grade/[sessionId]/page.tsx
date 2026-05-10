@@ -12,8 +12,7 @@ import Link from "next/link";
 import { QuestionNavigation } from "@/components/instructor/QuestionNavigation";
 import { QuestionPromptCard } from "@/components/instructor/QuestionPromptCard";
 import { AIConversationsCard } from "@/components/instructor/AIConversationsCard";
-// Assignment research flow: final answer card intentionally hidden.
-// import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
+import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
@@ -129,6 +128,8 @@ interface SessionData {
     ai_summary?: SummaryData;
     auto_submitted?: boolean;
     grading_progress?: GradingProgress | null;
+    final_answer?: string | null;
+    final_answer_updated_at?: string | null;
   };
   exam: {
     id: string;
@@ -804,19 +805,10 @@ export default function AssignmentGradePage({
                 </Card>
               )}
 
-              {/* Assignment research flow: final answer card intentionally hidden.
-                  Re-enable this block if assignment grading needs to inspect a submitted final answer again.
-                  <FinalAnswerCard
-                    submission={currentSubmission}
-                    pasteLogs={
-                      currentQuestion
-                        ? sessionData.pasteLogs?.[currentQuestion.id] ||
-                          sessionData.pasteLogs?.[String(selectedQuestionIdx)]
-                        : undefined
-                    }
-                    questionId={currentQuestion?.id}
-                  />
-              */}
+              {/* Assignment 최종답안 — sessions.final_answer (plain text, XSS 안전) */}
+              <FinalAnswerCard
+                finalAnswerText={sessionData.session.final_answer ?? ""}
+              />
             </div>
 
             <div className="space-y-6">

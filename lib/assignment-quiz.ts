@@ -56,7 +56,8 @@ type EnsureQuizAttemptResult =
         | "NOT_ASSIGNMENT"
         | "QUIZ_LOAD_FAILED"
         | "QUIZ_CREATE_FAILED"
-        | "QUIZ_START_FAILED";
+        | "QUIZ_START_FAILED"
+        | "FINAL_ANSWER_REQUIRED";
     };
 
 type SessionRow = {
@@ -65,6 +66,7 @@ type SessionRow = {
   student_id: string;
   status: string | null;
   submitted_at: string | null;
+  final_answer?: string | null;
 };
 
 type ExamRow = {
@@ -75,6 +77,7 @@ type ExamRow = {
   assignment_prompt: string | null;
   questions: Array<{ text: string; type?: string }> | null;
   language?: string | null;
+  deadline?: string | null;
 };
 
 type QuizAttemptRow = {
@@ -201,7 +204,7 @@ async function loadSessionAndExam(
   const supabase = getSupabaseServer();
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
-    .select("id, exam_id, student_id, status, submitted_at")
+    .select("id, exam_id, student_id, status, submitted_at, final_answer")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -216,7 +219,7 @@ async function loadSessionAndExam(
 
   const { data: exam, error: examError } = await supabase
     .from("exams")
-    .select("id, title, code, type, assignment_prompt, questions, language")
+    .select("id, title, code, type, assignment_prompt, questions, language, deadline")
     .eq("id", sessionRow.exam_id)
     .maybeSingle();
 
@@ -317,6 +320,22 @@ export async function ensureQuizAttempt(
   if (!("session" in loaded)) return loaded;
 
   const { session, exam } = loaded;
+
+  // Defense-in-depth: 클라이언트가 submit_assignment를 우회해 quiz로 직진하는 경로 차단.
+  // 이미 quiz_pending/submitted 단계로 넘어간 세션은 통과 (이전에 submitAssignment 가드를 거쳤음).
+  if (
+    session.status !== "quiz_pending" &&
+    session.status !== "submitted" &&
+    session.status !== "auto_submitted" &&
+    session.status !== "locked"
+  ) {
+    const finalAnswer = (session.final_answer ?? "").trim();
+    const deadlinePassed = !!exam.deadline && new Date(exam.deadline).getTime() < Date.now();
+    if (!finalAnswer && !deadlinePassed) {
+      return { error: "FINAL_ANSWER_REQUIRED" as const };
+    }
+  }
+
   const supabase = getSupabaseServer();
   const existing = await supabase
     .from("session_quiz_attempts")

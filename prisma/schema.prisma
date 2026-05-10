@@ -197,6 +197,8 @@ model sessions {
   is_active                Boolean?      @default(true) // 세션 활성 상태
   last_heartbeat_at        DateTime?     @db.Timestamptz(6) // 마지막 heartbeat 시간
   device_fingerprint       String? // 디바이스 식별용 핑거프린트
+  final_answer             String? // 과제 최종답안 (학생이 리서치 후 제출 전 작성하는 정리)
+  final_answer_updated_at  DateTime?     @db.Timestamptz(6) // 최종답안 마지막 수정 시간
   exams                    exams         @relation(fields: [exam_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   ai_events                ai_events[]
   grades                   grades[]
