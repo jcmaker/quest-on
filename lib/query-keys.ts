@@ -146,6 +146,19 @@ export const qk = {
     breadcrumb: (folderId: string) => ["drive-breadcrumb", folderId] as const,
   },
 
+  agent: {
+    /**
+     * 강사 AI 에이전트 런 목록
+     */
+    runs: () => ["agent-runs"] as const,
+
+    /**
+     * 단일 에이전트 런 (폴링 대상)
+     * @param id - 런 ID
+     */
+    run: (id: string) => ["agent-run", id] as const,
+  },
+
   admin: {
     aiUsageSummary: (options?: {
       range?: "7d" | "30d" | "90d";

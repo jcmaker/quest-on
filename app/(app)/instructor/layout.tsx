@@ -15,6 +15,7 @@ import {
 import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { UserMenu } from "@/components/auth/UserMenu";
+import AgentPanel from "@/components/agent/AgentPanel";
 
 export default function InstructorLayout({
   children,
@@ -167,6 +168,9 @@ export default function InstructorLayout({
 
         <MobileBottomNav navItems={navigationItems} />
       </SidebarProvider>
+
+      {/* 강사 전역 AI 에이전트 플로팅 패널 — 네비게이션해도 살아있게 한 번만 마운트 */}
+      <AgentPanel />
     </div>
   );
 }

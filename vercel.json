@@ -38,6 +38,9 @@
     },
     "app/api/cron/grading-sweep/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/agent-sweeper/route.ts": {
+      "maxDuration": 60
     }
   },
   "regions": ["iad1", "icn1"],
@@ -45,6 +48,10 @@
     {
       "path": "/api/cron/grading-sweep",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/agent-sweeper",
+      "schedule": "*/10 * * * *"
     }
   ]
 }
