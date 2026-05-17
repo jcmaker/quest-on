@@ -1,21 +1,32 @@
 /**
- * Quest-On 강사 AI 에이전트 — 러너 (에이전트 루프)
+ * Quest-On 강사 AI 에이전트 — 러너 (재개형 클라이언트-인터랙티브 루프)
  *
- * runAgentTurn 의 시그니처는 /api/agent/* 라우트가 의존하므로 변경 금지.
+ * 한 턴 = 한 HTTP 요청 = OpenAI Responses API 1회 호출.
+ * `after()` 백그라운드 루프는 폐기됐다.
  *
- * MVP 설계:
- *  - OpenAI Chat Completions function calling 루프.
- *  - 대화 상태는 OpenAI 에 저장하지 않고(last_response_id 미사용) 매 턴
- *    메모리상 messages[] 로만 관리한다. 한 턴이 한 요청 안에서 끝난다.
- *  - 모든 스텝은 appendAgentStep 으로 DB 에 남긴다 — 강사가 보는 감사 추적.
- *  - 에이전트 수준 오류는 throw 하지 않고 status="failed" 로 기록한다.
- *    runId 가 존재하지 않을 때만 throw.
+ * 흐름:
+ *  1. 첫 턴 — 시스템 프롬프트 + user 프롬프트 + 초기 pageState 로 LLM 호출.
+ *  2. LLM 이 UI 액션(function call)을 emit → pending_tool_calls 에 저장하고
+ *     last_response_id 를 기록한 뒤 클라이언트에 pendingActions 로 반환.
+ *  3. 클라이언트가 편집기에서 실행 → 결과 + 새 pageState 를 보고.
+ *  4. 재개 턴 — last_response_id 를 previous_response_id 로, 직전 액션들의
+ *     function_call_output(ok/error) + 새 pageState 를 input 으로 LLM 재호출.
+ *  5. LLM 이 finish 를 호출하면 done=true, status=completed 로 종료.
+ *
+ * Responses API 재개 방식:
+ *  - 대화 상태는 OpenAI 서버에 store:true 로 보관된다. 우리는 메모리에
+ *    messages[] 를 누적하지 않고 previous_response_id 로만 체이닝한다.
+ *  - 직전 턴의 각 function call 에 대해 반드시 function_call_output 을
+ *    돌려줘야 한다 (call_id 기준 1:1 매칭). 그렇지 않으면 OpenAI 가 거부한다.
+ *
+ * 오류 처리: 에이전트 수준 오류는 throw 하지 않고 status="failed" + done=true.
+ * runId 가 존재하지 않을 때만 throw.
  */
 
 import type OpenAI from "openai";
 
 import { AI_MODEL, getOpenAI } from "@/lib/openai";
-import { buildAiTextMetadata, callTrackedChatCompletion } from "@/lib/ai-tracking";
+import { buildAiTextMetadata, callTrackedResponse } from "@/lib/ai-tracking";
 import { logError } from "@/lib/logger";
 import {
   type AgentRunRecord,
@@ -23,356 +34,505 @@ import {
   getAgentRun,
   patchAgentRun,
 } from "@/lib/agent/store";
-import {
-  getAgentTool,
-  getOpenAIToolDefinitions,
-} from "@/lib/agent/tools";
-import type { ExamDraftPayload } from "@/lib/agent/types";
-
-type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
-type ChatCompletion = OpenAI.Chat.Completions.ChatCompletion;
-
-/** 한 턴에서 OpenAI 를 호출할 최대 횟수 (무한 툴콜 방지). */
-const MAX_ITERATIONS = 8;
+import { getOpenAIToolDefinitions, isAgentToolName } from "@/lib/agent/tools";
+import type {
+  AgentPageState,
+  AgentTurnResponse,
+  AgentUiAction,
+  AgentUiActionEnvelope,
+  AgentUiActionResult,
+} from "@/lib/agent/ui-actions";
 
 const AGENT_ROUTE = "/api/agent/runs";
 
-/** 메모리상 누적되는 비용/토큰. */
-interface UsageAccumulator {
-  tokensUsed: number;
-  costUsdMicros: number;
+type ResponsesResponse = OpenAI.Responses.Response;
+type ResponseOutputItem = OpenAI.Responses.ResponseOutputItem;
+type ResponseInputItem = OpenAI.Responses.ResponseInputItem;
+
+/** 재개 턴 입력 — 직전 액션 실행 결과 + 실행 후 페이지 상태. */
+export interface AgentTurnContinuation {
+  results: AgentUiActionResult[];
+  pageState: AgentPageState;
 }
 
-/** input.pageContext 를 시스템 프롬프트에 녹일 한 줄 설명으로 변환. */
-function describePageContext(record: AgentRunRecord): string {
-  const ctx = record.input?.pageContext;
-  if (!ctx) return "강사의 현재 위치 정보 없음.";
-  const parts = [`경로: ${ctx.route}`];
-  if (ctx.label) parts.push(`화면: ${ctx.label}`);
-  if (ctx.examId) parts.push(`시험 ID: ${ctx.examId}`);
-  return parts.join(" / ");
-}
-
-function buildSystemPrompt(record: AgentRunRecord): string {
+// ── 시스템 프롬프트 ──────────────────────────────────────────
+function buildSystemPrompt(): string {
   return [
-    "너는 강사의 시험 출제를 돕는 Quest-On 에이전트다.",
-    "다음 순서로 진행하라: 계획 수립 → generate_questions → assemble_exam_draft.",
+    "너는 강사의 시험 편집기를 직접 운전하는 Quest-On 에이전트다.",
+    "너는 DOM 을 직접 조작하지 않는다. 대신 UI 액션(function call)을 emit 하면",
+    "클라이언트가 실제 편집기 컨트롤로 그 액션을 실행하고 결과를 보고한다.",
+    "",
+    "사용 가능한 액션:",
+    "- navigate(route): 다른 페이지로 이동. 시험을 새로 만들려면 시험 생성 페이지로 먼저 이동.",
+    "- set_exam_title(text): 시험 제목 입력.",
+    "- set_topic(text): 문제 생성기의 주제/세부 토픽 입력.",
+    "- set_question_count(count): 문항 수 설정 (1~10).",
+    "- set_difficulty(difficulty): 난이도 설정 (basic/intermediate/advanced).",
+    "- generate_questions(): 현재 설정으로 문제 생성 시작.",
+    "- revise_question(index, instruction): 기존 문제 1개 수정.",
+    "- add_question(): 빈 문제 1개 추가.",
+    "- remove_question(index): 문제 1개 제거.",
+    "- finish(summary): 모든 작업 완료 시 호출 → 루프 종료.",
     "",
     "원칙:",
-    "- 먼저 강사의 요청을 분석해 어떤 시험을 만들지 짧게 계획을 설명한다.",
-    "- generate_questions 로 문제를 만든다. 각 문제에는 문제별 루브릭이 함께 생성된다.",
-    "- 특정 문제를 다듬어야 하면 revise_question 을 사용한다.",
-    "- assemble_exam_draft 를 호출할 때 각 문제의 루브릭(generate_questions 결과)을 그대로 포함하라.",
-    "- 모든 문제가 준비되면 assemble_exam_draft 를 단 한 번 호출해 draft 를 확정한다.",
-    "- assemble_exam_draft 를 호출하면 턴이 종료되고 강사 승인 대기로 넘어간다.",
-    "- 강사의 요청에 시험 시간/난이도/언어가 없으면 합리적인 기본값을 선택한다.",
-    "",
-    `강사의 현재 위치: ${describePageContext(record)}`,
+    "- 매 턴 직전 액션들의 실행 결과(ok/error)와 최신 페이지 상태(pageState)를 받는다.",
+    "  이 상태가 너의 '페이지 보기'다 — DOM 을 따로 읽지 마라.",
+    "- 한 턴에 서로 의존하지 않는 액션은 배치(batch)로 함께 emit 하라.",
+    "- 다음 액션이 이전 액션의 결과/상태에 의존하면(예: 생성된 문제를 수정),",
+    "  이번 턴엔 emit 하지 말고 다음 턴에서 결과를 본 뒤 emit 하라.",
+    "- 액션이 error 로 실패하면 사유를 보고 재시도하거나 대안을 택하라.",
+    "- 강사의 요청에 난이도/문항 수 등이 없으면 합리적인 기본값을 택하라.",
+    "- 모든 작업이 끝났다고 판단되면 반드시 finish 를 호출해 루프를 종료하라.",
+    "- 더 emit 할 액션이 없는데 작업이 끝나지 않았다면 그래도 finish 를 호출하라.",
   ].join("\n");
 }
 
-/**
- * 이번 턴의 지시문 — steps 중 가장 마지막 user_input 스텝의 content.
- * 라우트가 runAgentTurn 호출 전에 user_input 스텝을 추가해 둔다.
- */
-function getLatestInstruction(record: AgentRunRecord): string | null {
-  for (let i = record.steps.length - 1; i >= 0; i--) {
-    const step = record.steps[i];
-    if (step.stepType === "user_input") {
-      return step.content;
-    }
-  }
-  // user_input 스텝이 없으면 최초 생성 시의 input.prompt 로 폴백.
-  return record.input?.prompt ?? null;
-}
-
-/** 현재 draft(있다면)를 수정 턴 컨텍스트로 직렬화한다. */
-function buildCurrentDraftContext(draft: ExamDraftPayload): string {
+// ── pageState 직렬화 ─────────────────────────────────────────
+function describePageState(state: AgentPageState): string {
+  const questionLines =
+    state.questions.length > 0
+      ? state.questions
+          .map(
+            (q) => `  - [${q.index}] (${q.type}) ${q.summary}`
+          )
+          .join("\n")
+      : "  (없음)";
   return [
-    "현재 검토 중인 시험 draft (강사가 수정을 요청했다):",
-    "```json",
-    JSON.stringify(draft, null, 2),
-    "```",
-    "위 draft 를 강사의 지시에 맞게 수정한 뒤, assemble_exam_draft 로 새 draft 를 확정하라.",
+    "현재 페이지 상태:",
+    `- 경로: ${state.route}`,
+    `- 시험 제목: ${state.examTitle || "(비어 있음)"}`,
+    `- 문항 수: ${state.questionCount}`,
+    `- 루브릭 행 수: ${state.rubricRowCount}`,
+    `- 문제 생성 진행 중: ${state.isGenerating ? "예" : "아니오"}`,
+    "- 문제 목록:",
+    questionLines,
   ].join("\n");
 }
 
-/** OpenAI 를 한 번 호출하고 비용을 누적한다. */
+// ── 첫 턴 input ──────────────────────────────────────────────
+function buildFirstTurnInput(
+  prompt: string,
+  pageState: AgentPageState
+): string {
+  return [
+    "강사의 요청:",
+    prompt,
+    "",
+    describePageState(pageState),
+  ].join("\n");
+}
+
+// ── 재개 턴 input ────────────────────────────────────────────
+/**
+ * 직전 턴의 function call 들에 대한 function_call_output + 새 pageState.
+ * call_id 는 pending_tool_calls 에 저장해 둔 envelope.id 와 일치한다.
+ */
+function buildContinuationInput(
+  pending: AgentUiActionEnvelope[],
+  continuation: AgentTurnContinuation
+): ResponseInputItem[] {
+  const resultById = new Map<string, AgentUiActionResult>(
+    continuation.results.map((r) => [r.id, r])
+  );
+
+  const items: ResponseInputItem[] = [];
+
+  // 각 대기 액션에 대해 반드시 결과를 1:1 로 돌려준다.
+  // 클라이언트가 보고하지 않은 액션은 미실행으로 간주해 error 로 채운다.
+  for (const envelope of pending) {
+    const result = resultById.get(envelope.id);
+    const output = result
+      ? { ok: result.ok, error: result.error ?? null }
+      : { ok: false, error: "클라이언트가 이 액션의 결과를 보고하지 않았습니다." };
+    items.push({
+      type: "function_call_output",
+      call_id: envelope.id,
+      output: JSON.stringify(output),
+    });
+  }
+
+  // 실행 후 최신 페이지 상태를 user 메시지로 동봉한다.
+  items.push({
+    role: "user",
+    content: [
+      "직전 액션들을 실행했다. 결과는 위 function_call_output 에 있다.",
+      "",
+      describePageState(continuation.pageState),
+      "",
+      "이어서 다음 액션을 emit 하거나, 작업이 끝났다면 finish 를 호출하라.",
+    ].join("\n"),
+  });
+
+  return items;
+}
+
+// ── OpenAI 호출 ──────────────────────────────────────────────
 async function callModel(
-  messages: ChatMessage[],
-  tools: OpenAI.Chat.Completions.ChatCompletionTool[],
-  ctx: { runId: string; userId: string },
-  usage: UsageAccumulator
-): Promise<ChatCompletion> {
-  const tracked = await callTrackedChatCompletion(
+  params: {
+    input: string | ResponseInputItem[];
+    previousResponseId: string | null;
+    runId: string;
+    userId: string;
+    phase: "first_turn" | "resume_turn";
+  }
+): Promise<{ response: ResponsesResponse; tokensUsed: number; costUsdMicros: number }> {
+  const tracked = await callTrackedResponse(
     () =>
-      getOpenAI().chat.completions.create({
+      getOpenAI().responses.create({
         model: AI_MODEL,
-        messages,
-        tools,
+        instructions: buildSystemPrompt(),
+        input: params.input,
+        tools: getOpenAIToolDefinitions(),
+        store: true,
+        previous_response_id: params.previousResponseId ?? undefined,
       }),
     {
       feature: "instructor_agent",
       route: AGENT_ROUTE,
       model: AI_MODEL,
-      userId: ctx.userId,
+      userId: params.userId,
       metadata: buildAiTextMetadata({
         extra: {
-          agent_phase: "loop_step",
-          run_id: ctx.runId,
+          agent_phase: params.phase,
+          run_id: params.runId,
+          ...(params.previousResponseId
+            ? { previous_response_id: params.previousResponseId }
+            : {}),
         },
       }),
     }
   );
 
-  usage.tokensUsed += tracked.usage?.totalTokens ?? 0;
-  usage.costUsdMicros += tracked.estimatedCostUsdMicros;
-  return tracked.data;
+  return {
+    response: tracked.data,
+    tokensUsed: tracked.usage?.totalTokens ?? 0,
+    costUsdMicros: tracked.estimatedCostUsdMicros,
+  };
 }
 
-export async function runAgentTurn(runId: string): Promise<AgentRunRecord> {
+// ── 응답 파싱 ────────────────────────────────────────────────
+interface ParsedFunctionCall {
+  callId: string;
+  name: string;
+  rawArguments: string;
+}
+
+/** Responses API output 에서 텍스트와 function call 을 추출한다. */
+function parseResponseOutput(output: ResponseOutputItem[]): {
+  text: string;
+  functionCalls: ParsedFunctionCall[];
+} {
+  let text = "";
+  const functionCalls: ParsedFunctionCall[] = [];
+
+  for (const item of output ?? []) {
+    if (item.type === "message") {
+      for (const part of item.content ?? []) {
+        if (part.type === "output_text") {
+          text += part.text;
+        }
+      }
+    } else if (item.type === "function_call") {
+      functionCalls.push({
+        callId: item.call_id,
+        name: item.name,
+        rawArguments: item.arguments ?? "",
+      });
+    }
+  }
+
+  return { text: text.trim(), functionCalls };
+}
+
+/** function call 인자(JSON 문자열)를 안전하게 파싱한다. */
+function parseArgs(raw: string): Record<string, unknown> {
+  if (!raw || raw.trim().length === 0) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+/** function call 을 AgentUiAction 으로 변환한다. 알 수 없으면 null. */
+function toUiAction(name: string, args: Record<string, unknown>): AgentUiAction | null {
+  switch (name) {
+    case "navigate":
+      return { type: "navigate", route: String(args.route ?? "") };
+    case "set_exam_title":
+      return { type: "set_exam_title", text: String(args.text ?? "") };
+    case "set_topic":
+      return { type: "set_topic", text: String(args.text ?? "") };
+    case "set_question_count":
+      return {
+        type: "set_question_count",
+        count: Math.trunc(Number(args.count ?? 0)),
+      };
+    case "set_difficulty": {
+      const d = args.difficulty;
+      const difficulty =
+        d === "basic" || d === "advanced" ? d : "intermediate";
+      return { type: "set_difficulty", difficulty };
+    }
+    case "generate_questions":
+      return { type: "generate_questions" };
+    case "revise_question":
+      return {
+        type: "revise_question",
+        index: Math.trunc(Number(args.index ?? 0)),
+        instruction: String(args.instruction ?? ""),
+      };
+    case "add_question":
+      return { type: "add_question" };
+    case "remove_question":
+      return {
+        type: "remove_question",
+        index: Math.trunc(Number(args.index ?? 0)),
+      };
+    default:
+      return null;
+  }
+}
+
+/** 액션 타입별 사람이 읽는 한 줄 요약 — tool_call 스텝 title 용. */
+function describeUiAction(action: AgentUiAction): string {
+  switch (action.type) {
+    case "navigate":
+      return `페이지 이동: ${action.route}`;
+    case "set_exam_title":
+      return `시험 제목 입력: ${action.text}`;
+    case "set_topic":
+      return `주제 입력: ${action.text}`;
+    case "set_question_count":
+      return `문항 수 설정: ${action.count}`;
+    case "set_difficulty":
+      return `난이도 설정: ${action.difficulty}`;
+    case "generate_questions":
+      return "문제 생성 시작";
+    case "revise_question":
+      return `문제 수정 (#${action.index})`;
+    case "add_question":
+      return "문제 추가";
+    case "remove_question":
+      return `문제 제거 (#${action.index})`;
+  }
+}
+
+// ── 취소 처리 ────────────────────────────────────────────────
+async function finishCancelled(runId: string): Promise<AgentTurnResponse> {
+  await patchAgentRun(runId, {
+    status: "cancelled",
+    cancelRequested: false,
+    pendingToolCalls: null,
+    completedAt: new Date().toISOString(),
+  });
+  await appendAgentStep(runId, {
+    stepType: "analysis",
+    title: "작업 중단",
+    content: "강사 요청으로 에이전트 작업을 중단했습니다.",
+  });
+  const record = await getAgentRun(runId);
+  if (!record) throw new Error(`advanceAgentRun: agent_run disappeared: ${runId}`);
+  return { run: toPublicRun(record), pendingActions: [], done: true };
+}
+
+// ── 공개 형태 변환 ───────────────────────────────────────────
+/** 러너 내부 필드(lastResponseId, pendingToolCalls)를 제거. */
+function toPublicRun(record: AgentRunRecord): AgentTurnResponse["run"] {
+  const {
+    lastResponseId: _lastResponseId,
+    pendingToolCalls: _pendingToolCalls,
+    cancelRequested: _cancelRequested,
+    ...publicRun
+  } = record;
+  void _lastResponseId;
+  void _pendingToolCalls;
+  void _cancelRequested;
+  return publicRun;
+}
+
+// ── 메인: 재개형 턴 진행 ─────────────────────────────────────
+/**
+ * 에이전트 루프를 한 턴 진행한다.
+ *
+ * @param runId  agent_runs.id
+ * @param continuation  없으면 첫 턴, 있으면 재개 턴.
+ * @returns AgentTurnResponse — { run, pendingActions, done, summary? }
+ */
+export async function advanceAgentRun(
+  runId: string,
+  continuation?: AgentTurnContinuation
+): Promise<AgentTurnResponse> {
   // ── 1. 로드 ────────────────────────────────────────────────
   const initial = await getAgentRun(runId);
   if (!initial) {
-    throw new Error(`runAgentTurn: agent_run not found: ${runId}`);
+    throw new Error(`advanceAgentRun: agent_run not found: ${runId}`);
   }
 
-  const usage: UsageAccumulator = {
+  const usage = {
     tokensUsed: initial.tokensUsed,
     costUsdMicros: initial.costUsdMicros,
   };
 
   try {
+    // ── 2. 협조적 취소 확인 ──────────────────────────────────
+    if (initial.cancelRequested) {
+      return await finishCancelled(runId);
+    }
+
     await patchAgentRun(runId, { status: "running", error: null });
 
-    // ── 2. 지시문 + 컨텍스트 ────────────────────────────────
-    const instruction = getLatestInstruction(initial);
-    if (!instruction || instruction.trim().length === 0) {
-      throw new Error("러너: 처리할 강사 지시문이 없습니다.");
+    // ── 3. input 구성 (첫 턴 vs 재개 턴) ─────────────────────
+    let input: string | ResponseInputItem[];
+    let previousResponseId: string | null;
+    const phase: "first_turn" | "resume_turn" = continuation
+      ? "resume_turn"
+      : "first_turn";
+
+    if (continuation) {
+      const pending = (initial.pendingToolCalls ?? []) as AgentUiActionEnvelope[];
+      input = buildContinuationInput(pending, continuation);
+      previousResponseId = initial.lastResponseId;
+    } else {
+      const prompt = initial.input?.prompt ?? "";
+      if (prompt.trim().length === 0) {
+        throw new Error("러너: 처리할 강사 지시문이 없습니다.");
+      }
+      // 첫 턴 pageState 는 라우트가 input.pageContext 가 아닌
+      // StartAgentRunRequest.pageState 를 받아 첫 호출의 continuation 처럼
+      // 넘기지 않는다 — 첫 턴은 continuation 이 undefined 이므로
+      // pageState 를 input.pageContext 로부터 복원할 수 없다.
+      // 대신 라우트가 첫 pageState 를 user_input 스텝 metadata 에 심어 둔다.
+      const firstPageState = extractFirstPageState(initial);
+      input = buildFirstTurnInput(prompt, firstPageState);
+      previousResponseId = null;
     }
 
-    // 수정(revision) 턴 판별 — output(이전 draft)이 있으면 수정 턴이다.
-    // status 로 판별하지 않는다: /messages 라우트가 턴 시작 시 status 를
-    // queued 로 되돌리므로 러너 시점의 status 는 신뢰할 수 없다.
-    const isRevision = initial.output != null;
+    // ── 4. LLM 호출 ──────────────────────────────────────────
+    const { response, tokensUsed, costUsdMicros } = await callModel({
+      input,
+      previousResponseId,
+      runId,
+      userId: initial.actorId,
+      phase,
+    });
+    usage.tokensUsed += tokensUsed;
+    usage.costUsdMicros += costUsdMicros;
 
-    const ctx = { runId, userId: initial.actorId };
+    const { text, functionCalls } = parseResponseOutput(response.output);
 
-    // ── 3. 시스템 프롬프트 + 초기 messages ──────────────────
-    const messages: ChatMessage[] = [
-      { role: "system", content: buildSystemPrompt(initial) },
-    ];
-    if (isRevision && initial.output) {
-      messages.push({
-        role: "user",
-        content: buildCurrentDraftContext(initial.output),
+    // ── 5. 텍스트 → plan/analysis 스텝 ───────────────────────
+    if (text) {
+      const stepType = continuation ? "analysis" : "plan";
+      await appendAgentStep(runId, {
+        stepType,
+        title: stepType === "plan" ? "작업 계획" : "분석",
+        content: text,
       });
     }
-    messages.push({ role: "user", content: instruction });
 
-    const tools = getOpenAIToolDefinitions();
-    let finalDraft: ExamDraftPayload | null = null;
-
-    // ── 4. 툴콜 루프 ─────────────────────────────────────────
-    for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-      // 4-0. 협조적 취소 확인 — 취소는 루프 시작 후 들어오므로 매 반복마다
-      //      DB 에서 최신 상태를 다시 읽어야 한다(initial 캐시 사용 불가).
-      const current = await getAgentRun(runId);
-      if (current?.cancelRequested) {
-        if (initial.output) {
-          // 수정 턴 — 이전 draft 가 있으므로 살려서 다시 승인 가능하게 되돌린다.
-          await patchAgentRun(runId, {
-            status: "waiting_approval",
-            cancelRequested: false,
-          });
-          await appendAgentStep(runId, {
-            stepType: "analysis",
-            title: "작업 중단",
-            content:
-              "강사 요청으로 수정 작업을 중단했습니다. 이전 draft 가 유지됩니다.",
-          });
-        } else {
-          // 최초 턴 — draft 가 없으므로 런을 취소 상태로 종료한다.
-          await patchAgentRun(runId, {
-            status: "cancelled",
-            cancelRequested: false,
-          });
-          await appendAgentStep(runId, {
-            stepType: "analysis",
-            title: "작업 중단",
-            content: "강사 요청으로 에이전트 작업을 중단했습니다.",
-          });
-        }
-        // 취소는 깨끗한 종료 — throw 하지 않고, !finalDraft → failed 처리로
-        // 흘러가지 않도록 여기서 즉시 최신 record 를 반환한다.
-        const cancelledRecord = await getAgentRun(runId);
-        if (!cancelledRecord) {
-          throw new Error(`runAgentTurn: agent_run disappeared: ${runId}`);
-        }
-        return cancelledRecord;
-      }
-
-      const completion = await callModel(messages, tools, ctx, usage);
-      const choice = completion.choices[0];
-      const assistantMessage = choice?.message;
-      if (!assistantMessage) {
-        throw new Error("러너: OpenAI 응답에 메시지가 없습니다.");
-      }
-
-      const toolCalls = assistantMessage.tool_calls ?? [];
-
-      // 4a. 어시스턴트가 텍스트(계획/분석)를 냈으면 스텝으로 기록.
-      const text = assistantMessage.content?.trim();
-      if (text) {
-        const stepType = iteration === 0 ? "plan" : "analysis";
-        await appendAgentStep(runId, {
-          stepType,
-          title: stepType === "plan" ? "작업 계획" : "분석",
-          content: text,
-        });
-      }
-
-      // 4b. 어시스턴트 메시지를 대화 히스토리에 추가.
-      messages.push({
-        role: "assistant",
-        content: assistantMessage.content ?? "",
-        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+    // ── 6. finish 검사 ───────────────────────────────────────
+    const finishCall = functionCalls.find((c) => c.name === "finish");
+    if (finishCall) {
+      const args = parseArgs(finishCall.rawArguments);
+      const summary =
+        typeof args.summary === "string" && args.summary.trim().length > 0
+          ? args.summary.trim()
+          : "에이전트 작업을 완료했습니다.";
+      await appendAgentStep(runId, {
+        stepType: "final",
+        title: "작업 완료",
+        content: summary,
       });
-
-      // 4c. 툴콜이 없으면 — 모델이 더 할 일이 없다고 판단. 루프 종료.
-      if (toolCalls.length === 0) {
-        break;
-      }
-
-      // 4d. 각 툴콜 실행.
-      let assembleHandled = false;
-      for (const toolCall of toolCalls) {
-        if (toolCall.type !== "function") continue;
-        const toolName = toolCall.function.name;
-        const tool = getAgentTool(toolName);
-
-        // 인자 파싱.
-        let args: Record<string, unknown> = {};
-        let parseError: string | null = null;
-        try {
-          const raw = toolCall.function.arguments;
-          args = raw ? (JSON.parse(raw) as Record<string, unknown>) : {};
-        } catch (err) {
-          parseError = `툴 인자 파싱 실패: ${
-            err instanceof Error ? err.message : String(err)
-          }`;
-        }
-
-        if (!tool) {
-          const message = `알 수 없는 툴: ${toolName}`;
-          await appendAgentStep(runId, {
-            stepType: "tool_call",
-            title: `툴 호출 실패: ${toolName}`,
-            content: message,
-            metadata: { toolName, args, error: message },
-          });
-          messages.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: message }),
-          });
-          continue;
-        }
-
-        if (parseError) {
-          await appendAgentStep(runId, {
-            stepType: "tool_call",
-            title: `툴 호출 실패: ${toolName}`,
-            content: parseError,
-            metadata: { toolName, error: parseError },
-          });
-          messages.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: parseError }),
-          });
-          continue;
-        }
-
-        // 툴 실행.
-        try {
-          const execution = await tool.execute(args, ctx);
-          usage.tokensUsed += execution.tokensUsed;
-          usage.costUsdMicros += execution.costUsdMicros;
-
-          await appendAgentStep(runId, {
-            stepType: "tool_call",
-            title: `툴 실행: ${toolName}`,
-            content: `${toolName} 툴을 실행했습니다.`,
-            metadata: { toolName, args, result: execution.result },
-          });
-
-          messages.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: JSON.stringify(execution.result),
-          });
-
-          // 터미널 툴: draft 확정.
-          if (tool.terminal) {
-            const result = execution.result as { draft?: ExamDraftPayload };
-            if (result?.draft) {
-              finalDraft = result.draft;
-              assembleHandled = true;
-            }
-          }
-        } catch (toolError) {
-          const message =
-            toolError instanceof Error
-              ? toolError.message
-              : String(toolError);
-          await appendAgentStep(runId, {
-            stepType: "tool_call",
-            title: `툴 실행 실패: ${toolName}`,
-            content: message,
-            metadata: { toolName, args, error: message },
-          });
-          // 실패를 모델에 알려 재시도/대안을 유도한다.
-          messages.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: message }),
-          });
-        }
-      }
-
-      // 4e. 터미널 툴이 성공했으면 draft 확정 후 루프 종료.
-      if (assembleHandled && finalDraft) {
-        await patchAgentRun(runId, {
-          output: finalDraft,
-          status: "waiting_approval",
-          tokensUsed: usage.tokensUsed,
-          costUsdMicros: usage.costUsdMicros,
-        });
-        await appendAgentStep(runId, {
-          stepType: "draft",
-          title: "시험 draft 완성",
-          content: `"${finalDraft.title}" 시험 draft 를 ${finalDraft.questions.length}개 문제로 조립했습니다. 강사 승인을 기다립니다.`,
-          metadata: { draft: finalDraft },
-        });
-        break;
-      }
-    }
-
-    // ── 5. draft 없이 루프 종료 → 실패 ──────────────────────
-    if (!finalDraft) {
-      await patchAgentRun(runId, {
-        status: "failed",
-        error: "에이전트가 시험 draft 를 완성하지 못했습니다. 다시 시도해 주세요.",
+      const completed = await patchAgentRun(runId, {
+        status: "completed",
+        pendingToolCalls: null,
+        lastResponseId: response.id,
         tokensUsed: usage.tokensUsed,
         costUsdMicros: usage.costUsdMicros,
+        completedAt: new Date().toISOString(),
+      });
+      return {
+        run: toPublicRun(completed),
+        pendingActions: [],
+        done: true,
+        summary,
+      };
+    }
+
+    // ── 7. UI 액션 function call → pending envelopes ─────────
+    const pendingActions: AgentUiActionEnvelope[] = [];
+    for (const call of functionCalls) {
+      if (!isAgentToolName(call.name) || call.name === "finish") {
+        // 알 수 없는 툴 — 스텝으로만 남기고 건너뛴다.
+        await appendAgentStep(runId, {
+          stepType: "tool_call",
+          title: `알 수 없는 액션 무시: ${call.name}`,
+          content: `에이전트가 알 수 없는 액션 '${call.name}' 을 호출했습니다.`,
+          metadata: { toolName: call.name },
+        });
+        continue;
+      }
+      const args = parseArgs(call.rawArguments);
+      const action = toUiAction(call.name, args);
+      if (!action) continue;
+      pendingActions.push({ id: call.callId, action });
+      await appendAgentStep(runId, {
+        stepType: "tool_call",
+        title: describeUiAction(action),
+        content: `편집기에서 '${action.type}' 액션을 실행하도록 요청했습니다.`,
+        metadata: { toolName: action.type, args },
       });
     }
+
+    // ── 8. emit 한 액션이 없으면 → 모델이 더 할 일 없다고 판단 ──
+    //      finish 도 액션도 없으면 루프가 멈출 곳이 없으므로 완료 처리.
+    if (pendingActions.length === 0) {
+      const summary =
+        text || "에이전트가 더 진행할 작업을 찾지 못해 종료했습니다.";
+      await appendAgentStep(runId, {
+        stepType: "final",
+        title: "작업 종료",
+        content: summary,
+      });
+      const completed = await patchAgentRun(runId, {
+        status: "completed",
+        pendingToolCalls: null,
+        lastResponseId: response.id,
+        tokensUsed: usage.tokensUsed,
+        costUsdMicros: usage.costUsdMicros,
+        completedAt: new Date().toISOString(),
+      });
+      return {
+        run: toPublicRun(completed),
+        pendingActions: [],
+        done: true,
+        summary,
+      };
+    }
+
+    // ── 9. pending 저장 + last_response_id 저장 → 턴 일시정지 ──
+    const paused = await patchAgentRun(runId, {
+      status: "running",
+      pendingToolCalls: pendingActions,
+      lastResponseId: response.id,
+      tokensUsed: usage.tokensUsed,
+      costUsdMicros: usage.costUsdMicros,
+    });
+
+    return {
+      run: toPublicRun(paused),
+      pendingActions,
+      done: false,
+    };
   } catch (error) {
-    // ── 6. 에이전트 수준 오류 → status=failed, throw 하지 않음 ──
+    // ── 에이전트 수준 오류 → status=failed, throw 하지 않음 ──
     const message =
       error instanceof Error ? error.message : "알 수 없는 에이전트 오류";
-    logError("runAgentTurn failed", error, {
+    logError("advanceAgentRun failed", error, {
       path: AGENT_ROUTE,
       additionalData: { runId },
     });
@@ -380,21 +540,65 @@ export async function runAgentTurn(runId: string): Promise<AgentRunRecord> {
       await patchAgentRun(runId, {
         status: "failed",
         error: message,
+        pendingToolCalls: null,
         tokensUsed: usage.tokensUsed,
         costUsdMicros: usage.costUsdMicros,
+        completedAt: new Date().toISOString(),
       });
     } catch (patchError) {
-      logError("runAgentTurn: failed to record failure", patchError, {
+      logError("advanceAgentRun: failed to record failure", patchError, {
         path: AGENT_ROUTE,
         additionalData: { runId },
       });
     }
+    const failedRecord = await getAgentRun(runId);
+    if (!failedRecord) {
+      throw new Error(`advanceAgentRun: agent_run disappeared: ${runId}`);
+    }
+    return {
+      run: toPublicRun(failedRecord),
+      pendingActions: [],
+      done: true,
+    };
   }
+}
 
-  // ── 7. 최신 record 반환 ────────────────────────────────────
-  const finalRecord = await getAgentRun(runId);
-  if (!finalRecord) {
-    throw new Error(`runAgentTurn: agent_run disappeared: ${runId}`);
+// ── 첫 턴 pageState 복원 ─────────────────────────────────────
+/**
+ * 첫 턴에는 continuation 이 없으므로 pageState 를 별도로 얻어야 한다.
+ * 라우트(POST /api/agent/runs)가 첫 pageState 를 user_input 스텝의 metadata
+ * 에 `pageState` 키로 심어 둔다. 없으면 input.pageContext 로 최소 복원한다.
+ */
+function extractFirstPageState(record: AgentRunRecord): AgentPageState {
+  for (let i = record.steps.length - 1; i >= 0; i--) {
+    const step = record.steps[i];
+    if (step.stepType === "user_input" && step.metadata) {
+      const candidate = step.metadata.pageState;
+      if (isAgentPageState(candidate)) {
+        return candidate;
+      }
+    }
   }
-  return finalRecord;
+  // 폴백 — pageContext 의 route 만 알 수 있고 나머지는 빈 상태.
+  return {
+    route: record.input?.pageContext?.route ?? "/instructor",
+    examTitle: "",
+    questionCount: 0,
+    questions: [],
+    rubricRowCount: 0,
+    isGenerating: false,
+  };
+}
+
+function isAgentPageState(value: unknown): value is AgentPageState {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.route === "string" &&
+    typeof v.examTitle === "string" &&
+    typeof v.questionCount === "number" &&
+    Array.isArray(v.questions) &&
+    typeof v.rubricRowCount === "number" &&
+    typeof v.isGenerating === "boolean"
+  );
 }

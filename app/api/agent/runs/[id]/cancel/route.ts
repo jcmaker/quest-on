@@ -29,9 +29,9 @@ function toPublicRun(record: AgentRunRecord): AgentRun {
 /**
  * POST /api/agent/runs/[id]/cancel
  *
- * 진행 중인 에이전트 런의 협조적 취소(cooperative cancellation)를 요청한다.
- * cancel_requested 플래그만 세팅하고 즉시 반환한다 — 실제 중단은 러너가
- * 툴콜 루프 각 반복 시작 시 이 플래그를 다시 읽어 처리한다.
+ * 진행 중인 에이전트 런을 중단한다. 재개형(클라이언트 구동) 루프에서는
+ * 클라이언트가 취소 시 루프를 멈춰 더는 서버를 재호출하지 않으므로, 이
+ * 라우트가 런을 직접 cancelled 로 마무리한다.
  *
  * 요청 본문 없음 — Zod 스키마 불필요.
  */
@@ -78,8 +78,16 @@ export async function POST(
       );
     }
 
-    // 5. Business logic — 협조적 취소 플래그만 세팅. 러너가 루프 중 확인한다.
-    const cancelledRun = await patchAgentRun(id, { cancelRequested: true });
+    // 5. Business logic — 런을 cancelled 로 마무리한다.
+    //    재개형 모델에선 클라이언트 루프가 취소 시 멈춰 더는 서버를 재호출하지
+    //    않으므로, 러너가 cancelRequested 를 읽어 종료할 기회가 없다 → 여기서
+    //    직접 status 를 cancelled 로 확정한다. cancelRequested 도 함께 세팅해
+    //    혹시 턴이 인플라이트면 러너의 시작 체크에 잡히게 한다.
+    const cancelledRun = await patchAgentRun(id, {
+      status: "cancelled",
+      cancelRequested: true,
+      completedAt: new Date().toISOString(),
+    });
 
     return successJson({ run: toPublicRun(cancelledRun) });
   } catch (error) {

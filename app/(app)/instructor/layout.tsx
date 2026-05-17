@@ -15,7 +15,11 @@ import {
 import { DashboardSidebar } from "@/components/layout/dashboard-sidebar";
 import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { UserMenu } from "@/components/auth/UserMenu";
-import AgentPanel from "@/components/agent/AgentPanel";
+import AgentPanel, { AgentPanelGap } from "@/components/agent/AgentPanel";
+import { AgentFab } from "@/components/agent/AgentFab";
+import { AgentRunControllerProvider } from "@/components/agent/AgentRunController";
+import { AgentPresenceProvider } from "@/components/agent/AgentPresenceProvider";
+import { AgentPanelProvider } from "@/components/agent/AgentPanelProvider";
 
 export default function InstructorLayout({
   children,
@@ -118,59 +122,76 @@ export default function InstructorLayout({
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <SidebarProvider
-        defaultOpen={true}
-        className="overflow-x-hidden"
-        style={
-          {
-            "--sidebar-width": "16rem",
-            "--sidebar-width-icon": "4rem",
-          } as React.CSSProperties
-        }
-      >
-        <Sidebar
-          side="left"
-          variant="sidebar"
-          collapsible="icon"
-          className="overflow-visible"
-        >
-          <DashboardSidebar
-            homeHref="/instructor"
-            navItems={navigationItems}
-            userId={user?.id}
-          />
-        </Sidebar>
+    // AgentPanelProvider가 SidebarProvider를 감싸도록 배치
+    <AgentRunControllerProvider>
+      <AgentPresenceProvider>
+        <AgentPanelProvider>
+          <div className="min-h-screen bg-background">
+            <SidebarProvider
+              defaultOpen={true}
+              className="overflow-x-hidden"
+              style={
+                {
+                  "--sidebar-width": "16rem",
+                  "--sidebar-width-icon": "4rem",
+                } as React.CSSProperties
+              }
+            >
+              <Sidebar
+                side="left"
+                variant="sidebar"
+                collapsible="icon"
+                className="overflow-visible"
+              >
+                <DashboardSidebar
+                  homeHref="/instructor"
+                  navItems={navigationItems}
+                  userId={user?.id}
+                />
+              </Sidebar>
 
-        <SidebarInset className="min-w-0 overflow-x-hidden">
-          <header
-            className={`sticky top-0 z-40 lg:hidden bg-background/80 backdrop-blur-sm border-b border-border transition-transform duration-300 ${
-              headerVisible ? "translate-y-0" : "-translate-y-full"
-            }`}
-          >
-            <div className="px-4 py-3 flex items-center justify-between">
-              <Image
-                src="/qlogo_icon.png"
-                alt="Quest-On"
-                width={28}
-                height={28}
-              />
-              <UserMenu />
-            </div>
-          </header>
-          <main
-            ref={mainRef}
-            className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto bg-background pb-20 lg:pb-0"
-          >
-            {children}
-          </main>
-        </SidebarInset>
+              <SidebarInset className="min-w-0 overflow-x-hidden">
+                {/* 모바일 전용 헤더 — 데스크톱에선 숨김 */}
+                <header
+                  className={`sticky top-0 z-40 lg:hidden bg-background/80 backdrop-blur-sm border-b border-border transition-transform duration-300 ${
+                    headerVisible ? "translate-y-0" : "-translate-y-full"
+                  }`}
+                >
+                  <div className="px-4 py-3 flex items-center justify-between">
+                    <Image
+                      src="/qlogo_icon.png"
+                      alt="Quest-On"
+                      width={28}
+                      height={28}
+                    />
+                    <UserMenu />
+                  </div>
+                </header>
+                <main
+                  ref={mainRef}
+                  className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto bg-background pb-20 lg:pb-0"
+                >
+                  {children}
+                </main>
+              </SidebarInset>
 
-        <MobileBottomNav navItems={navigationItems} />
-      </SidebarProvider>
+              {/*
+               * AgentPanelGap — SidebarInset의 flex 형제로 위치해 본문을 밀어낸다.
+               * 데스크톱 전용(md:block). open 상태에 따라 너비 transition.
+               */}
+              <AgentPanelGap />
 
-      {/* 강사 전역 AI 에이전트 플로팅 패널 — 네비게이션해도 살아있게 한 번만 마운트 */}
-      <AgentPanel />
-    </div>
+              <MobileBottomNav navItems={navigationItems} showAgentButton />
+            </SidebarProvider>
+
+            {/* 실제 패널 본체 — 데스크톱: fixed 우측, 모바일: Sheet 오버레이 */}
+            <AgentPanel />
+
+            {/* 우측 하단 고정 플로팅 버튼 — 패널 열기 (데스크톱/태블릿) */}
+            <AgentFab />
+          </div>
+        </AgentPanelProvider>
+      </AgentPresenceProvider>
+    </AgentRunControllerProvider>
   );
 }

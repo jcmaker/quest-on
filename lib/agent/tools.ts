@@ -1,482 +1,209 @@
 /**
- * Quest-On 강사 AI 에이전트 — 툴 레지스트리
+ * Quest-On 강사 AI 에이전트 — 툴 선언 (declarations only)
  *
- * 에이전트 루프(lib/agent/runner.ts)가 OpenAI function calling 으로 호출하는 툴들.
- * 각 툴은 { name, description, parameters(OpenAI JSON schema), execute, terminal? }.
+ * 재개형(resumable) 클라이언트-인터랙티브 루프 모델:
+ *  - 에이전트(서버 LLM 두뇌)는 UI 액션을 emit 할 뿐 직접 실행하지 않는다.
+ *  - 실제 실행은 클라이언트(편집기)가 하고, 결과를 다시 보고한다.
  *
- * 설계 원칙:
- *  - 툴은 순수 비즈니스 로직만 수행한다. 영속화(스텝 추가/상태 전환)는 러너 책임.
- *  - OpenAI 호출은 전부 callTrackedChatCompletion 으로 감싸 ai_events 에 비용 추적.
- *  - assemble_exam_draft 는 terminal 툴: payload 유효성만 검증해 반환하고,
- *    output 저장 + status 전환은 러너가 한다.
+ * 따라서 이 파일에는 **서버 실행 로직이 없다**. 각 툴은 OpenAI Responses API
+ * function calling 으로 노출할 { name, description, parameters(JSON schema) }
+ * 선언만 담는다. 러너는 LLM 의 tool call 을 수집해 pendingActions 로 넘긴다.
+ *
+ * 툴셋 = lib/agent/ui-actions.ts 의 AgentUiAction 타입들 + finish.
+ * finish 는 클라이언트가 실행하는 액션이 아니라 루프 종료 신호다 — 러너가
+ * 서버에서 인식해 done=true 로 처리한다(AgentUiAction 유니온에는 없음).
  */
 
 import type OpenAI from "openai";
 
-import { AI_MODEL, AI_MODEL_HEAVY, getOpenAI } from "@/lib/openai";
-import { buildAiTextMetadata, callTrackedChatCompletion } from "@/lib/ai-tracking";
-import {
-  buildCaseQuestionAdjustmentPrompt,
-  buildCaseQuestionGenerationPrompt,
-} from "@/lib/prompts";
-import type {
-  DraftQuestion,
-  DraftRubricItem,
-  ExamDraftPayload,
-} from "@/lib/agent/types";
+import type { AgentUiActionType } from "@/lib/agent/ui-actions";
 
-// ── 컨텍스트 ─────────────────────────────────────────────────
-/** 러너가 각 툴 실행 시 넘기는 실행 컨텍스트. */
-export interface ToolContext {
-  runId: string;
-  /** Clerk user id — ai_events 의 user_id 로 기록 */
-  userId: string;
-}
+// ── 툴 선언 형태 ─────────────────────────────────────────────
+/** UI 액션 타입 + 루프 종료용 finish. */
+export type AgentToolName = AgentUiActionType | "finish";
 
-/** 한 번의 툴 실행 결과 — 러너가 누적 비용/스텝에 반영한다. */
-export interface ToolExecutionResult {
-  /** OpenAI 에 다시 돌려줄, 그리고 스텝 metadata 에 남길 결과 페이로드 */
-  result: unknown;
-  /** 이번 실행에서 소비한 토큰 수 (없으면 0) */
-  tokensUsed: number;
-  /** 이번 실행에서 추정된 비용 (USD micros, 없으면 0) */
-  costUsdMicros: number;
-}
-
-export interface AgentTool {
-  name: string;
+/** 순수 선언 — 서버 실행 로직 없음. */
+export interface AgentToolDeclaration {
+  name: AgentToolName;
   description: string;
   /** OpenAI function calling JSON schema */
   parameters: Record<string, unknown>;
-  /** true 면 러너가 이 툴 실행 후 루프를 종료한다. */
-  terminal?: boolean;
-  execute: (
-    args: Record<string, unknown>,
-    ctx: ToolContext
-  ) => Promise<ToolExecutionResult>;
 }
 
-const AGENT_ROUTE = "/api/agent/runs";
-
-// ── 헬퍼 ─────────────────────────────────────────────────────
-type ChatCompletion = OpenAI.Chat.Completions.ChatCompletion;
-
-/** JSON mode 응답 본문을 파싱한다. 비어 있거나 깨지면 throw. */
-function parseJsonContent(completion: ChatCompletion): Record<string, unknown> {
-  const content = completion.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("AI 응답이 비어 있습니다.");
-  }
-  try {
-    const parsed = JSON.parse(content);
-    if (typeof parsed !== "object" || parsed === null) {
-      throw new Error("AI 응답이 객체가 아닙니다.");
-    }
-    return parsed as Record<string, unknown>;
-  } catch (error) {
-    throw new Error(
-      `AI 응답을 파싱할 수 없습니다: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-  }
-}
-
-function asString(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback;
-}
-
-function asLanguage(value: unknown): "ko" | "en" {
-  return value === "en" ? "en" : "ko";
-}
-
-function asDifficulty(
-  value: unknown
-): "basic" | "intermediate" | "advanced" {
-  return value === "basic" || value === "advanced" ? value : "intermediate";
-}
-
-/** AI 응답의 rubric 배열을 DraftRubricItem[] 로 정규화한다. */
-function normalizeRubric(value: unknown): DraftRubricItem[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .filter((item): item is Record<string, unknown> => isRecord(item))
-    .map((item) => ({
-      evaluationArea: asString(item.evaluationArea),
-      detailedCriteria: asString(item.detailedCriteria),
-    }))
-    .filter((item) => item.evaluationArea.length > 0);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-// ── 툴 1: generate_questions ─────────────────────────────────
-const generateQuestionsTool: AgentTool = {
-  name: "generate_questions",
-  description:
-    "시험 주제/제목, 난이도, 문항 수에 맞춰 사례형(case-based) 시험 문제를 생성한다. " +
-    "각 문제는 HTML 본문과 문제별 루브릭 초안을 포함한다. assemble_exam_draft 보다 먼저 호출해야 한다.",
-  parameters: {
-    type: "object",
-    properties: {
-      examTitle: {
-        type: "string",
-        description: "시험 제목 또는 주제",
-      },
-      difficulty: {
-        type: "string",
-        enum: ["basic", "intermediate", "advanced"],
-        description: "문제 난이도",
-      },
-      questionCount: {
-        type: "integer",
-        minimum: 1,
-        maximum: 10,
-        description: "생성할 문제 수",
-      },
-      topics: {
-        type: "string",
-        description: "다룰 세부 토픽 (선택)",
-      },
-      customInstructions: {
-        type: "string",
-        description: "문제 유형/형식 등에 대한 추가 지시 (선택)",
-      },
-      language: {
-        type: "string",
-        enum: ["ko", "en"],
-        description: "문제 작성 언어 (기본값 ko)",
-      },
-    },
-    required: ["examTitle", "difficulty", "questionCount"],
-  },
-  async execute(args, ctx): Promise<ToolExecutionResult> {
-    const examTitle = asString(args.examTitle).trim();
-    if (!examTitle) {
-      throw new Error("generate_questions: examTitle 이 필요합니다.");
-    }
-    const difficulty = asDifficulty(args.difficulty);
-    const rawCount =
-      typeof args.questionCount === "number" ? args.questionCount : 1;
-    const questionCount = Math.min(10, Math.max(1, Math.floor(rawCount)));
-    const language = asLanguage(args.language);
-    const topics = asString(args.topics) || undefined;
-    const customInstructions = asString(args.customInstructions) || undefined;
-
-    const { system, user } = buildCaseQuestionGenerationPrompt({
-      examTitle,
-      difficulty,
-      questionCount,
-      topics,
-      customInstructions,
-      language,
-      generationMode: "case",
-    });
-
-    const tracked = await callTrackedChatCompletion(
-      () =>
-        getOpenAI().chat.completions.create({
-          model: AI_MODEL_HEAVY,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-          ],
-          response_format: { type: "json_object" },
-        }),
-      {
-        feature: "instructor_agent",
-        route: AGENT_ROUTE,
-        model: AI_MODEL_HEAVY,
-        userId: ctx.userId,
-        metadata: buildAiTextMetadata({
-          inputText: [system, user],
-          extra: {
-            agent_tool: "generate_questions",
-            run_id: ctx.runId,
-            question_count: questionCount,
-            difficulty,
-          },
-        }),
-      },
-      {
-        metadataBuilder: (result) =>
-          buildAiTextMetadata({
-            outputText:
-              (result as ChatCompletion).choices?.[0]?.message?.content ?? null,
-          }),
-      }
-    );
-
-    const parsed = parseJsonContent(tracked.data);
-    const rawQuestions = Array.isArray(parsed.questions)
-      ? parsed.questions
-      : [];
-    if (rawQuestions.length === 0) {
-      throw new Error("generate_questions: AI 가 문제를 생성하지 못했습니다.");
-    }
-
-    const questions: DraftQuestion[] = rawQuestions
-      .filter((q): q is Record<string, unknown> => isRecord(q))
-      .map((q) => ({
-        id: crypto.randomUUID(),
-        text: asString(q.text),
-        type: asString(q.type, "essay"),
-        rubric: normalizeRubric(q.rubric),
-      }))
-      .filter((q) => q.text.length > 0);
-
-    if (questions.length === 0) {
-      throw new Error("generate_questions: 유효한 문제가 없습니다.");
-    }
-
-    return {
-      result: { questions },
-      tokensUsed: tracked.usage?.totalTokens ?? 0,
-      costUsdMicros: tracked.estimatedCostUsdMicros,
-    };
-  },
+// ── 툴 선언 ──────────────────────────────────────────────────
+const EMPTY_OBJECT_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {},
+  required: [],
+  additionalProperties: false,
 };
 
-// ── 툴 2: revise_question ────────────────────────────────────
-const reviseQuestionTool: AgentTool = {
-  name: "revise_question",
-  description:
-    "강사의 수정 지시에 따라 기존 문제 1개를 수정한다. 수정된 HTML 본문을 반환한다.",
-  parameters: {
-    type: "object",
-    properties: {
-      questionText: {
-        type: "string",
-        description: "수정 대상 문제의 현재 HTML 본문",
-      },
-      instruction: {
-        type: "string",
-        description: "어떻게 수정할지에 대한 지시",
-      },
-      examTitle: {
-        type: "string",
-        description: "시험 제목 (맥락용, 선택)",
-      },
-      language: {
-        type: "string",
-        enum: ["ko", "en"],
-        description: "작성 언어 (기본값 ko)",
-      },
-    },
-    required: ["questionText", "instruction"],
-  },
-  async execute(args, ctx): Promise<ToolExecutionResult> {
-    const questionText = asString(args.questionText).trim();
-    if (!questionText) {
-      throw new Error("revise_question: questionText 가 필요합니다.");
-    }
-    const instruction = asString(args.instruction).trim();
-    if (!instruction) {
-      throw new Error("revise_question: instruction 이 필요합니다.");
-    }
-    const language = asLanguage(args.language);
-    const examTitle = asString(args.examTitle) || undefined;
-
-    const { system, user } = buildCaseQuestionAdjustmentPrompt({
-      currentQuestionText: questionText,
-      instruction,
-      examTitle,
-      language,
-      generationMode: "case",
-    });
-
-    const tracked = await callTrackedChatCompletion(
-      () =>
-        getOpenAI().chat.completions.create({
-          model: AI_MODEL,
-          messages: [
-            { role: "system", content: system },
-            { role: "user", content: user },
-          ],
-          response_format: { type: "json_object" },
-        }),
-      {
-        feature: "instructor_agent",
-        route: AGENT_ROUTE,
-        model: AI_MODEL,
-        userId: ctx.userId,
-        metadata: buildAiTextMetadata({
-          inputText: [system, user],
-          extra: {
-            agent_tool: "revise_question",
-            run_id: ctx.runId,
-          },
-        }),
-      },
-      {
-        metadataBuilder: (result) =>
-          buildAiTextMetadata({
-            outputText:
-              (result as ChatCompletion).choices?.[0]?.message?.content ?? null,
-          }),
-      }
-    );
-
-    const parsed = parseJsonContent(tracked.data);
-    const revisedText = asString(parsed.questionText).trim();
-    if (!revisedText) {
-      throw new Error("revise_question: 수정된 문제 본문이 비어 있습니다.");
-    }
-
-    return {
-      result: {
-        questionText: revisedText,
-        explanation: asString(parsed.explanation),
-      },
-      tokensUsed: tracked.usage?.totalTokens ?? 0,
-      costUsdMicros: tracked.estimatedCostUsdMicros,
-    };
-  },
-};
-
-// ── 툴 3: assemble_exam_draft (terminal) ─────────────────────
-/** assemble_exam_draft 인자를 ExamDraftPayload 로 검증·정규화한다. */
-function validateExamDraft(args: Record<string, unknown>): ExamDraftPayload {
-  const title = asString(args.title).trim();
-  if (!title) {
-    throw new Error("assemble_exam_draft: title 이 필요합니다.");
-  }
-
-  const rawQuestions = Array.isArray(args.questions) ? args.questions : [];
-  if (rawQuestions.length === 0) {
-    throw new Error("assemble_exam_draft: 문제가 1개 이상 필요합니다.");
-  }
-
-  const questions: DraftQuestion[] = rawQuestions
-    .filter((q): q is Record<string, unknown> => isRecord(q))
-    .map((q) => {
-      const text = asString(q.text).trim();
-      if (!text) {
-        throw new Error("assemble_exam_draft: 빈 문제 본문이 있습니다.");
-      }
-      return {
-        id: asString(q.id) || crypto.randomUUID(),
-        text,
-        type: asString(q.type, "essay"),
-        rubric: normalizeRubric(q.rubric),
-      };
-    });
-
-  if (questions.length === 0) {
-    throw new Error("assemble_exam_draft: 유효한 문제가 없습니다.");
-  }
-
-  const rawDuration =
-    typeof args.durationMinutes === "number" ? args.durationMinutes : 60;
-  const durationMinutes = Math.min(
-    600,
-    Math.max(1, Math.floor(rawDuration))
-  );
-
-  return {
-    title,
-    language: asLanguage(args.language),
-    difficulty: asDifficulty(args.difficulty),
-    durationMinutes,
-    questions,
-  };
-}
-
-const assembleExamDraftTool: AgentTool = {
-  name: "assemble_exam_draft",
-  description:
-    "생성·검토가 끝난 문제들을 최종 시험 draft 로 조립한다. 이 툴을 호출하면 " +
-    "에이전트 턴이 종료되고 강사 승인 대기 상태로 전환된다. 모든 문제와 루브릭이 " +
-    "준비된 뒤 마지막에 한 번만 호출하라.",
-  terminal: true,
-  parameters: {
-    type: "object",
-    properties: {
-      title: {
-        type: "string",
-        description: "시험 제목",
-      },
-      language: {
-        type: "string",
-        enum: ["ko", "en"],
-        description: "시험 언어",
-      },
-      difficulty: {
-        type: "string",
-        enum: ["basic", "intermediate", "advanced"],
-        description: "시험 난이도",
-      },
-      durationMinutes: {
-        type: "integer",
-        minimum: 1,
-        maximum: 600,
-        description: "시험 시간(분)",
-      },
-      questions: {
-        type: "array",
-        description: "완성된 문제 목록",
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string", description: "문제 id (없으면 자동 생성)" },
-            text: { type: "string", description: "문제 본문 HTML" },
-            type: { type: "string", description: "문제 유형 (예: essay)" },
-            rubric: {
-              type: "array",
-              description: "문제별 루브릭",
-              items: {
-                type: "object",
-                properties: {
-                  evaluationArea: { type: "string" },
-                  detailedCriteria: { type: "string" },
-                },
-                required: ["evaluationArea", "detailedCriteria"],
-              },
-            },
-          },
-          required: ["text"],
+export const AGENT_TOOLS: AgentToolDeclaration[] = [
+  {
+    name: "navigate",
+    description:
+      "강사를 다른 페이지로 이동시킨다. 시험을 새로 만들려면 시험 생성 페이지로 먼저 이동해야 한다.",
+    parameters: {
+      type: "object",
+      properties: {
+        route: {
+          type: "string",
+          description:
+            "이동할 라우트 경로 (예: '/instructor', '/instructor/new')",
         },
       },
+      required: ["route"],
+      additionalProperties: false,
     },
-    required: ["title", "language", "difficulty", "durationMinutes", "questions"],
   },
-  async execute(args): Promise<ToolExecutionResult> {
-    // 터미널 툴: 유효성만 검증해 draft 를 반환한다.
-    // output 저장 + status 전환은 러너의 책임이다.
-    const draft = validateExamDraft(args);
-    return {
-      result: { draft },
-      tokensUsed: 0,
-      costUsdMicros: 0,
-    };
+  {
+    name: "set_exam_title",
+    description: "시험 편집기의 시험 제목 입력란에 제목을 입력한다.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "시험 제목" },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
   },
-};
-
-// ── 레지스트리 ───────────────────────────────────────────────
-export const AGENT_TOOLS: AgentTool[] = [
-  generateQuestionsTool,
-  reviseQuestionTool,
-  assembleExamDraftTool,
+  {
+    name: "set_topic",
+    description:
+      "문제 생성기의 자유 서술 프롬프트(주제/세부 토픽)를 입력한다. " +
+      "generate_questions 가 이 주제를 바탕으로 문제를 만든다.",
+    parameters: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "시험 주제 또는 세부 토픽 설명",
+        },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_question_count",
+    description: "생성할 문항 수를 설정한다.",
+    parameters: {
+      type: "object",
+      properties: {
+        count: {
+          type: "integer",
+          minimum: 1,
+          maximum: 10,
+          description: "문항 수 (1~10)",
+        },
+      },
+      required: ["count"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_difficulty",
+    description: "문제 난이도를 설정한다.",
+    parameters: {
+      type: "object",
+      properties: {
+        difficulty: {
+          type: "string",
+          enum: ["basic", "intermediate", "advanced"],
+          description: "문제 난이도",
+        },
+      },
+      required: ["difficulty"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "generate_questions",
+    description:
+      "현재 설정된 주제/난이도/문항 수로 문제 스트리밍 생성을 시작한다. " +
+      "set_topic / set_question_count / set_difficulty 를 먼저 설정한 뒤 호출하라.",
+    parameters: EMPTY_OBJECT_SCHEMA,
+  },
+  {
+    name: "revise_question",
+    description:
+      "이미 생성된 문제 1개를 강사의 지시에 맞게 수정한다. 0부터 시작하는 인덱스로 대상 문제를 지정한다.",
+    parameters: {
+      type: "object",
+      properties: {
+        index: {
+          type: "integer",
+          minimum: 0,
+          description: "수정할 문제의 0-기반 인덱스",
+        },
+        instruction: {
+          type: "string",
+          description: "어떻게 수정할지에 대한 지시",
+        },
+      },
+      required: ["index", "instruction"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "add_question",
+    description: "시험에 빈 문제를 1개 추가한다.",
+    parameters: EMPTY_OBJECT_SCHEMA,
+  },
+  {
+    name: "remove_question",
+    description:
+      "시험에서 문제 1개를 제거한다. 0부터 시작하는 인덱스로 대상 문제를 지정한다.",
+    parameters: {
+      type: "object",
+      properties: {
+        index: {
+          type: "integer",
+          minimum: 0,
+          description: "제거할 문제의 0-기반 인덱스",
+        },
+      },
+      required: ["index"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "finish",
+    description:
+      "모든 작업이 끝났을 때 호출해 에이전트 루프를 종료한다. summary 에 강사에게 보여줄 마무리 요약을 담는다.",
+    parameters: {
+      type: "object",
+      properties: {
+        summary: {
+          type: "string",
+          description: "강사에게 보여줄 작업 마무리 요약",
+        },
+      },
+      required: ["summary"],
+      additionalProperties: false,
+    },
+  },
 ];
 
-const TOOL_BY_NAME: Map<string, AgentTool> = new Map(
-  AGENT_TOOLS.map((tool) => [tool.name, tool])
-);
+const TOOL_NAMES = new Set<string>(AGENT_TOOLS.map((tool) => tool.name));
 
-export function getAgentTool(name: string): AgentTool | undefined {
-  return TOOL_BY_NAME.get(name);
+/** name 이 알려진 에이전트 툴인지 검사한다. */
+export function isAgentToolName(name: string): name is AgentToolName {
+  return TOOL_NAMES.has(name);
 }
 
-/** OpenAI chat.completions 의 tools 파라미터로 넘길 함수 정의 배열. */
-export function getOpenAIToolDefinitions(): OpenAI.Chat.Completions.ChatCompletionTool[] {
+/**
+ * OpenAI Responses API 의 `tools` 파라미터로 넘길 function tool 정의 배열.
+ * Responses API 의 FunctionTool 은 chat.completions 와 달리 `function` 래퍼가
+ * 없는 평탄한 형태다 ({ type, name, description, parameters, strict }).
+ */
+export function getOpenAIToolDefinitions(): OpenAI.Responses.FunctionTool[] {
   return AGENT_TOOLS.map((tool) => ({
     type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-    },
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+    strict: false,
   }));
 }

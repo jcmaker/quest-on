@@ -19,6 +19,12 @@ import type {
   DraftRubricItem,
   ExamDraftPayload,
 } from "@/lib/agent/types";
+import type {
+  AgentActionResultRequest,
+  AgentPageState,
+  AgentUiActionResult,
+  StartAgentRunRequest,
+} from "@/lib/agent/ui-actions";
 
 // ── 페이지 컨텍스트 ─────────────────────────────────────────
 const agentPageContextSchema = z.object({
@@ -64,3 +70,43 @@ export const examDraftPayloadSchema = z.object({
 export const approveAgentRunSchema = z.object({
   editedDraft: examDraftPayloadSchema.optional(),
 }) satisfies z.ZodType<ApproveAgentRunRequest>;
+
+// ── 재개형 클라이언트-인터랙티브 루프 스키마 ────────────────
+// 계약: lib/agent/ui-actions.ts
+
+/** AgentPageState — 매 보고에 동봉되는 편집기 상태. */
+const agentPageStateSchema = z.object({
+  route: z.string().min(1, "route is required").max(500),
+  examTitle: z.string().max(500),
+  questionCount: z.number().int().min(0).max(1000),
+  questions: z
+    .array(
+      z.object({
+        index: z.number().int().min(0),
+        type: z.string().max(100),
+        summary: z.string().max(2000),
+      })
+    )
+    .max(200),
+  rubricRowCount: z.number().int().min(0).max(10000),
+  isGenerating: z.boolean(),
+}) satisfies z.ZodType<AgentPageState>;
+
+/** AgentUiActionResult — 한 액션 실행 결과. */
+const agentUiActionResultSchema = z.object({
+  id: z.string().min(1).max(200),
+  ok: z.boolean(),
+  error: z.string().max(2000).optional(),
+}) satisfies z.ZodType<AgentUiActionResult>;
+
+/** POST /api/agent/runs — 루프 시작. */
+export const startAgentRunSchema = z.object({
+  prompt: z.string().min(1, "prompt is required").max(8000),
+  pageState: agentPageStateSchema,
+}) satisfies z.ZodType<StartAgentRunRequest>;
+
+/** POST /api/agent/runs/[id]/action-result — 배치 실행 결과 보고 + 재개. */
+export const agentActionResultSchema = z.object({
+  results: z.array(agentUiActionResultSchema).max(50),
+  pageState: agentPageStateSchema,
+}) satisfies z.ZodType<AgentActionResultRequest>;

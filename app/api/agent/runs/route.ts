@@ -1,11 +1,11 @@
 // Node.js Runtime 사용
 export const runtime = "nodejs";
 
-// 에이전트 루프는 응답 후 after() 백그라운드 작업으로 돈다.
-// after 작업 시간을 확보하기 위해 maxDuration 을 길게 유지한다.
-export const maxDuration = 300;
+// 한 턴 = 한 HTTP 요청 = LLM 1회 호출. after() 백그라운드 루프는 폐기됐다.
+// 턴당 LLM 호출 1회면 충분하므로 maxDuration 을 60s 로 줄인다.
+export const maxDuration = 60;
 
-import { NextRequest, after } from "next/server";
+import { NextRequest } from "next/server";
 
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
@@ -13,44 +13,38 @@ import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest } from "@/lib/validations";
 import { logError } from "@/lib/logger";
 
-import { createAgentRunSchema } from "@/lib/agent/validation";
-import {
-  createAgentRun,
-  listAgentRuns,
-  appendAgentStep,
-} from "@/lib/agent/store";
-import { runAgentTurn } from "@/lib/agent/runner";
+import { startAgentRunSchema } from "@/lib/agent/validation";
+import { createAgentRun, listAgentRuns, appendAgentStep } from "@/lib/agent/store";
+import { advanceAgentRun } from "@/lib/agent/runner";
 
 import type { AgentRun } from "@/lib/agent/types";
 import type { AgentRunRecord } from "@/lib/agent/store";
 
-/**
- * 러너 내부 필드(lastResponseId, pendingToolCalls)를 제거하고
- * types.ts 의 공개 AgentRun 형태만 노출한다.
- */
+/** 러너 내부 필드를 제거하고 공개 AgentRun 형태만 노출한다. */
 function toPublicRun(record: AgentRunRecord): AgentRun {
   const {
-    // 내부 필드 — 응답에서 제외
     lastResponseId: _lastResponseId,
     pendingToolCalls: _pendingToolCalls,
+    cancelRequested: _cancelRequested,
     ...publicRun
   } = record;
   void _lastResponseId;
   void _pendingToolCalls;
+  void _cancelRequested;
   return publicRun;
 }
 
 /**
  * POST /api/agent/runs
  *
- * 강사의 새 에이전트 런을 생성한다. 런 생성 + user_input 스텝 추가까지만
- * await 하고, 에이전트 루프(runAgentTurn)는 after() 로 응답 후 백그라운드에서
- * 실행한다. 응답은 status="queued" 인 런을 즉시 반환하므로 UI 가 곧바로
- * 폴링을 시작할 수 있다.
+ * 재개형 클라이언트-인터랙티브 루프를 시작한다.
+ * 런 생성 → user_input 스텝(첫 pageState 를 metadata 에 동봉) → advanceAgentRun
+ * 첫 턴을 동기로 실행하고 AgentTurnResponse 를 반환한다. 클라이언트는 응답의
+ * pendingActions 를 편집기에서 실행한 뒤 action-result 로 루프를 재개한다.
  */
 export async function POST(request: NextRequest) {
   try {
-    // 2. Auth — rate limit 키를 만들려면 user 가 필요하므로 먼저 인증한다.
+    // 2. Auth
     const user = await currentUser();
     if (!user) {
       return errorJson("UNAUTHORIZED", "Unauthorized", 401);
@@ -70,32 +64,44 @@ export async function POST(request: NextRequest) {
     if (body === null) {
       return errorJson("VALIDATION_ERROR", "Invalid JSON body", 400);
     }
-    const validation = validateRequest(createAgentRunSchema, body);
+    const validation = validateRequest(startAgentRunSchema, body);
     if (!validation.success) {
       return errorJson("VALIDATION_ERROR", validation.error!, 400);
     }
-    const { type, prompt, pageContext } = validation.data;
+    const { prompt, pageState } = validation.data;
 
-    // 5. Business logic — 런 생성 → user_input 스텝 → 에이전트 루프
+    // 5. Business logic — 런 생성 → user_input 스텝 → 첫 턴 진행.
+    //    AgentRunType 은 현재 "exam_creation" 단일값이므로 그것으로 고정한다.
     const run = await createAgentRun({
-      type,
+      type: "exam_creation",
       actorId: user.id,
       actorRole: "teacher",
-      input: { prompt, pageContext },
+      input: {
+        prompt,
+        // 첫 pageState 의 route 를 pageContext 로 보존(목록/감사용).
+        pageContext: { route: pageState.route },
+      },
     });
 
-    const queuedRun = await appendAgentStep(run.id, {
+    // 첫 턴 러너는 continuation 이 없어 pageState 를 따로 얻어야 한다.
+    // user_input 스텝 metadata 에 첫 pageState 를 심어 러너가 읽게 한다.
+    await appendAgentStep(run.id, {
       stepType: "user_input",
       title: "강사 요청",
       content: prompt,
+      metadata: { pageState },
     });
 
-    // 에이전트 루프는 응답 후 백그라운드에서 실행한다(await 하지 않음).
-    // 러너가 즉시 status 를 running 으로 바꾸고 스텝을 실시간 적재한다.
-    after(() => runAgentTurn(run.id));
+    // 6. 첫 턴을 동기로 실행 (턴당 LLM 1회 — after() 없음).
+    const turn = await advanceAgentRun(run.id);
 
-    // 7. Return — status="queued" 런을 즉시 반환. 내부 러너 필드는 노출하지 않는다.
-    return successJson({ run: toPublicRun(queuedRun) });
+    // 7. Return — AgentTurnResponse.
+    return successJson({
+      run: turn.run,
+      pendingActions: turn.pendingActions,
+      done: turn.done,
+      ...(turn.summary !== undefined ? { summary: turn.summary } : {}),
+    });
   } catch (error) {
     logError("Failed to create agent run", error, { path: "/api/agent/runs" });
     return errorJson(

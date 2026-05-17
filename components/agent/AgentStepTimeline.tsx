@@ -32,7 +32,7 @@ function StepRow({ step, isLast }: { step: AgentStep; isLast: boolean }) {
   const Icon = meta.icon;
 
   return (
-    <li className="flex gap-3">
+    <li className="flex gap-3 animate-fade-in-up-xs">
       {/* 아이콘 + 세로 연결선 */}
       <div className="flex flex-col items-center">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
@@ -51,11 +51,16 @@ function StepRow({ step, isLast }: { step: AgentStep; isLast: boolean }) {
         <p className="mt-0.5 text-sm font-medium text-foreground">
           {step.title}
         </p>
-        {step.content && (
+        {/* user_input 스텝은 입력 프롬프트를 quote 스타일로 표시 */}
+        {step.content && step.stepType === "user_input" ? (
+          <p className="mt-1 rounded-lg bg-muted/60 px-2.5 py-2 text-xs leading-relaxed text-foreground/80 whitespace-pre-wrap">
+            {step.content}
+          </p>
+        ) : step.content ? (
           <p className="mt-0.5 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
             {step.content}
           </p>
-        )}
+        ) : null}
       </div>
     </li>
   );

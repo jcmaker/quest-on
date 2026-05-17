@@ -20,6 +20,11 @@ import type {
   ApproveAgentRunRequest,
   CreateAgentRunRequest,
 } from "@/lib/agent/types";
+import type {
+  AgentActionResultRequest,
+  AgentTurnResponse,
+  StartAgentRunRequest,
+} from "@/lib/agent/ui-actions";
 
 /** errorJson 봉투 형태 */
 interface ApiErrorEnvelope {
@@ -66,6 +71,38 @@ export async function createAgentRun(
     body: JSON.stringify(req),
   });
   return data.run;
+}
+
+/**
+ * POST /api/agent/runs — 재개형 클라이언트-인터랙티브 루프 시작.
+ *
+ * 응답의 pendingActions 를 편집기에서 실행한 뒤, 그 결과를
+ * submitAgentActionResults 로 보고해 루프를 재개한다. done=true 면 종료.
+ */
+export async function startAgentRun(
+  req: StartAgentRunRequest
+): Promise<AgentTurnResponse> {
+  return agentFetch<AgentTurnResponse>("/api/agent/runs", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+/**
+ * POST /api/agent/runs/[id]/action-result — 액션 배치 실행 결과를 보고하고
+ * 에이전트 루프를 한 턴 재개한다.
+ */
+export async function submitAgentActionResults(
+  id: string,
+  req: AgentActionResultRequest
+): Promise<AgentTurnResponse> {
+  return agentFetch<AgentTurnResponse>(
+    `/api/agent/runs/${encodeURIComponent(id)}/action-result`,
+    {
+      method: "POST",
+      body: JSON.stringify(req),
+    }
+  );
 }
 
 /** GET /api/agent/runs/[id] — 단일 런 조회 (폴링용) */

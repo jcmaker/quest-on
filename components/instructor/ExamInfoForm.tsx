@@ -48,6 +48,8 @@ interface ExamInfoFormProps {
   deadlineError?: string;
   language?: "ko" | "en";
   onLanguageChange?: (value: "ko" | "en") => void;
+  /** AI 에이전트 체화 애니메이션이 가리킬 제목 입력 DOM 요소 ref. */
+  titleRef?: React.Ref<HTMLInputElement>;
 }
 
 export function ExamInfoForm({
@@ -65,6 +67,7 @@ export function ExamInfoForm({
   deadlineError,
   language = "ko",
   onLanguageChange,
+  titleRef,
 }: ExamInfoFormProps) {
   const [durationInput, setDurationInput] = useState<string>(
     duration === 0 ? "" : duration.toString()
@@ -170,6 +173,7 @@ export function ExamInfoForm({
               </Tooltip>
             </div>
             <Input
+              ref={titleRef}
               id="title"
               value={title}
               onChange={(e) => onTitleChange(e.target.value)}

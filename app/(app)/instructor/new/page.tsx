@@ -35,7 +35,13 @@ import {
 } from "@/components/instructor/RubricTable";
 import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
-import { CaseQuestionGenerator } from "@/components/instructor/CaseQuestionGenerator";
+import {
+  CaseQuestionGenerator,
+  type CaseQuestionGeneratorHandle,
+} from "@/components/instructor/CaseQuestionGenerator";
+import { useAgentRunController } from "@/components/agent/AgentRunController";
+import { useAgentEditorExecutor } from "@/components/agent/useAgentEditorExecutor";
+import { Bot, Hand } from "lucide-react";
 import {
   ScrollProgressProvider,
   ScrollProgress,
@@ -79,6 +85,10 @@ export default function CreateExam() {
 
   // 문제 목록 참조 (스크롤용)
   const questionsListRef = useRef<HTMLDivElement>(null);
+
+  // AI 에이전트 실행 레이어 연결용 ref
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const generatorHandleRef = useRef<CaseQuestionGeneratorHandle>(null);
 
   // P1-2: 새로 수락된 문제 하이라이트
   const [highlightedQuestionIds, setHighlightedQuestionIds] = useState<Set<string>>(new Set());
@@ -425,6 +435,10 @@ export default function CreateExam() {
     ]);
   };
 
+  const removeQuestionById = useCallback((id: string) => {
+    setQuestions((prev) => prev.filter((q) => q.id !== id));
+  }, []);
+
   const moveQuestion = (index: number, direction: "up" | "down") => {
     setQuestions((prev) => {
       const newQuestions = [...prev];
@@ -511,6 +525,37 @@ export default function CreateExam() {
       setIsAIGeneratingRubric(false);
     }
   }, [examData.title, questions]);
+
+  // ── AI 에이전트 클라이언트 실행 레이어 연결 ──────────────────────
+  // 컨트롤러에 활성 런이 있고 running 단계이면 "에이전트 작성 중" 모드.
+  // URL 파라미터가 아니라 컨트롤러 상태로 판별한다. 일반 사용에는 무영향.
+  const agentController = useAgentRunController();
+  const isAgentMode =
+    agentController.activeRun != null &&
+    agentController.phase === "running";
+
+  const agentExecutor = useAgentEditorExecutor({
+    examTitle: examData.title,
+    setExamTitle: (value) =>
+      setExamData((prev) => ({ ...prev, title: value })),
+    titleElementRef: titleInputRef,
+    questions,
+    rubric,
+    addQuestion,
+    removeQuestionById,
+    updateQuestion,
+    generatorRef: generatorHandleRef,
+    route: "/instructor/new",
+  });
+
+  // 편집기 executor 를 컨트롤러에 등록 — 마운트 동안 유지, 언마운트 시 해제.
+  // 컨트롤러는 레이아웃에 마운트되어 페이지 이동에도 살아 있으므로,
+  // navigate 후 새 편집기가 마운트되며 여기서 재등록되어 핸드오프가 이어진다.
+  const registerExecutor = agentController.registerExecutor;
+  useEffect(() => {
+    registerExecutor(agentExecutor);
+    return () => registerExecutor(null);
+  }, [registerExecutor, agentExecutor]);
 
   const createExamMutation = useMutation({
     mutationFn: async (examDataForDB: {
@@ -705,6 +750,36 @@ export default function CreateExam() {
             </p>
           </div>
 
+          {/* AI 에이전트 작성 중 배너 — 중단(take-over) 컨트롤 포함 */}
+          {isAgentMode && (
+            <div
+              className="mb-6 flex items-start gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
+              data-testid="agent-writing-banner"
+            >
+              <Bot className="w-5 h-5 text-primary shrink-0 mt-0.5 animate-pulse" />
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-foreground">
+                  AI 에이전트가 시험을 작성하고 있습니다
+                </p>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  에이전트가 제목과 문제를 직접 입력합니다. 직접 이어서
+                  작성하려면 작업을 넘겨받으세요.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => agentController.cancelRun()}
+                className="shrink-0 gap-1.5"
+                aria-label="에이전트 작업 넘겨받기"
+              >
+                <Hand className="w-4 h-4" />
+                넘겨받기
+              </Button>
+            </div>
+          )}
+
           {/* 데모 모드 배너 (P0-1) */}
           {isDemoMode && isLoaded && (
             <div className="mb-6 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 px-4 py-3">
@@ -742,6 +817,7 @@ export default function CreateExam() {
             className="space-y-6"
           >
             <ExamInfoForm
+              titleRef={titleInputRef}
               title={examData.title}
               code={examData.code}
               duration={examData.duration}
@@ -778,6 +854,7 @@ export default function CreateExam() {
             />
 
             <CaseQuestionGenerator
+              agentHandleRef={generatorHandleRef}
               examTitle={examData.title}
               extractedTexts={fileUpload.extractedTexts}
               extractionStatus={fileUpload.fileStatus}

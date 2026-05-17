@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useImperativeHandle,
+  type Ref,
+} from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -41,6 +47,30 @@ import { GeneratedQuestionCard } from "./GeneratedQuestionCard";
 import { QuestionSkeletonCard } from "./QuestionSkeletonCard";
 import type { Question } from "./QuestionEditor";
 
+/**
+ * AI 에이전트가 생성기를 프로그램적으로 조작하기 위한 명령형 핸들.
+ * 강사 AI 에이전트의 클라이언트 실행 레이어가 ref 로 받아 사용한다.
+ * 일반(비에이전트) 사용에는 영향이 없다.
+ */
+export interface CaseQuestionGeneratorHandle {
+  /** freeform(주제) textarea 의 DOM 요소 — 체화 애니메이션 타깃. */
+  getFreeformElement: () => HTMLTextAreaElement | null;
+  /** 문제 수 Select 트리거의 DOM 요소 — 체화 애니메이션 타깃. */
+  getCountElement: () => HTMLElement | null;
+  /** 생성 버튼 DOM 요소 — 체화 애니메이션 타깃. */
+  getGenerateButtonElement: () => HTMLButtonElement | null;
+  /** freeform(주제) 입력값 직접 설정 (controlled state). */
+  setFreeformPrompt: (value: string) => void;
+  /** 현재 freeform(주제) 입력값. */
+  getFreeformPrompt: () => string;
+  /** 생성할 문제 수 설정 (1~5 로 클램프). */
+  setQuestionCount: (count: number) => void;
+  /** 현재 생성 진행 여부. */
+  getIsGenerating: () => boolean;
+  /** 기존 handleGenerate 를 재활용해 생성을 트리거. */
+  triggerGenerate: () => Promise<void>;
+}
+
 interface CaseQuestionGeneratorProps {
   examTitle: string;
   extractedTexts?: Map<string, { text: string; fileName: string }>;
@@ -52,6 +82,8 @@ interface CaseQuestionGeneratorProps {
   onRubricSuggested: (rubric: RubricItem[]) => void;
   language?: "ko" | "en";
   mode?: "exam" | "assignment";
+  /** AI 에이전트 실행 레이어가 생성기를 프로그램적으로 조작하기 위한 ref. */
+  agentHandleRef?: Ref<CaseQuestionGeneratorHandle>;
 }
 
 function getStageMessage(
@@ -81,12 +113,18 @@ export function CaseQuestionGenerator({
   onRubricSuggested,
   language,
   mode = "exam",
+  agentHandleRef,
 }: CaseQuestionGeneratorProps) {
   const [isOpen, setIsOpen] = useState(true);
   const difficulty = "basic" as const;
   const [questionCount, setQuestionCount] = useState(1);
   const [freeformPrompt, setFreeformPrompt] = useState("");
   const isAssignmentMode = mode === "assignment";
+
+  // AI 에이전트 체화 애니메이션이 가리킬 DOM 요소 ref.
+  const freeformElementRef = useRef<HTMLTextAreaElement>(null);
+  const countElementRef = useRef<HTMLButtonElement>(null);
+  const generateButtonRef = useRef<HTMLButtonElement>(null);
   const availableTexts = extractedTexts ?? new Map<string, { text: string; fileName: string }>();
 
   const {
@@ -168,6 +206,31 @@ export function CaseQuestionGenerator({
     await generateStream(getGenerateParams());
   };
 
+  // ── AI 에이전트 명령형 핸들 ──────────────────────────────────────
+  // 에이전트 실행 레이어가 ref 로 받아 생성기를 프로그램적으로 조작한다.
+  // 기존 handleGenerate / state setter 를 그대로 재활용한다.
+  useImperativeHandle(
+    agentHandleRef,
+    (): CaseQuestionGeneratorHandle => ({
+      getFreeformElement: () => freeformElementRef.current,
+      getCountElement: () => countElementRef.current,
+      getGenerateButtonElement: () => generateButtonRef.current,
+      setFreeformPrompt: (value) => setFreeformPrompt(value),
+      getFreeformPrompt: () => freeformPrompt,
+      setQuestionCount: (count) => {
+        const clamped = Math.min(5, Math.max(1, Math.round(count)));
+        setQuestionCount(clamped);
+      },
+      getIsGenerating: () => isGenerating,
+      // handleGenerate 가 generateStream 을 await 하므로
+      // 이 Promise 는 스트리밍(=생성)이 끝날 때 resolve 된다.
+      triggerGenerate: () => handleGenerate(),
+    }),
+    // 의존성 배열 생략 — 매 렌더 핸들을 갱신해 메서드가 항상 최신
+    // state/handleGenerate 를 참조하게 한다. ref 소비자(에이전트 실행기)는
+    // 핸들 객체 정체성에 의존하지 않으므로 무해하다.
+  );
+
   // P1-5: Track if rubric has been suggested to avoid duplicate toasts
   const rubricSuggestedRef = useRef(false);
 
@@ -236,7 +299,7 @@ export function CaseQuestionGenerator({
                 value={questionCount.toString()}
                 onValueChange={(v) => setQuestionCount(Number(v))}
               >
-                <SelectTrigger className="w-32">
+                <SelectTrigger ref={countElementRef} className="w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -260,6 +323,7 @@ export function CaseQuestionGenerator({
                 )}
               </Label>
               <Textarea
+                ref={freeformElementRef}
                 value={freeformPrompt}
                 onChange={(e) => setFreeformPrompt(e.target.value)}
                 placeholder={
@@ -345,6 +409,7 @@ export function CaseQuestionGenerator({
             {/* Generate / Cancel buttons */}
             <div className="flex items-center gap-2">
               <Button
+                ref={generateButtonRef}
                 type="button"
                 onClick={handleGenerate}
                 disabled={isDisabled || isGenerating}
