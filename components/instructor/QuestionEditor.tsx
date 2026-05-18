@@ -33,6 +33,7 @@ interface QuestionEditorProps {
   onRemove?: (id: string) => void;
   onAIEdit?: () => void;
   mode?: "exam" | "assignment";
+  variant?: "card" | "line";
 }
 
 export function QuestionEditor({
@@ -42,7 +43,70 @@ export function QuestionEditor({
   onRemove,
   onAIEdit,
   mode = "exam",
+  variant = "card",
 }: QuestionEditorProps) {
+  if (variant === "line") {
+    return (
+      <div
+        className="rounded-md border bg-background"
+        data-testid={`question-editor-${index}`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="h-7 border-primary/30 bg-primary/5 text-primary"
+            >
+              <Hash className="h-3.5 w-3.5" />
+              {index + 1}
+            </Badge>
+            <Label className="text-sm">
+              {mode === "assignment" ? "과제 문제" : "시험 문제"}
+            </Label>
+          </div>
+          <div className="flex items-center gap-1">
+            {onAIEdit && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onAIEdit}
+                className="h-8 gap-1.5"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                AI 다듬기
+              </Button>
+            )}
+            {onRemove && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    onClick={() => onRemove(question.id)}
+                    className="size-8 text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>문제 삭제</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
+        </div>
+        <RichTextEditor
+          value={question.text}
+          onChange={(value) => onUpdate(question.id, "text", value)}
+          placeholder="문제를 입력하세요"
+          className="rounded-t-none border-0"
+          contentClassName="prose max-w-none focus:outline-none min-h-[140px] p-3"
+          testId={`question-editor-input-${index}`}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       className="border rounded-lg p-5 bg-card shadow-sm relative overflow-hidden"

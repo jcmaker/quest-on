@@ -52,6 +52,9 @@ export default function InstructorLayout({
   ];
 
   const userRole = profile?.role ?? "student";
+  const isAuthoringRoute =
+    pathname === "/instructor/new" ||
+    pathname === "/instructor/assignment/new";
 
   // Scroll-based header hide/show
   const [headerVisible, setHeaderVisible] = useState(true);
@@ -169,7 +172,9 @@ export default function InstructorLayout({
                 </header>
                 <main
                   ref={mainRef}
-                  className="flex-1 min-w-0 overflow-x-hidden overflow-y-auto bg-background pb-20 lg:pb-0"
+                  className={`flex-1 min-w-0 overflow-x-hidden overflow-y-auto bg-background ${
+                    isAuthoringRoute ? "pb-0" : "pb-20 lg:pb-0"
+                  }`}
                 >
                   {children}
                 </main>
@@ -181,7 +186,9 @@ export default function InstructorLayout({
                */}
               <AgentPanelGap />
 
-              <MobileBottomNav navItems={navigationItems} showAgentButton />
+              {!isAuthoringRoute && (
+                <MobileBottomNav navItems={navigationItems} showAgentButton />
+              )}
             </SidebarProvider>
 
             {/* 실제 패널 본체 — 데스크톱: fixed 우측, 모바일: Sheet 오버레이 */}

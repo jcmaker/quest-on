@@ -27,18 +27,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ExamInfoForm } from "@/components/instructor/ExamInfoForm";
-import { FileUpload } from "@/components/instructor/FileUpload";
 import {
-  RubricTable,
   type RubricItem,
 } from "@/components/instructor/RubricTable";
-import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import {
   CaseQuestionGenerator,
   type CaseQuestionGeneratorHandle,
 } from "@/components/instructor/CaseQuestionGenerator";
+import { SimpleExamAuthoringForm } from "@/components/instructor/SimpleExamAuthoringForm";
 import { useAgentRunController } from "@/components/agent/AgentRunController";
 import { useAgentEditorExecutor } from "@/components/agent/useAgentEditorExecutor";
 import { Bot, Hand } from "lucide-react";
@@ -56,7 +53,7 @@ function isQuestionContentEmpty(text: string): boolean {
 
 export default function CreateExam() {
   const router = useRouter();
-  const { user, profile, isLoaded, isSignedIn } = useAppUser();
+  const { user, isLoaded, isSignedIn } = useAppUser();
   const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -524,7 +521,7 @@ export default function CreateExam() {
     } finally {
       setIsAIGeneratingRubric(false);
     }
-  }, [examData.title, questions]);
+  }, [examData.language, examData.title, questions]);
 
   // ── AI 에이전트 클라이언트 실행 레이어 연결 ──────────────────────
   // 컨트롤러에 활성 런이 있고 running 단계이면 "에이전트 작성 중" 모드.
@@ -533,6 +530,20 @@ export default function CreateExam() {
   const isAgentMode =
     agentController.activeRun != null &&
     agentController.phase === "running";
+
+  const submitReasons = [
+    !examData.title ? "시험 제목을 입력해주세요" : null,
+    !examData.code ? "시험 코드를 생성해주세요" : null,
+    questions.length === 0 ? "문제를 1개 이상 추가해주세요" : null,
+    questions.length > 0 &&
+    questions.every((q) => isQuestionContentEmpty(q.text))
+      ? "문제 내용을 입력해주세요"
+      : null,
+    !canAddMoreFiles ? "파일 용량이 50MB를 초과했습니다" : null,
+    examData.duration !== 0 && examData.duration < 15
+      ? "시험 시간은 15분 이상이거나 무제한이어야 합니다"
+      : null,
+  ].filter((reason): reason is string => Boolean(reason));
 
   const agentExecutor = useAgentEditorExecutor({
     examTitle: examData.title,
@@ -816,182 +827,133 @@ export default function CreateExam() {
             }}
             className="space-y-6"
           >
-            <ExamInfoForm
-              titleRef={titleInputRef}
-              title={examData.title}
-              code={examData.code}
-              duration={examData.duration}
-              onTitleChange={(value) =>
-                setExamData((prev) => ({ ...prev, title: value }))
-              }
-              onCodeChange={(value) =>
-                setExamData((prev) => ({ ...prev, code: value }))
-              }
-              onDurationChange={(value) =>
-                setExamData((prev) => ({ ...prev, duration: value }))
-              }
-              onGenerateCode={generateExamCode}
-              language={examData.language}
-              onLanguageChange={(value) =>
-                setExamData((prev) => ({ ...prev, language: value }))
-              }
-            />
-
-            <FileUpload
-              files={examData.materials}
-              disabledFiles={disabledFiles}
-              canAddMoreFiles={canAddMoreFiles}
-              isDragOver={isDragOver}
-              totalSize={calculateTotalSize(examData.materials)}
-              onFileSelect={handleFileSelect}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              onDragAreaClick={handleDragAreaClick}
-              onRemoveFile={removeFile}
-              getFileIcon={getFileIcon}
-              extractionStatus={fileUpload.fileStatus}
-            />
-
-            <CaseQuestionGenerator
-              agentHandleRef={generatorHandleRef}
-              examTitle={examData.title}
-              extractedTexts={fileUpload.extractedTexts}
-              extractionStatus={fileUpload.fileStatus}
-              language={examData.language}
-              onQuestionsAccepted={(newQuestions) => {
-                const newIds = newQuestions.map((q) => q.id);
-                setQuestions((prev) => {
-                  // 빈 초기 문제 자동 제거 (HTML 태그 strip 후 체크)
-                  const nonEmpty = prev.filter((q) => {
-                    const stripped = q.text.replace(/<[^>]*>/g, "").trim();
-                    return stripped !== "";
-                  });
-                  return [
-                    ...nonEmpty,
-                    ...newQuestions.map((q) => ({
-                      id: q.id,
-                      text: q.text,
-                      type: q.type as "essay" | "short-answer" | "multiple-choice",
-                      rubric: q.rubric,
-                    })),
-                  ];
-                });
-                // P1-2: 새로 수락된 문제 하이라이트
-                setHighlightedQuestionIds(new Set(newIds));
-                setTimeout(() => setHighlightedQuestionIds(new Set()), 3000);
-                // 문제 목록으로 스크롤
-                setTimeout(() => {
-                  questionsListRef.current?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                  });
-                }, 100);
-              }}
-              onRubricSuggested={(newRubric) => {
-                setPendingRubricSuggestions(
-                  newRubric.map((r) => ({
-                    id: Date.now().toString() + Math.random().toString(36).slice(2),
-                    evaluationArea: r.evaluationArea,
-                    detailedCriteria: r.detailedCriteria,
-                  }))
-                );
-              }}
-            />
-
             <div ref={questionsListRef}>
-              <QuestionsList
+              <SimpleExamAuthoringForm
+                titleRef={titleInputRef}
+                title={examData.title}
+                duration={examData.duration}
+                language={examData.language}
+                onTitleChange={(value) =>
+                  setExamData((prev) => ({ ...prev, title: value }))
+                }
+                onDurationChange={(value) =>
+                  setExamData((prev) => ({ ...prev, duration: value }))
+                }
+                onLanguageChange={(value) =>
+                  setExamData((prev) => ({ ...prev, language: value }))
+                }
+                files={examData.materials}
+                disabledFiles={disabledFiles}
+                canAddMoreFiles={canAddMoreFiles}
+                isDragOver={isDragOver}
+                totalSize={calculateTotalSize(examData.materials)}
+                extractionStatus={fileUpload.fileStatus}
+                onFileSelect={handleFileSelect}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onDragAreaClick={handleDragAreaClick}
+                onRemoveFile={removeFile}
+                getFileIcon={getFileIcon}
+                generator={
+                  <CaseQuestionGenerator
+                    agentHandleRef={generatorHandleRef}
+                    examTitle={examData.title}
+                    extractedTexts={fileUpload.extractedTexts}
+                    extractionStatus={fileUpload.fileStatus}
+                    language={examData.language}
+                    variant="line"
+                    onQuestionsAccepted={(newQuestions) => {
+                      const newIds = newQuestions.map((q) => q.id);
+                      setQuestions((prev) => {
+                        const nonEmpty = prev.filter((q) => {
+                          const stripped = q.text
+                            .replace(/<[^>]*>/g, "")
+                            .trim();
+                          return stripped !== "";
+                        });
+                        return [
+                          ...nonEmpty,
+                          ...newQuestions.map((q) => ({
+                            id: q.id,
+                            text: q.text,
+                            type: q.type as
+                              | "essay"
+                              | "short-answer"
+                              | "multiple-choice",
+                            rubric: q.rubric,
+                          })),
+                        ];
+                      });
+                      setHighlightedQuestionIds(new Set(newIds));
+                      setTimeout(
+                        () => setHighlightedQuestionIds(new Set()),
+                        3000,
+                      );
+                      setTimeout(() => {
+                        questionsListRef.current?.scrollIntoView({
+                          behavior: "smooth",
+                          block: "start",
+                        });
+                      }, 100);
+                    }}
+                    onRubricSuggested={(newRubric) => {
+                      setPendingRubricSuggestions(
+                        newRubric.map((r) => ({
+                          id:
+                            Date.now().toString() +
+                            Math.random().toString(36).slice(2),
+                          evaluationArea: r.evaluationArea,
+                          detailedCriteria: r.detailedCriteria,
+                        })),
+                      );
+                    }}
+                  />
+                }
                 questions={questions}
                 highlightedIds={highlightedQuestionIds}
-                defaultOpen={false}
-                language={examData.language}
-                onUpdate={updateQuestion}
-                onRemove={(id) => {
+                onQuestionAdd={addQuestion}
+                onQuestionUpdate={updateQuestion}
+                onQuestionRemove={(id) => {
                   setQuestions((prev) => prev.filter((q) => q.id !== id));
                 }}
-                onAdd={addQuestion}
-                onMove={moveQuestion}
-              />
-            </div>
-
-            <RubricTable
-              rubric={rubric}
-              onAdd={addRubricItem}
-              onUpdate={updateRubricItem}
-              onRemove={removeRubricItem}
-              isPublic={isRubricPublic}
-              onPublicChange={setIsRubricPublic}
-              chatWeight={chatWeight}
-              onChatWeightChange={setChatWeight}
-              onAIGenerate={handleAIGenerateRubric}
-              isAIGenerating={isAIGeneratingRubric}
-              pendingAISuggestions={pendingRubricSuggestions}
-              onAcceptAISuggestions={() => {
-                setRubric((prev) => {
-                  const nonEmpty = prev.filter(
-                    (r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== ""
-                  );
-                  return [...nonEmpty, ...pendingRubricSuggestions];
-                });
-                setPendingRubricSuggestions([]);
-                toast.success("AI 루브릭이 적용되었습니다.");
-              }}
-              onDismissAISuggestions={() => {
-                setPendingRubricSuggestions([]);
-              }}
-            />
-
-            {/* Submit */}
-            <div className="space-y-2">
-              <div className="flex gap-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    if (isDemoMode) {
-                      router.push("/");
-                    } else {
-                      router.push("/instructor");
-                    }
-                  }}
-                >
-                  취소
-                </Button>
-                <Button
-                  type="submit"
-                  disabled={
-                    isLoading ||
-                    !examData.title ||
-                    !examData.code ||
-                    questions.length === 0 ||
-                    questions.every((q) => isQuestionContentEmpty(q.text)) ||
-                    !canAddMoreFiles
+                onQuestionMove={moveQuestion}
+                rubric={rubric}
+                onRubricAdd={addRubricItem}
+                onRubricUpdate={updateRubricItem}
+                onRubricRemove={removeRubricItem}
+                isRubricPublic={isRubricPublic}
+                onRubricPublicChange={setIsRubricPublic}
+                chatWeight={chatWeight}
+                onChatWeightChange={setChatWeight}
+                pendingAISuggestions={pendingRubricSuggestions}
+                onAcceptAISuggestions={() => {
+                  setRubric((prev) => {
+                    const nonEmpty = prev.filter(
+                      (r) =>
+                        r.evaluationArea.trim() !== "" ||
+                        r.detailedCriteria.trim() !== "",
+                    );
+                    return [...nonEmpty, ...pendingRubricSuggestions];
+                  });
+                  setPendingRubricSuggestions([]);
+                  toast.success("AI 루브릭이 적용되었습니다.");
+                }}
+                onDismissAISuggestions={() => {
+                  setPendingRubricSuggestions([]);
+                }}
+                onAIGenerateRubric={handleAIGenerateRubric}
+                isAIGeneratingRubric={isAIGeneratingRubric}
+                submitReasons={submitReasons}
+                isSubmitting={isLoading}
+                onCancel={() => {
+                  if (isDemoMode) {
+                    router.push("/");
+                  } else {
+                    router.push("/instructor");
                   }
-                >
-                  {isLoading ? "출제 중..." : "출제하기"}
-                </Button>
-              </div>
-              {/* P1-6: 제출 불가 이유 표시 */}
-              {!isLoading && (
-                !examData.title ||
-                !examData.code ||
-                questions.length === 0 ||
-                questions.every((q) => isQuestionContentEmpty(q.text)) ||
-                !canAddMoreFiles
-              ) && (
-                <div
-                  className="text-xs text-muted-foreground space-y-0.5"
-                  data-testid="create-exam-submit-reasons"
-                >
-                  {!examData.title && <p>• 시험 제목을 입력해주세요</p>}
-                  {!examData.code && <p>• 시험 코드를 생성해주세요</p>}
-                  {questions.length === 0 && <p>• 문제를 1개 이상 추가해주세요</p>}
-                  {questions.length > 0 && questions.every((q) => isQuestionContentEmpty(q.text)) && (
-                    <p>• 문제 내용을 입력해주세요</p>
-                  )}
-                  {!canAddMoreFiles && <p>• 파일 용량이 50MB를 초과했습니다</p>}
-                </div>
-              )}
+                }}
+              />
             </div>
           </form>
 

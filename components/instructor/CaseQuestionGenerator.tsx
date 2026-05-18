@@ -82,6 +82,7 @@ interface CaseQuestionGeneratorProps {
   onRubricSuggested: (rubric: RubricItem[]) => void;
   language?: "ko" | "en";
   mode?: "exam" | "assignment";
+  variant?: "card" | "line";
   /** AI 에이전트 실행 레이어가 생성기를 프로그램적으로 조작하기 위한 ref. */
   agentHandleRef?: Ref<CaseQuestionGeneratorHandle>;
 }
@@ -113,6 +114,7 @@ export function CaseQuestionGenerator({
   onRubricSuggested,
   language,
   mode = "exam",
+  variant = "card",
   agentHandleRef,
 }: CaseQuestionGeneratorProps) {
   const [isOpen, setIsOpen] = useState(true);
@@ -265,6 +267,190 @@ export function CaseQuestionGenerator({
   const displayStageMessage = isAssignmentMode
     ? stageMessage.replace("시험 내용", "리서치 과제")
     : stageMessage;
+
+  if (variant === "line") {
+    return (
+      <div className="space-y-3" data-testid="simple-ai-generator">
+        <div className="grid gap-2 lg:grid-cols-[112px_minmax(0,1fr)_auto]">
+          <Select
+            value={questionCount.toString()}
+            onValueChange={(v) => setQuestionCount(Number(v))}
+          >
+            <SelectTrigger ref={countElementRef} className="h-11">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <SelectItem key={n} value={n.toString()}>
+                  {n}개
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Textarea
+            ref={freeformElementRef}
+            value={freeformPrompt}
+            onChange={(e) => setFreeformPrompt(e.target.value)}
+            placeholder={
+              isAssignmentMode
+                ? "예: 국내 배달앱 3사의 최근 수익성 변화를 조사해오시오"
+                : "예: 한국 기업 사례 중심으로 1문제 만들어줘"
+            }
+            maxLength={2000}
+            className="min-h-11 resize-none py-2.5"
+          />
+          <div className="flex gap-2">
+            <Button
+              ref={generateButtonRef}
+              type="button"
+              onClick={handleGenerate}
+              disabled={isDisabled || isGenerating}
+              className="h-11 gap-2"
+            >
+              <Sparkles className="w-4 h-4" />
+              {isGenerating ? "생성 중" : "생성"}
+            </Button>
+            {isGenerating && (
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={cancelGeneration}
+                className="size-11"
+                aria-label="생성 취소"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {!isAssignmentMode &&
+          (availableTexts.size > 0 ||
+            (extractionStatus && extractionStatus.size > 0)) && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <FileText className="w-3.5 h-3.5" />
+              <span>
+                업로드 자료 {extractionStatus?.size || availableTexts.size}개를
+                참고합니다.
+              </span>
+              {extractionStatus &&
+                Array.from(extractionStatus.entries()).map(([fileName, status]) => (
+                  <span
+                    key={fileName}
+                    className={
+                      status === "done"
+                        ? "text-emerald-600 dark:text-emerald-400"
+                        : status === "failed"
+                        ? "text-red-500"
+                        : "text-blue-600 dark:text-blue-400"
+                    }
+                  >
+                    {fileName}
+                  </span>
+                ))}
+            </div>
+          )}
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        {isDisabled && (
+          <p className="text-xs text-muted-foreground">
+            {isAssignmentMode
+              ? "과제 제목과 리서치 주제를 입력해야 생성할 수 있습니다."
+              : "시험 제목을 먼저 입력해야 생성할 수 있습니다."}
+          </p>
+        )}
+
+        {isGenerating && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>{displayStageMessage}</span>
+              {isMultiQuestion && <span>{Math.round(progressPercent)}%</span>}
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+              {isMultiQuestion ? (
+                <motion.div
+                  className="h-full rounded-full bg-primary"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPercent}%` }}
+                  transition={{ duration: 0.5, ease: "easeOut" }}
+                />
+              ) : (
+                <motion.div
+                  className="h-full w-2/5 rounded-full bg-primary/70"
+                  animate={{ x: ["-100%", "250%"] }}
+                  transition={{
+                    duration: 1.5,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {(generatedQuestions.length > 0 || skeletonCount > 0) && (
+          <div className="space-y-3 rounded-md border bg-muted/20 p-3">
+            <p className="text-xs font-medium text-muted-foreground">
+              생성 완료 시 문제 목록에 자동 추가됩니다.
+            </p>
+            <AnimatePresence mode="popLayout">
+              {generatedQuestions.map((q, idx) => (
+                <motion.div
+                  key={q.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.3 }}
+                  layout
+                >
+                  <GeneratedQuestionCard
+                    question={q}
+                    index={idx}
+                    isRegenerating={regeneratingId === q.id}
+                    isAdjusting={adjustingId === q.id}
+                    adjustHistory={getAdjustHistory(q.id)}
+                    generationMode={
+                      isAssignmentMode ? "research-assignment" : "case"
+                    }
+                    onRegenerate={() => regenerateOne(q.id, getGenerateParams())}
+                    onRemove={() => removeQuestion(q.id)}
+                    onAdjust={async (instruction) => {
+                      return await adjustQuestion(
+                        q.id,
+                        instruction,
+                        examTitle,
+                        language,
+                        isAssignmentMode ? "research-assignment" : "case",
+                      );
+                    }}
+                    onApplyAdjustment={(newText) =>
+                      applyAdjustment(q.id, newText)
+                    }
+                    isAnyAdjusting={adjustingId !== null}
+                  />
+                </motion.div>
+              ))}
+              {Array.from({ length: skeletonCount }, (_, i) => (
+                <motion.div
+                  key={`skeleton-${generationProgress.current + i}`}
+                  initial={{ opacity: 0.5 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.2 }}
+                  layout
+                >
+                  <QuestionSkeletonCard index={generationProgress.current + i} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
