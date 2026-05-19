@@ -529,6 +529,15 @@ export const adjustCaseQuestionSchema = z.object({
   examTitle: z.string().optional(),
   language: z.enum(["ko", "en"]).default("ko"),
   generationMode: z.enum(["case", "research-assignment"]).default("case"),
+  /**
+   * 수정 대상 문제의 유형. essay = 서술형(기본, 기존 동작), multiple-choice =
+   * 사지선다, true-false = O/X. 객관식 유형은 본문 + 선택지 + 정답을 함께 생성한다.
+   */
+  questionType: z.enum(["multiple-choice", "true-false", "essay"]).default("essay"),
+  /** 객관식 유형일 때, 반복 수정의 기준이 되는 현재 선택지들. */
+  currentOptions: z.array(z.string()).optional(),
+  /** 객관식 유형일 때, 반복 수정의 기준이 되는 현재 정답 인덱스. */
+  currentCorrectOptionIndex: z.number().int().min(0).optional(),
 });
 
 // Helper to validate and return typed result or error response

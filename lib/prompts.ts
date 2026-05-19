@@ -2248,6 +2248,17 @@ export function buildObjectiveQuestionGenerationPrompt(params: {
   customInstructions?: string;
   materialsContext?: string;
   language?: PromptLanguage;
+  /**
+   * 반복 수정 모드: 교수자가 기존 객관식 초안을 지시에 맞춰 다듬으라고 요청할 때
+   * 사용한다. 지정 시 user 프롬프트에 "기존 초안 + 지시" 섹션이 추가된다.
+   * 출력 JSON 형식은 동일하게 유지된다.
+   */
+  instruction?: string;
+  currentQuestion?: {
+    text: string;
+    options?: string[];
+    correctOptionIndex?: number;
+  };
 }): { system: string; user: string } {
   const {
     examTitle,
@@ -2257,6 +2268,8 @@ export function buildObjectiveQuestionGenerationPrompt(params: {
     customInstructions,
     materialsContext,
     language = "ko",
+    instruction,
+    currentQuestion,
   } = params;
 
   const isTrueFalse = questionType === "true-false";
@@ -2300,6 +2313,18 @@ ${optionRule}
     if (topics) user += `\nTopics: ${topics}`;
     if (customInstructions) user += `\nInstructions: ${customInstructions}`;
     if (materialsContext) user += `\n\n[Reference materials]\n${materialsContext}`;
+    if (currentQuestion && instruction) {
+      user += `\n\n[Existing draft to iterate on]\nQuestion: ${currentQuestion.text}`;
+      if (currentQuestion.options && currentQuestion.options.length > 0) {
+        user += `\nOptions: ${currentQuestion.options
+          .map((o, i) => `${i}) ${o}`)
+          .join("  ")}`;
+      }
+      if (typeof currentQuestion.correctOptionIndex === "number") {
+        user += `\nCurrent correct answer index: ${currentQuestion.correctOptionIndex}`;
+      }
+      user += `\n\n[Edit instruction]\n${instruction}\n\nRevise the existing draft above according to the instruction, keeping unchanged parts intact. Return the single revised question in the JSON format specified above.`;
+    }
     return { system, user };
   }
 
@@ -2341,6 +2366,18 @@ ${optionRule}
   if (topics) user += `\n특정 토픽: ${topics}`;
   if (customInstructions) user += `\n추가 지시사항: ${customInstructions}`;
   if (materialsContext) user += `\n\n[참고 자료]\n${materialsContext}`;
+  if (currentQuestion && instruction) {
+    user += `\n\n[수정 대상 기존 초안]\n문항: ${currentQuestion.text}`;
+    if (currentQuestion.options && currentQuestion.options.length > 0) {
+      user += `\n선택지: ${currentQuestion.options
+        .map((o, i) => `${i}) ${o}`)
+        .join("  ")}`;
+    }
+    if (typeof currentQuestion.correctOptionIndex === "number") {
+      user += `\n현재 정답 인덱스: ${currentQuestion.correctOptionIndex}`;
+    }
+    user += `\n\n[수정 지시]\n${instruction}\n\n위 기존 초안을 지시에 따라 수정하되, 변경할 필요 없는 부분은 그대로 유지하세요. 수정된 문제 하나를 위 JSON 형식으로 반환하세요.`;
+  }
   return { system, user };
 }
 
