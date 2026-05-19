@@ -101,6 +101,12 @@ const QUESTION_TYPE_LABELS: Record<PickerQuestionType, string> = {
   case: "사례형",
 };
 
+const QUESTION_TYPE_DESCRIPTIONS: Record<PickerQuestionType, string> = {
+  mcq: "4지선다 객관식",
+  "true-false": "참·거짓 O/X",
+  case: "서술형 사례",
+};
+
 function getStageMessage(
   stage: string,
   current: number,
@@ -297,9 +303,13 @@ export function CaseQuestionGenerator({
     const showPicker = showTypeSelector && !isAssignmentMode;
     return (
       <div className="space-y-3" data-testid="simple-ai-generator">
-        {/* 문제 유형 선택 — 점선 박스 3개 */}
+        {/* 문제 유형 선택 — 점선 정사각형 박스 3개 */}
         {showPicker && (
-          <div className="grid grid-cols-3 gap-2" role="group" aria-label="문제 유형">
+          <div
+            className="mx-auto grid w-full max-w-md grid-cols-3 gap-3"
+            role="group"
+            aria-label="문제 유형"
+          >
             {(Object.keys(QUESTION_TYPE_LABELS) as PickerQuestionType[]).map((t) => {
               const isSelected = questionType === t;
               return (
@@ -308,13 +318,18 @@ export function CaseQuestionGenerator({
                   type="button"
                   aria-pressed={isSelected}
                   onClick={() => setQuestionType(t)}
-                  className={`rounded-md border border-dashed px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`flex aspect-square flex-col items-center justify-center gap-1.5 rounded-md border border-dashed p-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     isSelected
                       ? "border-primary bg-primary/5 text-primary ring-1 ring-primary"
                       : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                   }`}
                 >
-                  {QUESTION_TYPE_LABELS[t]}
+                  <span className="text-sm font-semibold">
+                    {QUESTION_TYPE_LABELS[t]}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {QUESTION_TYPE_DESCRIPTIONS[t]}
+                  </span>
                 </button>
               );
             })}

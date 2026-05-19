@@ -858,7 +858,7 @@ export function SimpleExamAuthoringForm({
       {/* 문제 추가 Dialog — 유형/개수/AI 프롬프트 */}
       <Dialog open={isAddPickerOpen} onOpenChange={setIsAddPickerOpen}>
         <DialogContent
-          className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+          className="max-h-[85vh] overflow-y-auto sm:max-w-4xl"
           data-testid="add-question-picker"
         >
           <DialogHeader>
