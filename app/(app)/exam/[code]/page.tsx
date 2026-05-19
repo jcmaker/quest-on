@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, type SetStateAction } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type SetStateAction } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
@@ -58,6 +58,7 @@ import { PreflightModal } from "@/components/exam/PreflightModal";
 import { WaitingRoom } from "@/components/exam/WaitingRoom";
 import { LateEntryWaiting } from "@/components/exam/LateEntryWaiting";
 import { cn } from "@/lib/utils";
+import { seededOptionOrder } from "@/lib/shuffle";
 
 interface Question {
   id: string;
@@ -203,6 +204,27 @@ export default function ExamPage() {
   // 객관식/OX 문제는 구조화된 선택만 받고 AI 튜터 채팅을 노출하지 않는다 (제품 결정 #2).
   const currentQuestionType = exam?.questions?.[currentQuestion]?.type;
   const isCurrentObjective = isObjectiveQuestion(currentQuestionType);
+
+  // 객관식 선택지 표시 순서 — sessionId + 문제 id 로 시드한 결정론적 순열.
+  // 저장 값은 항상 원본 인덱스이며, 이 순서는 순수 표시용이다.
+  // 메모 키는 sessionId / 문제 id / 선택지 "개수"로만 잡는다.
+  // options 배열은 매 렌더 새 참조라 의존성으로 쓰면 안 된다.
+  const currentQuestionId = exam?.questions?.[currentQuestion]?.id;
+  const currentOptionCount =
+    exam?.questions?.[currentQuestion]?.options?.length ?? 0;
+  const objectiveDisplayOrder = useMemo(() => {
+    // sessionId 가 아직 없으면 undefined → 패널이 원본 순서로 폴백.
+    // multiple-choice 만 섞는다 (true-false 는 패널에서 항등 처리).
+    if (
+      !sessionId ||
+      !currentQuestionId ||
+      currentQuestionType !== "multiple-choice" ||
+      currentOptionCount < 2
+    ) {
+      return undefined;
+    }
+    return seededOptionOrder(sessionId + currentQuestionId, currentOptionCount);
+  }, [sessionId, currentQuestionId, currentQuestionType, currentOptionCount]);
 
   // --- Early returns ---
 
@@ -525,6 +547,7 @@ export default function ExamPage() {
                       <ObjectiveAnswerPanel
                         type={exam.questions[currentQuestion].type}
                         options={exam.questions[currentQuestion].options}
+                        displayOrder={objectiveDisplayOrder}
                         value={autoSave.draftAnswers[currentQuestion]?.text || ""}
                         onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
                       />
@@ -546,6 +569,7 @@ export default function ExamPage() {
                 <ObjectiveAnswerPanel
                   type={exam.questions[currentQuestion].type}
                   options={exam.questions[currentQuestion].options}
+                  displayOrder={objectiveDisplayOrder}
                   value={autoSave.draftAnswers[currentQuestion]?.text || ""}
                   onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
                   fullHeight

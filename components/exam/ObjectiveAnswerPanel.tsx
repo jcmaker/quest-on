@@ -15,6 +15,12 @@ interface ObjectiveAnswerPanelProps {
   value: string;
   /** 선택 시 인덱스 문자열을 그대로 전달. */
   onChange: (value: string) => void;
+  /**
+   * 선택지 표시 순서 — 원본 인덱스의 순열. 예: [2,0,3,1].
+   * 객관식(multiple-choice)을 섞어 보여줄 때 사용한다. 순수 표시용이며,
+   * 저장되는 값은 항상 원본 인덱스다. 없으면 원본 순서 그대로 렌더한다.
+   */
+  displayOrder?: number[];
   fullHeight?: boolean;
 }
 
@@ -29,6 +35,7 @@ export function ObjectiveAnswerPanel({
   options,
   value,
   onChange,
+  displayOrder,
   fullHeight = false,
 }: ObjectiveAnswerPanelProps) {
   // true-false 는 옵션이 비어 있어도 O/X 로 폴백.
@@ -38,6 +45,15 @@ export function ObjectiveAnswerPanel({
       : type === "true-false"
         ? ["O", "X"]
         : [];
+
+  // 표시 순서 — 유효한 순열일 때만 사용하고, 아니면 원본 순서로 폴백.
+  // true-false 는 절대 섞지 않는다 (항상 항등 순서).
+  const order =
+    type !== "true-false" &&
+    displayOrder &&
+    displayOrder.length === resolvedOptions.length
+      ? displayOrder
+      : resolvedOptions.map((_, index) => index);
 
   const selectedIndex = (() => {
     const parsed = Number.parseInt(value, 10);
@@ -68,16 +84,17 @@ export function ObjectiveAnswerPanel({
             </p>
           ) : (
             <ul className="space-y-2.5" role="radiogroup" aria-label="답안 선택지">
-              {resolvedOptions.map((option, index) => {
-                const isSelected = selectedIndex === index;
+              {order.map((originalIndex, displayIndex) => {
+                const option = resolvedOptions[originalIndex];
+                const isSelected = selectedIndex === originalIndex;
                 return (
-                  <li key={index}>
+                  <li key={originalIndex}>
                     <button
                       type="button"
                       role="radio"
                       aria-checked={isSelected}
-                      onClick={() => onChange(String(index))}
-                      data-testid={`objective-option-${index}`}
+                      onClick={() => onChange(String(originalIndex))}
+                      data-testid={`objective-option-${originalIndex}`}
                       className={cn(
                         "flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors sm:p-4",
                         isSelected
@@ -93,7 +110,7 @@ export function ObjectiveAnswerPanel({
                             : "border-muted-foreground/40 text-muted-foreground",
                         )}
                       >
-                        {index + 1}
+                        {displayIndex + 1}
                       </span>
                       <span className="flex-1 text-sm sm:text-base">
                         {option}
