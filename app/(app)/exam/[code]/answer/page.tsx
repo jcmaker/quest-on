@@ -576,6 +576,9 @@ export default function AnswerSubmission() {
                         : exam.questions[currentQuestion]?.type ===
                           "multiple-choice"
                         ? "객관식"
+                        : exam.questions[currentQuestion]?.type ===
+                          "true-false"
+                        ? "O/X"
                         : "문제"}
                     </div>
                   </div>

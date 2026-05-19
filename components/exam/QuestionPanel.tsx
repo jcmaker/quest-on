@@ -16,10 +16,28 @@ interface Question {
   id: string;
   text: string;
   type: string;
-  points: number;
+  points?: number;
+  options?: string[];
+  correctOptionIndex?: number;
   title?: string;
   ai_context?: string;
   rubric?: RubricItem[];
+}
+
+/** 문제 유형 → 한국어 라벨. 비-exhaustive 분기 방지용 단일 소스. */
+export function questionTypeLabel(type: string): string {
+  switch (type) {
+    case "essay":
+      return "서술형 문제";
+    case "short-answer":
+      return "단답형 문제";
+    case "multiple-choice":
+      return "객관식 문제";
+    case "true-false":
+      return "O/X 문제";
+    default:
+      return "문제";
+  }
 }
 
 interface QuestionPanelProps {
@@ -58,11 +76,13 @@ export function QuestionPanel({
               문제 {questionNumber}
             </span>
             <span className="text-xs sm:text-sm font-medium text-muted-foreground">
-              {question.type === "essay" ? "서술형 문제" : "문제"}
+              {questionTypeLabel(question.type)}
             </span>
-            <span className="text-xs sm:text-sm text-muted-foreground">
-              배점: {question.points}점
-            </span>
+            {typeof question.points === "number" && (
+              <span className="text-xs sm:text-sm text-muted-foreground">
+                배점: {question.points}점
+              </span>
+            )}
           </div>
 
           {question.title && (

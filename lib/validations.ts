@@ -81,7 +81,17 @@ export const examQuestionItemSchema = z.object({
   idx: z.number().optional(),
   ai_context: z.string().optional().nullable(),
   options: z.array(z.string()).optional(),
+  correctOptionIndex: z.number().int().min(0).optional(),
+  points: z.number().optional(),
 });
+
+/** 문제 유형 enum — 시험/과제 전반에서 단일 소스로 공유. */
+export const questionTypeEnum = z.enum([
+  "multiple-choice",
+  "true-false",
+  "essay",
+  "short-answer",
+]);
 
 export const examQuestionsSchema = z.array(examQuestionItemSchema);
 
@@ -201,8 +211,9 @@ export const createExamSchema = z.object({
   questions: z.array(z.object({
     id: z.string(),
     text: z.string(),
-    type: z.enum(["multiple-choice", "essay", "short-answer"]),
+    type: questionTypeEnum,
     options: z.array(z.string()).optional(),
+    correctOptionIndex: z.number().int().min(0).optional(),
   }).passthrough()),
   materials: z.array(z.string()).optional(),
   materials_text: z.array(z.object({
@@ -328,8 +339,9 @@ export const createAssignmentSchema = z.object({
   questions: z.array(z.object({
     id: z.string(),
     text: z.string(),
-    type: z.enum(["multiple-choice", "essay", "short-answer"]),
+    type: questionTypeEnum,
     options: z.array(z.string()).optional(),
+    correctOptionIndex: z.number().int().min(0).optional(),
   }).passthrough()),
   materials: z.array(z.string()).optional(),
   materials_text: z.array(z.object({
@@ -431,6 +443,8 @@ export const generateCaseQuestionsSchema = z.object({
   existingRubric: z.array(examRubricItemSchema).optional(),
   language: z.enum(["ko", "en"]).default("ko"),
   generationMode: z.enum(["case", "research-assignment"]).default("case"),
+  /** 생성할 문제 유형. mcq=사지선다, true-false=O/X, case=사례형(서술). */
+  questionType: z.enum(["mcq", "true-false", "case"]).default("case"),
 });
 
 // AI Case Question Adjustment

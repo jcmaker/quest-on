@@ -647,7 +647,10 @@ export default function EditExam({
               ...newQuestions.map((q) => ({
                 id: q.id,
                 text: q.text,
-                type: q.type as "essay" | "short-answer" | "multiple-choice",
+                type: q.type,
+                options: q.options,
+                correctOptionIndex: q.correctOptionIndex,
+                rubric: q.rubric,
               })),
             ]);
           }}

@@ -17,8 +17,12 @@ import {
 export interface Question {
   id: string;
   text: string;
-  type: "multiple-choice" | "essay" | "short-answer";
+  type: "multiple-choice" | "true-false" | "essay" | "short-answer";
   options?: string[];
+  /** 객관식/OX 정답 선택지 인덱스 (objective 문제 전용). */
+  correctOptionIndex?: number;
+  /** 배점. UI/저장 전반에서 선택값으로 통일 — 미설정 시 표시하지 않는다. */
+  points?: number;
   rubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
 }
 
