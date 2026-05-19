@@ -13,6 +13,8 @@ import {
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { QuestionPanel } from "@/components/exam/QuestionPanel";
 import { AnswerPanel } from "@/components/exam/AnswerPanel";
+import { ObjectiveAnswerPanel } from "@/components/exam/ObjectiveAnswerPanel";
+import { isObjectiveQuestion } from "@/lib/grading-helpers";
 import { SubmitConfirmDialog } from "@/components/exam/SubmitConfirmDialog";
 import { ExamChatSidebar } from "@/components/exam/ExamChatSidebar";
 import { MainContentWrapper } from "@/components/exam/MainContentWrapper";
@@ -61,7 +63,9 @@ interface Question {
   id: string;
   text: string;
   type: string;
-  points: number;
+  points?: number;
+  options?: string[];
+  correctOptionIndex?: number;
   title?: string;
   ai_context?: string;
 }
@@ -195,6 +199,10 @@ export default function ExamPage() {
   const filteredChatHistory = examChat.chatHistory.filter(
     (msg) => msg.qIdx === currentQuestion
   );
+
+  // 객관식/OX 문제는 구조화된 선택만 받고 AI 튜터 채팅을 노출하지 않는다 (제품 결정 #2).
+  const currentQuestionType = exam?.questions?.[currentQuestion]?.type;
+  const isCurrentObjective = isObjectiveQuestion(currentQuestionType);
 
   // --- Early returns ---
 
@@ -401,18 +409,21 @@ export default function ExamPage() {
       className="flex-row-reverse"
       style={{ "--sidebar-width": "40vw", "--sidebar-width-icon": "3rem" } as React.CSSProperties & { [key: string]: string }}
     >
-      <ExamChatSidebar
-        chatHistory={filteredChatHistory}
-        chatMessage={examChat.chatMessage}
-        setChatMessage={examChat.setChatMessage}
-        sendChatMessage={examChat.sendChatMessage}
-        isLoading={examChat.isLoading}
-        isTyping={examChat.isTyping}
-        sessionError={session.sessionError}
-        setSessionError={session.setSessionError}
-        chatEndRef={chatEndRef}
-        currentQuestion={currentQuestion}
-      />
+      {/* 객관식/OX 문제에서는 AI 튜터 채팅을 노출하지 않는다 (제품 결정 #2). */}
+      {!isCurrentObjective && (
+        <ExamChatSidebar
+          chatHistory={filteredChatHistory}
+          chatMessage={examChat.chatMessage}
+          setChatMessage={examChat.setChatMessage}
+          sendChatMessage={examChat.sendChatMessage}
+          isLoading={examChat.isLoading}
+          isTyping={examChat.isTyping}
+          sessionError={session.sessionError}
+          setSessionError={session.setSessionError}
+          chatEndRef={chatEndRef}
+          currentQuestion={currentQuestion}
+        />
+      )}
 
       <SidebarInset className="flex-1 min-h-0 overflow-hidden transition-all duration-75 ease-out">
         <div className="h-screen flex flex-col bg-background">
@@ -510,18 +521,35 @@ export default function ExamPage() {
                   </ResizablePanel>
                   <ResizableHandle withHandle />
                   <ResizablePanel defaultSize={60} minSize={30}>
-                    <AnswerPanel
-                      value={autoSave.draftAnswers[currentQuestion]?.text || ""}
-                      onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
-                      onPaste={submission.handlePaste}
-                      isSaving={autoSave.isSaving}
-                      lastSaved={autoSave.lastSaved}
-                      saveError={autoSave.saveError}
-                      saveShortcut={saveShortcut}
-                      onFocus={() => setIsQuestionVisible(false)}
-                    />
+                    {isCurrentObjective ? (
+                      <ObjectiveAnswerPanel
+                        type={exam.questions[currentQuestion].type}
+                        options={exam.questions[currentQuestion].options}
+                        value={autoSave.draftAnswers[currentQuestion]?.text || ""}
+                        onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
+                      />
+                    ) : (
+                      <AnswerPanel
+                        value={autoSave.draftAnswers[currentQuestion]?.text || ""}
+                        onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
+                        onPaste={submission.handlePaste}
+                        isSaving={autoSave.isSaving}
+                        lastSaved={autoSave.lastSaved}
+                        saveError={autoSave.saveError}
+                        saveShortcut={saveShortcut}
+                        onFocus={() => setIsQuestionVisible(false)}
+                      />
+                    )}
                   </ResizablePanel>
                 </ResizablePanelGroup>
+              ) : isCurrentObjective ? (
+                <ObjectiveAnswerPanel
+                  type={exam.questions[currentQuestion].type}
+                  options={exam.questions[currentQuestion].options}
+                  value={autoSave.draftAnswers[currentQuestion]?.text || ""}
+                  onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
+                  fullHeight
+                />
               ) : (
                 <AnswerPanel
                   value={autoSave.draftAnswers[currentQuestion]?.text || ""}

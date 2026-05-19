@@ -61,6 +61,10 @@ export function QuestionPanel({
     ? question.rubric
     : rubric;
 
+  // 객관식/OX 는 서술형 풀이 안내·루브릭이 의미 없다.
+  const isObjective =
+    question.type === "multiple-choice" || question.type === "true-false";
+
   return (
     <div className="relative h-full flex flex-col border-b border-border bg-muted/20">
       <div
@@ -102,23 +106,25 @@ export function QuestionPanel({
             </CopyProtector>
           </div>
 
-          <div className="bg-muted/40 p-3 sm:p-4 rounded-lg border border-border">
-            <h4 className="font-semibold mb-2 sm:mb-3 text-sm sm:text-base text-foreground">
-              요구사항
-            </h4>
-            <ul className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-muted-foreground">
-              <li className="flex items-start gap-2">
-                <span className="text-primary mt-0.5">•</span>
-                <span>문제를 정확히 이해하고 답변하세요</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-primary mt-0.5">•</span>
-                <span>풀이 과정을 단계별로 명확히 작성하세요</span>
-              </li>
-            </ul>
-          </div>
+          {!isObjective && (
+            <div className="bg-muted/40 p-3 sm:p-4 rounded-lg border border-border">
+              <h4 className="font-semibold mb-2 sm:mb-3 text-sm sm:text-base text-foreground">
+                요구사항
+              </h4>
+              <ul className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">•</span>
+                  <span>문제를 정확히 이해하고 답변하세요</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">•</span>
+                  <span>풀이 과정을 단계별로 명확히 작성하세요</span>
+                </li>
+              </ul>
+            </div>
+          )}
 
-          {rubricPublic && resolvedRubric && resolvedRubric.length > 0 && (
+          {!isObjective && rubricPublic && resolvedRubric && resolvedRubric.length > 0 && (
             <div className="bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800 p-4 sm:p-5 rounded-lg mt-4 shadow-sm">
               <h4 className="font-semibold mb-3 sm:mb-4 text-sm sm:text-base text-blue-900 dark:text-blue-100 flex items-center gap-2">
                 <span className="text-lg">📋</span>
