@@ -198,7 +198,7 @@ export function QuestionEditor({
                 className="h-8 gap-1.5"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
-                AI 다듬기
+                AI로 문제 생성
               </Button>
             )}
             {onRemove && (
@@ -271,7 +271,7 @@ export function QuestionEditor({
                 className="relative overflow-hidden gap-1.5 rounded-full"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
-                AI로 문제 다듬기
+                AI로 문제 생성
               </Button>
             </Shine>
           )}
@@ -295,7 +295,7 @@ export function QuestionEditor({
       </div>
       {onAIEdit && (
         <p className="text-xs text-muted-foreground mb-4">
-          난이도 조절 · 표현 개선 · 분량 조정
+          문제·선택지·정답을 AI로 생성
         </p>
       )}
       <div className="space-y-4">

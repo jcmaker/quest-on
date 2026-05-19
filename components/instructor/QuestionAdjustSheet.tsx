@@ -33,6 +33,13 @@ const ASSIGNMENT_PRESETS = [
   { label: "더 길게", instruction: "리서치 지시문을 더 자세하게 풀어 쓰되 정답이나 조사 결과는 포함하지 마세요." },
 ];
 
+/** {@link QuestionAdjustSheet} 의 적용 콜백 페이로드. */
+export interface QuestionAdjustApply {
+  text: string;
+  options?: string[];
+  correctOptionIndex?: number;
+}
+
 interface QuestionAdjustSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -40,8 +47,57 @@ interface QuestionAdjustSheetProps {
   history: ChatMessage[];
   isAdjusting: boolean;
   onSendInstruction: (instruction: string) => Promise<unknown>;
-  onApply: (newText: string) => void;
+  onApply: (update: QuestionAdjustApply) => void;
   generationMode?: "case" | "research-assignment";
+  /** 현재 문제 유형 — 미리보기·플레이스홀더를 유형에 맞춘다. */
+  questionType?: "multiple-choice" | "true-false" | "essay" | "short-answer";
+  /** 현재 문제의 선택지 — 상단 미리보기에 노출한다. */
+  questionOptions?: string[];
+  /** 현재 문제의 정답 인덱스. */
+  questionCorrectOptionIndex?: number;
+}
+
+/** 선택지 목록 미리보기 — 정답 칸을 강조해 보여준다. */
+function OptionPreview({
+  options,
+  correctOptionIndex,
+}: {
+  options: string[];
+  correctOptionIndex?: number;
+}) {
+  return (
+    <ul className="mt-2 space-y-1">
+      {options.map((option, idx) => {
+        const isCorrect = correctOptionIndex === idx;
+        return (
+          <li
+            key={idx}
+            className={`flex items-center gap-2 rounded-md border px-2 py-1.5 text-sm ${
+              isCorrect
+                ? "border-primary bg-primary/5 text-foreground"
+                : "border-border text-muted-foreground"
+            }`}
+          >
+            <span
+              className={`flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] ${
+                isCorrect
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border"
+              }`}
+            >
+              {isCorrect ? <Check className="size-3" /> : idx + 1}
+            </span>
+            <span className="min-w-0 flex-1 break-words">{option}</span>
+            {isCorrect && (
+              <span className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                정답
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 export function QuestionAdjustSheet({
@@ -53,6 +109,9 @@ export function QuestionAdjustSheet({
   onSendInstruction,
   onApply,
   generationMode = "case",
+  questionType,
+  questionOptions,
+  questionCorrectOptionIndex,
 }: QuestionAdjustSheetProps) {
   const [input, setInput] = useState("");
   const [appliedIdx, setAppliedIdx] = useState<number | null>(null);
@@ -60,6 +119,28 @@ export function QuestionAdjustSheet({
   const [loadingPreset, setLoadingPreset] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const presets = generationMode === "research-assignment" ? ASSIGNMENT_PRESETS : PRESETS;
+
+  const isObjective =
+    questionType === "multiple-choice" || questionType === "true-false";
+  const sheetTitle =
+    generationMode === "research-assignment"
+      ? "AI로 과제 생성"
+      : "AI로 문제 생성";
+  const emptyHint = isObjective
+    ? questionType === "true-false"
+      ? "원하는 O·X 문제를 한 문장으로 적어주세요. 문장과 정답을 AI가 만들어 줍니다."
+      : "원하는 객관식 문제를 한 문장으로 적어주세요. 문제·선택지·정답을 AI가 만들어 줍니다."
+    : "원하는 문제를 한 문장으로 적어주세요.";
+  const emptyExample = isObjective
+    ? questionType === "true-false"
+      ? '예: "재귀 함수에 대한 O·X 문제를 만들어줘"'
+      : '예: "다형성 개념을 묻는 사지선다 문제를 만들어줘"'
+    : '예: "난이도는 유지하고, 사례를 한국 기업으로 바꿔줘"';
+  const inputPlaceholder = isObjective
+    ? questionType === "true-false"
+      ? "예: 상속 개념을 묻는 O·X 문제"
+      : "예: 다형성 개념을 묻는 사지선다 문제"
+    : "예: 난이도는 유지하고, 사례를 한국 기업으로 바꿔줘";
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -87,7 +168,7 @@ export function QuestionAdjustSheet({
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent className="w-full sm:max-w-lg flex flex-col gap-0 p-0">
         <SheetHeader className="px-6 py-4 border-b shrink-0">
-          <SheetTitle>{generationMode === "research-assignment" ? "AI로 과제 다듬기" : "AI로 문제 다듬기"}</SheetTitle>
+          <SheetTitle>{sheetTitle}</SheetTitle>
         </SheetHeader>
 
         {/* P0-2: Current question preview with expand/collapse toggle */}
@@ -110,6 +191,12 @@ export function QuestionAdjustSheet({
             }`}
           >
             <RichTextViewer content={questionText} className="prose-sm" />
+            {questionOptions && questionOptions.length > 0 && (
+              <OptionPreview
+                options={questionOptions}
+                correctOptionIndex={questionCorrectOptionIndex}
+              />
+            )}
           </div>
         </div>
 
@@ -117,9 +204,9 @@ export function QuestionAdjustSheet({
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 min-h-0">
           {history.length === 0 && (
             <p className="text-sm text-muted-foreground text-center py-8">
-              원하는 수정을 한 문장으로 적어주세요.
+              {emptyHint}
               <br />
-              예: &quot;난이도는 유지하고, 사례를 한국 기업으로 바꿔줘&quot;
+              {emptyExample}
             </p>
           )}
 
@@ -159,6 +246,12 @@ export function QuestionAdjustSheet({
                             content={msg.questionText}
                             className="prose-sm"
                           />
+                          {msg.options && msg.options.length > 0 && (
+                            <OptionPreview
+                              options={msg.options}
+                              correctOptionIndex={msg.correctOptionIndex}
+                            />
+                          )}
                         </div>
                       </CollapsibleContent>
                     </Collapsible>
@@ -170,7 +263,11 @@ export function QuestionAdjustSheet({
                       className={`gap-1.5 ${appliedIdx === idx ? "bg-green-600 hover:bg-green-600 text-white" : ""}`}
                       disabled={appliedIdx !== null}
                       onClick={() => {
-                        onApply(msg.questionText!);
+                        onApply({
+                          text: msg.questionText!,
+                          options: msg.options,
+                          correctOptionIndex: msg.correctOptionIndex,
+                        });
                         setAppliedIdx(idx);
                         toast.success("수정 사항이 적용되었습니다.");
                         setTimeout(() => {
@@ -237,7 +334,7 @@ export function QuestionAdjustSheet({
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="예: 난이도는 유지하고, 사례를 한국 기업으로 바꿔줘"
+            placeholder={inputPlaceholder}
             className="min-h-[44px] max-h-32 resize-none"
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {

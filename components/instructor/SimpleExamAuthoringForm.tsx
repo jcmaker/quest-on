@@ -39,7 +39,10 @@ import {
 } from "lucide-react";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { QuestionEditor } from "@/components/instructor/QuestionEditor";
-import { QuestionAdjustSheet } from "@/components/instructor/QuestionAdjustSheet";
+import {
+  QuestionAdjustSheet,
+  type QuestionAdjustApply,
+} from "@/components/instructor/QuestionAdjustSheet";
 import type { RubricItem } from "@/components/instructor/RubricTable";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 import toast from "react-hot-toast";
@@ -358,6 +361,12 @@ export function SimpleExamAuthoringForm({
       });
 
       try {
+        // 라우트 enum 에는 short-answer 가 없으므로 essay 로 매핑한다.
+        const questionType: "multiple-choice" | "true-false" | "essay" =
+          question.type === "multiple-choice" ||
+          question.type === "true-false"
+            ? question.type
+            : "essay";
         const res = await fetch("/api/ai/adjust-question", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -366,12 +375,21 @@ export function SimpleExamAuthoringForm({
             questionText: question.text,
             instruction,
             language,
+            questionType,
+            ...(question.options && question.options.length > 0
+              ? { currentOptions: question.options }
+              : {}),
+            ...(typeof question.correctOptionIndex === "number"
+              ? { currentCorrectOptionIndex: question.correctOptionIndex }
+              : {}),
           }),
         });
         if (!res.ok) throw new Error("Failed");
         const data = (await res.json()) as {
           questionText: string;
           explanation: string;
+          options?: string[];
+          correctOptionIndex?: number;
         };
         setAdjustHistories((prev) => {
           const next = new Map(prev);
@@ -381,6 +399,8 @@ export function SimpleExamAuthoringForm({
               role: "assistant",
               content: data.explanation,
               questionText: data.questionText,
+              options: data.options,
+              correctOptionIndex: data.correctOptionIndex,
             },
           ]);
           return next;
@@ -397,9 +417,19 @@ export function SimpleExamAuthoringForm({
   );
 
   const handleApplyAdjustment = useCallback(
-    (newText: string) => {
+    (update: QuestionAdjustApply) => {
       if (!sheetQuestionId) return;
-      onQuestionUpdate(sheetQuestionId, "text", newText);
+      onQuestionUpdate(sheetQuestionId, "text", update.text);
+      if (update.options) {
+        onQuestionUpdate(sheetQuestionId, "options", update.options);
+      }
+      if (typeof update.correctOptionIndex === "number") {
+        onQuestionUpdate(
+          sheetQuestionId,
+          "correctOptionIndex",
+          update.correctOptionIndex,
+        );
+      }
     },
     [sheetQuestionId, onQuestionUpdate],
   );
@@ -1014,6 +1044,9 @@ export function SimpleExamAuthoringForm({
             if (!open) setSheetQuestionId(null);
           }}
           questionText={sheetQuestion.text}
+          questionType={sheetQuestion.type}
+          questionOptions={sheetQuestion.options}
+          questionCorrectOptionIndex={sheetQuestion.correctOptionIndex}
           history={sheetHistory}
           isAdjusting={isAdjusting}
           onSendInstruction={handleAdjust}

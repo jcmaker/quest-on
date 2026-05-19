@@ -23,6 +23,8 @@ export interface ChatMessage {
   content: string;
   questionText?: string; // AI가 제안한 수정본
   explanation?: string; // 변경 사항 요약
+  options?: string[]; // 객관식/OX 선택지 (objective 문제 생성 시)
+  correctOptionIndex?: number; // 객관식/OX 정답 인덱스
 }
 
 export interface GenerationProgress {

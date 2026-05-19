@@ -428,8 +428,8 @@ export default function CreateExam() {
     field: keyof Question,
     value: string | boolean | number | string[]
   ) => {
-    setQuestions(
-      questions.map((q) => (q.id === id ? { ...q, [field]: value } : q))
+    setQuestions((prev) =>
+      prev.map((q) => (q.id === id ? { ...q, [field]: value } : q))
     );
   };
 
