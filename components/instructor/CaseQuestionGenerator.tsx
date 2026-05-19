@@ -83,29 +83,12 @@ interface CaseQuestionGeneratorProps {
   language?: "ko" | "en";
   mode?: "exam" | "assignment";
   variant?: "card" | "line";
-  /**
-   * line variant 에서 문제 유형 선택기(사지선다/O·X/사례형)를 노출한다.
-   * 시험 만들기 "+" 피커에서만 true. assignment 모드에선 무시된다.
-   */
-  showTypeSelector?: boolean;
   /** AI 에이전트 실행 레이어가 생성기를 프로그램적으로 조작하기 위한 ref. */
   agentHandleRef?: Ref<CaseQuestionGeneratorHandle>;
 }
 
-/** 피커에서 고르는 문제 유형. case=사례형(서술). */
+/** AI 생성 모드에서 만들 문제 유형. case=사례형(서술). */
 type PickerQuestionType = "mcq" | "true-false" | "case";
-
-const QUESTION_TYPE_LABELS: Record<PickerQuestionType, string> = {
-  mcq: "사지선다",
-  "true-false": "O·X",
-  case: "사례형",
-};
-
-const QUESTION_TYPE_DESCRIPTIONS: Record<PickerQuestionType, string> = {
-  mcq: "4지선다 객관식",
-  "true-false": "참·거짓 O/X",
-  case: "서술형 사례",
-};
 
 function getStageMessage(
   stage: string,
@@ -135,14 +118,14 @@ export function CaseQuestionGenerator({
   language,
   mode = "exam",
   variant = "card",
-  showTypeSelector = false,
   agentHandleRef,
 }: CaseQuestionGeneratorProps) {
   const [isOpen, setIsOpen] = useState(true);
   const difficulty = "basic" as const;
   const [questionCount, setQuestionCount] = useState(1);
   const [freeformPrompt, setFreeformPrompt] = useState("");
-  const [questionType, setQuestionType] = useState<PickerQuestionType>("case");
+  // 시험 모드 AI 생성은 사례형(case) 고정. assignment 모드는 research-assignment.
+  const questionType: PickerQuestionType = "case";
   const isAssignmentMode = mode === "assignment";
 
   // AI 에이전트 체화 애니메이션이 가리킬 DOM 요소 ref.
@@ -300,42 +283,8 @@ export function CaseQuestionGenerator({
     : stageMessage;
 
   if (variant === "line") {
-    const showPicker = showTypeSelector && !isAssignmentMode;
     return (
       <div className="space-y-3" data-testid="simple-ai-generator">
-        {/* 문제 유형 선택 — 점선 정사각형 박스 3개 */}
-        {showPicker && (
-          <div
-            className="mx-auto grid w-full max-w-md grid-cols-3 gap-3"
-            role="group"
-            aria-label="문제 유형"
-          >
-            {(Object.keys(QUESTION_TYPE_LABELS) as PickerQuestionType[]).map((t) => {
-              const isSelected = questionType === t;
-              return (
-                <button
-                  key={t}
-                  type="button"
-                  aria-pressed={isSelected}
-                  onClick={() => setQuestionType(t)}
-                  className={`flex aspect-square flex-col items-center justify-center gap-1.5 rounded-md border border-dashed p-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    isSelected
-                      ? "border-primary bg-primary/5 text-primary ring-1 ring-primary"
-                      : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                  }`}
-                >
-                  <span className="text-sm font-semibold">
-                    {QUESTION_TYPE_LABELS[t]}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {QUESTION_TYPE_DESCRIPTIONS[t]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
         <div className="grid gap-2 lg:grid-cols-[112px_minmax(0,1fr)_auto]">
           <Select
             value={questionCount.toString()}

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode, Ref } from "react";
+import type { KeyboardEvent, ReactNode, Ref } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -67,10 +67,15 @@ interface SimpleExamAuthoringFormProps {
   onDragAreaClick: () => void;
   onRemoveFile: (index: number) => void;
   getFileIcon: (fileName: string) => ReactNode;
+  /**
+   * AI 에이전트 실행 레이어가 쓰는 숨은 문제 생성기.
+   * 다이얼로그에는 렌더링하지 않지만, 에이전트 ref 핸들이 살아 있도록
+   * 폼 내부에 시각적으로 숨겨 마운트한다.
+   */
   generator: ReactNode;
   questions: Question[];
   highlightedIds?: Set<string>;
-  onQuestionAdd: () => void;
+  onQuestionAdd: (type?: Question["type"]) => void;
   onQuestionUpdate: (
     id: string,
     field: keyof Question,
@@ -165,6 +170,84 @@ function Field({
   );
 }
 
+/** 문제 추가 다이얼로그에서 고르는 문제 유형. */
+const QUESTION_TYPE_OPTIONS: {
+  type: Question["type"];
+  label: string;
+  description: string;
+}[] = [
+  {
+    type: "multiple-choice",
+    label: "사지선다",
+    description: "4지선다 객관식",
+  },
+  { type: "true-false", label: "O·X", description: "참·거짓 O/X" },
+  { type: "essay", label: "사례형", description: "서술형 사례" },
+];
+
+/**
+ * 문제 추가 다이얼로그의 유형 선택기.
+ * 단일 선택이므로 radiogroup 으로 노출하고 좌우/상하 방향키 이동을 지원한다.
+ */
+function QuestionTypePicker({
+  value,
+  onChange,
+}: {
+  value: Question["type"];
+  onChange: (type: Question["type"]) => void;
+}) {
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    const currentIndex = QUESTION_TYPE_OPTIONS.findIndex(
+      (o) => o.type === value,
+    );
+    const delta =
+      e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+    const nextIndex =
+      (currentIndex + delta + QUESTION_TYPE_OPTIONS.length) %
+      QUESTION_TYPE_OPTIONS.length;
+    const next = QUESTION_TYPE_OPTIONS[nextIndex];
+    onChange(next.type);
+    document.getElementById(`question-type-${next.type}`)?.focus();
+  };
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="문제 유형"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+    >
+      {QUESTION_TYPE_OPTIONS.map((option) => {
+        const isSelected = value === option.type;
+        return (
+          <button
+            key={option.type}
+            id={`question-type-${option.type}`}
+            type="button"
+            role="radio"
+            aria-checked={isSelected}
+            tabIndex={isSelected ? 0 : -1}
+            onClick={() => onChange(option.type)}
+            onKeyDown={handleKeyDown}
+            className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed p-4 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:aspect-square ${
+              isSelected
+                ? "border-primary bg-primary/5 text-primary"
+                : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+            }`}
+          >
+            <span className="text-base font-semibold">{option.label}</span>
+            <span className="text-xs text-muted-foreground">
+              {option.description}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SimpleExamAuthoringForm({
   title,
   duration,
@@ -214,8 +297,11 @@ export function SimpleExamAuthoringForm({
   const [showAdvancedGrading, setShowAdvancedGrading] = useState(false);
   const [rubricTopics, setRubricTopics] = useState("");
   const [rubricInstructions, setRubricInstructions] = useState("");
-  // "+" 문제 추가 — 유형/개수/AI 프롬프트를 입력하는 Dialog 의 열림 상태.
+  // "+" 문제 추가 — 문제 유형을 고르는 Dialog 의 열림 상태.
   const [isAddPickerOpen, setIsAddPickerOpen] = useState(false);
+  // 추가 다이얼로그에서 선택 중인 문제 유형.
+  const [pickedType, setPickedType] =
+    useState<Question["type"]>("multiple-choice");
 
   const isUnlimited = duration === 0;
   const ready = submitReasons.length === 0;
@@ -855,34 +941,38 @@ export function SimpleExamAuthoringForm({
         </div>
       </div>
 
-      {/* 문제 추가 Dialog — 유형/개수/AI 프롬프트 */}
+      {/*
+        AI 에이전트 실행 레이어가 쓰는 숨은 문제 생성기.
+        다이얼로그 UI 에서는 AI 생성을 제거했지만, 에이전트 ref 핸들이
+        살아 있도록 시각적으로 숨겨 마운트만 유지한다.
+      */}
+      <div className="sr-only" aria-hidden>
+        {generator}
+      </div>
+
+      {/* 문제 추가 Dialog — 문제 유형만 고른다. */}
       <Dialog open={isAddPickerOpen} onOpenChange={setIsAddPickerOpen}>
         <DialogContent
-          className="max-h-[85vh] overflow-y-auto sm:max-w-4xl"
+          className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
           data-testid="add-question-picker"
         >
           <DialogHeader>
             <DialogTitle>문제 추가</DialogTitle>
             <DialogDescription>
-              문제 유형과 개수를 고르고, 어떤 문제를 만들지 적어주세요.
+              추가할 문제 유형을 선택하세요.
             </DialogDescription>
           </DialogHeader>
-          {generator}
-          <div className="flex items-center gap-2 border-t pt-3">
-            <span className="text-xs text-muted-foreground">
-              AI 없이 직접 작성하시겠어요?
-            </span>
+          <QuestionTypePicker value={pickedType} onChange={setPickedType} />
+          <div className="flex justify-end border-t pt-4">
             <Button
               type="button"
-              variant="outline"
-              size="sm"
               onClick={() => {
-                onQuestionAdd();
+                onQuestionAdd(pickedType);
                 setIsAddPickerOpen(false);
               }}
               data-testid="manual-add-question-btn"
             >
-              빈 문제 직접 추가
+              추가
             </Button>
           </div>
         </DialogContent>

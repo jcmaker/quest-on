@@ -56,7 +56,12 @@ export class InstructorCreateExamPage {
 
   async addQuestion() {
     await this.ensureManualQuestionsOpen();
+    // "+" 트리거가 문제 유형 선택 다이얼로그를 연다.
     await this.addQuestionBtn.first().click();
+    // 다이얼로그의 "추가" 버튼이 선택한 유형의 빈 문제를 목록에 추가한다.
+    await this.page
+      .getByTestId("manual-add-question-btn")
+      .click();
   }
 
   async fillQuestion(text: string, index = 0) {

@@ -421,13 +421,19 @@ export default function CreateExam() {
     );
   };
 
-  const addQuestion = () => {
+  const addQuestion = (type: Question["type"] = "essay") => {
     setQuestions((prev) => [
       ...prev,
       {
         id: Date.now().toString() + Math.random().toString(36).slice(2),
         text: "",
-        type: "essay" as const,
+        type,
+        // 객관식/OX 는 편집기에서 채울 선택지 골격을 미리 잡아둔다.
+        ...(type === "multiple-choice"
+          ? { options: ["", "", "", ""] }
+          : type === "true-false"
+            ? { options: ["O", "X"] }
+            : {}),
       },
     ]);
   };
@@ -863,7 +869,6 @@ export default function CreateExam() {
                     extractionStatus={fileUpload.fileStatus}
                     language={examData.language}
                     variant="line"
-                    showTypeSelector
                     onQuestionsAccepted={(newQuestions) => {
                       const newIds = newQuestions.map((q) => q.id);
                       setQuestions((prev) => {
