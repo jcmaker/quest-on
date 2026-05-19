@@ -236,6 +236,29 @@ export const createExamSchema = z.object({
         message: "사지선다 문제의 선택지 4개를 모두 입력해주세요.",
         path: ["options"],
       },
+    )
+    .refine(
+      (q) => {
+        if (q.type !== "true-false") return true;
+        const opts = q.options ?? [];
+        return opts.length >= 2 && opts.slice(0, 2).every((o) => o.trim() !== "");
+      },
+      {
+        message: "O/X 문제의 선택지 2개를 모두 입력해주세요.",
+        path: ["options"],
+      },
+    )
+    .refine(
+      (q) => {
+        if (q.type !== "multiple-choice" && q.type !== "true-false") return true;
+        if (typeof q.correctOptionIndex !== "number") return true; // caught by prior refine
+        const opts = q.options ?? [];
+        return q.correctOptionIndex < opts.length;
+      },
+      {
+        message: "정답 인덱스가 선택지 범위를 벗어났습니다.",
+        path: ["correctOptionIndex"],
+      },
     )),
   materials: z.array(z.string()).optional(),
   materials_text: z.array(z.object({
