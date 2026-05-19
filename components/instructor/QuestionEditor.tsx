@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from "react";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -84,12 +85,31 @@ function OptionEditor({
     onUpdate(question.id, "options", next);
   };
 
+  // 정답 라디오 — 방향키 이동(선택이 포커스를 따라감). QuestionTypePicker 와 동일 패턴.
+  const hasSelection = typeof question.correctOptionIndex === "number";
+  const handleRadioKeyDown = (
+    e: KeyboardEvent<HTMLButtonElement>,
+    idx: number,
+  ) => {
+    const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    const delta = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+    const nextIdx = (idx + delta + options.length) % options.length;
+    setCorrect(nextIdx);
+    document.getElementById(`${question.id}-option-${nextIdx}`)?.focus();
+  };
+
   return (
     <div className="border-t p-3">
       <p className="mb-2 text-xs text-muted-foreground">
         선택지를 입력하고 정답을 표시하세요.
       </p>
-      <div className="grid grid-cols-2 gap-2">
+      <div
+        role="radiogroup"
+        aria-label="정답 선택지"
+        className="grid grid-cols-2 gap-2"
+      >
         {options.map((option, idx) => {
           const isCorrect = question.correctOptionIndex === idx;
           return (
@@ -104,9 +124,12 @@ function OptionEditor({
               <button
                 type="button"
                 role="radio"
+                id={`${question.id}-option-${idx}`}
                 aria-checked={isCorrect}
                 aria-label={`${idx + 1}번 선택지를 정답으로 표시`}
+                tabIndex={(hasSelection ? isCorrect : idx === 0) ? 0 : -1}
                 onClick={() => setCorrect(idx)}
+                onKeyDown={(e) => handleRadioKeyDown(e, idx)}
                 className={`flex size-6 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   isCorrect
                     ? "border-primary bg-primary text-primary-foreground"

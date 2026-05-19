@@ -214,7 +214,29 @@ export const createExamSchema = z.object({
     type: questionTypeEnum,
     options: z.array(z.string()).optional(),
     correctOptionIndex: z.number().int().min(0).optional(),
-  }).passthrough()),
+  }).passthrough()
+    .refine(
+      (q) =>
+        (q.type !== "multiple-choice" && q.type !== "true-false") ||
+        typeof q.correctOptionIndex === "number",
+      {
+        message: "객관식 문제에 정답이 지정되지 않았습니다.",
+        path: ["correctOptionIndex"],
+      },
+    )
+    .refine(
+      (q) => {
+        if (q.type !== "multiple-choice") return true;
+        const opts = q.options ?? [];
+        return (
+          opts.length >= 4 && opts.slice(0, 4).every((o) => o.trim() !== "")
+        );
+      },
+      {
+        message: "사지선다 문제의 선택지 4개를 모두 입력해주세요.",
+        path: ["options"],
+      },
+    )),
   materials: z.array(z.string()).optional(),
   materials_text: z.array(z.object({
     url: z.string(),
