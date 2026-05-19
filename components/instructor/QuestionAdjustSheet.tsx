@@ -146,6 +146,16 @@ export function QuestionAdjustSheet({
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [history]);
 
+  // 최신 AI 답변은 폼에서 즉시 적용된다 — 마지막 답변을 "적용됨"으로 표시.
+  useEffect(() => {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === "assistant" && history[i].questionText) {
+        setAppliedIdx(i);
+        return;
+      }
+    }
+  }, [history]);
+
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       setAppliedIdx(null);
@@ -256,12 +266,12 @@ export function QuestionAdjustSheet({
                       </CollapsibleContent>
                     </Collapsible>
 
-                    {/* P2-4: Fixed variant comparison (was comparing "default" === "default") */}
+                    {/* 최신 답변은 자동 적용됨. 이전 버전이 좋으면 그 답변에서 다시 적용. */}
                     <Button
                       size="sm"
-                      variant={appliedIdx === idx ? "secondary" : "default"}
+                      variant={appliedIdx === idx ? "secondary" : "outline"}
                       className={`gap-1.5 ${appliedIdx === idx ? "bg-green-600 hover:bg-green-600 text-white" : ""}`}
-                      disabled={appliedIdx !== null}
+                      disabled={appliedIdx === idx}
                       onClick={() => {
                         onApply({
                           text: msg.questionText!,
@@ -269,14 +279,11 @@ export function QuestionAdjustSheet({
                           correctOptionIndex: msg.correctOptionIndex,
                         });
                         setAppliedIdx(idx);
-                        toast.success("수정 사항이 적용되었습니다.");
-                        setTimeout(() => {
-                          handleOpenChange(false);
-                        }, 800);
+                        toast.success("이 버전이 적용되었습니다.");
                       }}
                     >
                       <Check className="w-3.5 h-3.5" />
-                      {appliedIdx === idx ? "적용 완료!" : "적용하기"}
+                      {appliedIdx === idx ? "적용됨" : "이 버전 적용"}
                     </Button>
                   </div>
                 )}
@@ -309,7 +316,7 @@ export function QuestionAdjustSheet({
                 try {
                   const result = await onSendInstruction(preset.instruction) as { questionText?: string; explanation?: string } | null;
                   if (result && typeof result === "object" && "questionText" in result) {
-                    toast.success(`"${preset.label}" 수정이 적용되었습니다.`);
+                    toast.success(`"${preset.label}" 적용됨`);
                   }
                 } catch {
                   toast.error("수정에 실패했습니다.");

@@ -9,7 +9,7 @@ const RichTextEditor = dynamic(
   () => import("@/components/ui/rich-text-editor").then(mod => mod.RichTextEditor),
   { ssr: false, loading: () => <div className="h-[200px] animate-pulse bg-muted rounded-md" /> }
 );
-import { Check, Hash, HelpCircle, MessageSquare, Trash2 } from "lucide-react";
+import { Check, Hash, HelpCircle, MessageSquare, Sparkles, Trash2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -193,11 +193,11 @@ export function QuestionEditor({
               <Button
                 type="button"
                 size="sm"
-                variant="outline"
+                variant="default"
                 onClick={onAIEdit}
                 className="h-8 gap-1.5"
               >
-                <MessageSquare className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5" />
                 AI로 문제 생성
               </Button>
             )}

@@ -344,6 +344,24 @@ export function SimpleExamAuthoringForm({
     ? (adjustHistories.get(sheetQuestionId) ?? [])
     : [];
 
+  const handleApplyAdjustment = useCallback(
+    (update: QuestionAdjustApply) => {
+      if (!sheetQuestionId) return;
+      onQuestionUpdate(sheetQuestionId, "text", update.text);
+      if (update.options) {
+        onQuestionUpdate(sheetQuestionId, "options", update.options);
+      }
+      if (typeof update.correctOptionIndex === "number") {
+        onQuestionUpdate(
+          sheetQuestionId,
+          "correctOptionIndex",
+          update.correctOptionIndex,
+        );
+      }
+    },
+    [sheetQuestionId, onQuestionUpdate],
+  );
+
   const handleAdjust = useCallback(
     async (instruction: string) => {
       if (!sheetQuestionId) return null;
@@ -405,6 +423,12 @@ export function SimpleExamAuthoringForm({
           ]);
           return next;
         });
+        // 새 생성 결과는 적용하기 버튼 없이 즉시 문제에 반영한다.
+        handleApplyAdjustment({
+          text: data.questionText,
+          options: data.options,
+          correctOptionIndex: data.correctOptionIndex,
+        });
         return data;
       } catch {
         toast.error("문제 수정에 실패했습니다.");
@@ -413,25 +437,7 @@ export function SimpleExamAuthoringForm({
         setIsAdjusting(false);
       }
     },
-    [sheetQuestionId, questions, language],
-  );
-
-  const handleApplyAdjustment = useCallback(
-    (update: QuestionAdjustApply) => {
-      if (!sheetQuestionId) return;
-      onQuestionUpdate(sheetQuestionId, "text", update.text);
-      if (update.options) {
-        onQuestionUpdate(sheetQuestionId, "options", update.options);
-      }
-      if (typeof update.correctOptionIndex === "number") {
-        onQuestionUpdate(
-          sheetQuestionId,
-          "correctOptionIndex",
-          update.correctOptionIndex,
-        );
-      }
-    },
-    [sheetQuestionId, onQuestionUpdate],
+    [sheetQuestionId, questions, language, handleApplyAdjustment],
   );
 
   return (
