@@ -83,9 +83,23 @@ interface CaseQuestionGeneratorProps {
   language?: "ko" | "en";
   mode?: "exam" | "assignment";
   variant?: "card" | "line";
+  /**
+   * line variant 에서 문제 유형 선택기(사지선다/O·X/사례형)를 노출한다.
+   * 시험 만들기 "+" 피커에서만 true. assignment 모드에선 무시된다.
+   */
+  showTypeSelector?: boolean;
   /** AI 에이전트 실행 레이어가 생성기를 프로그램적으로 조작하기 위한 ref. */
   agentHandleRef?: Ref<CaseQuestionGeneratorHandle>;
 }
+
+/** 피커에서 고르는 문제 유형. case=사례형(서술). */
+type PickerQuestionType = "mcq" | "true-false" | "case";
+
+const QUESTION_TYPE_LABELS: Record<PickerQuestionType, string> = {
+  mcq: "사지선다",
+  "true-false": "O·X",
+  case: "사례형",
+};
 
 function getStageMessage(
   stage: string,
@@ -115,12 +129,14 @@ export function CaseQuestionGenerator({
   language,
   mode = "exam",
   variant = "card",
+  showTypeSelector = false,
   agentHandleRef,
 }: CaseQuestionGeneratorProps) {
   const [isOpen, setIsOpen] = useState(true);
   const difficulty = "basic" as const;
   const [questionCount, setQuestionCount] = useState(1);
   const [freeformPrompt, setFreeformPrompt] = useState("");
+  const [questionType, setQuestionType] = useState<PickerQuestionType>("case");
   const isAssignmentMode = mode === "assignment";
 
   // AI 에이전트 체화 애니메이션이 가리킬 DOM 요소 ref.
@@ -186,6 +202,11 @@ export function CaseQuestionGenerator({
       }),
     );
 
+    // assignment 모드는 항상 리서치 과제(case). 시험 모드에서만 피커 유형 적용.
+    const effectiveType: PickerQuestionType = isAssignmentMode
+      ? "case"
+      : questionType;
+
     return {
       examTitle,
       difficulty,
@@ -194,6 +215,7 @@ export function CaseQuestionGenerator({
       materialsText: !isAssignmentMode && materialsText.length > 0 ? materialsText : undefined,
       language,
       generationMode: isAssignmentMode ? "research-assignment" as const : "case" as const,
+      questionType: effectiveType,
     };
   };
 
@@ -272,9 +294,35 @@ export function CaseQuestionGenerator({
     : stageMessage;
 
   if (variant === "line") {
+    const showPicker = showTypeSelector && !isAssignmentMode;
     return (
       <div className="space-y-3" data-testid="simple-ai-generator">
-        <div className="grid gap-2 lg:grid-cols-[112px_minmax(0,1fr)_auto]">
+        <div
+          className={
+            showPicker
+              ? "grid gap-2 lg:grid-cols-[128px_112px_minmax(0,1fr)_auto]"
+              : "grid gap-2 lg:grid-cols-[112px_minmax(0,1fr)_auto]"
+          }
+        >
+          {showPicker && (
+            <Select
+              value={questionType}
+              onValueChange={(v) => setQuestionType(v as PickerQuestionType)}
+            >
+              <SelectTrigger className="h-11" data-testid="question-type-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(
+                  Object.keys(QUESTION_TYPE_LABELS) as PickerQuestionType[]
+                ).map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {QUESTION_TYPE_LABELS[t]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Select
             value={questionCount.toString()}
             onValueChange={(v) => setQuestionCount(Number(v))}

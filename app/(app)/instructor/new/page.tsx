@@ -863,6 +863,7 @@ export default function CreateExam() {
                     extractionStatus={fileUpload.fileStatus}
                     language={examData.language}
                     variant="line"
+                    showTypeSelector
                     onQuestionsAccepted={(newQuestions) => {
                       const newIds = newQuestions.map((q) => q.id);
                       setQuestions((prev) => {

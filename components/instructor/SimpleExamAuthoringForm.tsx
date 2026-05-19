@@ -179,7 +179,7 @@ export function SimpleExamAuthoringForm({
   onDragAreaClick,
   onRemoveFile,
   getFileIcon,
-  // generator,  // AI 문제 초안 임시 비활성화 — 복원 시 주석 해제
+  generator,
   questions,
   highlightedIds,
   onQuestionAdd,
@@ -207,6 +207,8 @@ export function SimpleExamAuthoringForm({
   const [showAdvancedGrading, setShowAdvancedGrading] = useState(false);
   const [rubricTopics, setRubricTopics] = useState("");
   const [rubricInstructions, setRubricInstructions] = useState("");
+  // "+" 문제 추가 피커 — 유형/개수/AI 프롬프트가 들어가는 인라인 확장 패널.
+  const [isAddPickerOpen, setIsAddPickerOpen] = useState(false);
 
   const isUnlimited = duration === 0;
   const ready = submitReasons.length === 0;
@@ -498,19 +500,7 @@ export function SimpleExamAuthoringForm({
           </Select>
         </Field>
 
-        {/* AI 문제 초안 — 임시 비활성화. MCQ·O/X 등 문제 유형 확장에 맞춰
-            문제별 AI 초안 생성으로 전환 검토 중. 복원: 위 generator prop 주석
-            해제 + 아래 블록 주석 해제.
-        <Field
-          label="AI 문제 초안"
-          optional
-          helper="주제를 입력하면 AI가 문제 초안을 만들어 아래 문제 목록에 추가합니다."
-        >
-          <div className="space-y-3">{generator}</div>
-        </Field>
-        */}
-
-        {/* 문제 */}
+        {/* 문제 — "+" 버튼이 인라인 피커(유형/개수/AI 프롬프트)를 연다. */}
         <Field
           label="문제"
           required
@@ -521,77 +511,117 @@ export function SimpleExamAuthoringForm({
           }
         >
           <div className="space-y-3" data-testid="manual-questions-section">
-            {questions.length === 0 ? (
-              <button
-                type="button"
-                onClick={onQuestionAdd}
-                className="flex min-h-28 w-full items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground hover:bg-muted/50"
-                data-testid="empty-add-question-btn"
+            {questions.map((question, index) => (
+              <div
+                key={question.id}
+                className={`relative transition-all duration-500 ${
+                  highlightedIds?.has(question.id)
+                    ? "rounded-md ring-2 ring-primary ring-offset-2"
+                    : ""
+                }`}
               >
-                <Plus className="mr-2 h-4 w-4" />첫 문제 입력
-              </button>
-            ) : (
-              <>
-                {questions.map((question, index) => (
-                  <div
-                    key={question.id}
-                    className={`relative transition-all duration-500 ${
-                      highlightedIds?.has(question.id)
-                        ? "rounded-md ring-2 ring-primary ring-offset-2"
-                        : ""
-                    }`}
-                  >
-                    {questions.length > 1 && (
-                      <div className="absolute right-3 top-11 z-10 flex gap-1">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="icon"
-                          className="size-7"
-                          disabled={index === 0}
-                          onClick={() => onQuestionMove(index, "up")}
-                          aria-label="위로 이동"
-                        >
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="icon"
-                          className="size-7"
-                          disabled={index === questions.length - 1}
-                          onClick={() => onQuestionMove(index, "down")}
-                          aria-label="아래로 이동"
-                        >
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                    <QuestionEditor
-                      question={question}
-                      index={index}
-                      onUpdate={onQuestionUpdate}
-                      onRemove={onQuestionRemove}
-                      onAIEdit={() => setSheetQuestionId(question.id)}
-                      mode="exam"
-                      variant="line"
-                    />
+                {questions.length > 1 && (
+                  <div className="absolute right-3 top-11 z-10 flex gap-1">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="size-7"
+                      disabled={index === 0}
+                      onClick={() => onQuestionMove(index, "up")}
+                      aria-label="위로 이동"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="size-7"
+                      disabled={index === questions.length - 1}
+                      onClick={() => onQuestionMove(index, "down")}
+                      aria-label="아래로 이동"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                ))}
-                <div className="flex justify-center pt-1">
+                )}
+                <QuestionEditor
+                  question={question}
+                  index={index}
+                  onUpdate={onQuestionUpdate}
+                  onRemove={onQuestionRemove}
+                  onAIEdit={() => setSheetQuestionId(question.id)}
+                  mode="exam"
+                  variant="line"
+                />
+              </div>
+            ))}
+
+            {/* "+" 문제 추가 — 인라인 확장 피커 */}
+            {isAddPickerOpen ? (
+              <div
+                className="space-y-3 rounded-md border bg-muted/20 p-3"
+                data-testid="add-question-picker"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">문제 추가</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7"
+                    onClick={() => setIsAddPickerOpen(false)}
+                    aria-label="문제 추가 닫기"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  문제 유형과 개수를 고르고, 어떤 문제를 만들지 적어주세요.
+                </p>
+                {generator}
+                <div className="flex items-center gap-2 border-t pt-3">
+                  <span className="text-xs text-muted-foreground">
+                    AI 없이 직접 작성하시겠어요?
+                  </span>
                   <Button
                     type="button"
                     variant="outline"
-                    size="icon"
-                    onClick={onQuestionAdd}
-                    className="size-10 rounded-full"
-                    aria-label="문제 추가"
-                    data-testid="add-question-btn"
+                    size="sm"
+                    onClick={() => {
+                      onQuestionAdd();
+                      setIsAddPickerOpen(false);
+                    }}
+                    data-testid="manual-add-question-btn"
                   >
-                    <Plus className="h-4 w-4" />
+                    빈 문제 직접 추가
                   </Button>
                 </div>
-              </>
+              </div>
+            ) : questions.length === 0 ? (
+              <button
+                type="button"
+                onClick={() => setIsAddPickerOpen(true)}
+                className="flex min-h-28 w-full items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground hover:bg-muted/50"
+                data-testid="empty-add-question-btn"
+              >
+                <Plus className="mr-2 h-4 w-4" />첫 문제 추가
+              </button>
+            ) : (
+              <div className="flex justify-center pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setIsAddPickerOpen(true)}
+                  className="size-10 rounded-full"
+                  aria-label="문제 추가"
+                  data-testid="add-question-btn"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
             )}
           </div>
         </Field>
