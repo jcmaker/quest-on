@@ -297,32 +297,31 @@ export function CaseQuestionGenerator({
     const showPicker = showTypeSelector && !isAssignmentMode;
     return (
       <div className="space-y-3" data-testid="simple-ai-generator">
-        <div
-          className={
-            showPicker
-              ? "grid gap-2 lg:grid-cols-[128px_112px_minmax(0,1fr)_auto]"
-              : "grid gap-2 lg:grid-cols-[112px_minmax(0,1fr)_auto]"
-          }
-        >
-          {showPicker && (
-            <Select
-              value={questionType}
-              onValueChange={(v) => setQuestionType(v as PickerQuestionType)}
-            >
-              <SelectTrigger className="h-11" data-testid="question-type-select">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(
-                  Object.keys(QUESTION_TYPE_LABELS) as PickerQuestionType[]
-                ).map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {QUESTION_TYPE_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+        {/* 문제 유형 선택 — 점선 박스 3개 */}
+        {showPicker && (
+          <div className="grid grid-cols-3 gap-2" role="group" aria-label="문제 유형">
+            {(Object.keys(QUESTION_TYPE_LABELS) as PickerQuestionType[]).map((t) => {
+              const isSelected = questionType === t;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => setQuestionType(t)}
+                  className={`rounded-md border border-dashed px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    isSelected
+                      ? "border-primary bg-primary/5 text-primary ring-1 ring-primary"
+                      : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+                  }`}
+                >
+                  {QUESTION_TYPE_LABELS[t]}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="grid gap-2 lg:grid-cols-[112px_minmax(0,1fr)_auto]">
           <Select
             value={questionCount.toString()}
             onValueChange={(v) => setQuestionCount(Number(v))}

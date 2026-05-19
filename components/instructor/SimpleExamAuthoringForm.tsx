@@ -17,6 +17,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
@@ -207,7 +214,7 @@ export function SimpleExamAuthoringForm({
   const [showAdvancedGrading, setShowAdvancedGrading] = useState(false);
   const [rubricTopics, setRubricTopics] = useState("");
   const [rubricInstructions, setRubricInstructions] = useState("");
-  // "+" 문제 추가 피커 — 유형/개수/AI 프롬프트가 들어가는 인라인 확장 패널.
+  // "+" 문제 추가 — 유형/개수/AI 프롬프트를 입력하는 Dialog 의 열림 상태.
   const [isAddPickerOpen, setIsAddPickerOpen] = useState(false);
 
   const isUnlimited = duration === 0;
@@ -500,7 +507,7 @@ export function SimpleExamAuthoringForm({
           </Select>
         </Field>
 
-        {/* 문제 — "+" 버튼이 인라인 피커(유형/개수/AI 프롬프트)를 연다. */}
+        {/* 문제 — "+" 버튼이 문제 추가 Dialog(유형/개수/AI 프롬프트)를 연다. */}
         <Field
           label="문제"
           required
@@ -558,48 +565,8 @@ export function SimpleExamAuthoringForm({
               </div>
             ))}
 
-            {/* "+" 문제 추가 — 인라인 확장 피커 */}
-            {isAddPickerOpen ? (
-              <div
-                className="space-y-3 rounded-md border bg-muted/20 p-3"
-                data-testid="add-question-picker"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">문제 추가</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="size-7"
-                    onClick={() => setIsAddPickerOpen(false)}
-                    aria-label="문제 추가 닫기"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  문제 유형과 개수를 고르고, 어떤 문제를 만들지 적어주세요.
-                </p>
-                {generator}
-                <div className="flex items-center gap-2 border-t pt-3">
-                  <span className="text-xs text-muted-foreground">
-                    AI 없이 직접 작성하시겠어요?
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      onQuestionAdd();
-                      setIsAddPickerOpen(false);
-                    }}
-                    data-testid="manual-add-question-btn"
-                  >
-                    빈 문제 직접 추가
-                  </Button>
-                </div>
-              </div>
-            ) : questions.length === 0 ? (
+            {/* "+" 문제 추가 트리거 — 클릭 시 문제 추가 Dialog 를 연다. */}
+            {questions.length === 0 ? (
               <button
                 type="button"
                 onClick={() => setIsAddPickerOpen(true)}
@@ -887,6 +854,39 @@ export function SimpleExamAuthoringForm({
           </div>
         </div>
       </div>
+
+      {/* 문제 추가 Dialog — 유형/개수/AI 프롬프트 */}
+      <Dialog open={isAddPickerOpen} onOpenChange={setIsAddPickerOpen}>
+        <DialogContent
+          className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+          data-testid="add-question-picker"
+        >
+          <DialogHeader>
+            <DialogTitle>문제 추가</DialogTitle>
+            <DialogDescription>
+              문제 유형과 개수를 고르고, 어떤 문제를 만들지 적어주세요.
+            </DialogDescription>
+          </DialogHeader>
+          {generator}
+          <div className="flex items-center gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground">
+              AI 없이 직접 작성하시겠어요?
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onQuestionAdd();
+                setIsAddPickerOpen(false);
+              }}
+              data-testid="manual-add-question-btn"
+            >
+              빈 문제 직접 추가
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {sheetQuestion && (
         <QuestionAdjustSheet
