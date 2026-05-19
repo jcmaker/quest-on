@@ -2234,6 +2234,117 @@ JSON만 반환하세요. 마크다운 코드블록은 쓰지 마세요.
 }
 
 /**
+ * 강사용 객관식/OX 문제 생성 프롬프트.
+ *
+ * assignment-quiz 의 JSON 어휘({question, options, correctOptionIndex,
+ * rationale})를 그대로 재사용한다. 별도 빌더를 만들지 않고 questionType 으로
+ * 분기해 사지선다(4지선다)와 O/X(2지선다)를 모두 처리한다.
+ */
+export function buildObjectiveQuestionGenerationPrompt(params: {
+  examTitle: string;
+  questionType: "mcq" | "true-false";
+  questionCount: number;
+  topics?: string;
+  customInstructions?: string;
+  materialsContext?: string;
+  language?: PromptLanguage;
+}): { system: string; user: string } {
+  const {
+    examTitle,
+    questionType,
+    questionCount,
+    topics,
+    customInstructions,
+    materialsContext,
+    language = "ko",
+  } = params;
+
+  const isTrueFalse = questionType === "true-false";
+  const isEnglish = language === "en";
+
+  if (isEnglish) {
+    const optionRule = isTrueFalse
+      ? `- Every "options" array MUST be exactly ["O", "X"] (O = true, X = false).
+- "correctOptionIndex" MUST be 0 (O is correct) or 1 (X is correct).
+- "question" must be a single declarative statement the student judges true or false.`
+      : `- Every "options" array MUST contain exactly 4 concise, mutually exclusive choices.
+- "correctOptionIndex" MUST be an integer 0..3 pointing at the correct choice.
+- Distractors must be plausible but clearly wrong.`;
+
+    const system = `You generate ${
+      isTrueFalse ? "True/False (O·X)" : "4-option multiple-choice"
+    } exam questions for a university course.
+
+Return JSON only. No markdown fences.
+
+Schema:
+{
+  "questions": [
+    {
+      "text": "Question text (plain text or simple HTML)",
+      "type": "${isTrueFalse ? "true-false" : "multiple-choice"}",
+      "options": ${isTrueFalse ? '["O", "X"]' : '["A", "B", "C", "D"]'},
+      "correctOptionIndex": 0,
+      "rationale": "One sentence explaining why the answer is correct"
+    }
+  ]
+}
+
+Rules:
+- Generate exactly ${questionCount} question(s).
+${optionRule}
+- Questions must be answerable and have exactly one correct answer.
+- Do not output any text outside the JSON object.`;
+
+    let user = `Exam title: "${examTitle}"\nNumber of questions: ${questionCount}`;
+    if (topics) user += `\nTopics: ${topics}`;
+    if (customInstructions) user += `\nInstructions: ${customInstructions}`;
+    if (materialsContext) user += `\n\n[Reference materials]\n${materialsContext}`;
+    return { system, user };
+  }
+
+  const optionRule = isTrueFalse
+    ? `- 모든 "options" 배열은 반드시 정확히 ["O", "X"] 여야 한다 (O = 참, X = 거짓).
+- "correctOptionIndex" 는 0(O가 정답) 또는 1(X가 정답) 이어야 한다.
+- "text" 는 학생이 참/거짓을 판단할 단일 진술문이어야 한다.`
+    : `- 모든 "options" 배열은 반드시 서로 명확히 구분되는 간결한 선택지 4개를 담아야 한다.
+- "correctOptionIndex" 는 정답 선택지를 가리키는 0~3 사이 정수여야 한다.
+- 오답 선택지는 그럴듯하지만 명확히 틀린 것이어야 한다.`;
+
+  const system = `당신은 대학 시험 출제 전문가입니다. ${
+    isTrueFalse ? "O·X(참/거짓) 문제" : "4지선다 객관식 문제"
+  }를 출제합니다.
+
+JSON만 반환하세요. 마크다운 코드블록은 쓰지 마세요.
+
+스키마:
+{
+  "questions": [
+    {
+      "text": "문항 (평문 또는 간단한 HTML)",
+      "type": "${isTrueFalse ? "true-false" : "multiple-choice"}",
+      "options": ${isTrueFalse ? '["O", "X"]' : '["선택지1", "선택지2", "선택지3", "선택지4"]'},
+      "correctOptionIndex": 0,
+      "rationale": "정답인 이유를 설명하는 한 문장"
+    }
+  ]
+}
+
+규칙:
+- 정확히 ${questionCount}문항을 생성한다.
+${optionRule}
+- 각 문항은 명확히 풀 수 있어야 하며 정답은 정확히 하나여야 한다.
+- JSON 객체 외의 텍스트는 절대 출력하지 않는다.
+- 모든 출력은 한국어로 작성한다.`;
+
+  let user = `시험 제목: "${examTitle}"\n생성할 문제 수: ${questionCount}개`;
+  if (topics) user += `\n특정 토픽: ${topics}`;
+  if (customInstructions) user += `\n추가 지시사항: ${customInstructions}`;
+  if (materialsContext) user += `\n\n[참고 자료]\n${materialsContext}`;
+  return { system, user };
+}
+
+/**
  * 과제 채점 시스템 프롬프트
  */
 export function buildAssignmentGradingPrompt(params: {

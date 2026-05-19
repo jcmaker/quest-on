@@ -447,6 +447,32 @@ export const generateCaseQuestionsSchema = z.object({
   questionType: z.enum(["mcq", "true-false", "case"]).default("case"),
 });
 
+// ── AI-generated objective question response validation ──
+// Strictly validate the parsed AI output per question type before it is
+// mapped into Question objects. MCQ: 4 options + index 0..3. TF: index 0..1.
+
+export const aiMcqQuestionSchema = z.object({
+  text: z.string().min(1).max(4000),
+  options: z.array(z.string().min(1).max(500)).length(4),
+  correctOptionIndex: z.number().int().min(0).max(3),
+  rationale: z.string().max(1000).optional(),
+});
+
+export const aiTrueFalseQuestionSchema = z.object({
+  text: z.string().min(1).max(4000),
+  options: z.array(z.string().min(1).max(500)).length(2),
+  correctOptionIndex: z.number().int().min(0).max(1),
+  rationale: z.string().max(1000).optional(),
+});
+
+export const aiMcqResponseSchema = z.object({
+  questions: z.array(aiMcqQuestionSchema).min(1),
+});
+
+export const aiTrueFalseResponseSchema = z.object({
+  questions: z.array(aiTrueFalseQuestionSchema).min(1),
+});
+
 // AI Case Question Adjustment
 export const adjustCaseQuestionSchema = z.object({
   questionText: z.string().min(1),

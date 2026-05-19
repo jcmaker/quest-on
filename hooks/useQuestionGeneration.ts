@@ -5,7 +5,11 @@ import { useState, useCallback, useRef } from "react";
 export interface GeneratedQuestion {
   id: string;
   text: string;
-  type: "essay";
+  type: "essay" | "multiple-choice" | "true-false";
+  /** 객관식/OX 선택지 (objective 문제 전용). */
+  options?: string[];
+  /** 객관식/OX 정답 인덱스 (objective 문제 전용). */
+  correctOptionIndex?: number;
   rubric?: RubricItem[];
 }
 
@@ -36,6 +40,8 @@ interface GenerateParams {
   materialsText?: Array<{ url: string; text: string; fileName: string }>;
   language?: "ko" | "en";
   generationMode?: "case" | "research-assignment";
+  /** 생성할 문제 유형. mcq=사지선다, true-false=O/X, case=사례형. */
+  questionType?: "mcq" | "true-false" | "case";
 }
 
 interface AdjustResult {

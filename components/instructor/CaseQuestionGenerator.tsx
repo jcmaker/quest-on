@@ -163,6 +163,9 @@ export function CaseQuestionGenerator({
             id: q.id,
             text: q.text,
             type: q.type as Question["type"],
+            options: q.options,
+            correctOptionIndex: q.correctOptionIndex,
+            // 객관식/OX 는 결정론 채점이라 루브릭이 없다.
             rubric: q.rubric,
           })),
         );
