@@ -20,7 +20,10 @@ import {
   formatAiDependencyForPrompt,
   summarizeAiDependencyAssessments,
   resolveQuestionRubric,
+  isObjectiveQuestion,
+  gradeObjectiveAnswer,
   type DecompressionWarning,
+  type NormalizedQuestion,
 } from "@/lib/grading-helpers";
 import {
   buildAiTextMetadata,
@@ -815,18 +818,8 @@ interface PhaseContext {
     type?: string;
     language?: string;
   };
-  questions: Array<{
-    idx: number;
-    prompt?: string;
-    ai_context?: string;
-    rubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
-  }>;
-  questionsToGrade: Array<{
-    idx: number;
-    prompt?: string;
-    ai_context?: string;
-    rubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
-  }>;
+  questions: NormalizedQuestion[];
+  questionsToGrade: NormalizedQuestion[];
   submissionsByQuestion: Record<number, { answer: string; workspace_state?: unknown }>;
   messagesByQuestion: Record<number, Array<{ role: string; content: string }>>;
   chatWeight: number;
@@ -1004,14 +997,68 @@ export async function gradeOneQuestion(
     return { skipped: true, graded: false, failureReason: "No submission" };
   }
 
-  const questionMessages = ctx.messagesByQuestion[qIdx] || [];
-  const rubricItems = resolveQuestionRubric(question, ctx.exam.rubric);
-
   await updateGradingProgress(supabase, sessionId, {
     status: "running",
     phase: "grade",
     current_q_idx: qIdx,
   });
+
+  // ── 객관식/OX 결정론적 채점 (OpenAI 호출 없음) ──
+  // 학생 제출 답안은 선택지 인덱스의 문자열("2")로 저장된다. 인덱스를
+  // correctOptionIndex 와 비교해 100/0 점을 부여하고 즉시 grade 행을 쓴다.
+  // chat 단계 가중치/AI 의존도 분석 없이 단일 결정론 점수만 기록한다.
+  if (isObjectiveQuestion(question.type)) {
+    const objective = gradeObjectiveAnswer({
+      rawAnswer: submission.answer || "",
+      options: question.options,
+      correctOptionIndex: question.correctOptionIndex,
+    });
+
+    if (objective) {
+      await upsertGradesBySessionQuestion(
+        supabase as never,
+        [
+          {
+            session_id: sessionId,
+            q_idx: qIdx,
+            score: objective.score,
+            comment: objective.comment,
+            stage_grading: null,
+            ai_summary: null,
+            grade_type: "auto",
+          },
+        ],
+        "phase_grade_objective"
+      );
+      return { skipped: false, graded: true };
+    }
+    // correctOptionIndex 누락 등 결정론 채점 불가 — AI 경로로 폴백하지 않고
+    // 수동 채점 필요 행을 남긴다 (objective 문제에 AI 채점은 부적절).
+    await upsertGradesBySessionQuestion(
+      supabase as never,
+      [
+        {
+          session_id: sessionId,
+          q_idx: qIdx,
+          score: 0,
+          comment:
+            "[채점 불가] 객관식 문제에 정답 정보가 없습니다 — 강사의 수동 채점이 필요합니다.",
+          stage_grading: null,
+          ai_summary: null,
+          grade_type: "ai_failed",
+        },
+      ],
+      "phase_grade_objective_failed"
+    );
+    return {
+      skipped: false,
+      graded: false,
+      failureReason: "Objective question missing correctOptionIndex",
+    };
+  }
+
+  const questionMessages = ctx.messagesByQuestion[qIdx] || [];
+  const rubricItems = resolveQuestionRubric(question, ctx.exam.rubric);
 
   const abortController = new AbortController();
   const deadline = Date.now() + 180_000;
@@ -1121,6 +1168,11 @@ export async function generateOneQuestionSummary(
   const ctx = await loadPhaseContext(sessionId, supabase);
   const question = ctx.questionsToGrade.find((q) => q.idx === qIdx);
   if (!question) {
+    return { skipped: true, generated: false };
+  }
+
+  // 객관식/OX 는 결정론적으로 채점되며 요약할 채팅이 없다 — 요약 단계 생략.
+  if (isObjectiveQuestion(question.type)) {
     return { skipped: true, generated: false };
   }
 

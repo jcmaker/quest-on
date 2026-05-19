@@ -155,10 +155,22 @@ export function decompressMessages(
   return result;
 }
 
+/** A question normalized for the grading pipeline. */
+export interface NormalizedQuestion {
+  idx: number;
+  prompt?: string;
+  ai_context?: string;
+  rubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
+  /** 문제 유형. 객관식/OX(objective)는 결정론적 채점 경로를 탄다. */
+  type?: string;
+  /** 객관식/OX 선택지. */
+  options?: string[];
+  /** 객관식/OX 정답 인덱스. */
+  correctOptionIndex?: number;
+}
+
 /** Normalize DB question rows into a standard shape. */
-export function normalizeQuestions(
-  questions: unknown
-): Array<{ idx: number; prompt?: string; ai_context?: string; rubric?: Array<{ evaluationArea: string; detailedCriteria: string }> }> {
+export function normalizeQuestions(questions: unknown): NormalizedQuestion[] {
   if (!questions || !Array.isArray(questions)) return [];
 
   return questions.map((q: Record<string, unknown>, index: number) => ({
@@ -171,7 +183,65 @@ export function normalizeQuestions(
         : undefined,
     ai_context: typeof q.ai_context === "string" ? q.ai_context : undefined,
     rubric: Array.isArray(q.rubric) ? (q.rubric as Array<{ evaluationArea: string; detailedCriteria: string }>) : undefined,
+    type: typeof q.type === "string" ? q.type : undefined,
+    options: Array.isArray(q.options)
+      ? (q.options as unknown[]).filter((o): o is string => typeof o === "string")
+      : undefined,
+    correctOptionIndex:
+      typeof q.correctOptionIndex === "number" && Number.isInteger(q.correctOptionIndex)
+        ? q.correctOptionIndex
+        : undefined,
   }));
+}
+
+/** True when a question is graded deterministically (no LLM): 객관식/OX. */
+export function isObjectiveQuestion(type?: string): boolean {
+  return type === "multiple-choice" || type === "true-false";
+}
+
+/**
+ * Deterministically grade an objective (mcq/true-false) question.
+ *
+ * The student's submitted answer is stored as the chosen option index in
+ * string form (e.g. "2"). We parse it, compare against `correctOptionIndex`,
+ * and return a 100/0 score with a Korean comment. No OpenAI call.
+ *
+ * Returns `null` when the question is not gradeable deterministically
+ * (missing/invalid correctOptionIndex) so the caller can fall back.
+ */
+export function gradeObjectiveAnswer(params: {
+  rawAnswer: string;
+  options?: string[];
+  correctOptionIndex?: number;
+}): { score: number; comment: string; selectedIndex: number | null } | null {
+  const { rawAnswer, options, correctOptionIndex } = params;
+  if (
+    typeof correctOptionIndex !== "number" ||
+    !Number.isInteger(correctOptionIndex) ||
+    correctOptionIndex < 0
+  ) {
+    return null;
+  }
+
+  const trimmed = (rawAnswer ?? "").trim();
+  const parsed = Number.parseInt(trimmed, 10);
+  const selectedIndex =
+    trimmed !== "" && Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+
+  const optionLabel = (idx: number | null): string => {
+    if (idx === null) return "무응답";
+    return options && options[idx] !== undefined ? options[idx] : `${idx + 1}번`;
+  };
+
+  const correct = selectedIndex !== null && selectedIndex === correctOptionIndex;
+  const score = correct ? 100 : 0;
+  const comment = correct
+    ? `정답입니다. 선택: ${optionLabel(selectedIndex)}`
+    : `오답입니다. 선택: ${optionLabel(selectedIndex)} / 정답: ${optionLabel(
+        correctOptionIndex
+      )}`;
+
+  return { score, comment, selectedIndex };
 }
 
 /** Default rubric used when neither question-level nor exam-level rubric exists. */
