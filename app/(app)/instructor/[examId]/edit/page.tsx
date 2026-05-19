@@ -410,7 +410,7 @@ export default function EditExam({
   const updateQuestion = (
     id: string,
     field: keyof Question,
-    value: string | boolean
+    value: string | boolean | number | string[]
   ) => {
     setQuestions(
       questions.map((q) => (q.id === id ? { ...q, [field]: value } : q))

@@ -65,7 +65,7 @@ export default function CreateAssignment() {
     generateExamCode();
   }, []);
 
-  const updateQuestion = (id: string, field: keyof Question, value: string | boolean) => {
+  const updateQuestion = (id: string, field: keyof Question, value: string | boolean | number | string[]) => {
     setQuestions(questions.map((q) => (q.id === id ? { ...q, [field]: value } : q)));
   };
   const addQuestion = () => {

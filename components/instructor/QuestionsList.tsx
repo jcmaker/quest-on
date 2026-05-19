@@ -30,7 +30,7 @@ interface QuestionsListProps {
   onUpdate: (
     id: string,
     field: keyof Question,
-    value: string | boolean
+    value: string | boolean | number | string[]
   ) => void;
   onRemove?: (id: string) => void;
   onAdd?: () => void;

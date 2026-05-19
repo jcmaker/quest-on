@@ -75,11 +75,11 @@ interface SimpleExamAuthoringFormProps {
   generator: ReactNode;
   questions: Question[];
   highlightedIds?: Set<string>;
-  onQuestionAdd: (type?: Question["type"]) => void;
+  onQuestionAdd: (type?: Question["type"], count?: number) => void;
   onQuestionUpdate: (
     id: string,
     field: keyof Question,
-    value: string | boolean,
+    value: string | boolean | number | string[],
   ) => void;
   onQuestionRemove: (id: string) => void;
   onQuestionMove: (index: number, direction: "up" | "down") => void;
@@ -302,6 +302,8 @@ export function SimpleExamAuthoringForm({
   // 추가 다이얼로그에서 선택 중인 문제 유형.
   const [pickedType, setPickedType] =
     useState<Question["type"]>("multiple-choice");
+  // 추가 다이얼로그에서 한 번에 추가할 문제 개수 (1~5).
+  const [pickedCount, setPickedCount] = useState(1);
 
   const isUnlimited = duration === 0;
   const ready = submitReasons.length === 0;
@@ -963,12 +965,39 @@ export function SimpleExamAuthoringForm({
             </DialogDescription>
           </DialogHeader>
           <QuestionTypePicker value={pickedType} onChange={setPickedType} />
-          <div className="flex justify-end border-t pt-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="add-question-count" className="text-sm">
+                개수
+              </Label>
+              <Select
+                value={pickedCount.toString()}
+                onValueChange={(value) =>
+                  setPickedCount(Number.parseInt(value, 10))
+                }
+              >
+                <SelectTrigger
+                  id="add-question-count"
+                  className="h-9 w-20"
+                  data-testid="add-question-count"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <SelectItem key={n} value={n.toString()}>
+                      {n}개
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button
               type="button"
               onClick={() => {
-                onQuestionAdd(pickedType);
+                onQuestionAdd(pickedType, pickedCount);
                 setIsAddPickerOpen(false);
+                setPickedCount(1);
               }}
               data-testid="manual-add-question-btn"
             >

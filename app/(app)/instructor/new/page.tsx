@@ -414,27 +414,30 @@ export default function CreateExam() {
   const updateQuestion = (
     id: string,
     field: keyof Question,
-    value: string | boolean
+    value: string | boolean | number | string[]
   ) => {
     setQuestions(
       questions.map((q) => (q.id === id ? { ...q, [field]: value } : q))
     );
   };
 
-  const addQuestion = (type: Question["type"] = "essay") => {
+  const createEmptyQuestion = (type: Question["type"]): Question => ({
+    id: Date.now().toString() + Math.random().toString(36).slice(2),
+    text: "",
+    type,
+    // 객관식/OX 는 편집기에서 채울 선택지 골격을 미리 잡아둔다.
+    ...(type === "multiple-choice"
+      ? { options: ["", "", "", ""] }
+      : type === "true-false"
+        ? { options: ["O", "X"] }
+        : {}),
+  });
+
+  const addQuestion = (type: Question["type"] = "essay", count: number = 1) => {
+    const safeCount = Math.max(1, Math.min(5, Math.floor(count)));
     setQuestions((prev) => [
       ...prev,
-      {
-        id: Date.now().toString() + Math.random().toString(36).slice(2),
-        text: "",
-        type,
-        // 객관식/OX 는 편집기에서 채울 선택지 골격을 미리 잡아둔다.
-        ...(type === "multiple-choice"
-          ? { options: ["", "", "", ""] }
-          : type === "true-false"
-            ? { options: ["O", "X"] }
-            : {}),
-      },
+      ...Array.from({ length: safeCount }, () => createEmptyQuestion(type)),
     ]);
   };
 
