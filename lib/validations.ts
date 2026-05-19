@@ -520,7 +520,8 @@ export const aiTrueFalseResponseSchema = z.object({
 
 // AI Case Question Adjustment
 export const adjustCaseQuestionSchema = z.object({
-  questionText: z.string().min(1),
+  // 빈 문자열 허용 — "AI로 문제 생성"은 빈 문제에서 시작한다(생성 모드).
+  questionText: z.string(),
   instruction: z.string().min(1).max(2000),
   conversationHistory: z.array(z.object({
     role: z.enum(["user", "assistant"]),
