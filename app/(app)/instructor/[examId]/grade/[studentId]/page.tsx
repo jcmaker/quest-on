@@ -13,7 +13,9 @@ import { QuestionNavigation } from "@/components/instructor/QuestionNavigation";
 import { QuestionPromptCard } from "@/components/instructor/QuestionPromptCard";
 import { AIConversationsCard } from "@/components/instructor/AIConversationsCard";
 import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
+import { ObjectiveGradeCard } from "@/components/instructor/ObjectiveGradeCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
+import { isObjectiveQuestion } from "@/lib/grading-helpers";
 import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
@@ -92,6 +94,8 @@ interface Question {
   type: string;
   prompt: string;
   ai_context?: string;
+  options?: string[];
+  correctOptionIndex?: number;
 }
 
 interface Submission {
@@ -1816,18 +1820,30 @@ export default function GradeStudentPage({
                 questionNumber={selectedQuestionIdx + 1}
               />
 
-              <AIConversationsCard messages={duringExamMessages} />
+              {isObjectiveQuestion(currentQuestion?.type) ? (
+                /* 객관식/OX: 채팅·서술 답안 카드 대신 선택 결과만 표시 */
+                <ObjectiveGradeCard
+                  type={currentQuestion?.type ?? ""}
+                  options={currentQuestion?.options}
+                  correctOptionIndex={currentQuestion?.correctOptionIndex}
+                  studentAnswer={currentSubmission?.answer}
+                />
+              ) : (
+                <>
+                  <AIConversationsCard messages={duringExamMessages} />
 
-              <FinalAnswerCard
-                submission={currentSubmission}
-                pasteLogs={
-                  currentQuestion
-                    ? sessionData.pasteLogs?.[currentQuestion.id] ||
-                      sessionData.pasteLogs?.[String(selectedQuestionIdx)]
-                    : undefined
-                }
-                questionId={currentQuestion?.id}
-              />
+                  <FinalAnswerCard
+                    submission={currentSubmission}
+                    pasteLogs={
+                      currentQuestion
+                        ? sessionData.pasteLogs?.[currentQuestion.id] ||
+                          sessionData.pasteLogs?.[String(selectedQuestionIdx)]
+                        : undefined
+                    }
+                    questionId={currentQuestion?.id}
+                  />
+                </>
+              )}
             </div>
 
             <div className="space-y-6">
@@ -1854,12 +1870,15 @@ export default function GradeStudentPage({
                 onSave={() => handleSaveGrade(selectedQuestionIdx)}
               />
 
-              <AiDependencySummaryCard
-                mode="instructor"
-                questionAssessment={currentAiDependency}
-                overallSummary={overallAiDependency}
-                loading={isGradingInProgress}
-              />
+              {/* 객관식/OX 는 AI 의존도 분석 대상이 아니다 (채팅 없음). */}
+              {!isObjectiveQuestion(currentQuestion?.type) && (
+                <AiDependencySummaryCard
+                  mode="instructor"
+                  questionAssessment={currentAiDependency}
+                  overallSummary={overallAiDependency}
+                  loading={isGradingInProgress}
+                />
+              )}
 
               <QuickActionsCard
                 sessionId={sessionData.session.id}
