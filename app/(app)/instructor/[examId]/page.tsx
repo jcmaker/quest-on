@@ -9,9 +9,10 @@ import Link from "next/link";
 import { ExamDetailHeader } from "@/components/instructor/ExamDetailHeader";
 import { ExamDetailsCard } from "@/components/instructor/ExamDetailsCard";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
-import { ExamAnalyticsCard } from "@/components/instructor/ExamAnalyticsCard";
 import { ExamControlButtons } from "@/components/instructor/ExamControlButtons";
 import { LateEntryPanel } from "@/components/instructor/LateEntryPanel";
+import { ExamStudentRow } from "@/components/instructor/ExamStudentRow";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Collapsible,
   CollapsibleContent,
@@ -25,19 +26,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Search, ChevronDown, ChevronUp, RefreshCw, CheckCheck, Loader2, Eye, EyeOff, Download } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, RefreshCw, Loader2, Eye, EyeOff, Download } from "lucide-react";
 import { StudentLiveMonitoring } from "@/components/instructor/StudentLiveMonitoring";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
-import { StudentListItem } from "@/components/instructor/StudentListItem";
-import { StudentListItemSkeleton } from "@/components/instructor/StudentListItemSkeleton";
 import { useExamDetail } from "@/hooks/useExamDetail";
-import { useStudentFiltering } from "@/hooks/useStudentFiltering";
+import { useExamStudentSummaries } from "@/hooks/useExamStudentSummaries";
+import {
+  useStudentFiltering,
+  type StudentFilterSortOption,
+} from "@/hooks/useStudentFiltering";
 import { buildInstructorExamContext } from "@/lib/instructor-utils";
 import { qk } from "@/lib/query-keys";
-import type { InstructorExam, InstructorStudent, SortOption } from "@/lib/types/exam";
+import type { InstructorExam } from "@/lib/types/exam";
+import type { ExamStudentSummary } from "@/lib/types/student-summary";
 
 export default function ExamDetail({
   params,
@@ -47,22 +49,17 @@ export default function ExamDetail({
   const resolvedParams = use(params);
   const { isSignedIn, isLoaded, user, profile } = useAppUser();
 
-  const [monitoringSessionId, setMonitoringSessionId] = useState<string | null>(null);
-  const [monitoringStudent, setMonitoringStudent] = useState<InstructorStudent | null>(null);
+  const [monitoringStudent, setMonitoringStudent] = useState<ExamStudentSummary | null>(null);
   const [examInfoOpen, setExamInfoOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
 
-  // Data loading
   const {
     exam,
     setExam,
     examDetailData,
     examDetailLoading,
-    examDetailFetching,
     loading,
     error,
-    analyticsData,
-    analyticsLoading,
   } = useExamDetail({
     examId: resolvedParams.examId,
     isLoaded,
@@ -70,64 +67,37 @@ export default function ExamDetail({
     userId: user?.id,
   });
 
-  // Student filtering
+  const hasGradingInProgress = useMemo(
+    () => exam?.status === "closed",
+    [exam?.status]
+  );
+
+  const {
+    data: students = [],
+    isLoading: summariesLoading,
+    isFetching: summariesFetching,
+    isError: summariesError,
+    error: summariesErrorDetail,
+    refetch: refetchSummaries,
+  } = useExamStudentSummaries({
+    examId: resolvedParams.examId,
+    enabled: !!exam && isLoaded && !!isSignedIn,
+    refetchInterval: hasGradingInProgress ? 10000 : false,
+  });
+
   const {
     searchQuery,
     setSearchQuery,
     sortOption,
     setSortOption,
-    gradedStudents,
-    nonGradedStudents,
-  } = useStudentFiltering({ students: exam?.students ?? [] });
+    filteredAndSortedStudents,
+  } = useStudentFiltering({
+    students,
+    defaultSort: "name",
+  });
 
   const queryClient = useQueryClient();
 
-  // Bulk approve state
-  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
-
-  const aiGradedStudents = useMemo(
-    () => nonGradedStudents.filter((s) => s.gradeType === "ai_graded"),
-    [nonGradedStudents]
-  );
-
-  const handleSelectStudent = useCallback((sessionId: string, checked: boolean) => {
-    setSelectedSessionIds((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(sessionId);
-      else next.delete(sessionId);
-      return next;
-    });
-  }, []);
-
-  const handleSelectAllAiGraded = useCallback((checked: boolean) => {
-    if (checked) {
-      setSelectedSessionIds(new Set(aiGradedStudents.map((s) => s.id)));
-    } else {
-      setSelectedSessionIds(new Set());
-    }
-  }, [aiGradedStudents]);
-
-  const bulkApproveMutation = useMutation({
-    mutationFn: async (sessionIds: string[]) => {
-      const response = await fetch(`/api/exam/${resolvedParams.examId}/bulk-approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionIds }),
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.message || "일괄 승인에 실패했습니다.");
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      setSelectedSessionIds(new Set());
-      queryClient.invalidateQueries({ queryKey: qk.instructor.finalGrades(resolvedParams.examId) });
-      queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
-    },
-  });
-
-  // Grades release mutation
   const releaseGradesMutation = useMutation({
     mutationFn: async (release: boolean) => {
       const url = `/api/exam/${resolvedParams.examId}/release-grades`;
@@ -141,8 +111,10 @@ export default function ExamDetail({
       return response.json();
     },
     onSuccess: (_data, release) => {
-      setExam((prev) => prev ? { ...prev, grades_released: release } : prev);
-      queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
+      setExam((prev) => (prev ? { ...prev, grades_released: release } : prev));
+      queryClient.invalidateQueries({
+        queryKey: qk.instructor.examDetail(resolvedParams.examId),
+      });
     },
   });
 
@@ -156,7 +128,6 @@ export default function ExamDetail({
     }
   };
 
-  // Redirect non-instructors
   useEffect(() => {
     if (
       isLoaded &&
@@ -164,40 +135,28 @@ export default function ExamDetail({
     ) {
       redirect("/student");
     }
-  }, [isLoaded, isSignedIn, user]);
+  }, [isLoaded, isSignedIn, profile?.role]);
 
   const questionsCount = examDetailData?.questionsCount ?? null;
   const questionsLoading = examDetailLoading;
   const questions = (questionsOpen ? examDetailData?.questionsRaw : null) ?? [];
 
-  const handleLiveMonitoring = (student: InstructorStudent) => {
+  const handleLiveMonitoring = (student: ExamStudentSummary) => {
     setMonitoringStudent(student);
-    setMonitoringSessionId(student.id);
   };
 
   const handleCloseMonitoring = () => {
-    setMonitoringSessionId(null);
     setMonitoringStudent(null);
   };
 
-  const getStudentStatusColor = (status: string) => {
-    switch (status) {
-      case "completed":
-        return "bg-green-100 text-green-800";
-      case "in-progress":
-        return "bg-yellow-100 text-yellow-800";
-      case "not-started":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
-
   const hasIncompleteGrading = useMemo(() => {
-    return exam?.students.some(
-      (student) => student.status === "completed" && !student.isGraded
-    ) ?? false;
-  }, [exam?.students]);
+    return students.some(
+      (s) =>
+        s.status === "submitted" &&
+        s.caseProgress.total > 0 &&
+        s.caseProgress.graded < s.caseProgress.total
+    );
+  }, [students]);
 
   const handleExcelDownload = useCallback(() => {
     if (!exam) return;
@@ -213,30 +172,14 @@ export default function ExamDetail({
     return buildInstructorExamContext(exam, questions);
   }, [exam, questions]);
 
-  // --- Early returns ---
+  const studentsLoading = loading || summariesLoading || summariesFetching;
 
-  if (!isLoaded) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
-      </div>
-    );
+  if (!isLoaded || loading) {
+    return <PageSpinner />;
   }
 
   if (!isSignedIn || (profile?.role as string) !== "instructor") {
     return null;
-  }
-
-  if (loading) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        </div>
-      </div>
-    );
   }
 
   if (error || !exam) {
@@ -254,8 +197,6 @@ export default function ExamDetail({
       </div>
     );
   }
-
-  // --- Main UI ---
 
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
@@ -302,15 +243,18 @@ export default function ExamDetail({
                         started_at: startedAt || prev.started_at,
                       };
                     });
-                    queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
-                    queryClient.invalidateQueries({ queryKey: qk.instructor.examAnalytics(resolvedParams.examId) });
+                    queryClient.invalidateQueries({
+                      queryKey: qk.instructor.examDetail(resolvedParams.examId),
+                    });
+                    queryClient.invalidateQueries({
+                      queryKey: qk.instructor.studentSummaries(resolvedParams.examId),
+                    });
                   }}
                 />
               </>
             }
           />
 
-          {/* Collapsible sections */}
           <div className="space-y-3 mt-6 mb-6">
             <div id="exam-info-section">
               <Collapsible open={examInfoOpen} onOpenChange={setExamInfoOpen}>
@@ -319,14 +263,25 @@ export default function ExamDetail({
                     <div className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors">
                       <div className="flex items-center gap-3">
                         <h3 className="font-semibold">시험 정보</h3>
-                        <span className="text-sm text-muted-foreground">{exam.duration}분 &bull; {exam.code}</span>
+                        <span className="text-sm text-muted-foreground">
+                          {exam.duration}분 &bull; {exam.code}
+                        </span>
                       </div>
-                      {examInfoOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                      {examInfoOpen ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="px-4 pb-4">
-                      <ExamDetailsCard description={exam.description} duration={exam.duration} createdAt={exam.createdAt} examCode={exam.code} />
+                      <ExamDetailsCard
+                        description={exam.description}
+                        duration={exam.duration}
+                        createdAt={exam.createdAt}
+                        examCode={exam.code}
+                      />
                     </div>
                   </CollapsibleContent>
                 </div>
@@ -341,17 +296,23 @@ export default function ExamDetail({
                       <div className="flex items-center gap-3">
                         <h3 className="font-semibold">문제 보기</h3>
                         <span className="text-sm text-muted-foreground">
-                          {questionsCount !== null ? `${questionsCount}개 문제` : "문제 로딩 중..."}
+                          {questionsCount !== null
+                            ? `${questionsCount}개 문제`
+                            : "문제 로딩 중..."}
                         </span>
                       </div>
-                      {questionsOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                      {questionsOpen ? (
+                        <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      )}
                     </div>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <div className="px-4 pb-4">
                       {questionsLoading ? (
                         <div className="flex items-center justify-center py-8">
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
                         </div>
                       ) : (
                         <QuestionsListCard questions={questions} />
@@ -363,255 +324,176 @@ export default function ExamDetail({
             </div>
           </div>
 
-          {/* Grid: Charts | Student List */}
-          <div className="grid gap-6 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_500px]">
-            {/* Charts */}
-            <div className="space-y-4">
-              {analyticsData && !analyticsLoading && (
-                <ExamAnalyticsCard
-                  averageScore={analyticsData.averageScore || 0}
-                  averageQuestions={analyticsData.averageQuestions || 0}
-                  averageAnswerLength={analyticsData.averageAnswerLength || 0}
-                  averageExamDuration={analyticsData.averageExamDuration || 0}
-                  scoreDistribution={analyticsData.statistics?.scoreDistribution || []}
-                  questionCountDistribution={analyticsData.statistics?.questionCountDistribution || []}
-                  answerLengthDistribution={analyticsData.statistics?.answerLengthDistribution || []}
-                  examDurationDistribution={analyticsData.statistics?.examDurationDistribution || []}
-                  stageAnalysis={analyticsData.stageAnalysis}
-                  rubricAnalysis={analyticsData.rubricAnalysis}
-                  questionTypeAnalysis={analyticsData.questionTypeAnalysis}
-                />
-              )}
-              {analyticsLoading && (
-                <div className="flex items-center justify-center py-8 border rounded-lg">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
-                </div>
-              )}
+          <div className="space-y-4">
+            {exam.status === "running" && (
+              <LateEntryPanel examId={exam.id} examStatus={exam.status} />
+            )}
+
+            <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+              <div className="flex items-center gap-2">
+                {exam.grades_released ? (
+                  <Eye className="h-4 w-4 text-green-600" />
+                ) : (
+                  <EyeOff className="h-4 w-4 text-muted-foreground" />
+                )}
+                <span className="text-sm font-medium">
+                  {exam.grades_released ? "성적 공개중" : "성적 비공개"}
+                </span>
+                <span className="text-xs text-muted-foreground hidden sm:inline">
+                  {exam.grades_released
+                    ? "학생들이 점수와 응시 내용을 볼 수 있습니다"
+                    : "학생들은 답안만 확인할 수 있습니다"}
+                </span>
+              </div>
+              <Button
+                size="sm"
+                variant={exam.grades_released ? "outline" : "default"}
+                disabled={releaseGradesMutation.isPending}
+                onClick={handleToggleGradesRelease}
+              >
+                {releaseGradesMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                ) : exam.grades_released ? (
+                  <EyeOff className="h-4 w-4 mr-1.5" />
+                ) : (
+                  <Eye className="h-4 w-4 mr-1.5" />
+                )}
+                {exam.grades_released ? "성적 비공개" : "성적 공개"}
+              </Button>
             </div>
 
-            {/* Student List */}
-            <div className="space-y-4">
-              {/* 지각 학생 패널 — 시험 진행 중에만 */}
-              {exam.status === "running" && (
-                <LateEntryPanel examId={exam.id} examStatus={exam.status} />
-              )}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  placeholder="학생 이름, 이메일, 학번, 학교로 검색..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <Select
+                value={sortOption}
+                onValueChange={(v) => setSortOption(v as StudentFilterSortOption)}
+              >
+                <SelectTrigger className="w-full sm:w-[200px]">
+                  <SelectValue placeholder="정렬 기준" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">이름순</SelectItem>
+                  <SelectItem value="studentNumber">학번순</SelectItem>
+                  <SelectItem value="submittedAt">제출 빠른 순</SelectItem>
+                  <SelectItem value="overallStatus">채점 상태순</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 shrink-0"
+                onClick={() => {
+                  queryClient.invalidateQueries({
+                    queryKey: qk.instructor.lateStudents(resolvedParams.examId),
+                  });
+                  queryClient.invalidateQueries({
+                    queryKey: qk.instructor.examDetail(resolvedParams.examId),
+                  });
+                  void refetchSummaries();
+                }}
+                title="새로고침"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
 
-              {/* Grades Release Toggle */}
-              <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
-                <div className="flex items-center gap-2">
-                  {exam.grades_released ? (
-                    <Eye className="h-4 w-4 text-green-600" />
-                  ) : (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <span className="text-sm font-medium">
-                    {exam.grades_released ? "성적 공개중" : "성적 비공개"}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {exam.grades_released
-                      ? "학생들이 점수와 응시 내용을 볼 수 있습니다"
-                      : "학생들은 답안만 확인할 수 있습니다"}
-                  </span>
-                </div>
-                <Button
-                  size="sm"
-                  variant={exam.grades_released ? "outline" : "default"}
-                  disabled={releaseGradesMutation.isPending}
-                  onClick={handleToggleGradesRelease}
-                >
-                  {releaseGradesMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-                  ) : exam.grades_released ? (
-                    <EyeOff className="h-4 w-4 mr-1.5" />
-                  ) : (
-                    <Eye className="h-4 w-4 mr-1.5" />
-                  )}
-                  {exam.grades_released ? "성적 비공개" : "성적 공개"}
+            <p className="text-sm text-muted-foreground">
+              총 {filteredAndSortedStudents.length}명
+            </p>
+
+            {studentsLoading ? (
+              <div className="border rounded-lg overflow-hidden p-4 space-y-4">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div key={index} className="flex items-center gap-4">
+                    <Skeleton className="h-10 w-10 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                    <Skeleton className="h-4 w-12" />
+                    <Skeleton className="h-8 w-16" />
+                  </div>
+                ))}
+              </div>
+            ) : summariesError ? (
+              <div className="border border-destructive/30 rounded-lg p-12 text-center">
+                <p className="text-destructive font-medium mb-2">
+                  학생 목록을 불러오지 못했습니다
+                </p>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {summariesErrorDetail instanceof Error
+                    ? summariesErrorDetail.message
+                    : "잠시 후 다시 시도해 주세요."}
+                </p>
+                <Button variant="outline" onClick={() => void refetchSummaries()}>
+                  다시 시도
                 </Button>
               </div>
-
-              {/* Search & Sort */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-                  <Input
-                    placeholder="학생 이름, 이메일, 학번, 학교로 검색..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-                <Select value={sortOption} onValueChange={(v) => setSortOption(v as SortOption)}>
-                  <SelectTrigger className="w-full sm:w-[200px]">
-                    <SelectValue placeholder="정렬 기준" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="score">가채점 순</SelectItem>
-                    <SelectItem value="questionCount">질문 갯수 순</SelectItem>
-                    <SelectItem value="answerLength">답안 길이 순</SelectItem>
-                    <SelectItem value="submittedAt">제출 빠른 순</SelectItem>
-                  </SelectContent>
-                </Select>
+            ) : filteredAndSortedStudents.length === 0 ? (
+              <div className="border rounded-lg p-12 text-center text-muted-foreground">
+                <p>표시할 학생이 없습니다.</p>
               </div>
-
-              {/* Graded students */}
-              {loading || examDetailFetching || !exam ? (
-                <div className="border rounded-lg flex flex-col max-h-[300px]">
-                  <div className="p-4 border-b bg-muted/50 flex-shrink-0">
-                    <Skeleton className="h-6 w-40" />
-                    <Skeleton className="h-4 w-32 mt-2" />
-                  </div>
-                  <div className="divide-y overflow-y-auto flex-1 p-4 space-y-4">
-                    {Array.from({ length: 3 }).map((_, index) => (
-                      <StudentListItemSkeleton key={index} />
-                    ))}
+            ) : (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="bg-muted/50 border-b px-4 py-3 hidden md:block">
+                  <div className="grid grid-cols-[1fr_72px_72px_72px_140px_100px_80px] gap-3 items-center text-sm font-medium text-muted-foreground">
+                    <span>학생</span>
+                    <span className="text-center">객관식</span>
+                    <span className="text-center">O/X</span>
+                    <span className="text-center">서술</span>
+                    <span>제출일시</span>
+                    <span>상태</span>
+                    <span className="text-center">액션</span>
                   </div>
                 </div>
-              ) : (
-                gradedStudents.length > 0 && (
-                  <div className="border rounded-lg flex flex-col max-h-[300px]">
-                    <div className="p-4 border-b bg-muted/50 flex-shrink-0">
-                      <h3 className="font-semibold">최종 채점 완료 ({gradedStudents.length}명)</h3>
-                      <p className="text-sm text-muted-foreground">교수가 최종 채점한 학생 (점수 순)</p>
-                    </div>
-                    <div className="divide-y overflow-y-auto flex-1">
-                      {gradedStudents.map((student) => (
-                        <StudentListItem
-                          key={student.id}
-                          student={student}
-                          examId={exam.id}
-                          onLiveMonitoring={handleLiveMonitoring}
-                          getStudentStatusColor={getStudentStatusColor}
-                          showFinalScore={true}
-                          analyticsData={analyticsData}
-                          examStatus={exam.status}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )
-              )}
-
-              {/* Non-graded students */}
-              <div className="border rounded-lg flex flex-col h-[calc(100vh-400px)] min-h-[600px]">
-                <div className="p-4 border-b bg-muted/50 flex-shrink-0">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-semibold">
-                        {loading || examDetailFetching || !exam ? (
-                          <Skeleton className="h-6 w-32" />
-                        ) : (
-                          `학생 목록 (${nonGradedStudents.length}명)`
-                        )}
-                      </h3>
-                      {loading || examDetailFetching || !exam ? (
-                        <div className="text-sm text-muted-foreground">
-                          <Skeleton className="h-4 w-24 mt-2" />
-                        </div>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          {sortOption === "score" && "가채점 점수 순"}
-                          {sortOption === "questionCount" && "질문 갯수 순"}
-                          {sortOption === "answerLength" && "답안 길이 순"}
-                          {sortOption === "submittedAt" && "제출 빠른 순"}
-                        </p>
-                      )}
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => {
-                        queryClient.invalidateQueries({ queryKey: qk.instructor.lateStudents(resolvedParams.examId) });
-                        queryClient.invalidateQueries({ queryKey: qk.instructor.examDetail(resolvedParams.examId) });
-                      }}
-                      title="새로고침"
-                    >
-                      <RefreshCw className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  {/* Bulk approve controls */}
-                  {aiGradedStudents.length > 0 && (
-                    <div className="flex items-center gap-3 mt-3 pt-3 border-t">
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          checked={
-                            aiGradedStudents.length > 0 &&
-                            aiGradedStudents.every((s) => selectedSessionIds.has(s.id))
-                          }
-                          onCheckedChange={(checked) => handleSelectAllAiGraded(!!checked)}
-                        />
-                        <span className="text-sm text-muted-foreground">
-                          AI 채점 전체 선택 ({aiGradedStudents.length}명)
-                        </span>
-                      </div>
-                      {selectedSessionIds.size > 0 && (
-                        <Button
-                          size="sm"
-                          variant="default"
-                          className="ml-auto"
-                          disabled={bulkApproveMutation.isPending}
-                          onClick={() => {
-                            bulkApproveMutation.mutate(Array.from(selectedSessionIds));
-                          }}
-                        >
-                          {bulkApproveMutation.isPending ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
-                          ) : (
-                            <CheckCheck className="h-4 w-4 mr-1.5" />
-                          )}
-                          일괄 승인 ({selectedSessionIds.size}명)
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <div className="divide-y overflow-y-auto flex-1">
-                  {loading || examDetailFetching || !exam ? (
-                    <div className="p-4 space-y-4">
-                      {Array.from({ length: 5 }).map((_, index) => (
-                        <StudentListItemSkeleton key={index} />
-                      ))}
-                    </div>
-                  ) : nonGradedStudents.length === 0 ? (
-                    <div className="p-8 text-center text-muted-foreground">
-                      <p>표시할 학생이 없습니다.</p>
-                    </div>
-                  ) : (
-                    nonGradedStudents.map((student) => (
-                      <StudentListItem
-                        key={student.id}
+                <div className="divide-y max-h-[calc(100vh-400px)] min-h-[320px] overflow-y-auto">
+                  {(filteredAndSortedStudents as ExamStudentSummary[]).map(
+                    (student) => (
+                      <ExamStudentRow
+                        key={student.sessionId}
                         student={student}
                         examId={exam.id}
                         onLiveMonitoring={handleLiveMonitoring}
-                        getStudentStatusColor={getStudentStatusColor}
-                        showFinalScore={false}
-                        analyticsData={analyticsData}
-                        examStatus={exam.status}
-                        selectable={student.gradeType === "ai_graded"}
-                        selected={selectedSessionIds.has(student.id)}
-                        onSelect={handleSelectStudent}
                       />
-                    ))
+                    ),
                   )}
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
-          {monitoringStudent && monitoringSessionId && (
+          {monitoringStudent && (
             <StudentLiveMonitoring
-              open={monitoringSessionId !== null}
-              onOpenChange={(open: boolean) => { if (!open) handleCloseMonitoring(); }}
-              sessionId={monitoringSessionId}
+              open={monitoringStudent !== null}
+              onOpenChange={(open: boolean) => {
+                if (!open) handleCloseMonitoring();
+              }}
+              sessionId={monitoringStudent.sessionId}
               studentName={monitoringStudent.name}
-              studentNumber={monitoringStudent.student_number}
+              studentNumber={monitoringStudent.studentNumber}
               school={monitoringStudent.school}
             />
           )}
         </div>
       </SidebarInset>
     </SidebarProvider>
+  );
+}
+
+function PageSpinner() {
+  return (
+    <div className="container mx-auto p-6">
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    </div>
   );
 }

@@ -27,9 +27,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  type RubricItem,
-} from "@/components/instructor/RubricTable";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import {
   CaseQuestionGenerator,
@@ -85,9 +82,6 @@ export default function CreateExam() {
   const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [rubric, setRubric] = useState<RubricItem[]>([]);
-  const [pendingRubricSuggestions, setPendingRubricSuggestions] = useState<RubricItem[]>([]);
-  const [isRubricPublic, setIsRubricPublic] = useState(false);
   const [chatWeight, setChatWeight] = useState<number | null>(null);
   // 파일 업로드 + 텍스트 추출 통합 hook
   const fileUpload = useFileUpload();
@@ -101,9 +95,6 @@ export default function CreateExam() {
 
   // P1-2: 새로 수락된 문제 하이라이트
   const [highlightedQuestionIds, setHighlightedQuestionIds] = useState<Set<string>>(new Set());
-
-  // AI 루브릭 생성 상태
-  const [isAIGeneratingRubric, setIsAIGeneratingRubric] = useState(false);
 
   // P0-2: adjustHistory ref for localStorage persistence
   const adjustHistoryRef = useRef<Map<string, ChatMessage[]>>(new Map());
@@ -120,8 +111,6 @@ export default function CreateExam() {
     duration: examData.duration,
     code: examData.code,
     questions,
-    rubric,
-    isRubricPublic,
     chatWeight,
     adjustHistoryRef,
   });
@@ -138,10 +127,6 @@ export default function CreateExam() {
       if (draft.questions?.length > 0) {
         setQuestions(draft.questions);
       }
-      if (draft.rubric?.length > 0) {
-        setRubric(draft.rubric);
-      }
-      setIsRubricPublic(draft.isRubricPublic ?? false);
       setChatWeight(draft.chatWeight ?? null);
       // P0-2: Restore adjust history
       if (draft.adjustHistory) {
@@ -155,12 +140,9 @@ export default function CreateExam() {
     return (
       examData.title.trim() !== "" ||
       examData.materials.length > 0 ||
-      questions.some((q) => !isQuestionContentEmpty(q.text)) ||
-      rubric.some(
-        (r) => r.evaluationArea.trim() !== "" || r.detailedCriteria.trim() !== ""
-      )
+      questions.some((q) => !isQuestionContentEmpty(q.text))
     );
-  }, [examData.title, examData.materials.length, questions, rubric]);
+  }, [examData.title, examData.materials.length, questions]);
 
   // 이탈 경고
   useEffect(() => {
@@ -467,83 +449,6 @@ export default function CreateExam() {
     });
   };
 
-  const addRubricItem = () => {
-    const newRubricItem: RubricItem = {
-      id: Date.now().toString(),
-      evaluationArea: "",
-      detailedCriteria: "",
-    };
-
-    setRubric([...rubric, newRubricItem]);
-  };
-
-  const updateRubricItem = (
-    id: string,
-    field: keyof RubricItem,
-    value: string
-  ) => {
-    const updatedRubric = rubric.map((item) =>
-      item.id === id ? { ...item, [field]: value } : item
-    );
-
-    setRubric(updatedRubric);
-  };
-
-  const removeRubricItem = (id: string) => {
-    const newRubric = rubric.filter((item) => item.id !== id);
-    setRubric(newRubric);
-  };
-
-  const handleAIGenerateRubric = useCallback(async (params?: { topics?: string; customInstructions?: string }) => {
-    if (questions.length === 0 || questions.every((q) => isQuestionContentEmpty(q.text))) {
-      toast.error("AI 루브릭을 생성하려면 문제를 먼저 작성해주세요.");
-      return;
-    }
-    if (!examData.title.trim()) {
-      toast.error("AI 루브릭을 생성하려면 시험 제목을 먼저 입력해주세요.");
-      return;
-    }
-
-    setIsAIGeneratingRubric(true);
-    try {
-      const response = await fetch("/api/ai/generate-rubric", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          examTitle: examData.title,
-          questions: questions
-            .filter((q) => !isQuestionContentEmpty(q.text))
-            .map((q) => ({ text: q.text, type: q.type })),
-          ...(params?.topics ? { topics: params.topics } : {}),
-          ...(params?.customInstructions ? { customInstructions: params.customInstructions } : {}),
-          language: examData.language,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "루브릭 생성에 실패했습니다.");
-      }
-
-      const result = await response.json();
-      if (result.rubric && Array.isArray(result.rubric)) {
-        setPendingRubricSuggestions(
-          result.rubric.map((r: { evaluationArea: string; detailedCriteria: string }) => ({
-            id: Date.now().toString() + Math.random().toString(36).slice(2),
-            evaluationArea: r.evaluationArea,
-            detailedCriteria: r.detailedCriteria,
-          }))
-        );
-        toast.success("AI 평가 기준이 제안되었습니다. 확인 후 적용해주세요.");
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "루브릭 생성 중 오류가 발생했습니다.";
-      toast.error(message);
-    } finally {
-      setIsAIGeneratingRubric(false);
-    }
-  }, [examData.language, examData.title, questions]);
-
   // ── AI 에이전트 클라이언트 실행 레이어 연결 ──────────────────────
   // 컨트롤러에 활성 런이 있고 running 단계이면 "에이전트 작성 중" 모드.
   // URL 파라미터가 아니라 컨트롤러 상태로 판별한다. 일반 사용에는 무영향.
@@ -575,7 +480,6 @@ export default function CreateExam() {
       setExamData((prev) => ({ ...prev, title: value })),
     titleElementRef: titleInputRef,
     questions,
-    rubric,
     addQuestion,
     removeQuestionById,
     updateQuestion,
@@ -598,8 +502,6 @@ export default function CreateExam() {
       code: string;
       duration: number;
       questions: Question[];
-      rubric: RubricItem[];
-      rubric_public: boolean;
       chat_weight: number | null;
       materials: string[];
       status: string;
@@ -728,8 +630,6 @@ export default function CreateExam() {
         // 명시적으로 0을 전송하여 fallback 로직이 작동하지 않도록 함
         duration: examData.duration,
         questions: questions,
-        rubric: rubric, // 루브릭 데이터 추가
-        rubric_public: isRubricPublic, // 루브릭 공개 여부
         chat_weight: chatWeight, // 채점 가중치 (null = 기본값 50)
         materials: materialUrls, // Array of file URLs
         materials_text: materialsText, // 추출된 텍스트 배열
@@ -915,7 +815,6 @@ export default function CreateExam() {
                             type: q.type,
                             options: q.options,
                             correctOptionIndex: q.correctOptionIndex,
-                            rubric: q.rubric,
                           })),
                         ];
                       });
@@ -931,17 +830,6 @@ export default function CreateExam() {
                         });
                       }, 100);
                     }}
-                    onRubricSuggested={(newRubric) => {
-                      setPendingRubricSuggestions(
-                        newRubric.map((r) => ({
-                          id:
-                            Date.now().toString() +
-                            Math.random().toString(36).slice(2),
-                          evaluationArea: r.evaluationArea,
-                          detailedCriteria: r.detailedCriteria,
-                        })),
-                      );
-                    }}
                   />
                 }
                 questions={questions}
@@ -952,32 +840,8 @@ export default function CreateExam() {
                   setQuestions((prev) => prev.filter((q) => q.id !== id));
                 }}
                 onQuestionMove={moveQuestion}
-                rubric={rubric}
-                onRubricAdd={addRubricItem}
-                onRubricUpdate={updateRubricItem}
-                onRubricRemove={removeRubricItem}
-                isRubricPublic={isRubricPublic}
-                onRubricPublicChange={setIsRubricPublic}
                 chatWeight={chatWeight}
                 onChatWeightChange={setChatWeight}
-                pendingAISuggestions={pendingRubricSuggestions}
-                onAcceptAISuggestions={() => {
-                  setRubric((prev) => {
-                    const nonEmpty = prev.filter(
-                      (r) =>
-                        r.evaluationArea.trim() !== "" ||
-                        r.detailedCriteria.trim() !== "",
-                    );
-                    return [...nonEmpty, ...pendingRubricSuggestions];
-                  });
-                  setPendingRubricSuggestions([]);
-                  toast.success("AI 루브릭이 적용되었습니다.");
-                }}
-                onDismissAISuggestions={() => {
-                  setPendingRubricSuggestions([]);
-                }}
-                onAIGenerateRubric={handleAIGenerateRubric}
-                isAIGeneratingRubric={isAIGeneratingRubric}
                 submitReasons={submitReasons}
                 isSubmitting={isLoading}
                 onCancel={() => {
@@ -1028,7 +892,7 @@ export default function CreateExam() {
                       </div>
                       {/* P2-5: Summary */}
                       <div className="text-sm text-muted-foreground space-y-1 border-t pt-3">
-                        <p>문제 {questions.length}개{examData.materials.length > 0 && ` · 자료 ${examData.materials.length}개`}{rubric.some(r => r.evaluationArea.trim()) && " · 루브릭 포함"}</p>
+                        <p>문제 {questions.length}개{examData.materials.length > 0 && ` · 자료 ${examData.materials.length}개`}</p>
                         <p>시험 시간: {examData.duration === 0 ? "무제한 (과제형)" : `${examData.duration}분`}</p>
                       </div>
                     </div>

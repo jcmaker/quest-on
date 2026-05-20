@@ -238,11 +238,7 @@ describe("gradeOneQuestion — objective vs case", () => {
     expect(grades[0].score).toBe(0);
   });
 
-  it("case question → AI grading path is taken (OpenAI called)", async () => {
-    // Make the OpenAI call throw so grading fails fast — we only assert the
-    // AI path was *entered*, not that it succeeds.
-    callOpenAIMock.mockRejectedValue(new Error("stub: openai called"));
-
+  it("case question → skipped without OpenAI grading", async () => {
     supabaseMock.from.mockImplementation(
       buildSupabase({
         questions: [
@@ -256,8 +252,14 @@ describe("gradeOneQuestion — objective vs case", () => {
       })
     );
 
-    await gradeOneQuestion(SESSION_ID, 0);
+    const result = await gradeOneQuestion(SESSION_ID, 0);
 
-    expect(callOpenAIMock).toHaveBeenCalled();
+    expect(result).toEqual({
+      skipped: true,
+      graded: false,
+      failureReason: "Non-objective exam question skipped",
+    });
+    expect(callOpenAIMock).not.toHaveBeenCalled();
+    expect(upsertGradesMock).not.toHaveBeenCalled();
   });
 });

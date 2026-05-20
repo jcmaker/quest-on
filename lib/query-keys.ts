@@ -26,10 +26,11 @@ export const qk = {
     examDetail: (examId: string) => ["instructor-exam-detail", examId] as const,
 
     /**
-     * 시험별 최종 채점 데이터
+     * 시험별 학생 요약 (객관식/서술 진행)
      * @param examId - 시험 ID
      */
-    finalGrades: (examId: string) => ["instructor-final-grades", examId] as const,
+    studentSummaries: (examId: string) =>
+      ["instructor-student-summaries", examId] as const,
 
     /**
      * 시험별 문제 목록 (lazy load)
@@ -62,6 +63,14 @@ export const qk = {
      * @param assignmentId - 과제 ID (exams 테이블의 type='assignment')
      */
     assignmentDetail: (assignmentId: string) => ["instructor-assignment-detail", assignmentId] as const,
+
+    /**
+     * 사례형 문항 강사–AI 채점 대화
+     * @param sessionId - 세션 ID
+     * @param qIdx - 문항 인덱스
+     */
+    caseGradeChat: (sessionId: string, qIdx: number) =>
+      ["instructor-case-grade-chat", sessionId, qIdx] as const,
   },
 
   student: {

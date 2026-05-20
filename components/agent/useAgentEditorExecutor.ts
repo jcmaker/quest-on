@@ -20,7 +20,6 @@ import { typeText } from "@/components/agent/typeText";
 import type { CaseQuestionGeneratorHandle } from "@/components/instructor/CaseQuestionGenerator";
 import type { AgentEditorExecutor } from "@/components/agent/AgentRunController";
 import type { Question } from "@/components/instructor/QuestionEditor";
-import type { RubricItem } from "@/components/instructor/RubricTable";
 import type { AgentPageState, AgentUiAction } from "@/lib/agent/ui-actions";
 
 /** HTML 본문에서 텍스트만 추출해 짧은 요약으로. */
@@ -58,8 +57,6 @@ export interface AgentEditorExecutorDeps {
   titleElementRef: RefObject<HTMLElement | null>;
   /** 현재 문제 목록. */
   questions: Question[];
-  /** 현재 루브릭 행. */
-  rubric: RubricItem[];
   /** 빈 문제 1개 추가. */
   addQuestion: () => void;
   /** id 로 문제 제거. */
@@ -86,7 +83,6 @@ export function useAgentEditorExecutor(
     setExamTitle,
     titleElementRef,
     questions,
-    rubric,
     addQuestion,
     removeQuestionById,
     updateQuestion,
@@ -106,10 +102,9 @@ export function useAgentEditorExecutor(
         type: q.type,
         summary: summarizeHtml(q.text),
       })),
-      rubricRowCount: rubric.length,
       isGenerating: generatorRef.current?.getIsGenerating() ?? false,
     };
-  }, [examTitle, questions, rubric, generatorRef, route]);
+  }, [examTitle, questions, generatorRef, route]);
 
   // ── set_exam_title — 제목 필드 focus + 타이핑 ──────────────────
   const runSetExamTitle = useCallback(

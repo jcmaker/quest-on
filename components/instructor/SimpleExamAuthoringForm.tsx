@@ -5,7 +5,6 @@ import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -32,8 +31,6 @@ import {
   FolderOpen,
   Loader2,
   Plus,
-  Sparkles,
-  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -43,7 +40,6 @@ import {
   QuestionAdjustSheet,
   type QuestionAdjustApply,
 } from "@/components/instructor/QuestionAdjustSheet";
-import type { RubricItem } from "@/components/instructor/RubricTable";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 import toast from "react-hot-toast";
 
@@ -86,22 +82,8 @@ interface SimpleExamAuthoringFormProps {
   ) => void;
   onQuestionRemove: (id: string) => void;
   onQuestionMove: (index: number, direction: "up" | "down") => void;
-  rubric: RubricItem[];
-  onRubricAdd: () => void;
-  onRubricUpdate: (id: string, field: keyof RubricItem, value: string) => void;
-  onRubricRemove: (id: string) => void;
-  isRubricPublic: boolean;
-  onRubricPublicChange: (value: boolean) => void;
   chatWeight: number | null;
   onChatWeightChange: (value: number | null) => void;
-  pendingAISuggestions: RubricItem[];
-  onAcceptAISuggestions: () => void;
-  onDismissAISuggestions: () => void;
-  onAIGenerateRubric: (params?: {
-    topics?: string;
-    customInstructions?: string;
-  }) => void;
-  isAIGeneratingRubric: boolean;
   submitReasons: string[];
   isSubmitting: boolean;
   onCancel: () => void;
@@ -279,27 +261,13 @@ export function SimpleExamAuthoringForm({
   onQuestionUpdate,
   onQuestionRemove,
   onQuestionMove,
-  rubric,
-  onRubricAdd,
-  onRubricUpdate,
-  onRubricRemove,
-  isRubricPublic,
-  onRubricPublicChange,
   chatWeight,
   onChatWeightChange,
-  pendingAISuggestions,
-  onAcceptAISuggestions,
-  onDismissAISuggestions,
-  onAIGenerateRubric,
-  isAIGeneratingRubric,
   submitReasons,
   isSubmitting,
   onCancel,
 }: SimpleExamAuthoringFormProps) {
-  const [showRubricDetails, setShowRubricDetails] = useState(false);
   const [showAdvancedGrading, setShowAdvancedGrading] = useState(false);
-  const [rubricTopics, setRubricTopics] = useState("");
-  const [rubricInstructions, setRubricInstructions] = useState("");
   // "+" 문제 추가 — 문제 유형을 고르는 Dialog 의 열림 상태.
   const [isAddPickerOpen, setIsAddPickerOpen] = useState(false);
   // 추가 다이얼로그에서 선택 중인 문제 유형.
@@ -523,7 +491,7 @@ export function SimpleExamAuthoringForm({
         <Field
           label="수업 자료"
           optional
-          helper="업로드하면 AI가 자료를 근거로 문제와 평가 기준을 만듭니다."
+          helper="업로드하면 AI가 자료를 근거로 문제를 만듭니다."
         >
           <div className="space-y-3">
             <Input
@@ -717,223 +685,53 @@ export function SimpleExamAuthoringForm({
           </div>
         </Field>
 
-        {/* 평가 기준 */}
+        {/* 채점 비중 */}
         <Field
-          label="평가 기준"
+          label="채점 비중"
           optional
-          helper="AI 채점에 사용할 기준입니다. 비워두면 기본 기준으로 채점됩니다."
+          helper="AI 대화 과정과 최종 답안을 채점에 반영하는 비율입니다. 비워두면 기본값 50:50으로 채점됩니다."
         >
-          <div className="space-y-3">
+          <div className="rounded-md border bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={() =>
-                  onAIGenerateRubric({
-                    topics: rubricTopics.trim() || undefined,
-                    customInstructions:
-                      rubricInstructions.trim() || undefined,
-                  })
-                }
-                disabled={isAIGeneratingRubric}
-                className="gap-1.5"
-              >
-                {isAIGeneratingRubric ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                AI 생성
-              </Button>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">
+                대화 {effectiveWeight}% / 최종 답안 {100 - effectiveWeight}%
+              </span>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowRubricDetails((prev) => !prev)}
+                onClick={() => setShowAdvancedGrading((prev) => !prev)}
+                className="ml-auto"
               >
-                {showRubricDetails ? "접기" : "편집"}
-              </Button>
-              <div className="ml-auto flex items-center gap-2">
-                <Label htmlFor="simple-rubric-public" className="text-sm">
-                  학생에게 공개
-                </Label>
-                <Switch
-                  id="simple-rubric-public"
-                  checked={isRubricPublic}
-                  onCheckedChange={onRubricPublicChange}
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="rubric-topics" className="text-sm">
-                  주제 / 키워드
-                </Label>
-                <Input
-                  id="rubric-topics"
-                  value={rubricTopics}
-                  onChange={(e) => setRubricTopics(e.target.value)}
-                  placeholder="예: 주요 개념, 특정 주제, 응용 사례"
-                  maxLength={500}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="rubric-instructions" className="text-sm">
-                  추가 지시사항{" "}
-                  <span className="font-normal text-muted-foreground">
-                    (선택)
-                  </span>
-                </Label>
-                <Input
-                  id="rubric-instructions"
-                  value={rubricInstructions}
-                  onChange={(e) => setRubricInstructions(e.target.value)}
-                  placeholder="예: 한국 기업 사례를 활용해주세요"
-                  maxLength={1000}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-center pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  onRubricAdd();
-                  setShowRubricDetails(true);
-                }}
-                className="size-10 rounded-full"
-                aria-label="평가 기준 추가"
-              >
-                <Plus className="h-4 w-4" />
+                조정
               </Button>
             </div>
-
-            {pendingAISuggestions.length > 0 && (
-              <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium">
-                    AI 제안 {pendingAISuggestions.length}개
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={onDismissAISuggestions}
-                  >
-                    무시
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={onAcceptAISuggestions}
-                  >
-                    적용
-                  </Button>
+            {showAdvancedGrading && (
+              <div className="mt-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="simple-custom-weight"
+                    checked={isCustomWeight}
+                    onCheckedChange={(checked) =>
+                      onChatWeightChange(checked ? 50 : null)
+                    }
+                  />
+                  <Label htmlFor="simple-custom-weight" className="text-sm">
+                    직접 설정
+                  </Label>
                 </div>
-              </div>
-            )}
-
-            {showRubricDetails && (
-              <div className="space-y-2">
-                {rubric.length === 0 ? (
-                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    평가 기준이 없으면 기본 기준으로 채점됩니다.
-                  </p>
-                ) : (
-                  rubric.map((item) => (
-                    <div
-                      key={item.id}
-                      className="grid gap-2 rounded-md border p-3 lg:grid-cols-[180px_minmax(0,1fr)_auto]"
-                    >
-                      <Textarea
-                        value={item.evaluationArea}
-                        onChange={(e) =>
-                          onRubricUpdate(
-                            item.id,
-                            "evaluationArea",
-                            e.target.value,
-                          )
-                        }
-                        placeholder="평가 영역"
-                        className="min-h-11 resize-y"
-                      />
-                      <Textarea
-                        value={item.detailedCriteria}
-                        onChange={(e) =>
-                          onRubricUpdate(
-                            item.id,
-                            "detailedCriteria",
-                            e.target.value,
-                          )
-                        }
-                        placeholder="세부 기준"
-                        className="min-h-11 resize-y"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onRubricRemove(item.id)}
-                        className="text-destructive hover:text-destructive"
-                        aria-label="평가 기준 삭제"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))
+                {isCustomWeight && (
+                  <Slider
+                    value={[effectiveWeight]}
+                    onValueChange={([value]) => onChatWeightChange(value)}
+                    min={0}
+                    max={100}
+                    step={10}
+                  />
                 )}
               </div>
             )}
-
-            <div className="rounded-md border bg-muted/20 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">
-                  채점 비중: 대화 {effectiveWeight}% / 최종 답안{" "}
-                  {100 - effectiveWeight}%
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAdvancedGrading((prev) => !prev)}
-                  className="ml-auto"
-                >
-                  조정
-                </Button>
-              </div>
-              {showAdvancedGrading && (
-                <div className="mt-3 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      id="simple-custom-weight"
-                      checked={isCustomWeight}
-                      onCheckedChange={(checked) =>
-                        onChatWeightChange(checked ? 50 : null)
-                      }
-                    />
-                    <Label
-                      htmlFor="simple-custom-weight"
-                      className="text-sm"
-                    >
-                      직접 설정
-                    </Label>
-                  </div>
-                  {isCustomWeight && (
-                    <Slider
-                      value={[effectiveWeight]}
-                      onValueChange={([value]) => onChatWeightChange(value)}
-                      min={0}
-                      max={100}
-                      step={10}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
           </div>
         </Field>
       </div>
@@ -949,13 +747,7 @@ export function SimpleExamAuthoringForm({
                 {duration === 0 ? "무제한" : `${duration}분`}
               </Badge>
               <Badge variant="outline">문제 {questions.length}개</Badge>
-              <Badge variant="outline">
-                루브릭 {rubric.length > 0 ? `${rubric.length}개` : "없음"}
-              </Badge>
               <Badge variant="outline">{materialSummary}</Badge>
-              <Badge variant="outline">
-                {isRubricPublic ? "루브릭 공개" : "루브릭 비공개"}
-              </Badge>
             </div>
             {submitReasons.length > 0 && (
               <div

@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { useAppUser } from "@/components/providers/AppAuthProvider";
 import { useState, useEffect, use, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { qk } from "@/lib/query-keys";
 import { Button } from "@/components/ui/button";
@@ -14,16 +14,19 @@ import { QuestionPromptCard } from "@/components/instructor/QuestionPromptCard";
 import { AIConversationsCard } from "@/components/instructor/AIConversationsCard";
 import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
 import { ObjectiveGradeCard } from "@/components/instructor/ObjectiveGradeCard";
-import { GradingPanel } from "@/components/instructor/GradingPanel";
+import { CaseGradingChat } from "@/components/instructor/CaseGradingChat";
+import {
+  SessionQuizResultsCard,
+  type SessionQuizAttempt,
+} from "@/components/instructor/SessionQuizResultsCard";
+import { QuestionAiSummaryCard } from "@/components/instructor/QuestionAiSummaryCard";
+import {
+  AIOverallSummary,
+  type SummaryData,
+} from "@/components/instructor/AIOverallSummary";
 import { isObjectiveQuestion } from "@/lib/grading-helpers";
 import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
 import toast from "react-hot-toast";
-import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
-import {
-  AIOverallSummary,
-  SummaryData,
-} from "@/components/instructor/AIOverallSummary";
-import { AiDependencySummaryCard } from "@/components/grading/AiDependencySummaryCard";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
 import {
@@ -68,17 +71,10 @@ import {
   CartesianGrid,
 } from "recharts";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { StageGrading, StageKey, QuestionSummaryData, GradingProgress } from "@/lib/types/grading";
-import { isAiGraded } from "@/lib/grading-utils";
+  StageGrading,
+  GradingProgress,
+  QuestionSummaryData,
+} from "@/lib/types/grading";
 
 interface Conversation {
   id: string;
@@ -139,7 +135,7 @@ interface SessionData {
     submitted_at: string;
     used_clarifications: number;
     created_at: string;
-    ai_summary?: SummaryData;
+    ai_summary?: SummaryData | null;
     auto_submitted?: boolean;
     grading_progress?: GradingProgress | null;
   };
@@ -161,6 +157,7 @@ interface SessionData {
   pasteLogs?: Record<string, PasteLog[]>; // question_id별로 그룹화된 paste 로그
   overallScore: number | null;
   gradingProgress?: GradingProgress | null;
+  assignmentQuiz?: SessionQuizAttempt | null;
 }
 
 export default function GradeStudentPage({
@@ -202,26 +199,9 @@ export default function GradeStudentPage({
     };
   }, [searchParams]);
 
-  const [scores, setScores] = useState<Record<number, number>>({});
-  const [feedbacks, setFeedbacks] = useState<Record<number, string>>({});
-  const [stageScores, setStageScores] = useState<
-    Record<number, Partial<Record<StageKey, number>>>
-  >({});
-  const [stageComments, setStageComments] = useState<
-    Record<number, Partial<Record<StageKey, string>>>
-  >({});
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
   const [examStatsOpen, setExamStatsOpen] = useState<boolean>(true);
-  const [showBackConfirm, setShowBackConfirm] = useState<boolean>(false);
-  const [acceptedAiScores, setAcceptedAiScores] = useState<
-    Record<number, boolean>
-  >({}); // 가채점 점수를 승인한 문제들
-
-  // Use state for summary to combine DB data and fresh generation
-  const [overallSummary, setOverallSummary] = useState<SummaryData | null>(
-    null
-  );
-
+  const [summaryCommitPending, setSummaryCommitPending] = useState(false);
   // Redirect non-instructors
   useEffect(() => {
     if (
@@ -304,326 +284,8 @@ export default function GradeStudentPage({
     }
   };
 
-  // Effect to initialize state from sessionData
-  useEffect(() => {
-    if (sessionData) {
-      setOverallSummary(sessionData.session.ai_summary || null);
-
-      // Initialize scores and feedbacks from existing grades
-      const initialScores: Record<number, number> = {};
-      const initialFeedbacks: Record<number, string> = {};
-      const initialStageScores: Record<
-        number,
-        Partial<Record<StageKey, number>>
-      > = {};
-      const initialStageComments: Record<
-        number,
-        Partial<Record<StageKey, string>>
-      > = {};
-
-      Object.entries(sessionData.grades).forEach(([qIdx, grade]) => {
-        const typedGrade = grade as Grade;
-        initialScores[parseInt(qIdx)] = typedGrade.score;
-        initialFeedbacks[parseInt(qIdx)] = typedGrade.comment || "";
-
-        // Load stage grading data
-        if (typedGrade.stage_grading) {
-          const stageGrading = typedGrade.stage_grading;
-          if (stageGrading.chat) {
-            initialStageScores[parseInt(qIdx)] = {
-              ...initialStageScores[parseInt(qIdx)],
-              chat: stageGrading.chat.score,
-            };
-            initialStageComments[parseInt(qIdx)] = {
-              ...initialStageComments[parseInt(qIdx)],
-              chat: stageGrading.chat.comment,
-            };
-          }
-          if (stageGrading.answer) {
-            initialStageScores[parseInt(qIdx)] = {
-              ...initialStageScores[parseInt(qIdx)],
-              answer: stageGrading.answer.score,
-            };
-            initialStageComments[parseInt(qIdx)] = {
-              ...initialStageComments[parseInt(qIdx)],
-              answer: stageGrading.answer.comment,
-            };
-          }
-        }
-      });
-
-      setScores(initialScores);
-      setFeedbacks(initialFeedbacks);
-      setStageScores(initialStageScores);
-      setStageComments(initialStageComments);
-    }
-  }, [sessionData]);
-
-  // Query for AI Summary (optimizing GPT API call)
-  const { data: generatedSummary, isLoading: summaryLoading } = useQuery({
-    queryKey: qk.session.summary(sessionData?.session?.id),
-    queryFn: async ({ signal }) => {
-      const response = await fetch("/api/instructor/generate-summary", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sessionId: sessionData?.session?.id,
-        }),
-        signal, // AbortSignal 연결
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to generate summary");
-      }
-
-      const data = await response.json();
-      return data.summary as SummaryData;
-    },
-    // Only fetch if session loaded AND no summary in DB AND grading is not in progress
-    enabled: !!sessionData?.session?.id &&
-      !sessionData?.session?.ai_summary &&
-      sessionData?.gradingProgress?.status !== "queued" &&
-      sessionData?.gradingProgress?.status !== "running",
-    staleTime: 1000 * 60 * 5, // 5 minutes cache
-  });
-
-  // Effect to update summary when generated
-  useEffect(() => {
-    if (generatedSummary) {
-      setOverallSummary(generatedSummary);
-    }
-  }, [generatedSummary]);
-
-  // Mutation for saving grades (optimistic update)
-  const saveGradeMutation = useMutation({
-    mutationFn: async (questionIdx: number) => {
-      const existingStageGrading = (
-        sessionData?.grades?.[questionIdx] as Grade | undefined
-      )?.stage_grading;
-      const response = await fetch(
-        `/api/session/${resolvedParams.studentId}/grade`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            questionIdx,
-            score: scores[questionIdx] || 0,
-            comment: feedbacks[questionIdx] || "",
-            stageGrading: (() => {
-              const chat = stageScores[questionIdx]?.chat
-                ? {
-                    ...(existingStageGrading?.chat || {}),
-                    score: stageScores[questionIdx]?.chat || 0,
-                    comment: stageComments[questionIdx]?.chat || "",
-                  }
-                : existingStageGrading?.chat ?? undefined;
-              const answer = stageScores[questionIdx]?.answer
-                ? {
-                    ...(existingStageGrading?.answer || {}),
-                    score: stageScores[questionIdx]?.answer || 0,
-                    comment: stageComments[questionIdx]?.answer || "",
-                  }
-                : existingStageGrading?.answer ?? undefined;
-              // chat/answer 모두 없으면 stageGrading 자체를 null로
-              if (!chat && !answer) return null;
-              return { chat, answer };
-            })(),
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = extractErrorMessage(
-          errorData,
-          "채점 저장 중 오류가 발생했습니다",
-          response.status
-        );
-        throw new Error(errorMessage);
-      }
-      return response.json();
-    },
-    onMutate: async (questionIdx: number) => {
-      // Optimistic update: 서버 확인 전 로컬 캐시에 즉시 반영
-      await queryClient.cancelQueries({
-        queryKey: qk.session.grade(resolvedParams.studentId),
-      });
-
-      const previousData = queryClient.getQueryData(
-        qk.session.grade(resolvedParams.studentId)
-      );
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      queryClient.setQueryData(qk.session.grade(resolvedParams.studentId), (old: any) => {
-        if (!old) return old;
-        const updatedGrades = { ...old.grades };
-        const existingGrade = updatedGrades[questionIdx] as Grade | undefined;
-        updatedGrades[questionIdx] = {
-          ...(existingGrade || { id: "optimistic", q_idx: questionIdx }),
-          score: scores[questionIdx] || 0,
-          comment: feedbacks[questionIdx] || "",
-          stage_grading: {
-            ...(existingGrade?.stage_grading || {}),
-            ...(stageScores[questionIdx]?.chat ? {
-              chat: { ...(existingGrade?.stage_grading?.chat || {}), score: stageScores[questionIdx]?.chat || 0, comment: stageComments[questionIdx]?.chat || "" },
-            } : {}),
-            ...(stageScores[questionIdx]?.answer ? {
-              answer: { ...(existingGrade?.stage_grading?.answer || {}), score: stageScores[questionIdx]?.answer || 0, comment: stageComments[questionIdx]?.answer || "" },
-            } : {}),
-          },
-        };
-        return { ...old, grades: updatedGrades };
-      });
-
-      return { previousData };
-    },
-    onSuccess: () => {
-      toast.success("채점이 저장되었습니다.");
-      // 성공 시에만 서버 데이터로 동기화 (optimistic update와의 race condition 방지)
-      queryClient.invalidateQueries({
-        queryKey: qk.session.grade(resolvedParams.studentId),
-      });
-    },
-    onError: (error: Error, _questionIdx, context) => {
-      // 실패 시 이전 데이터로 롤백
-      if (context?.previousData) {
-        queryClient.setQueryData(
-          qk.session.grade(resolvedParams.studentId),
-          context.previousData
-        );
-      }
-      const errorMessage = getErrorMessage(
-        error,
-        "채점 저장 중 오류가 발생했습니다"
-      );
-      toast.error(errorMessage, {
-        duration: 5000,
-      });
-      // 실패 시에도 서버 데이터로 동기화 (롤백 후 최신 상태 확인)
-      queryClient.invalidateQueries({
-        queryKey: qk.session.grade(resolvedParams.studentId),
-      });
-    },
-  });
-
-  const handleSaveGrade = (questionIdx: number) => {
-    // 가채점만 있는 경우 저장 방지
-    const currentGrade = sessionData?.grades?.[questionIdx] as
-      | Grade
-      | undefined;
-    if (currentGrade && isAiGraded(currentGrade)) {
-      // 교수가 점수를 직접 수정했는지 또는 승인했는지 확인
-      const originalScore = currentGrade.score;
-      const currentScore = scores[questionIdx] || 0;
-      const isAccepted = acceptedAiScores[questionIdx] || false;
-
-      // 점수가 변경되지 않았고 승인도 안 했으면 저장 불가
-      if (originalScore === currentScore && !isAccepted) {
-        toast.error(
-          "가채점 점수를 승인하거나 직접 입력한 후 저장할 수 있습니다.",
-          {
-            duration: 4000,
-          }
-        );
-        return;
-      }
-    }
-    saveGradeMutation.mutate(questionIdx);
-  };
-
-  // 현재 선택된 문제가 가채점만 있는지 확인
-  const isCurrentQuestionAiGradedOnly = useMemo(() => {
-    if (!sessionData) return false;
-    const currentGrade = sessionData.grades?.[selectedQuestionIdx] as
-      | Grade
-      | undefined;
-    if (!currentGrade) return false;
-
-    if (isAiGraded(currentGrade)) {
-      // 교수가 점수를 수정했는지 또는 승인했는지 확인
-      const originalScore = currentGrade.score;
-      const currentScore = scores[selectedQuestionIdx] || 0;
-      const isAccepted = acceptedAiScores[selectedQuestionIdx] || false;
-      return originalScore === currentScore && !isAccepted;
-    }
-    return false;
-  }, [sessionData, selectedQuestionIdx, scores, acceptedAiScores]);
-
-  // 현재 문제의 가채점 점수
-  const currentAiGradedScore = useMemo(() => {
-    if (!sessionData) return undefined;
-    const currentGrade = sessionData.grades?.[selectedQuestionIdx] as
-      | Grade
-      | undefined;
-    if (!currentGrade || !isAiGraded(currentGrade)) return undefined;
-    return currentGrade.score;
-  }, [sessionData, selectedQuestionIdx]);
-
-  // 가채점 점수 승인 핸들러
-  const handleAcceptAiScore = () => {
-    if (currentAiGradedScore !== undefined) {
-      setScores({
-        ...scores,
-        [selectedQuestionIdx]: currentAiGradedScore,
-      });
-      // 가채점 점수 승인 표시
-      setAcceptedAiScores({
-        ...acceptedAiScores,
-        [selectedQuestionIdx]: true,
-      });
-      toast.success(
-        `가채점 점수 ${currentAiGradedScore}점으로 설정되었습니다. 저장 버튼을 눌러 채점을 완료하세요.`,
-        {
-          duration: 3000,
-        }
-      );
-    }
-  };
-
-  // 뒤로 가기 핸들러
   const handleBackClick = () => {
-    // 가채점만 있는 문제가 있는지 확인
-    const hasAiGradedOnly = Object.entries(sessionData?.grades || {}).some(
-      ([qIdx, grade]) => {
-        const typedGrade = grade as Grade;
-        if (!isAiGraded(typedGrade)) return false;
-        const originalScore = typedGrade.score;
-        const currentScore = scores[parseInt(qIdx)] || 0;
-        const isAccepted = acceptedAiScores[parseInt(qIdx)] || false;
-        return originalScore === currentScore && !isAccepted;
-      }
-    );
-
-    if (hasAiGradedOnly) {
-      setShowBackConfirm(true);
-    } else {
-      // 가채점만 있는 문제가 없으면 바로 이동
-      window.location.href = `/instructor/${resolvedParams.examId}`;
-    }
-  };
-
-  const handleStageScoreChange = (stage: StageKey, value: number) => {
-    setStageScores((prev) => ({
-      ...prev,
-      [selectedQuestionIdx]: {
-        ...(prev[selectedQuestionIdx] || {}),
-        [stage]: value,
-      },
-    }));
-  };
-
-  const handleStageCommentChange = (stage: StageKey, value: string) => {
-    setStageComments((prev) => ({
-      ...prev,
-      [selectedQuestionIdx]: {
-        ...(prev[selectedQuestionIdx] || {}),
-        [stage]: value,
-      },
-    }));
+    window.location.href = `/instructor/${resolvedParams.examId}`;
   };
 
   // Compute chat context (must be before conditional returns to follow Rules of Hooks)
@@ -832,8 +494,11 @@ export default function GradeStudentPage({
   const currentGrade = sessionData.grades?.[selectedQuestionIdx] as
     | Grade
     | undefined;
-  const currentAiDependency = currentGrade?.stage_grading?.chat?.ai_dependency;
-  const overallAiDependency = overallSummary?.aiDependency || null;
+
+  const caseGradeInitialScore =
+    currentGrade?.stage_grading?.answer?.score ?? currentGrade?.score;
+  const caseGradeInitialComment =
+    currentGrade?.stage_grading?.answer?.comment ?? currentGrade?.comment ?? "";
 
   // Try to get messages by both index and question.id (for backward compatibility)
   let currentMessages = (sessionData.messages?.[selectedQuestionIdx] ||
@@ -852,10 +517,6 @@ export default function GradeStudentPage({
 
   // For now, we'll assume all messages are AI conversations during the exam
   const duringExamMessages = aiConversations;
-
-  const isGradingInProgress =
-    sessionData.gradingProgress?.status === "queued" ||
-    sessionData.gradingProgress?.status === "running";
 
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
@@ -885,6 +546,15 @@ export default function GradeStudentPage({
                   grades={sessionData.grades}
                 />
               }
+            />
+          </div>
+
+          <div className="mb-6">
+            <AIOverallSummary
+              summary={
+                (sessionData.session.ai_summary as SummaryData | null) ?? null
+              }
+              loading={false}
             />
           </div>
 
@@ -1806,13 +1476,6 @@ export default function GradeStudentPage({
             </div>
           )}
 
-          <div className="mb-6">
-            <AIOverallSummary
-              summary={overallSummary}
-              loading={isGradingInProgress || summaryLoading}
-            />
-          </div>
-
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2 space-y-6">
               <QuestionPromptCard
@@ -1821,7 +1484,6 @@ export default function GradeStudentPage({
               />
 
               {isObjectiveQuestion(currentQuestion?.type) ? (
-                /* 객관식/OX: 채팅·서술 답안 카드 대신 선택 결과만 표시 */
                 <ObjectiveGradeCard
                   type={currentQuestion?.type ?? ""}
                   options={currentQuestion?.options}
@@ -1847,37 +1509,31 @@ export default function GradeStudentPage({
             </div>
 
             <div className="space-y-6">
-              <GradingPanel
-                questionNumber={selectedQuestionIdx + 1}
-                stageScores={stageScores[selectedQuestionIdx] || {}}
-                stageComments={stageComments[selectedQuestionIdx] || {}}
-                overallScore={scores[selectedQuestionIdx] || 0}
-                isGraded={!!sessionData.grades[selectedQuestionIdx]}
-                isAiGradedOnly={isCurrentQuestionAiGradedOnly}
-                aiGradedScore={currentAiGradedScore}
-                aiSummary={sessionData.grades[selectedQuestionIdx]?.ai_summary || null}
-                saving={saveGradeMutation.isPending}
-                isGradingInProgress={isGradingInProgress}
-                onStageScoreChange={handleStageScoreChange}
-                onStageCommentChange={handleStageCommentChange}
-                onOverallScoreChange={(value) =>
-                  setScores({
-                    ...scores,
-                    [selectedQuestionIdx]: value,
-                  })
-                }
-                onAcceptAiScore={handleAcceptAiScore}
-                onSave={() => handleSaveGrade(selectedQuestionIdx)}
-              />
-
-              {/* 객관식/OX 는 AI 의존도 분석 대상이 아니다 (채팅 없음). */}
-              {!isObjectiveQuestion(currentQuestion?.type) && (
-                <AiDependencySummaryCard
-                  mode="instructor"
-                  questionAssessment={currentAiDependency}
-                  overallSummary={overallAiDependency}
-                  loading={isGradingInProgress}
+              {sessionData.assignmentQuiz && (
+                <SessionQuizResultsCard
+                  quiz={sessionData.assignmentQuiz}
+                  compact
                 />
+              )}
+
+              {!isObjectiveQuestion(currentQuestion?.type) && (
+                <>
+                  <CaseGradingChat
+                    key={selectedQuestionIdx}
+                    sessionId={sessionData.session.id}
+                    qIdx={selectedQuestionIdx}
+                    questionNumber={selectedQuestionIdx + 1}
+                    initialScore={caseGradeInitialScore}
+                    initialComment={caseGradeInitialComment}
+                    onCommitPendingChange={setSummaryCommitPending}
+                  />
+                  <QuestionAiSummaryCard
+                    summary={currentGrade?.ai_summary ?? null}
+                    loading={
+                      summaryCommitPending && !currentGrade?.ai_summary
+                    }
+                  />
+                </>
               )}
 
               <QuickActionsCard
@@ -1927,7 +1583,9 @@ export default function GradeStudentPage({
                         studentName: sessionData.student.name,
                         studentNumber: sessionData.student.student_number,
                         school: sessionData.student.school,
-                        aiSummary: overallSummary,
+                        aiSummary:
+                          (sessionData.session.ai_summary as SummaryData | null) ??
+                          null,
                       }
                     : undefined
                 }
@@ -1937,29 +1595,6 @@ export default function GradeStudentPage({
         </div>
       </SidebarInset>
 
-      {/* 뒤로 가기 확인 다이얼로그 */}
-      <AlertDialog open={showBackConfirm} onOpenChange={setShowBackConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>채점이 완료되지 않았습니다</AlertDialogTitle>
-            <AlertDialogDescription>
-              가채점만 있는 문제가 있습니다. 반드시 교수가 직접 점수를 입력해야
-              합니다. 그래도 뒤로 가시겠습니까?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setShowBackConfirm(false);
-                window.location.href = `/instructor/${resolvedParams.examId}`;
-              }}
-            >
-              뒤로 가기
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </SidebarProvider>
   );
 }

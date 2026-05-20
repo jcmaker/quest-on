@@ -59,6 +59,18 @@ app.post("/v1/chat/completions", (req, res) => {
   const isJsonMode = req.body?.response_format?.type === "json_object";
 
   if (!isJsonMode) {
+    const sysPrompt = getSystemPrompt(req.body);
+    if (
+      sysPrompt.includes("사례형 시험 문항을 채점") ||
+      sysPrompt.includes("grade a case-based exam question")
+    ) {
+      return res.json(
+        chatCompletionResponse(
+          "답안은 핵심 개념을 잘 이해하고 있습니다. 논리 전개가 명확하나 일부 세부 근거가 부족합니다.\n\n**추천 점수: 85**",
+        ),
+      );
+    }
+
     // Non-JSON mode: grading / feedback response
     const content = JSON.stringify({
       score: 75,
@@ -113,7 +125,6 @@ app.post("/v1/chat/completions", (req, res) => {
 
   if (sysPrompt.includes("출제 전문가")) {
     // generate-questions (case question generation)
-    // Must be checked BEFORE the rubric handler because question generation prompts also contain "루브릭"
     return res.json(chatCompletionResponse(JSON.stringify({
       questions: [
         {
@@ -123,41 +134,6 @@ app.post("/v1/chat/completions", (req, res) => {
         {
           text: "Compare and contrast inheritance and composition. When would you use each?",
           type: "essay",
-        },
-      ],
-      suggestedRubric: [
-        {
-          evaluationArea: "Conceptual Understanding",
-          detailedCriteria: "Demonstrates clear understanding of core OOP concepts.",
-        },
-        {
-          evaluationArea: "Practical Application",
-          detailedCriteria: "Provides relevant real-world examples.",
-        },
-      ],
-    })));
-  }
-
-  if (sysPrompt.includes("설계 전문가")) {
-    // generate-rubric (standalone rubric generation)
-    // Uses "설계 전문가" which is unique to buildRubricGenerationPrompt
-    return res.json(chatCompletionResponse(JSON.stringify({
-      rubric: [
-        {
-          evaluationArea: "개념 이해도",
-          detailedCriteria: "핵심 개념에 대한 정확한 이해와 설명 능력을 평가합니다.",
-        },
-        {
-          evaluationArea: "논리적 전개력",
-          detailedCriteria: "논리적이고 체계적인 답변 구성 능력을 평가합니다.",
-        },
-        {
-          evaluationArea: "실용적 적용",
-          detailedCriteria: "이론을 실제 사례에 적용하는 능력을 평가합니다.",
-        },
-        {
-          evaluationArea: "AI 활용 및 자기주도 탐구",
-          detailedCriteria: "AI를 정보 탐색 도구로 활용하면서도 독립적인 분석과 판단을 수행했는가를 평가합니다.",
         },
       ],
     })));
@@ -173,16 +149,6 @@ app.post("/v1/chat/completions", (req, res) => {
       {
         text: "Compare and contrast inheritance and composition. When would you use each?",
         type: "essay",
-      },
-    ],
-    suggestedRubric: [
-      {
-        evaluationArea: "Conceptual Understanding",
-        detailedCriteria: "Demonstrates clear understanding of core OOP concepts.",
-      },
-      {
-        evaluationArea: "Practical Application",
-        detailedCriteria: "Provides relevant real-world examples.",
       },
     ],
   })));

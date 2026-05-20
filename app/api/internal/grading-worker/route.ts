@@ -10,6 +10,8 @@ import {
   generateSessionSummaryPhase,
   listQuestionsToGrade,
   listGradedQuestionsForSummary,
+  isAssignmentGradingSession,
+  markObjectiveOnlyGradingDone,
 } from "@/lib/grading";
 import { enqueueGradingPhase } from "@/lib/qstash";
 import { getSupabaseServer } from "@/lib/supabase-server";
@@ -22,8 +24,8 @@ import type {
 /**
  * QStash grading worker — handles ONE phase per invocation.
  *
- * The pipeline is:
- *   grade_question (per q_idx) → question_summary (per q_idx) → session_summary
+ * The exam pipeline is:
+ *   grade_question (objective q_idx only) → objective_only_done
  *
  * Each phase is idempotent: if the work is already done (DB row exists /
  * non-null summary), the worker returns success without calling OpenAI.
@@ -105,8 +107,19 @@ async function computeNextPhase(
     if (typeof next === "number") {
       return { sessionId: payload.sessionId, phase: "grade_question", qIdx: next };
     }
-    // Done grading → move to per-question summaries
+
     const graded = await listGradedQuestionsForSummary(payload.sessionId);
+    const isAssignment = await isAssignmentGradingSession(payload.sessionId);
+    if (!isAssignment) {
+      await markObjectiveOnlyGradingDone(payload.sessionId, {
+        total: toGrade.length,
+        completed: graded.length,
+        failed: Math.max(0, toGrade.length - graded.length),
+      });
+      return null;
+    }
+
+    // Assignment grading keeps its separate AI summary pipeline.
     if (graded.length === 0) {
       // Nothing to summarize → jump to session summary (which will record
       // a failed marker if no grades exist)

@@ -8,15 +8,7 @@ export class StudentExamPage {
   }
 
   get submitBtn(): Locator {
-    return this.page.getByRole("button", { name: /제출|submit/i });
-  }
-
-  get nextBtn(): Locator {
-    return this.page.getByRole("button", { name: "다음 문제" });
-  }
-
-  get prevBtn(): Locator {
-    return this.page.getByRole("button", { name: "이전 문제" });
+    return this.page.locator('[data-testid="exam-submit-btn"]');
   }
 
   get saveIndicator(): Locator {
@@ -68,28 +60,41 @@ export class StudentExamPage {
     await this.preflightAcceptBtn.click();
   }
 
+  questionNav(index: number): Locator {
+    return this.page.locator(`[data-testid="exam-question-nav-${index}"]`);
+  }
+
+  /** Navigate to question by index (0-based) via left/bottom timeline nav. */
+  async goToQuestion(index: number) {
+    await this.questionNav(index).click();
+  }
+
   /** Returns the nth objective option by index (0-based). */
-  objectiveOption(index: number): import("@playwright/test").Locator {
+  objectiveOption(index: number): Locator {
     return this.page.locator(`[data-testid="objective-option-${index}"]`);
   }
 
-  get floatingChatButton(): import("@playwright/test").Locator {
+  get floatingChatButton(): Locator {
     return this.page.locator('[aria-label="AI 채팅 열기"]');
   }
 
-  get chatSidebarClose(): import("@playwright/test").Locator {
+  get chatSidebarClose(): Locator {
     return this.page.locator('[aria-label="채팅 사이드바 닫기"]');
   }
 
-  get questionCollapseBtn(): import("@playwright/test").Locator {
+  get questionCollapseBtn(): Locator {
     return this.page.locator('[aria-label="문제 접기"]');
   }
 
-  get questionExpandBtn(): import("@playwright/test").Locator {
+  get questionExpandBtn(): Locator {
     return this.page.locator('[aria-label="문제 보기"]');
   }
 
-  get essayAnswerArea(): import("@playwright/test").Locator {
+  get essayAnswerArea(): Locator {
     return this.page.getByPlaceholder("여기에 상세한 답안을 작성하세요...");
+  }
+
+  get examTimer(): Locator {
+    return this.page.locator('[data-testid="exam-timer"]');
   }
 }

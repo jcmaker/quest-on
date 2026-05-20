@@ -6,12 +6,6 @@ import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import { CopyProtector } from "@/components/exam/CopyProtector";
 import { ChevronsDown } from "lucide-react";
 
-interface RubricItem {
-  id?: string;
-  evaluationArea: string;
-  detailedCriteria: string;
-}
-
 interface Question {
   id: string;
   text: string;
@@ -21,7 +15,6 @@ interface Question {
   correctOptionIndex?: number;
   title?: string;
   ai_context?: string;
-  rubric?: RubricItem[];
 }
 
 /** 문제 유형 → 한국어 라벨. 비-exhaustive 분기 방지용 단일 소스. */
@@ -43,25 +36,16 @@ export function questionTypeLabel(type: string): string {
 interface QuestionPanelProps {
   question: Question;
   questionNumber: number;
-  rubric?: RubricItem[];
-  rubricPublic?: boolean;
 }
 
 export function QuestionPanel({
   question,
   questionNumber,
-  rubric,
-  rubricPublic,
 }: QuestionPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
 
-  // Per-question rubric: use question's own rubric if available, else fall back to exam-level
-  const resolvedRubric = (question.rubric && question.rubric.length > 0)
-    ? question.rubric
-    : rubric;
-
-  // 객관식/OX 는 서술형 풀이 안내·루브릭이 의미 없다.
+  // 객관식/OX 는 서술형 풀이 안내가 의미 없다.
   const isObjective =
     question.type === "multiple-choice" || question.type === "true-false";
 
@@ -121,33 +105,6 @@ export function QuestionPanel({
                   <span>풀이 과정을 단계별로 명확히 작성하세요</span>
                 </li>
               </ul>
-            </div>
-          )}
-
-          {!isObjective && rubricPublic && resolvedRubric && resolvedRubric.length > 0 && (
-            <div className="bg-blue-50 dark:bg-blue-950/30 border-2 border-blue-200 dark:border-blue-800 p-4 sm:p-5 rounded-lg mt-4 shadow-sm">
-              <h4 className="font-semibold mb-3 sm:mb-4 text-sm sm:text-base text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                <span className="text-lg">📋</span>
-                <span>평가 기준 (루브릭)</span>
-              </h4>
-              <div className="space-y-2.5 sm:space-y-3">
-                {resolvedRubric.map((item, index) => (
-                  <div
-                    key={item.id || index}
-                    className="bg-white dark:bg-blue-900/20 p-3 sm:p-4 rounded-md border border-blue-100 dark:border-blue-800/50 shadow-sm"
-                  >
-                    <div className="font-semibold text-sm sm:text-base text-blue-800 dark:text-blue-200 mb-1.5 sm:mb-2">
-                      {item.evaluationArea || `평가 영역 ${index + 1}`}
-                    </div>
-                    <div className="text-xs sm:text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
-                      {item.detailedCriteria || "세부 기준 미설정"}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs sm:text-sm text-blue-600 dark:text-blue-400 mt-3 sm:mt-4 italic">
-                이 평가 기준에 따라 답안이 평가됩니다.
-              </p>
             </div>
           )}
         </div>

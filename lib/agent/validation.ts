@@ -16,7 +16,6 @@ import type {
   AgentRunMessageRequest,
   CreateAgentRunRequest,
   DraftQuestion,
-  DraftRubricItem,
   ExamDraftPayload,
 } from "@/lib/agent/types";
 import type {
@@ -45,17 +44,10 @@ export const agentRunMessageSchema = z.object({
   prompt: z.string().min(1, "prompt is required").max(8000),
 }) satisfies z.ZodType<AgentRunMessageRequest>;
 
-// ── ExamDraftPayload (approve 의 editedDraft) ───────────────
-const draftRubricItemSchema = z.object({
-  evaluationArea: z.string().max(500),
-  detailedCriteria: z.string().max(5000),
-}) satisfies z.ZodType<DraftRubricItem>;
-
 const draftQuestionSchema = z.object({
   id: z.string().min(1),
   text: z.string().max(50000),
   type: z.string().min(1).max(50),
-  rubric: z.array(draftRubricItemSchema).optional(),
 }) satisfies z.ZodType<DraftQuestion>;
 
 export const examDraftPayloadSchema = z.object({
@@ -88,7 +80,6 @@ const agentPageStateSchema = z.object({
       })
     )
     .max(200),
-  rubricRowCount: z.number().int().min(0).max(10000),
   isGenerating: z.boolean(),
 }) satisfies z.ZodType<AgentPageState>;
 

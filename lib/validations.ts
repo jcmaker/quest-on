@@ -71,7 +71,7 @@ export const canvasConfigSchema = z.object({
 });
 
 // ========== Exam JSON Column Schemas ==========
-// These validate the JSON stored in exams.questions, exams.rubric, exams.materials
+// These validate the JSON stored in exams.questions and exams.materials
 
 export const examQuestionItemSchema = z.object({
   id: z.union([z.string(), z.number()]),
@@ -94,13 +94,6 @@ export const questionTypeEnum = z.enum([
 ]);
 
 export const examQuestionsSchema = z.array(examQuestionItemSchema);
-
-export const examRubricItemSchema = z.object({
-  evaluationArea: z.string(),
-  detailedCriteria: z.string(),
-});
-
-export const examRubricSchema = z.array(examRubricItemSchema);
 
 export const examMaterialsSchema = z.array(z.string());
 
@@ -195,6 +188,17 @@ export const singleGradeUpdateSchema = z.object({
   expected_updated_at: z.string().optional(),
 });
 
+export const caseGradeChatPostSchema = z.object({
+  qIdx: z.number().int().min(0),
+  message: sanitizedString(z.string().min(1, "Message is required").max(10000)),
+});
+
+export const caseGradeCommitSchema = z.object({
+  qIdx: z.number().int().min(0),
+  score: z.number().min(0).max(100),
+  comment: z.string().max(5000).optional().transform((v) => (v ? sanitizeUserInput(v) : v)),
+});
+
 // Supa route action schema
 export const supaActionSchema = z.object({
   action: z.string().min(1),
@@ -266,11 +270,6 @@ export const createExamSchema = z.object({
     text: z.string(),
     fileName: z.string(),
   })).optional(),
-  rubric: z.array(z.object({
-    evaluationArea: z.string(),
-    detailedCriteria: z.string(),
-  })).optional(),
-  rubric_public: z.boolean().optional(),
   status: z.string().min(1),
   created_at: z.string(),
   updated_at: z.string(),
@@ -285,8 +284,6 @@ export const updateExamSchema = z.object({
     description: z.string().max(2000).nullable().optional(),
     duration: z.number().int().min(0).optional(),
     questions: z.unknown().optional(),
-    rubric: z.unknown().optional(),
-    rubric_public: z.boolean().optional(),
     materials: z.array(z.string()).optional(),
     materials_text: z.array(z.object({
       url: z.string(),
@@ -394,11 +391,6 @@ export const createAssignmentSchema = z.object({
     text: z.string(),
     fileName: z.string(),
   })).optional(),
-  rubric: z.array(z.object({
-    evaluationArea: z.string(),
-    detailedCriteria: z.string(),
-  })).optional(),
-  rubric_public: z.boolean().optional(),
   status: z.string().min(1),
   created_at: z.string(),
   updated_at: z.string(),
@@ -462,17 +454,6 @@ export const feedbackChatSchema = z.object({
   studentId: z.string().optional(),
 });
 
-// AI Rubric Generation
-export const generateRubricSchema = z.object({
-  examTitle: z.string().min(1, "Exam title is required").max(500),
-  questions: z.array(z.object({
-    text: z.string(),
-    type: z.string().optional(),
-  })).min(1, "At least one question is required"),
-  topics: z.string().max(500).optional(),
-  language: z.enum(["ko", "en"]).default("ko"),
-});
-
 // AI Case Question Generation
 export const generateCaseQuestionsSchema = z.object({
   examTitle: z.string().min(1).max(500),
@@ -485,7 +466,6 @@ export const generateCaseQuestionsSchema = z.object({
     text: z.string(),
     fileName: z.string(),
   })).optional(),
-  existingRubric: z.array(examRubricItemSchema).optional(),
   language: z.enum(["ko", "en"]).default("ko"),
   generationMode: z.enum(["case", "research-assignment"]).default("case"),
   /** 생성할 문제 유형. mcq=사지선다, true-false=O/X, case=사례형(서술). */

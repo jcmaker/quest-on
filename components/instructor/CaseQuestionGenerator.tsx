@@ -39,10 +39,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import {
-  useQuestionGeneration,
-  type RubricItem,
-} from "@/hooks/useQuestionGeneration";
+import { useQuestionGeneration } from "@/hooks/useQuestionGeneration";
 import { GeneratedQuestionCard } from "./GeneratedQuestionCard";
 import { QuestionSkeletonCard } from "./QuestionSkeletonCard";
 import type { Question } from "./QuestionEditor";
@@ -79,7 +76,6 @@ interface CaseQuestionGeneratorProps {
     "uploading" | "extracting" | "done" | "failed"
   >;
   onQuestionsAccepted: (questions: Question[]) => void;
-  onRubricSuggested: (rubric: RubricItem[]) => void;
   language?: "ko" | "en";
   mode?: "exam" | "assignment";
   variant?: "card" | "line";
@@ -114,7 +110,6 @@ export function CaseQuestionGenerator({
   extractedTexts,
   extractionStatus,
   onQuestionsAccepted,
-  onRubricSuggested,
   language,
   mode = "exam",
   variant = "card",
@@ -136,7 +131,6 @@ export function CaseQuestionGenerator({
 
   const {
     generatedQuestions,
-    suggestedRubric,
     isGenerating,
     regeneratingId,
     adjustingId,
@@ -170,11 +164,8 @@ export function CaseQuestionGenerator({
             type: q.type as Question["type"],
             options: q.options,
             correctOptionIndex: q.correctOptionIndex,
-            // 객관식/OX 는 결정론 채점이라 루브릭이 없다.
-            rubric: q.rubric,
           })),
         );
-        applyRubricIfNeeded();
         toast.success(`${all.length}개 문제가 추가되었습니다.`);
       }
     }
@@ -246,17 +237,6 @@ export function CaseQuestionGenerator({
     // state/handleGenerate 를 참조하게 한다. ref 소비자(에이전트 실행기)는
     // 핸들 객체 정체성에 의존하지 않으므로 무해하다.
   );
-
-  // P1-5: Track if rubric has been suggested to avoid duplicate toasts
-  const rubricSuggestedRef = useRef(false);
-
-  const applyRubricIfNeeded = () => {
-    if (!isAssignmentMode && suggestedRubric.length > 0 && !rubricSuggestedRef.current) {
-      onRubricSuggested(suggestedRubric);
-      rubricSuggestedRef.current = true;
-      toast("AI 루브릭 제안을 확인하세요.", { icon: "📋" });
-    }
-  };
 
   const isDisabled = !examTitle.trim() || (isAssignmentMode && !freeformPrompt.trim());
 

@@ -31,10 +31,6 @@ interface ParsedQuestionResponse {
   questions: Array<{
     text: string;
     type: string;
-    rubric?: Array<{
-      evaluationArea: string;
-      detailedCriteria: string;
-    }>;
   }>;
 }
 
@@ -45,7 +41,6 @@ interface StreamedQuestion {
   type: "essay" | "multiple-choice" | "true-false";
   options?: string[];
   correctOptionIndex?: number;
-  rubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
 }
 
 /** Single OpenAI generation call with 1 retry on parse failure. */
@@ -284,7 +279,6 @@ export async function POST(request: NextRequest) {
                     id: crypto.randomUUID(),
                     text: q.text,
                     type: "essay",
-                    rubric: q.rubric || [],
                   };
                   enqueue("question", { question, index: i });
                 }

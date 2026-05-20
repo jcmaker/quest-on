@@ -10,12 +10,6 @@ export interface GeneratedQuestion {
   options?: string[];
   /** 객관식/OX 정답 인덱스 (objective 문제 전용). */
   correctOptionIndex?: number;
-  rubric?: RubricItem[];
-}
-
-export interface RubricItem {
-  evaluationArea: string;
-  detailedCriteria: string;
 }
 
 export interface ChatMessage {
@@ -53,7 +47,6 @@ interface AdjustResult {
 
 export interface UseQuestionGenerationReturn {
   generatedQuestions: GeneratedQuestion[];
-  suggestedRubric: RubricItem[];
   isGenerating: boolean;
   regeneratingId: string | null;
   adjustingId: string | null;
@@ -98,23 +91,6 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
       current: 0,
       total: 0,
     });
-
-  // Derive suggestedRubric from all generated questions' rubrics (merged, deduplicated by evaluationArea)
-  const suggestedRubric: RubricItem[] = (() => {
-    const seen = new Set<string>();
-    const merged: RubricItem[] = [];
-    for (const q of generatedQuestions) {
-      if (q.rubric) {
-        for (const item of q.rubric) {
-          if (!seen.has(item.evaluationArea)) {
-            seen.add(item.evaluationArea);
-            merged.push(item);
-          }
-        }
-      }
-    }
-    return merged;
-  })();
 
   // Per-question conversation history
   const adjustHistoryRef = useRef<Map<string, ChatMessage[]>>(new Map());
@@ -452,7 +428,6 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
 
   return {
     generatedQuestions,
-    suggestedRubric,
     isGenerating,
     regeneratingId,
     adjustingId,

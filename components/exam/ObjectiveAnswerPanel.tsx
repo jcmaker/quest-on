@@ -3,32 +3,21 @@
 import { CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+export type ObjectiveAnswerVariant = "list" | "grid-2x2" | "row-1x2";
+
 interface ObjectiveAnswerPanelProps {
-  /** 문제 유형: multiple-choice 또는 true-false. */
   type: string;
-  /** 선택지. true-false 면 통상 ["O", "X"]. */
   options?: string[];
-  /**
-   * 현재 답안 — 선택한 선택지 인덱스의 문자열("2"). 미선택 시 빈 문자열.
-   * 채점기(Phase 1)가 이 문자열을 파싱한다.
-   */
   value: string;
-  /** 선택 시 인덱스 문자열을 그대로 전달. */
   onChange: (value: string) => void;
-  /**
-   * 선택지 표시 순서 — 원본 인덱스의 순열. 예: [2,0,3,1].
-   * 객관식(multiple-choice)을 섞어 보여줄 때 사용한다. 순수 표시용이며,
-   * 저장되는 값은 항상 원본 인덱스다. 없으면 원본 순서 그대로 렌더한다.
-   */
   displayOrder?: number[];
   fullHeight?: boolean;
+  variant?: ObjectiveAnswerVariant;
 }
 
 /**
  * 객관식/OX 문제의 학생 응시 위젯.
- *
- * 선택지를 라디오 리스트로 렌더하고, 선택한 인덱스를 문자열로 저장한다.
- * AI 튜터 채팅 없이 구조화된 선택만 수행한다 (제품 결정 #2).
+ * variant: list (MCQ, 세로 1열), row-1x2 (O/X), grid-2x2 (legacy).
  */
 export function ObjectiveAnswerPanel({
   type,
@@ -37,8 +26,8 @@ export function ObjectiveAnswerPanel({
   onChange,
   displayOrder,
   fullHeight = false,
+  variant,
 }: ObjectiveAnswerPanelProps) {
-  // true-false 는 옵션이 비어 있어도 O/X 로 폴백.
   const resolvedOptions =
     options && options.length > 0
       ? options
@@ -46,8 +35,6 @@ export function ObjectiveAnswerPanel({
         ? ["O", "X"]
         : [];
 
-  // 표시 순서 — 유효한 순열일 때만 사용하고, 아니면 원본 순서로 폴백.
-  // true-false 는 절대 섞지 않는다 (항상 항등 순서).
   const order =
     type !== "true-false" &&
     displayOrder &&
@@ -60,6 +47,13 @@ export function ObjectiveAnswerPanel({
     return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
   })();
 
+  const resolvedVariant: ObjectiveAnswerVariant =
+    variant ??
+    (type === "true-false" ? "row-1x2" : "list");
+
+  const promptLabel =
+    type === "true-false" ? "참 / 거짓을 선택하세요" : "정답을 선택하세요";
+
   return (
     <div
       className={cn(
@@ -69,70 +63,201 @@ export function ObjectiveAnswerPanel({
     >
       <div
         className={cn(
-          "mx-auto max-w-2xl bg-background",
+          "mx-auto max-w-3xl bg-background",
           fullHeight && "min-h-full",
         )}
       >
         <div className="space-y-4 p-4 sm:p-6 lg:p-8">
-          <p className="text-sm font-semibold text-muted-foreground">
-            {type === "true-false" ? "참 / 거짓을 선택하세요" : "정답을 선택하세요"}
-          </p>
+          <p className="text-sm font-semibold text-muted-foreground">{promptLabel}</p>
 
           {resolvedOptions.length === 0 ? (
             <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
               선택지가 없는 문제입니다. 시험 출제자에게 문의하세요.
             </p>
+          ) : resolvedVariant === "grid-2x2" ? (
+            <OptionGrid
+              order={order}
+              options={resolvedOptions}
+              selectedIndex={selectedIndex}
+              onChange={onChange}
+              showNumberBadge
+            />
+          ) : resolvedVariant === "row-1x2" ? (
+            <OptionRow
+              order={order}
+              options={resolvedOptions}
+              selectedIndex={selectedIndex}
+              onChange={onChange}
+            />
           ) : (
-            <ul className="space-y-2.5" role="radiogroup" aria-label="답안 선택지">
-              {order.map((originalIndex, displayIndex) => {
-                const option = resolvedOptions[originalIndex];
-                const isSelected = selectedIndex === originalIndex;
-                return (
-                  <li key={originalIndex}>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={isSelected}
-                      onClick={() => onChange(String(originalIndex))}
-                      data-testid={`objective-option-${originalIndex}`}
-                      className={cn(
-                        "flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors sm:p-4",
-                        isSelected
-                          ? "border-primary bg-primary/5 ring-1 ring-primary"
-                          : "border-border hover:bg-muted/50",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "flex size-7 shrink-0 items-center justify-center rounded-full border text-sm font-semibold",
-                          isSelected
-                            ? "border-primary bg-primary text-primary-foreground"
-                            : "border-muted-foreground/40 text-muted-foreground",
-                        )}
-                      >
-                        {displayIndex + 1}
-                      </span>
-                      <span className="flex-1 text-sm sm:text-base">
-                        {option}
-                      </span>
-                      {isSelected && (
-                        <CheckCircle2
-                          className="size-5 shrink-0 text-primary"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <OptionList
+              order={order}
+              options={resolvedOptions}
+              selectedIndex={selectedIndex}
+              onChange={onChange}
+            />
           )}
 
-          <p className="text-xs text-muted-foreground">
-            선택한 답안은 자동으로 저장됩니다.
-          </p>
+          <p className="text-xs text-muted-foreground">선택한 답안은 자동으로 저장됩니다.</p>
         </div>
       </div>
     </div>
+  );
+}
+
+function OptionGrid({
+  order,
+  options,
+  selectedIndex,
+  onChange,
+  showNumberBadge,
+}: {
+  order: number[];
+  options: string[];
+  selectedIndex: number | null;
+  onChange: (value: string) => void;
+  showNumberBadge: boolean;
+}) {
+  return (
+    <ul className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="답안 선택지">
+      {order.map((originalIndex, displayIndex) => (
+        <li key={originalIndex}>
+          <OptionButton
+            originalIndex={originalIndex}
+            displayIndex={displayIndex}
+            label={options[originalIndex]}
+            isSelected={selectedIndex === originalIndex}
+            onSelect={() => onChange(String(originalIndex))}
+            showNumberBadge={showNumberBadge}
+            size="card"
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function OptionRow({
+  order,
+  options,
+  selectedIndex,
+  onChange,
+}: {
+  order: number[];
+  options: string[];
+  selectedIndex: number | null;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <ul className="grid grid-cols-2 gap-4" role="radiogroup" aria-label="답안 선택지">
+      {order.map((originalIndex) => (
+        <li key={originalIndex}>
+          <OptionButton
+            originalIndex={originalIndex}
+            displayIndex={originalIndex}
+            label={options[originalIndex]}
+            isSelected={selectedIndex === originalIndex}
+            onSelect={() => onChange(String(originalIndex))}
+            showNumberBadge={false}
+            size="large"
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function OptionList({
+  order,
+  options,
+  selectedIndex,
+  onChange,
+}: {
+  order: number[];
+  options: string[];
+  selectedIndex: number | null;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <ul className="space-y-2.5" role="radiogroup" aria-label="답안 선택지">
+      {order.map((originalIndex, displayIndex) => (
+        <li key={originalIndex}>
+          <OptionButton
+            originalIndex={originalIndex}
+            displayIndex={displayIndex}
+            label={options[originalIndex]}
+            isSelected={selectedIndex === originalIndex}
+            onSelect={() => onChange(String(originalIndex))}
+            showNumberBadge
+            size="list"
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function OptionButton({
+  originalIndex,
+  displayIndex,
+  label,
+  isSelected,
+  onSelect,
+  showNumberBadge,
+  size,
+}: {
+  originalIndex: number;
+  displayIndex: number;
+  label: string;
+  isSelected: boolean;
+  onSelect: () => void;
+  showNumberBadge: boolean;
+  size: "card" | "large" | "list";
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={isSelected}
+      onClick={onSelect}
+      data-testid={`objective-option-${originalIndex}`}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-lg border text-left transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
+        size === "large"
+          ? "min-h-[88px] justify-center p-6 text-lg font-semibold sm:min-h-[100px] sm:text-xl"
+          : size === "card"
+            ? "min-h-[88px] flex-col justify-center p-4 text-center sm:min-h-[96px]"
+            : "p-3 sm:p-4",
+        isSelected
+          ? "border-primary bg-primary/5 ring-1 ring-primary"
+          : "border-border hover:bg-muted/50",
+      )}
+    >
+      {showNumberBadge && size !== "large" && (
+        <span
+          className={cn(
+            "flex size-7 shrink-0 items-center justify-center rounded-full border text-sm font-semibold",
+            size === "card" ? "mb-1" : "",
+            isSelected
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-muted-foreground/40 text-muted-foreground",
+          )}
+        >
+          {displayIndex + 1}
+        </span>
+      )}
+      <span
+        className={cn(
+          "flex-1",
+          size === "card" ? "text-sm sm:text-base line-clamp-4" : "text-sm sm:text-base",
+          size === "large" && "flex-none text-center",
+        )}
+      >
+        {label}
+      </span>
+      {isSelected && size === "list" && (
+        <CheckCircle2 className="size-5 shrink-0 text-primary" aria-hidden="true" />
+      )}
+    </button>
   );
 }

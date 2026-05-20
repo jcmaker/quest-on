@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   autoGradeSessionMock,
   listQuestionsToGradeMock,
+  markObjectiveOnlyGradingDoneMock,
   enqueueGradingPhaseMock,
   isQStashEnabledMock,
   logErrorMock,
@@ -10,6 +11,7 @@ const {
 } = vi.hoisted(() => ({
   autoGradeSessionMock: vi.fn(),
   listQuestionsToGradeMock: vi.fn(),
+  markObjectiveOnlyGradingDoneMock: vi.fn(),
   enqueueGradingPhaseMock: vi.fn(),
   isQStashEnabledMock: vi.fn(),
   logErrorMock: vi.fn(),
@@ -21,6 +23,7 @@ const {
 vi.mock("@/lib/grading", () => ({
   autoGradeSession: autoGradeSessionMock,
   listQuestionsToGrade: listQuestionsToGradeMock,
+  markObjectiveOnlyGradingDone: markObjectiveOnlyGradingDoneMock,
 }));
 
 vi.mock("@/lib/qstash", () => ({
@@ -125,6 +128,7 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
       messageId: "m1",
     });
     listQuestionsToGradeMock.mockResolvedValue([0]);
+    markObjectiveOnlyGradingDoneMock.mockResolvedValue(undefined);
   });
 
   it("skips when successful grades exist AND a real session summary is already saved", async () => {
@@ -202,7 +206,7 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
     expect(enqueueGradingPhaseMock).toHaveBeenCalled();
   });
 
-  it("falls back to session_summary phase when no questions have submissions", async () => {
+  it("completes immediately when no objective questions need grading", async () => {
     listQuestionsToGradeMock.mockResolvedValue([]);
     mockDb({
       gradeRows: [],
@@ -211,10 +215,8 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
 
     const result = await triggerGradingIfNeeded("550e8400-e29b-41d4-a716-446655440000", "submit_exam");
 
-    expect(result).toEqual({ queued: true, reason: "qstash" });
-    expect(enqueueGradingPhaseMock).toHaveBeenCalledWith(
-      expect.objectContaining({ phase: "session_summary" })
-    );
+    expect(result).toEqual({ queued: false, reason: "objective_only_done" });
+    expect(enqueueGradingPhaseMock).not.toHaveBeenCalled();
   });
 
   it("returns qstash_not_configured on Vercel when QStash is disabled", async () => {

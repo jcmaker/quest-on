@@ -2,8 +2,6 @@ import { z } from "zod";
 import { getOpenAI, AI_MODEL_HEAVY } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import {
-  buildUnifiedGradingSystemPrompt,
-  buildUnifiedGradingUserPrompt,
   buildSummaryGenerationSystemPrompt,
   buildSummaryEvaluationSystemPrompt,
   buildAssignmentResearchSummarySystemPrompt,
@@ -14,12 +12,9 @@ import {
   decompressSubmissions,
   decompressMessages,
   normalizeQuestions,
-  buildRubricText,
-  calculateWeightedScore,
   analyzeAiDependency,
   formatAiDependencyForPrompt,
   summarizeAiDependencyAssessments,
-  resolveQuestionRubric,
   isObjectiveQuestion,
   gradeObjectiveAnswer,
   type DecompressionWarning,
@@ -158,6 +153,36 @@ type GradeSingleQuestionOutcome =
   | { ok: true; result: GradeResult; aiDependency: AiDependencyAssessment | null }
   | { ok: false; failureReason: string };
 
+type RubricItem = {
+  evaluationArea: string;
+  detailedCriteria: string;
+};
+
+function resolveAssignmentRubric(
+  question: { rubric?: RubricItem[] },
+  examRubric: unknown
+): RubricItem[] {
+  if (question.rubric && question.rubric.length > 0) {
+    return question.rubric;
+  }
+  return Array.isArray(examRubric) ? (examRubric as RubricItem[]) : [];
+}
+
+function buildAssignmentRubricText(rubricItems: RubricItem[]): string {
+  if (rubricItems.length === 0) return "";
+
+  return `
+**평가 루브릭 기준:**
+${rubricItems
+  .map(
+    (item, index) =>
+      `${index + 1}. ${item.evaluationArea}
+   - 세부 기준: ${item.detailedCriteria}`
+  )
+  .join("\n")}
+`;
+}
+
 /**
  * 단일 문제 채점 (기존 pLimit 내부 closure 로직 추출)
  */
@@ -166,7 +191,7 @@ async function gradeSingleQuestion(params: {
   submission: { answer: string; workspace_state?: unknown } | undefined;
   questionMessages: Array<{ role: string; content: string }>;
   exam: { id: string; title: string; rubric?: unknown; chat_weight?: number; type?: string; language?: string };
-  rubricItems: ReturnType<typeof resolveQuestionRubric>;
+  rubricItems: RubricItem[];
   chatWeight: number;
   isAssignment: boolean;
   /**
@@ -196,92 +221,68 @@ async function gradeSingleQuestion(params: {
   } = params;
 
   const qIdx = question.idx;
-  const rubricText = buildRubricText(rubricItems);
-  const rubricScoresSchema = rubricItems
-    .map(
-      (item) =>
-        `  "${item.evaluationArea}": 0-5 사이의 정수 (0: 전혀 충족하지 않음, 5: 완벽하게 충족)`
-    )
-    .join(",\n");
+  const rubricText = buildAssignmentRubricText(rubricItems);
 
   if (!submission) {
     return { ok: false, failureReason: "No submission for question" };
   }
 
+  if (!isAssignment) {
+    return { ok: false, failureReason: "Non-objective exam question skipped" };
+  }
+
   // 과제 모드에선 학생이 직접 작성한 최종답안과 AI 응답의 유사도를 비교해야 한다.
   // 기존엔 submission.answer(채팅 스냅샷)가 들어가서 사실상 "채팅 vs 채팅"이 됐었음 — 정정.
-  const aiDependencyFinalAnswer = isAssignment
-    ? sessionFinalAnswer ?? ""
-    : submission.answer || "";
   const aiDependencyAssessment = analyzeAiDependency({
     messages: questionMessages,
-    finalAnswer: aiDependencyFinalAnswer,
+    finalAnswer: sessionFinalAnswer ?? "",
   });
 
-  // Build prompts: assignment uses dedicated grading prompt, exam uses unified grading
-  let systemPrompt: string;
-  let userPrompt: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ws = submission.workspace_state as any;
+  const wsCode = typeof ws?.code === "string" ? ws.code : "";
+  const wsErd = ws?.erd as
+    | {
+        nodes?: Array<{
+          data: {
+            tableName: string;
+            columns: Array<{
+              name: string;
+              type: string;
+              isPrimary?: boolean;
+              isForeignKey?: boolean;
+              references?: string;
+            }>;
+          };
+        }>;
+        edges?: Array<{ source: string; target: string; type?: string }>;
+      }
+    | undefined;
+  const hasWorkspace = !!(wsCode.trim() || (wsErd?.nodes?.length ?? 0) > 0);
 
-  if (isAssignment) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ws = submission.workspace_state as any;
-    const wsCode = typeof ws?.code === "string" ? ws.code : "";
-    const wsErd = ws?.erd as
-      | {
-          nodes?: Array<{
-            data: {
-              tableName: string;
-              columns: Array<{
-                name: string;
-                type: string;
-                isPrimary?: boolean;
-                isForeignKey?: boolean;
-                references?: string;
-              }>;
-            };
-          }>;
-          edges?: Array<{ source: string; target: string; type?: string }>;
+  const systemPrompt = buildAssignmentGradingPrompt({
+    examTitle: exam.title,
+    assignmentPrompt: question.prompt || null,
+    rubricText,
+    workspaceContext: hasWorkspace
+      ? {
+          code: wsCode || undefined,
+          language: typeof ws?.language === "string" ? ws.language : undefined,
+          erd: wsErd?.nodes?.length
+            ? { nodes: wsErd.nodes, edges: wsErd.edges || [] }
+            : undefined,
         }
-      | undefined;
-    const hasWorkspace = !!(wsCode.trim() || (wsErd?.nodes?.length ?? 0) > 0);
+      : null,
+  });
 
-    systemPrompt = buildAssignmentGradingPrompt({
-      examTitle: exam.title,
-      assignmentPrompt: question.prompt || null,
-      rubricText,
-      workspaceContext: hasWorkspace
-        ? {
-            code: wsCode || undefined,
-            language: typeof ws?.language === "string" ? ws.language : undefined,
-            erd: wsErd?.nodes?.length
-              ? { nodes: wsErd.nodes, edges: wsErd.edges || [] }
-              : undefined,
-          }
-        : null,
-    });
+  const aiSummaryText = aiDependencyAssessment.summary
+    ? `\n\n[AI 활용 요약]\n${aiDependencyAssessment.summary}`
+    : "";
 
-    const aiSummaryText = aiDependencyAssessment.summary
-      ? `\n\n[AI 활용 요약]\n${aiDependencyAssessment.summary}`
-      : "";
+  const finalAnswerText = (sessionFinalAnswer ?? "").trim();
+  const finalAnswerSection = `\n\n[학생이 작성한 최종답안]\n${finalAnswerText || "(작성되지 않음)"}`;
 
-    const finalAnswerText = (sessionFinalAnswer ?? "").trim();
-    const finalAnswerSection = `\n\n[학생이 작성한 최종답안]\n${finalAnswerText || "(작성되지 않음)"}`;
-
-    userPrompt = `[학생의 채팅 기반 과제 수행 기록]\n${submission.answer || "(기록 없음)"}${finalAnswerSection}${aiSummaryText}`;
-  } else {
-    systemPrompt = buildUnifiedGradingSystemPrompt({
-      rubricText,
-      rubricScoresSchema,
-      chatWeightPercent: chatWeight,
-    });
-
-    userPrompt = buildUnifiedGradingUserPrompt({
-      questionPrompt: question.prompt || "",
-      questionAiContext: question.ai_context,
-      answer: submission.answer || "",
-      aiDependencyAssessment,
-    });
-  }
+  const userPrompt = `[학생의 채팅 기반 과제 수행 기록]\n${submission.answer || "(기록 없음)"}${finalAnswerSection}${aiSummaryText}`;
 
   // Retry loop: up to 2 retries (3 total attempts) with exponential backoff (1s, 2s)
   const MAX_GRADING_RETRIES = 2;
@@ -408,177 +409,69 @@ async function gradeSingleQuestion(params: {
     };
   }
 
-  // Zod schema for AI grading response
-  const aiGradingResponseSchema = z.object({
-    chat_score: z.number().finite().optional(),
-    chat_comment: z.string().optional(),
-    answer_score: z.number().finite().optional(),
-    answer_comment: z.string().optional(),
-    overall_comment: z.string().optional(),
-    rubric_scores: z.record(z.string(), z.number().finite().min(0).max(5)).optional(),
+  const assignmentResponseSchema = z.object({
+    rubric_scores: z
+      .array(
+        z.object({
+          area: z.string(),
+          score: z.number().finite().min(0).max(100),
+          comment: z.string(),
+        })
+      )
+      .optional(),
+    overall_score: z.number().finite().min(0).max(100),
+    overall_comment: z.string(),
   });
 
-  // Assignment grading path
-  if (isAssignment) {
-    const assignmentResponseSchema = z.object({
-      rubric_scores: z
-        .array(
-          z.object({
-            area: z.string(),
-            score: z.number().finite().min(0).max(100),
-            comment: z.string(),
-          })
-        )
-        .optional(),
-      overall_score: z.number().finite().min(0).max(100),
-      overall_comment: z.string(),
-    });
-
-    const assignmentResult = assignmentResponseSchema.safeParse(rawParsed);
-    if (!assignmentResult.success) {
-      logError("[AUTO_GRADE] Assignment response schema validation failed", assignmentResult.error, {
-        path: "lib/grading.ts",
-        additionalData: { sessionId, qIdx, rawContent: JSON.stringify(rawParsed).slice(0, 500) },
-      });
-      return { ok: false, failureReason: "Assignment schema validation failure" };
-    }
-
-    const assignmentParsed = assignmentResult.data;
-    const normalizedScore = normalizeAssignmentGradeScore(assignmentParsed.overall_score);
-    const assignmentLabel = scoreToAssignmentLabel(normalizedScore);
-    const scoreClamp = clampAndLog(normalizedScore, {
-      sessionId,
-      qIdx,
-      field: "overall_score",
-    });
-
-    const assignmentRubricScores: Record<string, number> = {};
-    if (assignmentParsed.rubric_scores) {
-      for (const rs of assignmentParsed.rubric_scores) {
-        assignmentRubricScores[rs.area] = normalizeAssignmentGradeScore(rs.score);
-      }
-    }
-    const assignmentComment = sanitizeComment(
-      assignmentParsed.overall_comment?.includes("등급:")
-        ? assignmentParsed.overall_comment
-        : `등급: ${assignmentLabel}. ${assignmentParsed.overall_comment || "과제 평가 완료"}`
-    );
-
-    const stageGrading: StageGrading = {
-      answer: {
-        score: scoreClamp.value,
-        comment: assignmentComment,
-        rubric_scores:
-          Object.keys(assignmentRubricScores).length > 0 ? assignmentRubricScores : undefined,
-      },
-    };
-
-    return {
-      ok: true,
-      aiDependency: null,
-      result: {
-        q_idx: qIdx,
-        score: scoreClamp.value,
-        comment: assignmentComment,
-        stage_grading: scoreClamp.clamped
-          ? { ...stageGrading, _score_clamped: true }
-          : stageGrading,
-      },
-    };
-  }
-
-  // Exam grading path
-  const schemaResult = aiGradingResponseSchema.safeParse(rawParsed);
-  if (!schemaResult.success) {
-    logError("[AUTO_GRADE] AI response schema validation failed", schemaResult.error, {
+  const assignmentResult = assignmentResponseSchema.safeParse(rawParsed);
+  if (!assignmentResult.success) {
+    logError("[AUTO_GRADE] Assignment response schema validation failed", assignmentResult.error, {
       path: "lib/grading.ts",
       additionalData: { sessionId, qIdx, rawContent: JSON.stringify(rawParsed).slice(0, 500) },
     });
-    return { ok: false, failureReason: "Schema validation failure" };
-  }
-  const parsed = schemaResult.data;
-
-  const hasChatScore =
-    typeof parsed.chat_score === "number" && Number.isFinite(parsed.chat_score);
-  const hasAnswerScore =
-    typeof parsed.answer_score === "number" && Number.isFinite(parsed.answer_score);
-  if (!hasChatScore && !hasAnswerScore) {
-    logError("[AUTO_GRADE] AI returned no valid scores — rejecting to prevent 0-score grade", null, {
-      path: "lib/grading.ts",
-      additionalData: { sessionId, qIdx, rawContent: JSON.stringify(rawParsed).slice(0, 500) },
-    });
-    return { ok: false, failureReason: "No valid scores in AI response" };
+    return { ok: false, failureReason: "Assignment schema validation failure" };
   }
 
-  const rubricScores: Record<string, number> = {};
-  if (parsed.rubric_scores && typeof parsed.rubric_scores === "object" && rubricItems.length > 0) {
-    const rawRubricScores = parsed.rubric_scores;
-    const normalizedRubric: Record<string, number> = {};
-    for (const [k, v] of Object.entries(rawRubricScores)) {
-      if (typeof k === "string") normalizedRubric[k.trim().toLowerCase()] = v as number;
+  const assignmentParsed = assignmentResult.data;
+  const normalizedScore = normalizeAssignmentGradeScore(assignmentParsed.overall_score);
+  const assignmentLabel = scoreToAssignmentLabel(normalizedScore);
+  const scoreClamp = clampAndLog(normalizedScore, {
+    sessionId,
+    qIdx,
+    field: "overall_score",
+  });
+
+  const assignmentRubricScores: Record<string, number> = {};
+  if (assignmentParsed.rubric_scores) {
+    for (const rs of assignmentParsed.rubric_scores) {
+      assignmentRubricScores[rs.area] = normalizeAssignmentGradeScore(rs.score);
     }
-    rubricItems.forEach((item) => {
-      const normalizedKey = item.evaluationArea.trim().toLowerCase();
-      const score = normalizedRubric[normalizedKey];
-      if (typeof score === "number" && Number.isFinite(score)) {
-        rubricScores[item.evaluationArea] = Math.max(0, Math.min(5, Math.round(score)));
-      }
-    });
   }
-  const rubricScoresOrUndef = Object.keys(rubricScores).length > 0 ? rubricScores : undefined;
-
-  const stageGrading: StageGrading = {};
-  let scoreClamped = false;
-
-  if (questionMessages.length > 0 && hasChatScore) {
-    const chatClamp = clampAndLog(parsed.chat_score ?? 0, { sessionId, qIdx, field: "chat_score" });
-    scoreClamped = scoreClamped || chatClamp.clamped;
-    const adjustedChatScore = Math.max(
-      0,
-      Math.min(100, chatClamp.value - aiDependencyAssessment.penaltyApplied)
-    );
-    stageGrading.chat = {
-      score: adjustedChatScore,
-      comment: sanitizeComment(
-        `${parsed.chat_comment || "채팅 단계 평가 완료"}\n\nAI 활용 해석: ${aiDependencyAssessment.summary}`
-      ),
-      rubric_scores: rubricScoresOrUndef,
-      ai_dependency: aiDependencyAssessment,
-    };
-  }
-
-  if (submission.answer?.trim() && hasAnswerScore) {
-    const answerClamp = clampAndLog(parsed.answer_score ?? 0, {
-      sessionId,
-      qIdx,
-      field: "answer_score",
-    });
-    scoreClamped = scoreClamped || answerClamp.clamped;
-    stageGrading.answer = {
-      score: answerClamp.value,
-      comment: sanitizeComment(parsed.answer_comment || "답안 평가 완료"),
-      rubric_scores: rubricScoresOrUndef,
-    };
-  }
-
-  const finalScore = calculateWeightedScore(stageGrading, chatWeight);
-  const overallComment = sanitizeComment(
-    parsed.overall_comment ||
-      `채팅 단계: ${stageGrading.chat?.score ?? "N/A"}점, 답안 단계: ${stageGrading.answer?.score ?? "N/A"}점`
+  const assignmentComment = sanitizeComment(
+    assignmentParsed.overall_comment?.includes("등급:")
+      ? assignmentParsed.overall_comment
+      : `등급: ${assignmentLabel}. ${assignmentParsed.overall_comment || "과제 평가 완료"}`
   );
 
-  if (Object.keys(stageGrading).length === 0) {
-    return { ok: false, failureReason: "No stage_grading produced" };
-  }
+  const stageGrading: StageGrading = {
+    answer: {
+      score: scoreClamp.value,
+      comment: assignmentComment,
+      rubric_scores:
+        Object.keys(assignmentRubricScores).length > 0 ? assignmentRubricScores : undefined,
+    },
+  };
 
   return {
     ok: true,
-    aiDependency: aiDependencyAssessment,
+    aiDependency: null,
     result: {
       q_idx: qIdx,
-      score: finalScore,
-      comment: overallComment,
-      stage_grading: scoreClamped ? { ...stageGrading, _score_clamped: true } : stageGrading,
+      score: scoreClamp.value,
+      comment: assignmentComment,
+      stage_grading: scoreClamp.clamped
+        ? { ...stageGrading, _score_clamped: true }
+        : stageGrading,
     },
   };
 }
@@ -592,7 +485,7 @@ async function generateQuestionSummary(params: {
   submission: { answer: string } | undefined;
   questionMessages: Array<{ role: string; content: string }>;
   grade: GradeResult;
-  rubricItems: ReturnType<typeof resolveQuestionRubric>;
+  rubricItems: RubricItem[];
   examTitle: string;
   isAssignment?: boolean;
   examId: string;
@@ -909,7 +802,8 @@ async function loadPhaseContext(
 
 /**
  * Ordered list of q_idxes that have a submission and are candidates for
- * grading. Used by the worker to chain `grade_question` jobs.
+ * grading. Exam sessions only auto-grade objective questions; assignment
+ * sessions keep their separate single-question grading path.
  */
 export async function listQuestionsToGrade(
   sessionId: string
@@ -918,8 +812,32 @@ export async function listQuestionsToGrade(
   const ctx = await loadPhaseContext(sessionId, supabase);
   return ctx.questionsToGrade
     .filter((q) => !!ctx.submissionsByQuestion[q.idx])
+    .filter((q) => ctx.isAssignment || isObjectiveQuestion(q.type))
     .map((q) => q.idx)
     .sort((a, b) => a - b);
+}
+
+export async function isAssignmentGradingSession(
+  sessionId: string
+): Promise<boolean> {
+  const supabase = getSupabaseServer();
+  const ctx = await loadPhaseContext(sessionId, supabase);
+  return ctx.isAssignment;
+}
+
+export async function markObjectiveOnlyGradingDone(
+  sessionId: string,
+  totals?: { total?: number; completed?: number; failed?: number }
+): Promise<void> {
+  const supabase = getSupabaseServer();
+  await updateGradingProgress(supabase, sessionId, {
+    status: "completed",
+    total: totals?.total ?? 0,
+    completed: totals?.completed ?? totals?.total ?? 0,
+    failed: totals?.failed ?? 0,
+    phase: "objective_only_done",
+    current_q_idx: undefined,
+  });
 }
 
 /**
@@ -1057,8 +975,12 @@ export async function gradeOneQuestion(
     };
   }
 
+  if (!ctx.isAssignment) {
+    return { skipped: true, graded: false, failureReason: "Non-objective exam question skipped" };
+  }
+
   const questionMessages = ctx.messagesByQuestion[qIdx] || [];
-  const rubricItems = resolveQuestionRubric(question, ctx.exam.rubric);
+  const rubricItems = resolveAssignmentRubric(question, ctx.exam.rubric);
 
   const abortController = new AbortController();
   const deadline = Date.now() + 180_000;
@@ -1184,7 +1106,9 @@ export async function generateOneQuestionSummary(
 
   const submission = ctx.submissionsByQuestion[qIdx];
   const questionMessages = ctx.messagesByQuestion[qIdx] || [];
-  const rubricItems = resolveQuestionRubric(question, ctx.exam.rubric);
+  const rubricItems = ctx.isAssignment
+    ? resolveAssignmentRubric(question, ctx.exam.rubric)
+    : [];
 
   const abortController = new AbortController();
   const grade: GradeResult = {
@@ -1273,6 +1197,42 @@ export async function generateSessionSummaryPhase(
   });
 
   const ctx = await loadPhaseContext(sessionId, supabase);
+  const caseQuestions = ctx.questionsToGrade.filter(
+    (q) => !isObjectiveQuestion(q.type)
+  );
+
+  if (!ctx.isAssignment) {
+    if (caseQuestions.length === 0) {
+      const objectiveIdxs = ctx.questionsToGrade
+        .filter((q) => !!ctx.submissionsByQuestion[q.idx])
+        .filter((q) => isObjectiveQuestion(q.type))
+        .map((q) => q.idx);
+      const gradedIdxs = await listGradedQuestionsForSummary(sessionId);
+      await markObjectiveOnlyGradingDone(sessionId, {
+        total: objectiveIdxs.length,
+        completed: gradedIdxs.length,
+        failed: Math.max(0, objectiveIdxs.length - gradedIdxs.length),
+      });
+      return { skipped: true, generated: false };
+    }
+
+    const { data: caseGrades, error: caseGradesErr } = await supabase
+      .from("grades")
+      .select("q_idx, grade_type")
+      .eq("session_id", sessionId);
+    if (caseGradesErr) {
+      throw new Error(`Failed to load grades: ${caseGradesErr.message}`);
+    }
+    const gradedCaseIdxs = new Set(
+      (caseGrades || [])
+        .filter((g) => (g as { grade_type?: string }).grade_type !== "ai_failed")
+        .map((g) => (g as { q_idx: number }).q_idx)
+    );
+    const allCaseGraded = caseQuestions.every((q) => gradedCaseIdxs.has(q.idx));
+    if (!allCaseGraded) {
+      return { skipped: true, generated: false };
+    }
+  }
 
   const { data: gradesData, error: gradesErr } = await supabase
     .from("grades")
@@ -1352,6 +1312,40 @@ export async function generateSessionSummaryPhase(
 }
 
 /**
+ * After instructor commits a case/essay grade, generate per-question AI summary
+ * and session-level summary when all subjective questions are graded.
+ */
+export async function triggerExamSummariesAfterCaseCommit(
+  sessionId: string,
+  qIdx: number
+): Promise<{ questionSummaryGenerated: boolean; sessionSummaryGenerated: boolean }> {
+  let questionSummaryGenerated = false;
+  let sessionSummaryGenerated = false;
+
+  try {
+    const qResult = await generateOneQuestionSummary(sessionId, qIdx);
+    questionSummaryGenerated = qResult.generated;
+  } catch (err) {
+    logError("[case-grade commit] Question summary failed", err, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, qIdx },
+    });
+  }
+
+  try {
+    const sResult = await generateSessionSummaryPhase(sessionId);
+    sessionSummaryGenerated = sResult.generated;
+  } catch (err) {
+    logError("[case-grade commit] Session summary failed", err, {
+      path: "lib/grading.ts",
+      additionalData: { sessionId, qIdx },
+    });
+  }
+
+  return { questionSummaryGenerated, sessionSummaryGenerated };
+}
+
+/**
  * Legacy monolithic wrapper — sequentially runs all phases in-process.
  * Used by:
  *   - Tests
@@ -1371,6 +1365,7 @@ export async function autoGradeSession(
   const supabase = getSupabaseServer();
 
   const questionIdxs = await listQuestionsToGrade(sessionId);
+  const isAssignment = await isAssignmentGradingSession(sessionId);
 
   await updateGradingProgress(supabase, sessionId, {
     status: "running",
@@ -1428,6 +1423,20 @@ export async function autoGradeSession(
         last_error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  if (!isAssignment) {
+    await markObjectiveOnlyGradingDone(sessionId, {
+      total: questionIdxs.length,
+      completed: grades.length,
+      failed: failedQuestions.length,
+    });
+    return {
+      grades,
+      summary: null,
+      failedQuestions,
+      timedOut: false,
+    };
   }
 
   const gradedIdxs = await listGradedQuestionsForSummary(sessionId);

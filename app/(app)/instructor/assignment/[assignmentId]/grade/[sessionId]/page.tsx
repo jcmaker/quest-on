@@ -14,6 +14,7 @@ import { QuestionPromptCard } from "@/components/instructor/QuestionPromptCard";
 import { AIConversationsCard } from "@/components/instructor/AIConversationsCard";
 import { FinalAnswerCard } from "@/components/instructor/FinalAnswerCard";
 import { GradingPanel } from "@/components/instructor/GradingPanel";
+import { SessionQuizResultsCard } from "@/components/instructor/SessionQuizResultsCard";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import {
@@ -28,7 +29,6 @@ import {
   RefreshCw,
   Loader2,
   ArrowLeft,
-  ShieldQuestion,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -731,78 +731,7 @@ export default function AssignmentGradePage({
               <AIConversationsCard messages={duringExamMessages} />
 
               {assignmentQuiz && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <ShieldQuestion className="w-5 h-5 text-amber-600" />
-                      타임어택 퀴즈 결과
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <Badge
-                        variant="outline"
-                        className="bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                      >
-                        점수 {assignmentQuiz.score ?? 0}/100
-                      </Badge>
-                      <Badge variant="secondary">
-                        {assignmentQuiz.total_questions}문항 · {assignmentQuiz.time_limit_seconds}초
-                      </Badge>
-                      {assignmentQuiz.submitted_at && (
-                        <span className="text-sm text-muted-foreground">
-                          완료: {new Date(assignmentQuiz.submitted_at).toLocaleString("ko-KR")}
-                        </span>
-                      )}
-                    </div>
-                    <div className="space-y-3">
-                      {assignmentQuiz.questions.map((question, index) => {
-                        const selectedIndex = assignmentQuiz.answers?.[question.id];
-                        const correctIndex = question.correctOptionIndex;
-                        const isCorrect =
-                          typeof correctIndex === "number" && selectedIndex === correctIndex;
-
-                        return (
-                          <div key={question.id} className="rounded-lg border p-3">
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="font-medium text-sm">
-                                {index + 1}. {question.question}
-                              </p>
-                              {typeof correctIndex === "number" && (
-                                <Badge
-                                  variant="outline"
-                                  className={
-                                    isCorrect
-                                      ? "bg-green-500/10 text-green-700 dark:text-green-400"
-                                      : "bg-red-500/10 text-red-700 dark:text-red-400"
-                                  }
-                                >
-                                  {isCorrect ? "정답" : "오답"}
-                                </Badge>
-                              )}
-                            </div>
-                            <p className="mt-2 text-sm text-muted-foreground">
-                              선택:{" "}
-                              {typeof selectedIndex === "number"
-                                ? question.options[selectedIndex] || "무응답"
-                                : "무응답"}
-                            </p>
-                            {typeof correctIndex === "number" && (
-                              <p className="text-sm text-muted-foreground">
-                                정답: {question.options[correctIndex]}
-                              </p>
-                            )}
-                            {question.rationale && (
-                              <p className="mt-2 text-sm text-muted-foreground">
-                                근거: {question.rationale}
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
+                <SessionQuizResultsCard quiz={assignmentQuiz} />
               )}
 
               {/* Assignment 최종답안 — sessions.final_answer (plain text, XSS 안전) */}

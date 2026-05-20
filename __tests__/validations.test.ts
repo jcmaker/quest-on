@@ -96,10 +96,10 @@ describe("createExamSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts exam with rubric", () => {
+  it("accepts exam with chat weight", () => {
     const result = createExamSchema.safeParse({
       ...validExam,
-      rubric: [{ evaluationArea: "Logic", detailedCriteria: "Clear reasoning" }],
+      chat_weight: 40,
     });
     expect(result.success).toBe(true);
   });

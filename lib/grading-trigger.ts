@@ -1,4 +1,8 @@
-import { autoGradeSession, listQuestionsToGrade } from "@/lib/grading";
+import {
+  autoGradeSession,
+  listQuestionsToGrade,
+  markObjectiveOnlyGradingDone,
+} from "@/lib/grading";
 import { logError } from "@/lib/logger";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import {
@@ -140,8 +144,15 @@ export async function triggerGradingIfNeeded(
     }
 
     const gradingProgress = (sessionMeta?.grading_progress as
-      | { status?: string; updated_at?: string }
+      | { status?: string; phase?: string; updated_at?: string }
       | null) || null;
+
+    if (
+      gradingProgress?.status === "completed" &&
+      gradingProgress.phase === "objective_only_done"
+    ) {
+      return { queued: false, reason: "already_graded" };
+    }
 
     if (
       gradingProgress?.status === "queued" ||
@@ -170,12 +181,14 @@ export async function triggerGradingIfNeeded(
     }
   }
 
-  // Determine the first q_idx with a submission — that's the entry point
-  // for the chain. If there are zero gradable questions, fall straight
-  // through to session_summary, which will record the appropriate fallback.
+  // Determine the first objective q_idx with a submission — that's the entry
+  // point for the chain. If there are zero objective questions, complete the
+  // objective-only pipeline immediately without queuing summary phases.
   let firstQIdx: number | undefined;
+  let objectiveTotal = 0;
   try {
     const toGrade = await listQuestionsToGrade(sessionId);
+    objectiveTotal = toGrade.length;
     firstQIdx = toGrade[0];
   } catch (err) {
     logError("[GRADING_TRIGGER] Failed to list questions to grade", err, {
@@ -184,10 +197,16 @@ export async function triggerGradingIfNeeded(
     });
   }
 
-  const firstPhase =
-    typeof firstQIdx === "number"
-      ? ({ sessionId, phase: "grade_question" as const, qIdx: firstQIdx })
-      : ({ sessionId, phase: "session_summary" as const });
+  if (typeof firstQIdx !== "number") {
+    await markObjectiveOnlyGradingDone(sessionId, {
+      total: objectiveTotal,
+      completed: 0,
+      failed: 0,
+    });
+    return { queued: false, reason: "objective_only_done" };
+  }
+
+  const firstPhase = { sessionId, phase: "grade_question" as const, qIdx: firstQIdx };
 
   if (isQStashEnabled()) {
     const publish = await enqueueGradingPhase(firstPhase);

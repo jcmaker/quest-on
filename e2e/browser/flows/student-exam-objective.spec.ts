@@ -271,8 +271,10 @@ test.describe("Student — Objective-Only Exam UX", () => {
     await expect(firstOption).toBeVisible({ timeout: TIMEOUTS.QUICK_CHECK });
 
     // Navigate to second question
-    await expect(examPage.nextBtn).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
-    await examPage.nextBtn.click();
+    await expect(examPage.questionNav(1)).toBeVisible({
+      timeout: TIMEOUTS.ELEMENT_VISIBLE,
+    });
+    await examPage.goToQuestion(1);
 
     await expect(
       studentPage.getByText(/OOP/i),
@@ -300,7 +302,7 @@ test.describe("Student — Objective-Only Exam UX", () => {
     await examPage.objectiveOption(0).click();
 
     // Move to question 2
-    await examPage.nextBtn.click();
+    await examPage.goToQuestion(1);
     await expect(
       studentPage.getByText(/OOP/i),
     ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
@@ -344,7 +346,7 @@ test.describe("Student — Mixed Exam (essay + MCQ) UX", () => {
     await expect(chatPresent.first()).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
 
     // Navigate to MCQ question
-    await examPage.nextBtn.click();
+    await examPage.goToQuestion(1);
     await expect(
       studentPage.getByText(/compile-time/i),
     ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
@@ -359,7 +361,7 @@ test.describe("Student — Mixed Exam (essay + MCQ) UX", () => {
     });
 
     // Navigate back to essay
-    await examPage.prevBtn.click();
+    await examPage.goToQuestion(0);
     await expect(
       studentPage.getByText(/polymorphism/i),
     ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });

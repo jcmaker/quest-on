@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { useAppUser } from "@/components/providers/AppAuthProvider";
 import React, { useState, useEffect, use, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { QuestionsListCard } from "@/components/instructor/QuestionsListCard";
@@ -36,7 +36,8 @@ import { useExamDetail } from "@/hooks/useExamDetail";
 import { useStudentFiltering } from "@/hooks/useStudentFiltering";
 import { buildInstructorExamContext } from "@/lib/instructor-utils";
 import { qk } from "@/lib/query-keys";
-import type { InstructorStudent, SortOption } from "@/lib/types/exam";
+import type { InstructorStudent } from "@/lib/types/exam";
+import type { StudentFilterSortOption } from "@/hooks/useStudentFiltering";
 
 function getStatusBadge(status: string, submittedAt?: string, isGraded?: boolean) {
   if (isGraded) {
@@ -77,8 +78,6 @@ export default function AssignmentDashboard({
     examDetailLoading,
     loading,
     error,
-    analyticsData,
-    analyticsLoading,
   } = useExamDetail({
     examId: resolvedParams.assignmentId,
     isLoaded,
@@ -93,7 +92,25 @@ export default function AssignmentDashboard({
     setSortOption,
     gradedStudents,
     nonGradedStudents,
-  } = useStudentFiltering({ students: exam?.students ?? [] });
+  } = useStudentFiltering({
+    students: exam?.students ?? [],
+    defaultSort: "submittedAt",
+  });
+
+  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
+    queryKey: qk.instructor.examAnalytics(resolvedParams.assignmentId),
+    queryFn: async ({ signal }) => {
+      const response = await fetch(
+        `/api/analytics/exam/${resolvedParams.assignmentId}/overview`,
+        { signal }
+      );
+      if (!response.ok) throw new Error("Failed to fetch analytics");
+      return response.json();
+    },
+    enabled: !!exam && exam.students.length > 0,
+    staleTime: 30000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   const queryClient = useQueryClient();
 
@@ -340,7 +357,7 @@ export default function AssignmentDashboard({
               </div>
               <Select
                 value={sortOption}
-                onValueChange={(v) => setSortOption(v as SortOption)}
+                onValueChange={(v) => setSortOption(v as StudentFilterSortOption)}
               >
                 <SelectTrigger className="w-full sm:w-[200px]">
                   <SelectValue placeholder="정렬 기준" />

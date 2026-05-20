@@ -217,13 +217,12 @@ export default function CreateAssignment() {
                 const newIds = newQuestions.map((q) => q.id);
                 setQuestions((prev) => {
                   const nonEmpty = prev.filter((q) => q.text.replace(/<[^>]*>/g, "").trim() !== "");
-                  return [...nonEmpty, ...newQuestions.map((q) => ({ id: q.id, text: q.text, type: q.type as "essay" | "short-answer" | "multiple-choice", rubric: q.rubric }))];
+                  return [...nonEmpty, ...newQuestions.map((q) => ({ id: q.id, text: q.text, type: q.type as "essay" | "short-answer" | "multiple-choice" }))];
                 });
                 setHighlightedQuestionIds(new Set(newIds));
                 setTimeout(() => setHighlightedQuestionIds(new Set()), 3000);
                 setTimeout(() => questionsListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
               }}
-              onRubricSuggested={() => {}}
             />
 
             <div ref={questionsListRef} className={fieldErrors.questions ? "rounded-lg ring-2 ring-red-500 ring-offset-2" : ""}>

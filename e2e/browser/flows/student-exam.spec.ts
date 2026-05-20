@@ -76,8 +76,10 @@ test.describe("Student — Exam Flow", () => {
     ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
 
     // Navigate to next question — button must be visible
-    await expect(examPage.nextBtn).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
-    await examPage.nextBtn.click();
+    await expect(examPage.questionNav(1)).toBeVisible({
+      timeout: TIMEOUTS.ELEMENT_VISIBLE,
+    });
+    await examPage.goToQuestion(1);
     // Second question should show
     await expect(
       studentPage.getByText(/stack|queue/i),
@@ -107,7 +109,7 @@ test.describe("Student — Exam Flow", () => {
     ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
 
     // Moving to another question should reopen the panel
-    await examPage.nextBtn.click();
+    await examPage.goToQuestion(1);
     await expect(
       studentPage.getByRole("button", { name: "문제 접기" }),
     ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });

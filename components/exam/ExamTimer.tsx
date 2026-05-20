@@ -1,0 +1,101 @@
+"use client";
+
+import { Clock } from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  useExamTimer,
+  formatExamTime,
+  isExamTimeCritical,
+  isExamTimeUrgent,
+  type UseExamTimerOptions,
+} from "@/hooks/useExamTimer";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+interface ExamTimerProps extends UseExamTimerOptions {
+  className?: string;
+  /** When false, expiry dialog is not rendered (parent may handle it). Default true. */
+  showExpiredDialog?: boolean;
+}
+
+export function ExamTimer({
+  duration,
+  sessionStartTime,
+  timeRemaining: initialTimeRemaining,
+  onTimeExpired,
+  className,
+  showExpiredDialog: renderExpiredDialog = true,
+}: ExamTimerProps) {
+  const {
+    timeRemaining,
+    hasExpired,
+    showExpiredDialog,
+    setShowExpiredDialog,
+    isUnlimited,
+  } = useExamTimer({
+    duration,
+    sessionStartTime,
+    timeRemaining: initialTimeRemaining,
+    onTimeExpired,
+  });
+
+  if (isUnlimited || timeRemaining === null) {
+    return null;
+  }
+
+  const displaySeconds = hasExpired || timeRemaining <= 0 ? 0 : timeRemaining;
+  const urgent = isExamTimeUrgent(displaySeconds);
+  const critical = isExamTimeCritical(displaySeconds, duration);
+
+  return (
+    <>
+      <div
+        className={cn(
+          "inline-flex items-center rounded-lg font-semibold transition-all",
+          hasExpired || displaySeconds <= 0
+            ? "px-3 py-1.5 text-sm bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
+            : urgent
+              ? "px-4 py-2 text-base bg-red-200 text-red-900 dark:bg-red-900/50 dark:text-red-200 animate-pulse ring-2 ring-red-400"
+              : critical
+                ? "px-3 py-1.5 text-sm bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 ring-1 ring-red-300"
+                : "px-3 py-1.5 text-sm bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+          className,
+        )}
+        data-testid="exam-timer"
+        aria-live="polite"
+        aria-label={`남은 시간 ${formatExamTime(displaySeconds)}`}
+      >
+        <Clock
+          className={cn("mr-2 shrink-0", urgent ? "size-5" : "size-4")}
+          aria-hidden="true"
+        />
+        {hasExpired || displaySeconds <= 0 ? "00:00" : formatExamTime(displaySeconds)}
+      </div>
+
+      {renderExpiredDialog && (
+        <AlertDialog open={showExpiredDialog} onOpenChange={setShowExpiredDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-destructive">
+                시험 시간이 종료되었습니다
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                시험 시간이 종료되어 답안이 자동으로 제출되었습니다.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogAction className="min-h-[44px]">확인</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </>
+  );
+}

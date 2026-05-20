@@ -4,7 +4,6 @@ import {
   decompressSubmissions,
   decompressMessages,
   normalizeQuestions,
-  buildRubricText,
   calculateWeightedScore,
   calculateAiDependencyPenalty,
   analyzeAiDependency,
@@ -264,39 +263,6 @@ describe("normalizeQuestions", () => {
     const questions = [{ text: "q", ai_context: 123, idx: 0 }];
     const result = normalizeQuestions(questions);
     expect(result[0].ai_context).toBeUndefined();
-  });
-});
-
-describe("buildRubricText", () => {
-  it("formats rubric items correctly", () => {
-    const rubric = [
-      { evaluationArea: "논리성", detailedCriteria: "논리적 구조가 명확한가" },
-      { evaluationArea: "정확성", detailedCriteria: "사실관계가 정확한가" },
-    ];
-    const result = buildRubricText(rubric);
-    expect(result).toContain("평가 루브릭 기준");
-    expect(result).toContain("1. 논리성");
-    expect(result).toContain("세부 기준: 논리적 구조가 명확한가");
-    expect(result).toContain("2. 정확성");
-    expect(result).toContain("세부 기준: 사실관계가 정확한가");
-  });
-
-  it("returns empty string for empty rubric", () => {
-    expect(buildRubricText([])).toBe("");
-  });
-
-  it("returns empty string for null/undefined", () => {
-    expect(buildRubricText(null)).toBe("");
-    expect(buildRubricText(undefined)).toBe("");
-  });
-
-  it("includes evaluationArea and detailedCriteria", () => {
-    const rubric = [
-      { evaluationArea: "Area1", detailedCriteria: "Criteria1" },
-    ];
-    const result = buildRubricText(rubric);
-    expect(result).toContain("Area1");
-    expect(result).toContain("Criteria1");
   });
 });
 

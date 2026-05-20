@@ -43,21 +43,15 @@ import {
 } from "@/components/ui/alert-dialog";
 import Link from "next/link";
 import { useAppUser } from "@/components/providers/AppAuthProvider";
-import {
-  FileText,
-  ChevronDown,
-  ChevronUp,
-  CheckCircle2,
-  WifiOff,
-  AlertCircle,
-} from "lucide-react";
+import { CheckCircle2, WifiOff, AlertCircle } from "lucide-react";
 import { Kbd } from "@/components/ui/kbd";
 import { ExamHeader } from "@/components/ExamHeader";
+import { ExamQuestionNav } from "@/components/exam/ExamQuestionNav";
+import { ExamCenterToolbar } from "@/components/exam/ExamCenterToolbar";
 import { SubmissionOverlay } from "@/components/exam/ExamLoading";
 import { PreflightModal } from "@/components/exam/PreflightModal";
 import { WaitingRoom } from "@/components/exam/WaitingRoom";
 import { LateEntryWaiting } from "@/components/exam/LateEntryWaiting";
-import { cn } from "@/lib/utils";
 import { seededOptionOrder } from "@/lib/shuffle";
 
 interface Question {
@@ -81,12 +75,6 @@ interface Exam {
   status: string;
   startTime?: string;
   endTime?: string;
-  rubric?: Array<{
-    id?: string;
-    evaluationArea: string;
-    detailedCriteria: string;
-  }>;
-  rubric_public?: boolean;
   allow_draft_in_waiting?: boolean;
   allow_chat_in_waiting?: boolean;
 }
@@ -94,6 +82,15 @@ interface Exam {
 function isHtmlEmpty(html: string): boolean {
   if (!html) return true;
   return html.replace(/<[^>]*>/g, "").trim().length === 0;
+}
+
+function hasQuestionAnswer(text: string, questionType?: string): boolean {
+  if (isObjectiveQuestion(questionType)) {
+    if (!text) return false;
+    const parsed = Number.parseInt(text, 10);
+    return Number.isInteger(parsed) && parsed >= 0;
+  }
+  return !isHtmlEmpty(text);
 }
 
 export default function ExamPage() {
@@ -209,6 +206,18 @@ export default function ExamPage() {
   const examHasEssay = useMemo(
     () => exam?.questions?.some((q) => !isObjectiveQuestion(q.type)) ?? false,
     [exam]
+  );
+
+  const questionNavItems = useMemo(
+    () =>
+      exam?.questions.map((q, idx) => ({
+        type: q.type,
+        hasAnswer: hasQuestionAnswer(autoSave.draftAnswers[idx]?.text || "", q.type),
+        hasChat:
+          !isObjectiveQuestion(q.type) &&
+          examChat.chatHistory.some((msg) => msg.qIdx === idx),
+      })) ?? [],
+    [exam, autoSave.draftAnswers, examChat.chatHistory],
   );
 
   // 객관식 문제에서는 SidebarProvider 전역 Ctrl/Cmd+B 단축키가 보이지 않는 사이드바 상태를
@@ -448,12 +457,25 @@ export default function ExamPage() {
   // --- Main exam UI ---
 
   return (
-    <SidebarProvider
-      defaultOpen={true}
-      className="flex-row-reverse"
-      style={{ "--sidebar-width": examHasEssay ? "40vw" : "0px", "--sidebar-width-icon": "3rem" } as React.CSSProperties & { [key: string]: string }}
-    >
-      {/* 객관식/OX 문제에서는 AI 튜터 채팅을 노출하지 않는다 (제품 결정 #2). */}
+    <div className="flex h-screen w-full bg-background">
+      <ExamQuestionNav
+        questions={questionNavItems}
+        currentQuestion={currentQuestion}
+        onSelect={setCurrentQuestionWithReveal}
+        onExit={() => setShowExitConfirm(true)}
+      />
+
+      <div className="flex flex-1 flex-col min-h-0 min-w-0 pb-[72px] md:pb-0">
+        <SidebarProvider
+          defaultOpen={true}
+          className="flex flex-1 min-h-0 flex-row-reverse"
+          style={
+            {
+              "--sidebar-width": examHasEssay ? "40vw" : "0px",
+              "--sidebar-width-icon": "3rem",
+            } as React.CSSProperties & { [key: string]: string }
+          }
+        >
       {!isCurrentObjective && (
         <ExamChatSidebar
           chatHistory={filteredChatHistory}
@@ -469,8 +491,7 @@ export default function ExamPage() {
         />
       )}
 
-      <SidebarInset className="flex-1 min-h-0 overflow-hidden transition-all duration-75 ease-out">
-        <div className="h-screen flex flex-col bg-background">
+      <SidebarInset className="flex flex-1 min-h-0 flex-col overflow-hidden">
           <SubmissionOverlay isSubmitting={submission.isSubmitting} />
           {!autoSave.isOnline && (
             <div className="bg-destructive text-destructive-foreground px-4 py-2 text-center text-sm font-medium flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300">
@@ -479,115 +500,57 @@ export default function ExamPage() {
             </div>
           )}
 
-          <ExamHeader
-            examCode={examCode}
-            duration={exam.duration}
-            currentStep="exam"
-            user={profile ? { avatarUrl: profile.avatarUrl, fullName: profile.fullName, email: profile.email } : null}
-            disableLogoLink
-            sessionStartTime={session.sessionStartTime}
-            timeRemaining={session.timeRemaining}
-            onTimeExpired={async () => {
-              if (!sessionId || !exam || session.isSubmitted) return;
-              await submission.handleTimeExpired();
-            }}
-            onExit={() => setShowExitConfirm(true)}
-          />
+            <ExamCenterToolbar
+              examTitle={exam.title}
+              duration={exam.duration}
+              sessionStartTime={session.sessionStartTime}
+              timeRemaining={session.timeRemaining}
+              onTimeExpired={async () => {
+                if (!sessionId || !exam || session.isSubmitted) return;
+                await submission.handleTimeExpired();
+              }}
+              onSubmit={submission.handleSubmitClick}
+              isSubmitting={submission.isSubmitting}
+              showQuestionToggle={!isCurrentObjective}
+              isQuestionVisible={isQuestionVisible}
+              onToggleQuestion={() => {
+                setIsQuestionVisible(!isQuestionVisible);
+                if (!hasOpenedQuestion) setHasOpenedQuestion(true);
+              }}
+            />
 
-          <MainContentWrapper>
-            <div className="bg-background h-full flex flex-col">
-              {/* Top Bar */}
-              <div className="sticky top-0 z-[5] border-b border-border p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-background/95 backdrop-blur-sm shadow-sm">
-                <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                  {!isCurrentObjective && (
-                    <Button
-                      variant="outline"
-                      onClick={() => { setIsQuestionVisible(!isQuestionVisible); if (!hasOpenedQuestion) setHasOpenedQuestion(true); }}
-                      className="gap-2 transition-all duration-300 min-h-[44px] px-4 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-950/30"
-                      aria-label={isQuestionVisible ? "문제 접기" : "문제 보기"}
-                      aria-expanded={isQuestionVisible}
-                    >
-                      <FileText className="w-4 h-4 shrink-0" aria-hidden="true" />
-                      <span className="text-sm sm:text-base">{isQuestionVisible ? "문제 접기" : "문제 보기"}</span>
-                      {isQuestionVisible
-                        ? <ChevronUp className="w-4 h-4 opacity-50 shrink-0" aria-hidden="true" />
-                        : <ChevronDown className="w-4 h-4 opacity-50 shrink-0" aria-hidden="true" />}
-                    </Button>
-                  )}
-                  <h2 className="text-sm sm:text-base font-semibold text-foreground truncate max-w-[200px] sm:max-w-none">{exam.title}</h2>
-                </div>
-
-                <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-between sm:justify-end">
-                  <div className="flex items-center gap-1.5 sm:gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentQuestionWithReveal((prev) => Math.max(0, prev - 1))} disabled={currentQuestion === 0} className="h-8 w-8 shrink-0" aria-label="이전 문제">←</Button>
-                    <div className="flex items-center gap-1 overflow-x-auto hide-scrollbar">
-                      {exam.questions.map((_, idx) => {
-                        const isCurrent = idx === currentQuestion;
-                        const hasAnswer = !isHtmlEmpty(autoSave.draftAnswers[idx]?.text || "");
-                        const hasChat =
-                          !isObjectiveQuestion(exam.questions[idx]?.type) &&
-                          examChat.chatHistory.some((msg) => msg.qIdx === idx);
-                        return (
-                          <button
-                            key={idx}
-                            onClick={() => setCurrentQuestionWithReveal(idx)}
-                            className={cn(
-                              "w-10 h-10 sm:w-8 sm:h-8 rounded-full text-xs font-medium border transition-all shrink-0 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1 relative",
-                              isCurrent ? "ring-2 ring-primary bg-primary text-primary-foreground border-primary"
-                                : hasAnswer ? "bg-primary/15 border-primary/30 text-primary hover:bg-primary/25"
-                                : "bg-muted border-border text-muted-foreground hover:bg-muted/80"
-                            )}
-                            aria-label={`문제 ${idx + 1}${isCurrent ? " (현재)" : ""}${hasAnswer ? " (작성됨)" : " (미작성)"}${hasChat ? " (채팅 있음)" : ""}`}
-                          >
-                            {idx + 1}
-                            {hasChat && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-blue-500 rounded-full border border-background" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentQuestionWithReveal((prev) => Math.min(exam.questions.length - 1, prev + 1))} disabled={currentQuestion === exam.questions.length - 1} className="h-8 w-8 shrink-0" aria-label="다음 문제">→</Button>
-                  </div>
-                  <Button
-                    onClick={submission.handleSubmitClick}
-                    disabled={submission.isSubmitting}
-                    className="min-h-[44px] sm:min-h-[48px] text-sm sm:text-base font-semibold shadow-md hover:shadow-lg transition-all duration-200 px-4 sm:px-6"
-                    size="lg"
-                    aria-label="시험 제출하기"
-                  >
-                    {submission.isSubmitting ? (
-                      <><div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-foreground border-t-transparent mr-2"></div>제출 중...</>
-                    ) : "시험 제출하기"}
-                  </Button>
-                </div>
-              </div>
+            <MainContentWrapper>
+              <div className="flex h-full min-h-0 flex-col bg-background">
 
               {/* Question & Answer */}
               {isCurrentObjective ? (
                 // 객관식/OX: 문제 + 선택지를 한 화면에 항상 동시 노출. Resizable / 접기 토글 / 채팅 없음.
-                <div className="flex-1 min-h-0 flex flex-col">
+                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
                   <div className="shrink-0">
                     <QuestionPanel
                       question={exam.questions[currentQuestion]}
                       questionNumber={currentQuestion + 1}
-                      rubric={exam.rubric}
-                      rubricPublic={exam.rubric_public}
                     />
                   </div>
-                  <div className="flex-1 min-h-0">
+                  <div className="shrink-0">
                     <ObjectiveAnswerPanel
                       type={exam.questions[currentQuestion].type}
                       options={exam.questions[currentQuestion].options}
                       displayOrder={objectiveDisplayOrder}
                       value={autoSave.draftAnswers[currentQuestion]?.text || ""}
                       onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
-                      fullHeight
+                      variant={
+                        exam.questions[currentQuestion].type === "true-false"
+                          ? "row-1x2"
+                          : "list"
+                      }
                     />
                   </div>
                 </div>
               ) : isQuestionVisible ? (
                 <ResizablePanelGroup direction="vertical" className="flex-1 min-h-0">
                   <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
-                    <QuestionPanel question={exam.questions[currentQuestion]} questionNumber={currentQuestion + 1} rubric={exam.rubric} rubricPublic={exam.rubric_public} />
+                    <QuestionPanel question={exam.questions[currentQuestion]} questionNumber={currentQuestion + 1} />
                   </ResizablePanel>
                   <ResizableHandle withHandle />
                   <ResizablePanel defaultSize={60} minSize={30}>
@@ -618,8 +581,11 @@ export default function ExamPage() {
             </div>
           </MainContentWrapper>
 
-          <SubmitConfirmDialog open={submission.showSubmitConfirm} onOpenChange={submission.setShowSubmitConfirm} onConfirm={submission.handleSubmit} />
-        </div>
+            <SubmitConfirmDialog
+              open={submission.showSubmitConfirm}
+              onOpenChange={submission.setShowSubmitConfirm}
+              onConfirm={submission.handleSubmit}
+            />
       </SidebarInset>
 
       <ExamDialogs
@@ -639,7 +605,9 @@ export default function ExamPage() {
         onManualSubmitRetry={() => { submission.setManualSubmitFailed(false); submission.handleSubmit(); }}
         submitErrorMessage={submission.submitErrorMessage}
       />
-    </SidebarProvider>
+        </SidebarProvider>
+      </div>
+    </div>
   );
 }
 

@@ -130,7 +130,7 @@ Mock 서버 (`scripts/start-mock-server.ts`, 포트 4010)는 시스템 프롬프
 | `편집 어시스턴트` | 문제 수정 (adjust-question) | `{ questionText, explanation }` |
 | `전문 교육가` | 요약 생성 (generate-summary) | `{ sentiment, summary, strengths, weaknesses, keyQuotes }` |
 | `전문 평가위원` | 자동 채점 (auto-grade) | `{ chat_score, answer_score, overall_comment, ... }` |
-| (기본값) | 문제 생성 | `{ questions, suggestedRubric }` |
+| (기본값) | 문제 생성 | `{ questions }` |
 | (non-JSON mode) | 채점/피드백 | `{ score, comment, stage_grading }` |
 
 **에러 시뮬레이션**: `x-mock-error` 헤더로 `rate_limit`, `server_error`, `timeout`, `malformed` 시뮬레이션 가능.
@@ -234,10 +234,9 @@ BASE_URL = "http://localhost:3000"
 - `app/api/session/[sessionId]/preflight/route.ts` — 사전 안내
 - `app/api/session/[sessionId]/live-messages/route.ts` — 실시간 메시지
 
-### AI 관련 (5개)
+### AI 관련 (4개)
 - `app/api/ai/generate-questions/route.ts` — 문제 생성
 - `app/api/ai/generate-questions-stream/route.ts` — 문제 생성 (스트림)
-- `app/api/ai/generate-rubric/route.ts` — 루브릭 생성
 - `app/api/ai/adjust-question/route.ts` — 문제 수정
 - `app/api/chat/stream/route.ts` — 채팅 스트림
 

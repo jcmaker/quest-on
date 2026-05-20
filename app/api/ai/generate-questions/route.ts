@@ -199,14 +199,12 @@ export async function POST(request: NextRequest) {
         options: q.options,
         correctOptionIndex: q.correctOptionIndex,
       }));
-      // 객관식/OX 는 결정론적으로 채점되므로 루브릭이 없다.
-      return successJson({ questions, suggestedRubric: [] });
+      return successJson({ questions });
     }
 
     // ── Case: existing essay-question shape ──
     const caseResponse = parsedResponse as {
       questions?: Array<{ text: string; type?: string }>;
-      suggestedRubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
     };
     if (!caseResponse.questions || !Array.isArray(caseResponse.questions)) {
       return errorJson(
@@ -222,11 +220,7 @@ export async function POST(request: NextRequest) {
       type: "essay" as const,
     }));
 
-    const suggestedRubric = Array.isArray(caseResponse.suggestedRubric)
-      ? caseResponse.suggestedRubric
-      : [];
-
-    return successJson({ questions, suggestedRubric });
+    return successJson({ questions });
   } catch (error) {
     logError("Question generation failed", error, { path: "/api/ai/generate-questions" });
     return errorJson("INTERNAL_ERROR", "문제 생성 중 오류가 발생했습니다.", 500);
