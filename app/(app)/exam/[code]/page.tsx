@@ -391,6 +391,7 @@ export default function ExamPage() {
           examTitle={exam.title}
           examDuration={exam.duration}
           examDescription={exam.description}
+          examHasEssay={examHasEssay}
         />
         <AlertDialog open={submission.showPreflightCancelConfirm} onOpenChange={submission.setShowPreflightCancelConfirm}>
           <AlertDialogContent>
@@ -437,6 +438,7 @@ export default function ExamPage() {
         sessionId={sessionId || undefined}
         examId={exam.id}
         studentId={user.id}
+        examHasEssay={examHasEssay}
         examDuration={exam.duration}
         questionCount={exam.questions?.length}
       />
