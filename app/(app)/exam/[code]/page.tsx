@@ -205,6 +205,26 @@ export default function ExamPage() {
   const currentQuestionType = exam?.questions?.[currentQuestion]?.type;
   const isCurrentObjective = isObjectiveQuestion(currentQuestionType);
 
+  // 시험 단위로 한 번만 계산 — sidebar-width 게이팅, Preflight/Waiting 프롭 전달(추후)에 사용.
+  const examHasEssay = useMemo(
+    () => exam?.questions?.some((q) => !isObjectiveQuestion(q.type)) ?? false,
+    [exam]
+  );
+
+  // 객관식 문제에서는 SidebarProvider 전역 Ctrl/Cmd+B 단축키가 보이지 않는 사이드바 상태를
+  // 토글하지 못하도록 캡처 단계에서 차단한다.
+  useEffect(() => {
+    if (!isCurrentObjective) return;
+    const handler = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && (event.key === "b" || event.key === "B")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener("keydown", handler, { capture: true });
+    return () => document.removeEventListener("keydown", handler, { capture: true });
+  }, [isCurrentObjective]);
+
   // 객관식 선택지 표시 순서 — sessionId + 문제 id 로 시드한 결정론적 순열.
   // 저장 값은 항상 원본 인덱스이며, 이 순서는 순수 표시용이다.
   // 메모 키는 sessionId / 문제 id / 선택지 "개수"로만 잡는다.
@@ -429,7 +449,7 @@ export default function ExamPage() {
     <SidebarProvider
       defaultOpen={true}
       className="flex-row-reverse"
-      style={{ "--sidebar-width": "40vw", "--sidebar-width-icon": "3rem" } as React.CSSProperties & { [key: string]: string }}
+      style={{ "--sidebar-width": examHasEssay ? "40vw" : "0px", "--sidebar-width-icon": "3rem" } as React.CSSProperties & { [key: string]: string }}
     >
       {/* 객관식/OX 문제에서는 AI 튜터 채팅을 노출하지 않는다 (제품 결정 #2). */}
       {!isCurrentObjective && (
@@ -477,19 +497,21 @@ export default function ExamPage() {
               {/* Top Bar */}
               <div className="sticky top-0 z-[5] border-b border-border p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-background/95 backdrop-blur-sm shadow-sm">
                 <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
-                  <Button
-                    variant="outline"
-                    onClick={() => { setIsQuestionVisible(!isQuestionVisible); if (!hasOpenedQuestion) setHasOpenedQuestion(true); }}
-                    className="gap-2 transition-all duration-300 min-h-[44px] px-4 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-950/30"
-                    aria-label={isQuestionVisible ? "문제 접기" : "문제 보기"}
-                    aria-expanded={isQuestionVisible}
-                  >
-                    <FileText className="w-4 h-4 shrink-0" aria-hidden="true" />
-                    <span className="text-sm sm:text-base">{isQuestionVisible ? "문제 접기" : "문제 보기"}</span>
-                    {isQuestionVisible
-                      ? <ChevronUp className="w-4 h-4 opacity-50 shrink-0" aria-hidden="true" />
-                      : <ChevronDown className="w-4 h-4 opacity-50 shrink-0" aria-hidden="true" />}
-                  </Button>
+                  {!isCurrentObjective && (
+                    <Button
+                      variant="outline"
+                      onClick={() => { setIsQuestionVisible(!isQuestionVisible); if (!hasOpenedQuestion) setHasOpenedQuestion(true); }}
+                      className="gap-2 transition-all duration-300 min-h-[44px] px-4 text-blue-600 border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:border-blue-800 dark:hover:bg-blue-950/30"
+                      aria-label={isQuestionVisible ? "문제 접기" : "문제 보기"}
+                      aria-expanded={isQuestionVisible}
+                    >
+                      <FileText className="w-4 h-4 shrink-0" aria-hidden="true" />
+                      <span className="text-sm sm:text-base">{isQuestionVisible ? "문제 접기" : "문제 보기"}</span>
+                      {isQuestionVisible
+                        ? <ChevronUp className="w-4 h-4 opacity-50 shrink-0" aria-hidden="true" />
+                        : <ChevronDown className="w-4 h-4 opacity-50 shrink-0" aria-hidden="true" />}
+                    </Button>
+                  )}
                   <h2 className="text-sm sm:text-base font-semibold text-foreground truncate max-w-[200px] sm:max-w-none">{exam.title}</h2>
                 </div>
 
@@ -500,7 +522,9 @@ export default function ExamPage() {
                       {exam.questions.map((_, idx) => {
                         const isCurrent = idx === currentQuestion;
                         const hasAnswer = !isHtmlEmpty(autoSave.draftAnswers[idx]?.text || "");
-                        const hasChat = examChat.chatHistory.some((msg) => msg.qIdx === idx);
+                        const hasChat =
+                          !isObjectiveQuestion(exam.questions[idx]?.type) &&
+                          examChat.chatHistory.some((msg) => msg.qIdx === idx);
                         return (
                           <button
                             key={idx}
@@ -536,44 +560,47 @@ export default function ExamPage() {
               </div>
 
               {/* Question & Answer */}
-              {isQuestionVisible ? (
+              {isCurrentObjective ? (
+                // 객관식/OX: 문제 + 선택지를 한 화면에 항상 동시 노출. Resizable / 접기 토글 / 채팅 없음.
+                <div className="flex-1 min-h-0 flex flex-col">
+                  <div className="shrink-0">
+                    <QuestionPanel
+                      question={exam.questions[currentQuestion]}
+                      questionNumber={currentQuestion + 1}
+                      rubric={exam.rubric}
+                      rubricPublic={exam.rubric_public}
+                    />
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <ObjectiveAnswerPanel
+                      type={exam.questions[currentQuestion].type}
+                      options={exam.questions[currentQuestion].options}
+                      displayOrder={objectiveDisplayOrder}
+                      value={autoSave.draftAnswers[currentQuestion]?.text || ""}
+                      onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
+                      fullHeight
+                    />
+                  </div>
+                </div>
+              ) : isQuestionVisible ? (
                 <ResizablePanelGroup direction="vertical" className="flex-1 min-h-0">
                   <ResizablePanel defaultSize={40} minSize={20} maxSize={70}>
                     <QuestionPanel question={exam.questions[currentQuestion]} questionNumber={currentQuestion + 1} rubric={exam.rubric} rubricPublic={exam.rubric_public} />
                   </ResizablePanel>
                   <ResizableHandle withHandle />
                   <ResizablePanel defaultSize={60} minSize={30}>
-                    {isCurrentObjective ? (
-                      <ObjectiveAnswerPanel
-                        type={exam.questions[currentQuestion].type}
-                        options={exam.questions[currentQuestion].options}
-                        displayOrder={objectiveDisplayOrder}
-                        value={autoSave.draftAnswers[currentQuestion]?.text || ""}
-                        onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
-                      />
-                    ) : (
-                      <AnswerPanel
-                        value={autoSave.draftAnswers[currentQuestion]?.text || ""}
-                        onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
-                        onPaste={submission.handlePaste}
-                        isSaving={autoSave.isSaving}
-                        lastSaved={autoSave.lastSaved}
-                        saveError={autoSave.saveError}
-                        saveShortcut={saveShortcut}
-                        onFocus={() => setIsQuestionVisible(false)}
-                      />
-                    )}
+                    <AnswerPanel
+                      value={autoSave.draftAnswers[currentQuestion]?.text || ""}
+                      onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
+                      onPaste={submission.handlePaste}
+                      isSaving={autoSave.isSaving}
+                      lastSaved={autoSave.lastSaved}
+                      saveError={autoSave.saveError}
+                      saveShortcut={saveShortcut}
+                      onFocus={() => setIsQuestionVisible(false)}
+                    />
                   </ResizablePanel>
                 </ResizablePanelGroup>
-              ) : isCurrentObjective ? (
-                <ObjectiveAnswerPanel
-                  type={exam.questions[currentQuestion].type}
-                  options={exam.questions[currentQuestion].options}
-                  displayOrder={objectiveDisplayOrder}
-                  value={autoSave.draftAnswers[currentQuestion]?.text || ""}
-                  onChange={(value) => autoSave.updateAnswer(exam.questions[currentQuestion].id, value)}
-                  fullHeight
-                />
               ) : (
                 <AnswerPanel
                   value={autoSave.draftAnswers[currentQuestion]?.text || ""}
