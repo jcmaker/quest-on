@@ -10,6 +10,7 @@ import {
   generateSessionSummaryPhase,
   listQuestionsToGrade,
   listGradedQuestionsForSummary,
+  listCaseQuestionsForSummary,
   isAssignmentGradingSession,
   markObjectiveOnlyGradingDone,
 } from "@/lib/grading";
@@ -24,16 +25,13 @@ import type {
 /**
  * QStash grading worker — handles ONE phase per invocation.
  *
- * The exam pipeline is:
- *   grade_question (objective q_idx only) → objective_only_done
+ * Exam pipeline:
+ *   grade_question (objective only)
+ *   → caseCount 0: objective_only_done
+ *   → caseCount 1: session_summary
+ *   → caseCount ≥ 2: question_summary (per case) → session_summary
  *
- * Each phase is idempotent: if the work is already done (DB row exists /
- * non-null summary), the worker returns success without calling OpenAI.
- * This makes QStash retries safe and cheap.
- *
- * On success, the worker publishes the next phase job. On failure (thrown
- * exception), the worker returns 500 so QStash retries with exponential
- * backoff — up to 3 retries per phase.
+ * Assignment pipeline unchanged: grade → question_summary → session_summary.
  */
 
 const payloadSchema: z.ZodType<GradingPhasePayload> = z.discriminatedUnion(
@@ -94,6 +92,33 @@ async function markFailed(
   }
 }
 
+async function enqueueExamSummaryPipeline(
+  sessionId: string,
+  objectiveTotal: number,
+  objectiveGraded: number
+): Promise<GradingPhasePayload | null> {
+  const caseIdxs = await listCaseQuestionsForSummary(sessionId);
+
+  if (caseIdxs.length === 0) {
+    await markObjectiveOnlyGradingDone(sessionId, {
+      total: objectiveTotal,
+      completed: objectiveGraded,
+      failed: Math.max(0, objectiveTotal - objectiveGraded),
+    });
+    return null;
+  }
+
+  if (caseIdxs.length === 1) {
+    return { sessionId, phase: "session_summary" };
+  }
+
+  return {
+    sessionId,
+    phase: "question_summary",
+    qIdx: caseIdxs[0],
+  };
+}
+
 /**
  * Given current phase output, figure out what to enqueue next.
  * Returns null when the pipeline is complete.
@@ -110,19 +135,17 @@ async function computeNextPhase(
 
     const graded = await listGradedQuestionsForSummary(payload.sessionId);
     const isAssignment = await isAssignmentGradingSession(payload.sessionId);
+
     if (!isAssignment) {
-      await markObjectiveOnlyGradingDone(payload.sessionId, {
-        total: toGrade.length,
-        completed: graded.length,
-        failed: Math.max(0, toGrade.length - graded.length),
-      });
-      return null;
+      return enqueueExamSummaryPipeline(
+        payload.sessionId,
+        toGrade.length,
+        graded.length
+      );
     }
 
     // Assignment grading keeps its separate AI summary pipeline.
     if (graded.length === 0) {
-      // Nothing to summarize → jump to session summary (which will record
-      // a failed marker if no grades exist)
       return { sessionId: payload.sessionId, phase: "session_summary" };
     }
     return {
@@ -133,8 +156,12 @@ async function computeNextPhase(
   }
 
   if (payload.phase === "question_summary") {
-    const graded = await listGradedQuestionsForSummary(payload.sessionId);
-    const next = graded.find((idx) => idx > payload.qIdx);
+    const isAssignment = await isAssignmentGradingSession(payload.sessionId);
+    const indices = isAssignment
+      ? await listGradedQuestionsForSummary(payload.sessionId)
+      : await listCaseQuestionsForSummary(payload.sessionId);
+
+    const next = indices.find((idx) => idx > payload.qIdx);
     if (typeof next === "number") {
       return {
         sessionId: payload.sessionId,
@@ -186,8 +213,6 @@ async function handler(request: NextRequest): Promise<Response> {
     if (next) {
       const publish = await enqueueGradingPhase(next);
       if (!publish.ok) {
-        // Next-phase enqueue failed. Surface as error so QStash retries this
-        // phase, which will recompute the next phase and try again.
         await markFailed(
           payload.sessionId,
           `Failed to enqueue next phase (${next.phase}): reason=${publish.reason}`

@@ -844,6 +844,21 @@ export async function markObjectiveOnlyGradingDone(
  * Ordered list of q_idxes that have a successful (non-`ai_failed`) grade
  * row — these are the ones we generate per-question summaries for.
  */
+/**
+ * Case/essay q_idxes with a submission — used for per-question summaries on exams.
+ */
+export async function listCaseQuestionsForSummary(
+  sessionId: string
+): Promise<number[]> {
+  const supabase = getSupabaseServer();
+  const ctx = await loadPhaseContext(sessionId, supabase);
+  return ctx.questionsToGrade
+    .filter((q) => !!ctx.submissionsByQuestion[q.idx])
+    .filter((q) => !isObjectiveQuestion(q.type))
+    .map((q) => q.idx)
+    .sort((a, b) => a - b);
+}
+
 export async function listGradedQuestionsForSummary(
   sessionId: string
 ): Promise<number[]> {
@@ -1067,25 +1082,6 @@ export async function generateOneQuestionSummary(
   if (gradeErr) {
     throw new Error(`Failed to fetch grade: ${gradeErr.message}`);
   }
-  if (!gradeRow) {
-    return { skipped: true, generated: false };
-  }
-
-  const typedGrade = gradeRow as {
-    q_idx: number;
-    score: number;
-    comment: string | null;
-    stage_grading: StageGrading | null;
-    ai_summary: QuestionSummaryData | null;
-    grade_type: string | null;
-  };
-
-  if (typedGrade.ai_summary) {
-    return { skipped: true, generated: false };
-  }
-  if (typedGrade.grade_type === "ai_failed") {
-    return { skipped: true, generated: false };
-  }
 
   const ctx = await loadPhaseContext(sessionId, supabase);
   const question = ctx.questionsToGrade.find((q) => q.idx === qIdx);
@@ -1098,13 +1094,33 @@ export async function generateOneQuestionSummary(
     return { skipped: true, generated: false };
   }
 
+  const submission = ctx.submissionsByQuestion[qIdx];
+  if (!submission) {
+    return { skipped: true, generated: false };
+  }
+
+  const typedGrade = gradeRow as {
+    q_idx: number;
+    score: number;
+    comment: string | null;
+    stage_grading: StageGrading | null;
+    ai_summary: QuestionSummaryData | null;
+    grade_type: string | null;
+  } | null;
+
+  if (typedGrade?.ai_summary) {
+    return { skipped: true, generated: false };
+  }
+  if (typedGrade?.grade_type === "ai_failed") {
+    return { skipped: true, generated: false };
+  }
+
   await updateGradingProgress(supabase, sessionId, {
     status: "running",
     phase: "qsummary",
     current_q_idx: qIdx,
   });
 
-  const submission = ctx.submissionsByQuestion[qIdx];
   const questionMessages = ctx.messagesByQuestion[qIdx] || [];
   const rubricItems = ctx.isAssignment
     ? resolveAssignmentRubric(question, ctx.exam.rubric)
@@ -1112,10 +1128,10 @@ export async function generateOneQuestionSummary(
 
   const abortController = new AbortController();
   const grade: GradeResult = {
-    q_idx: typedGrade.q_idx,
-    score: typedGrade.score,
-    comment: typedGrade.comment || "",
-    stage_grading: typedGrade.stage_grading || undefined,
+    q_idx: qIdx,
+    score: typedGrade?.score ?? 0,
+    comment: typedGrade?.comment || "",
+    stage_grading: typedGrade?.stage_grading || undefined,
   };
 
   const summary = await generateQuestionSummary({
@@ -1142,13 +1158,30 @@ export async function generateOneQuestionSummary(
     throw new Error(`Failed to generate question summary for q_idx=${qIdx}`);
   }
 
-  const { error: updateErr } = await supabase
-    .from("grades")
-    .update({ ai_summary: summary })
-    .eq("session_id", sessionId)
-    .eq("q_idx", qIdx);
-  if (updateErr) {
-    throw new Error(`Failed to save question summary: ${updateErr.message}`);
+  if (typedGrade) {
+    const { error: updateErr } = await supabase
+      .from("grades")
+      .update({ ai_summary: summary })
+      .eq("session_id", sessionId)
+      .eq("q_idx", qIdx);
+    if (updateErr) {
+      throw new Error(`Failed to save question summary: ${updateErr.message}`);
+    }
+  } else {
+    await upsertGradesBySessionQuestion(
+      supabase as never,
+      [
+        {
+          session_id: sessionId,
+          q_idx: qIdx,
+          score: 0,
+          comment: "",
+          grade_type: "ai_summary",
+          ai_summary: summary,
+        },
+      ],
+      "question_summary"
+    );
   }
 
   return { skipped: false, generated: true };
@@ -1197,42 +1230,6 @@ export async function generateSessionSummaryPhase(
   });
 
   const ctx = await loadPhaseContext(sessionId, supabase);
-  const caseQuestions = ctx.questionsToGrade.filter(
-    (q) => !isObjectiveQuestion(q.type)
-  );
-
-  if (!ctx.isAssignment) {
-    if (caseQuestions.length === 0) {
-      const objectiveIdxs = ctx.questionsToGrade
-        .filter((q) => !!ctx.submissionsByQuestion[q.idx])
-        .filter((q) => isObjectiveQuestion(q.type))
-        .map((q) => q.idx);
-      const gradedIdxs = await listGradedQuestionsForSummary(sessionId);
-      await markObjectiveOnlyGradingDone(sessionId, {
-        total: objectiveIdxs.length,
-        completed: gradedIdxs.length,
-        failed: Math.max(0, objectiveIdxs.length - gradedIdxs.length),
-      });
-      return { skipped: true, generated: false };
-    }
-
-    const { data: caseGrades, error: caseGradesErr } = await supabase
-      .from("grades")
-      .select("q_idx, grade_type")
-      .eq("session_id", sessionId);
-    if (caseGradesErr) {
-      throw new Error(`Failed to load grades: ${caseGradesErr.message}`);
-    }
-    const gradedCaseIdxs = new Set(
-      (caseGrades || [])
-        .filter((g) => (g as { grade_type?: string }).grade_type !== "ai_failed")
-        .map((g) => (g as { q_idx: number }).q_idx)
-    );
-    const allCaseGraded = caseQuestions.every((q) => gradedCaseIdxs.has(q.idx));
-    if (!allCaseGraded) {
-      return { skipped: true, generated: false };
-    }
-  }
 
   const { data: gradesData, error: gradesErr } = await supabase
     .from("grades")
@@ -1242,9 +1239,11 @@ export async function generateSessionSummaryPhase(
     throw new Error(`Failed to load grades: ${gradesErr.message}`);
   }
 
-  const grades: GradeResult[] = (gradesData || [])
+  let grades: GradeResult[] = (gradesData || [])
     .filter(
-      (g) => (g as { grade_type?: string }).grade_type !== "ai_failed"
+      (g) =>
+        (g as { grade_type?: string }).grade_type !== "ai_failed" &&
+        (g as { grade_type?: string }).grade_type !== "ai_summary"
     )
     .map((g) => {
       const row = g as {
@@ -1264,23 +1263,32 @@ export async function generateSessionSummaryPhase(
     });
 
   if (grades.length === 0) {
-    const fallback = {
-      grading_status: "failed" as const,
-      grading_failed_questions: ctx.questionsToGrade.map((q) => q.idx),
-      grading_completed_count: 0,
-      grading_total_count: ctx.questions.length,
-      grading_timed_out: false,
-    };
-    await supabase
-      .from("sessions")
-      .update({ ai_summary: fallback })
-      .eq("id", sessionId);
-    await updateGradingProgress(supabase, sessionId, {
-      status: "failed",
-      phase: "done",
-      last_error: "No successfully graded questions to summarize",
-    });
-    return { skipped: false, generated: false };
+    const caseIdxs = await listCaseQuestionsForSummary(sessionId);
+    if (caseIdxs.length > 0) {
+      grades = caseIdxs.map((qIdx) => ({
+        q_idx: qIdx,
+        score: 0,
+        comment: "",
+      }));
+    } else {
+      const fallback = {
+        grading_status: "failed" as const,
+        grading_failed_questions: ctx.questionsToGrade.map((q) => q.idx),
+        grading_completed_count: 0,
+        grading_total_count: ctx.questions.length,
+        grading_timed_out: false,
+      };
+      await supabase
+        .from("sessions")
+        .update({ ai_summary: fallback })
+        .eq("id", sessionId);
+      await updateGradingProgress(supabase, sessionId, {
+        status: "failed",
+        phase: "done",
+        last_error: "No successfully graded questions to summarize",
+      });
+      return { skipped: false, generated: false };
+    }
   }
 
   const summary = await generateSummary(
@@ -1309,40 +1317,6 @@ export async function generateSessionSummaryPhase(
   });
 
   return { skipped: false, generated: true };
-}
-
-/**
- * After instructor commits a case/essay grade, generate per-question AI summary
- * and session-level summary when all subjective questions are graded.
- */
-export async function triggerExamSummariesAfterCaseCommit(
-  sessionId: string,
-  qIdx: number
-): Promise<{ questionSummaryGenerated: boolean; sessionSummaryGenerated: boolean }> {
-  let questionSummaryGenerated = false;
-  let sessionSummaryGenerated = false;
-
-  try {
-    const qResult = await generateOneQuestionSummary(sessionId, qIdx);
-    questionSummaryGenerated = qResult.generated;
-  } catch (err) {
-    logError("[case-grade commit] Question summary failed", err, {
-      path: "lib/grading.ts",
-      additionalData: { sessionId, qIdx },
-    });
-  }
-
-  try {
-    const sResult = await generateSessionSummaryPhase(sessionId);
-    sessionSummaryGenerated = sResult.generated;
-  } catch (err) {
-    logError("[case-grade commit] Session summary failed", err, {
-      path: "lib/grading.ts",
-      additionalData: { sessionId, qIdx },
-    });
-  }
-
-  return { questionSummaryGenerated, sessionSummaryGenerated };
 }
 
 /**
@@ -1426,14 +1400,53 @@ export async function autoGradeSession(
   }
 
   if (!isAssignment) {
-    await markObjectiveOnlyGradingDone(sessionId, {
-      total: questionIdxs.length,
-      completed: grades.length,
-      failed: failedQuestions.length,
-    });
+    const caseIdxs = await listCaseQuestionsForSummary(sessionId);
+    if (caseIdxs.length === 0) {
+      await markObjectiveOnlyGradingDone(sessionId, {
+        total: questionIdxs.length,
+        completed: grades.length,
+        failed: failedQuestions.length,
+      });
+      return {
+        grades,
+        summary: null,
+        failedQuestions,
+        timedOut: false,
+      };
+    }
+
+    if (caseIdxs.length >= 2) {
+      for (const qIdx of caseIdxs) {
+        try {
+          await generateOneQuestionSummary(sessionId, qIdx);
+        } catch (err) {
+          logError("[AUTO_GRADE] generateOneQuestionSummary threw", err, {
+            path: "lib/grading.ts",
+            additionalData: { sessionId, qIdx },
+          });
+        }
+      }
+    }
+
+    let summary: SummaryData | null = null;
+    try {
+      await generateSessionSummaryPhase(sessionId);
+      const { data } = await supabase
+        .from("sessions")
+        .select("ai_summary")
+        .eq("id", sessionId)
+        .maybeSingle();
+      summary = (data?.ai_summary as SummaryData | null) ?? null;
+    } catch (err) {
+      logError("[AUTO_GRADE] generateSessionSummaryPhase threw", err, {
+        path: "lib/grading.ts",
+        additionalData: { sessionId },
+      });
+    }
+
     return {
       grades,
-      summary: null,
+      summary,
       failedQuestions,
       timedOut: false,
     };

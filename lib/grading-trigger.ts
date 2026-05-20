@@ -1,6 +1,8 @@
 import {
   autoGradeSession,
   listQuestionsToGrade,
+  listCaseQuestionsForSummary,
+  isAssignmentGradingSession,
   markObjectiveOnlyGradingDone,
 } from "@/lib/grading";
 import { logError } from "@/lib/logger";
@@ -149,7 +151,8 @@ export async function triggerGradingIfNeeded(
 
     if (
       gradingProgress?.status === "completed" &&
-      gradingProgress.phase === "objective_only_done"
+      gradingProgress.phase === "objective_only_done" &&
+      hasRealSummary
     ) {
       return { queued: false, reason: "already_graded" };
     }
@@ -197,16 +200,39 @@ export async function triggerGradingIfNeeded(
     });
   }
 
-  if (typeof firstQIdx !== "number") {
-    await markObjectiveOnlyGradingDone(sessionId, {
-      total: objectiveTotal,
-      completed: 0,
-      failed: 0,
-    });
-    return { queued: false, reason: "objective_only_done" };
-  }
+  let firstPhase:
+    | { sessionId: string; phase: "grade_question"; qIdx: number }
+    | { sessionId: string; phase: "question_summary"; qIdx: number }
+    | { sessionId: string; phase: "session_summary" };
 
-  const firstPhase = { sessionId, phase: "grade_question" as const, qIdx: firstQIdx };
+  if (typeof firstQIdx === "number") {
+    firstPhase = { sessionId, phase: "grade_question", qIdx: firstQIdx };
+  } else {
+    const isAssignment = await isAssignmentGradingSession(sessionId);
+    if (isAssignment) {
+      await markObjectiveOnlyGradingDone(sessionId, {
+        total: objectiveTotal,
+        completed: 0,
+        failed: 0,
+      });
+      return { queued: false, reason: "objective_only_done" };
+    }
+
+    const caseIdxs = await listCaseQuestionsForSummary(sessionId);
+    if (caseIdxs.length === 0) {
+      await markObjectiveOnlyGradingDone(sessionId, {
+        total: objectiveTotal,
+        completed: 0,
+        failed: 0,
+      });
+      return { queued: false, reason: "objective_only_done" };
+    }
+    if (caseIdxs.length === 1) {
+      firstPhase = { sessionId, phase: "session_summary" };
+    } else {
+      firstPhase = { sessionId, phase: "question_summary", qIdx: caseIdxs[0] };
+    }
+  }
 
   if (isQStashEnabled()) {
     const publish = await enqueueGradingPhase(firstPhase);

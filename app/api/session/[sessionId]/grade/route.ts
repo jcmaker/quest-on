@@ -371,7 +371,8 @@ export async function GET(
     let overallScore = null;
     if (grades && grades.length > 0) {
       const validGrades = (grades as Array<Record<string, unknown>>).filter(
-        (g) => g.grade_type !== "ai_failed"
+        (g) =>
+          g.grade_type !== "ai_failed" && g.grade_type !== "ai_summary"
       );
       if (validGrades.length > 0) {
         const totalScore = validGrades.reduce(

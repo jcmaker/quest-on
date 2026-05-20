@@ -11,9 +11,6 @@ import {
 } from "@/lib/validations";
 import { upsertGradesBySessionQuestion } from "@/lib/grades-upsert";
 import { requireCaseGradeAccess } from "@/lib/case-grade-access";
-import { triggerExamSummariesAfterCaseCommit } from "@/lib/grading";
-
-export const maxDuration = 120;
 
 export async function POST(
   request: NextRequest,
@@ -79,14 +76,7 @@ export async function POST(
       });
     }
 
-    const summaryResult = await triggerExamSummariesAfterCaseCommit(sessionId, qIdx);
-
-    return successJson({
-      ok: true,
-      qIdx,
-      score,
-      ...summaryResult,
-    });
+    return successJson({ ok: true, qIdx, score });
   } catch (error) {
     logError("case-grade commit POST handler error", error, {
       path: "/api/session/case-grade/commit",

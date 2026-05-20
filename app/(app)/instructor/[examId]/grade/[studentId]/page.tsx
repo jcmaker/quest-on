@@ -201,7 +201,6 @@ export default function GradeStudentPage({
 
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
   const [examStatsOpen, setExamStatsOpen] = useState<boolean>(true);
-  const [summaryCommitPending, setSummaryCommitPending] = useState(false);
   // Redirect non-instructors
   useEffect(() => {
     if (
@@ -518,6 +517,27 @@ export default function GradeStudentPage({
   // For now, we'll assume all messages are AI conversations during the exam
   const duringExamMessages = aiConversations;
 
+  const caseCount =
+    sessionData.exam?.questions?.filter(
+      (q: Question) => !isObjectiveQuestion(q.type),
+    ).length ?? 0;
+
+  const sessionSummary =
+    (sessionData.session.ai_summary as SummaryData | null) ?? null;
+  const hasSessionSummary =
+    !!sessionSummary &&
+    typeof sessionSummary.summary === "string" &&
+    sessionSummary.summary.trim().length > 0;
+
+  const gp = sessionData.gradingProgress;
+  const summaryLoading =
+    !hasSessionSummary &&
+    (gp?.status === "queued" ||
+      gp?.status === "running") &&
+    (gp?.phase === "session_summary" ||
+      gp?.phase === "qsummary" ||
+      gp?.phase === "grade");
+
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
       <InstructorChatSidebar
@@ -546,15 +566,6 @@ export default function GradeStudentPage({
                   grades={sessionData.grades}
                 />
               }
-            />
-          </div>
-
-          <div className="mb-6">
-            <AIOverallSummary
-              summary={
-                (sessionData.session.ai_summary as SummaryData | null) ?? null
-              }
-              loading={false}
             />
           </div>
 
@@ -1525,14 +1536,19 @@ export default function GradeStudentPage({
                     questionNumber={selectedQuestionIdx + 1}
                     initialScore={caseGradeInitialScore}
                     initialComment={caseGradeInitialComment}
-                    onCommitPendingChange={setSummaryCommitPending}
                   />
-                  <QuestionAiSummaryCard
-                    summary={currentGrade?.ai_summary ?? null}
-                    loading={
-                      summaryCommitPending && !currentGrade?.ai_summary
-                    }
+                  <AIOverallSummary
+                    summary={sessionSummary}
+                    loading={summaryLoading}
                   />
+                  {caseCount >= 2 && (
+                    <QuestionAiSummaryCard
+                      summary={currentGrade?.ai_summary ?? null}
+                      loading={
+                        summaryLoading && !currentGrade?.ai_summary
+                      }
+                    />
+                  )}
                 </>
               )}
 

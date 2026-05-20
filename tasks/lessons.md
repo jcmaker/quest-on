@@ -16,3 +16,6 @@
 - 루브릭·자동 서술형 채점을 제거할 때 DB 컬럼(`exams.rubric`)은 보존하고 런타임·출제 UI·프롬프트만 끊는다. 기존 데이터 무손실.
 - 제출 시 자동 채점은 `multiple-choice`/`true-false`만 큐잉하고, essay/case는 인스트럭터 `case-grade/chat` → `case-grade/commit` 경로로만 `grades`에 기록한다.
 - 시험 대시보드 집계는 무거운 analytics overview 대신 `GET /api/exam/[examId]/student-summaries` 한 엔드포인트로 MCQ/OX/서술 진행률을 계산한다.
+- 시험 채팅/답안 요약은 **제출 시 QStash phase**에서만 생성한다. `case-grade/commit`에서 `triggerExamSummariesAfterCaseCommit` 같은 재생성을 붙이지 않는다.
+- 문항별 요약 placeholder는 `grade_type: "ai_summary"`로 저장해 `overallScore`·`isCaseGraded`에 영향을 주지 않게 한다.
+- 강사 채점 UI: 세션 요약은 케이스 문항 사이드에서만, 문항별 카드는 `caseCount >= 2`일 때만.

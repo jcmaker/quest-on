@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   autoGradeSessionMock,
   listQuestionsToGradeMock,
+  listCaseQuestionsForSummaryMock,
+  isAssignmentGradingSessionMock,
   markObjectiveOnlyGradingDoneMock,
   enqueueGradingPhaseMock,
   isQStashEnabledMock,
@@ -11,6 +13,8 @@ const {
 } = vi.hoisted(() => ({
   autoGradeSessionMock: vi.fn(),
   listQuestionsToGradeMock: vi.fn(),
+  listCaseQuestionsForSummaryMock: vi.fn(),
+  isAssignmentGradingSessionMock: vi.fn(),
   markObjectiveOnlyGradingDoneMock: vi.fn(),
   enqueueGradingPhaseMock: vi.fn(),
   isQStashEnabledMock: vi.fn(),
@@ -23,6 +27,8 @@ const {
 vi.mock("@/lib/grading", () => ({
   autoGradeSession: autoGradeSessionMock,
   listQuestionsToGrade: listQuestionsToGradeMock,
+  listCaseQuestionsForSummary: listCaseQuestionsForSummaryMock,
+  isAssignmentGradingSession: isAssignmentGradingSessionMock,
   markObjectiveOnlyGradingDone: markObjectiveOnlyGradingDoneMock,
 }));
 
@@ -128,6 +134,8 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
       messageId: "m1",
     });
     listQuestionsToGradeMock.mockResolvedValue([0]);
+    listCaseQuestionsForSummaryMock.mockResolvedValue([]);
+    isAssignmentGradingSessionMock.mockResolvedValue(false);
     markObjectiveOnlyGradingDoneMock.mockResolvedValue(undefined);
   });
 
@@ -206,8 +214,9 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
     expect(enqueueGradingPhaseMock).toHaveBeenCalled();
   });
 
-  it("completes immediately when no objective questions need grading", async () => {
+  it("completes immediately when no objective and no case questions", async () => {
     listQuestionsToGradeMock.mockResolvedValue([]);
+    listCaseQuestionsForSummaryMock.mockResolvedValue([]);
     mockDb({
       gradeRows: [],
       sessionMeta: { ai_summary: null, grading_progress: null },
@@ -217,6 +226,23 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
 
     expect(result).toEqual({ queued: false, reason: "objective_only_done" });
     expect(enqueueGradingPhaseMock).not.toHaveBeenCalled();
+  });
+
+  it("queues session_summary when exam has one case question and no objective", async () => {
+    listQuestionsToGradeMock.mockResolvedValue([]);
+    listCaseQuestionsForSummaryMock.mockResolvedValue([0]);
+    mockDb({
+      gradeRows: [],
+      sessionMeta: { ai_summary: null, grading_progress: null },
+    });
+
+    const result = await triggerGradingIfNeeded("550e8400-e29b-41d4-a716-446655440000", "submit_exam");
+
+    expect(result).toEqual({ queued: true, reason: "qstash" });
+    expect(enqueueGradingPhaseMock).toHaveBeenCalledWith({
+      sessionId: "550e8400-e29b-41d4-a716-446655440000",
+      phase: "session_summary",
+    });
   });
 
   it("returns qstash_not_configured on Vercel when QStash is disabled", async () => {
