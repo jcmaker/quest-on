@@ -37,7 +37,7 @@ async function seedObjectiveOnlyExam() {
       prompt: "Which data structure follows LIFO?",
       ai_context: "",
       options: ["Queue", "Stack", "Tree", "Graph"],
-      answer: 1,
+      correctOptionIndex: 1,
     },
     {
       id: "q-obj-1",
@@ -52,7 +52,7 @@ async function seedObjectiveOnlyExam() {
         "Ordered Output Process",
         "Optional Output Pointer",
       ],
-      answer: 0,
+      correctOptionIndex: 0,
     },
   ];
 
@@ -100,7 +100,7 @@ async function seedMixedExam() {
         "Interface implementation",
         "Abstract class",
       ],
-      answer: 0,
+      correctOptionIndex: 0,
     },
   ];
 
@@ -140,7 +140,7 @@ async function seedObjectiveOnlyExamPreflight() {
       prompt: "Is the sky blue?",
       ai_context: "",
       options: ["Yes", "No"],
-      answer: 0,
+      correctOptionIndex: 0,
     },
   ];
 
@@ -184,7 +184,7 @@ async function seedMixedExamPreflight() {
       prompt: "Which of these is a base case pattern?",
       ai_context: "",
       options: ["n === 0", "n > 0", "n < 10", "n % 2 === 0"],
-      answer: 0,
+      correctOptionIndex: 0,
     },
   ];
 
@@ -368,6 +368,11 @@ test.describe("Student — Mixed Exam (essay + MCQ) UX", () => {
 
     // Chat UI should be restored on the essay question
     await expect(chatPresent.first()).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
+
+    // TODO(S2): Verify chat-history *content* preservation across MCQ navigation.
+    // useExamChat is mounted at page level so history survives unmount, but
+    // exercising the full path requires sending a chat message — which hits
+    // /api/chat (OpenAI). Add this once a chat-API mock fixture exists.
   });
 });
 
