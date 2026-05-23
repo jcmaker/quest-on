@@ -1487,6 +1487,22 @@ export default function GradeStudentPage({
             </div>
           )}
 
+          {/* 케이스 문제일 때: 시험 응시 데이터와 문제 사이에 채팅/답안 요약문 표시 */}
+          {!isObjectiveQuestion(currentQuestion?.type) && (
+            <div className="mb-6 space-y-4">
+              <AIOverallSummary
+                summary={sessionSummary}
+                loading={summaryLoading}
+              />
+              {caseCount >= 2 && (
+                <QuestionAiSummaryCard
+                  summary={currentGrade?.ai_summary ?? null}
+                  loading={summaryLoading && !currentGrade?.ai_summary}
+                />
+              )}
+            </div>
+          )}
+
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2 space-y-6">
               <QuestionPromptCard
@@ -1528,28 +1544,14 @@ export default function GradeStudentPage({
               )}
 
               {!isObjectiveQuestion(currentQuestion?.type) && (
-                <>
-                  <CaseGradingChat
-                    key={selectedQuestionIdx}
-                    sessionId={sessionData.session.id}
-                    qIdx={selectedQuestionIdx}
-                    questionNumber={selectedQuestionIdx + 1}
-                    initialScore={caseGradeInitialScore}
-                    initialComment={caseGradeInitialComment}
-                  />
-                  <AIOverallSummary
-                    summary={sessionSummary}
-                    loading={summaryLoading}
-                  />
-                  {caseCount >= 2 && (
-                    <QuestionAiSummaryCard
-                      summary={currentGrade?.ai_summary ?? null}
-                      loading={
-                        summaryLoading && !currentGrade?.ai_summary
-                      }
-                    />
-                  )}
-                </>
+                <CaseGradingChat
+                  key={selectedQuestionIdx}
+                  sessionId={sessionData.session.id}
+                  qIdx={selectedQuestionIdx}
+                  questionNumber={selectedQuestionIdx + 1}
+                  initialScore={caseGradeInitialScore}
+                  initialComment={caseGradeInitialComment}
+                />
               )}
 
               <QuickActionsCard
