@@ -8,7 +8,8 @@ import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { bulkGradeCommitSchema, validateRequest } from "@/lib/validations";
 import { upsertGradesBySessionQuestion } from "@/lib/grades-upsert";
 import { requireBulkGradeAccess } from "@/lib/bulk-grade-access";
-import { getSupabaseServer } from "@/lib/supabase-server";
+
+const COMMITTING_STALE_MS = 2 * 60 * 1000;
 
 export async function POST(
   request: NextRequest,
@@ -39,7 +40,7 @@ export async function POST(
     const access = await requireBulkGradeAccess(examId, user);
     if (!access.ok) return access.response;
 
-    const supabase = getSupabaseServer();
+    const supabase = access.ctx.supabase;
 
     // [QA CRITICAL] 2-step ownership check:
     // Step 1 — exam.instructor_id === user.id (done by requireBulkGradeAccess)
@@ -66,14 +67,17 @@ export async function POST(
       );
     }
 
-    // [QA HIGH-3 idempotency] — only commit if status is 'draft'
-    const { data: updatedSession, error: statusError } = await supabase
+    // Claim the commit before writing grades. The intermediate `committing`
+    // state prevents concurrent requests from writing competing grade payloads,
+    // while still allowing recovery if the process dies before `committed`.
+    const nowIso = new Date().toISOString();
+    const { data: claimedSession, error: statusError } = await supabase
       .from("exam_grading_sessions")
-      .update({ status: "committed", committed_at: new Date().toISOString() })
+      .update({ status: "committing", updated_at: nowIso })
       .eq("exam_id", examId)
       .eq("instructor_id", access.ctx.user.id)
       .eq("status", "draft")
-      .select("id")
+      .select("id, status")
       .maybeSingle();
 
     if (statusError) {
@@ -83,9 +87,51 @@ export async function POST(
       return errorJson("INTERNAL_ERROR", "Failed to update grading session", 500);
     }
 
-    if (!updatedSession) {
-      // Already committed — idempotent response
-      return successJson({ ok: true, gradedCount: grades.length, alreadyCommitted: true });
+    if (!claimedSession) {
+      const { data: existingSession, error: existingError } = await supabase
+        .from("exam_grading_sessions")
+        .select("id, status, updated_at")
+        .eq("exam_id", examId)
+        .eq("instructor_id", access.ctx.user.id)
+        .maybeSingle();
+
+      if (existingError) {
+        logError("bulk-grade commit: status read failed", existingError, {
+          path: `/api/exam/${examId}/bulk-grade/commit`,
+        });
+        return errorJson("INTERNAL_ERROR", "Failed to read grading session", 500);
+      }
+
+      if (!existingSession || existingSession.status === "committed") {
+        return successJson({ ok: true, gradedCount: grades.length, alreadyCommitted: true });
+      }
+
+      if (existingSession.status === "committing") {
+        const updatedAt = existingSession.updated_at
+          ? new Date(existingSession.updated_at as string).getTime()
+          : 0;
+        const isStale = !Number.isFinite(updatedAt) ||
+          Date.now() - updatedAt > COMMITTING_STALE_MS;
+
+        if (!isStale) {
+          return errorJson("COMMIT_IN_PROGRESS", "Bulk grade commit is already in progress", 409);
+        }
+
+        const { data: reclaimedSession, error: reclaimError } = await supabase
+          .from("exam_grading_sessions")
+          .update({ updated_at: nowIso })
+          .eq("id", existingSession.id)
+          .eq("status", "committing")
+          .select("id, status")
+          .maybeSingle();
+
+        if (reclaimError || !reclaimedSession) {
+          logError("bulk-grade commit: stale committing reclaim failed", reclaimError, {
+            path: `/api/exam/${examId}/bulk-grade/commit`,
+          });
+          return errorJson("COMMIT_IN_PROGRESS", "Bulk grade commit is already in progress", 409);
+        }
+      }
     }
 
     // Upsert grades
@@ -103,11 +149,39 @@ export async function POST(
       grade_type: "manual",
     }));
 
-    await upsertGradesBySessionQuestion(
-      supabase as never,
-      gradeRows,
-      "bulk_grade_commit",
-    );
+    try {
+      await upsertGradesBySessionQuestion(
+        supabase as never,
+        gradeRows,
+        "bulk_grade_commit",
+      );
+    } catch (upsertError) {
+      await supabase
+        .from("exam_grading_sessions")
+        .update({ status: "draft", updated_at: new Date().toISOString() })
+        .eq("exam_id", examId)
+        .eq("instructor_id", access.ctx.user.id)
+        .eq("status", "committing");
+      throw upsertError;
+    }
+
+    const { error: commitError } = await supabase
+      .from("exam_grading_sessions")
+      .update({
+        status: "committed",
+        committed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("exam_id", examId)
+      .eq("instructor_id", access.ctx.user.id)
+      .eq("status", "committing");
+
+    if (commitError) {
+      logError("bulk-grade commit: final status update failed", commitError, {
+        path: `/api/exam/${examId}/bulk-grade/commit`,
+      });
+      return errorJson("INTERNAL_ERROR", "Failed to finalize grading session", 500);
+    }
 
     try {
       await auditLog({

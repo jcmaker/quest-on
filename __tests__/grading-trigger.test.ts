@@ -181,6 +181,28 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
     expect(enqueueGradingPhaseMock).toHaveBeenCalled();
   });
 
+  it("skips completed objective-only sessions even without a real summary", async () => {
+    mockDb({
+      gradeRows: [{ grade_type: "auto" }],
+      sessionMeta: {
+        ai_summary: null,
+        grading_progress: {
+          status: "completed",
+          phase: "objective_only_done",
+          updated_at: new Date().toISOString(),
+        },
+      },
+    });
+
+    const result = await triggerGradingIfNeeded(
+      "550e8400-e29b-41d4-a716-446655440000",
+      "heartbeat"
+    );
+
+    expect(result).toEqual({ queued: false, reason: "already_graded" });
+    expect(enqueueGradingPhaseMock).not.toHaveBeenCalled();
+  });
+
   it("skips when grading_progress is actively running and fresh", async () => {
     mockDb({
       gradeRows: [],

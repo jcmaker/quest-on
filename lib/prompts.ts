@@ -2372,12 +2372,21 @@ export function buildAssignmentGradingPrompt(params: {
 Quest-On 리서치 과제는 최종 보고서나 완성 답안을 평가하는 과제가 아니다.
 학생은 별도의 최종 산출물을 제출하지 않는다.
 평가 대상은 학생이 AI와 대화하며 리서치를 진행한 과정이다.
+이 과제는 채팅 기반 리서치 과제이며, 학생-AI 채팅/리서치 과정과 타임어택 퀴즈 이해 신호를 함께 참고한다.
+AI 채팅 기록 자체가 평가 자료다.
 
 따라서 학생이 최종 답안을 잘 썼는지, 문서 형태로 정리했는지, 보고서 구조를 갖췄는지를 평가해서는 안 된다.
 학생의 질문 흐름, 후속 질문의 질, 개념 이해 과정, 리서치 범위 탐색, AI 답변에 대한 반응과 검증 시도를 중심으로 평가해야 한다.
 
 ${examTitle ? `과제 제목: ${sanitizeForPrompt(examTitle, "title")}` : ""}
 ${assignmentPrompt ? `과제 설명: ${sanitizeForPrompt(assignmentPrompt, "question")}` : ""}
+${rubricText ? `평가 기준:\n${rubricText}` : ""}
+
+등급 스케일은 우수 / 평범 / 미흡 세 단계만 사용한다.
+- 우수: 85
+- 평범: 70
+- 미흡: 45
+overall_score는 반드시 85, 70, 45 중 하나만 반환하세요.
 
 
 ## 핵심 평가 관점

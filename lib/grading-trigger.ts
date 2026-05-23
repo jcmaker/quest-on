@@ -151,8 +151,7 @@ export async function triggerGradingIfNeeded(
 
     if (
       gradingProgress?.status === "completed" &&
-      gradingProgress.phase === "objective_only_done" &&
-      hasRealSummary
+      gradingProgress.phase === "objective_only_done"
     ) {
       return { queued: false, reason: "already_graded" };
     }

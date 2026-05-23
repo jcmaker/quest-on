@@ -17,6 +17,7 @@ import {
   summarizeAiDependencyAssessments,
   isObjectiveQuestion,
   gradeObjectiveAnswer,
+  formatSummaryScoreLabel,
   type DecompressionWarning,
   type NormalizedQuestion,
 } from "@/lib/grading-helpers";
@@ -106,6 +107,8 @@ interface GradeResult {
   comment: string;
   stage_grading?: StageGrading;
   ai_summary?: QuestionSummaryData | null;
+  /** Case/essay question submitted but not manually graded yet. */
+  ungraded?: boolean;
 }
 
 interface FailedGradeResult {
@@ -1083,22 +1086,6 @@ export async function generateOneQuestionSummary(
     throw new Error(`Failed to fetch grade: ${gradeErr.message}`);
   }
 
-  const ctx = await loadPhaseContext(sessionId, supabase);
-  const question = ctx.questionsToGrade.find((q) => q.idx === qIdx);
-  if (!question) {
-    return { skipped: true, generated: false };
-  }
-
-  // 객관식/OX 는 결정론적으로 채점되며 요약할 채팅이 없다 — 요약 단계 생략.
-  if (isObjectiveQuestion(question.type)) {
-    return { skipped: true, generated: false };
-  }
-
-  const submission = ctx.submissionsByQuestion[qIdx];
-  if (!submission) {
-    return { skipped: true, generated: false };
-  }
-
   const typedGrade = gradeRow as {
     q_idx: number;
     score: number;
@@ -1112,6 +1099,22 @@ export async function generateOneQuestionSummary(
     return { skipped: true, generated: false };
   }
   if (typedGrade?.grade_type === "ai_failed") {
+    return { skipped: true, generated: false };
+  }
+
+  const ctx = await loadPhaseContext(sessionId, supabase);
+  const question = ctx.questionsToGrade.find((q) => q.idx === qIdx);
+  if (!question) {
+    return { skipped: true, generated: false };
+  }
+
+  // 객관식/OX 는 결정론적으로 채점되며 요약할 채팅이 없다 — 요약 단계 생략.
+  if (isObjectiveQuestion(question.type)) {
+    return { skipped: true, generated: false };
+  }
+
+  const submission = ctx.submissionsByQuestion[qIdx];
+  if (!submission) {
     return { skipped: true, generated: false };
   }
 
@@ -1269,6 +1272,7 @@ export async function generateSessionSummaryPhase(
         q_idx: qIdx,
         score: 0,
         comment: "",
+        ungraded: true,
       }));
     } else {
       const fallback = {
@@ -1521,7 +1525,7 @@ async function generateSummary(
   sessionId: string,
   studentId: string,
   exam: { id: string; title: string; rubric?: unknown },
-  questions: Array<{ idx: number; prompt?: string; ai_context?: string }>,
+  questions: Array<{ idx: number; prompt?: string; ai_context?: string; type?: string }>,
   submissionsByQuestion: Record<number, { answer: string }>,
   messagesByQuestion: Record<number, Array<{ role: string; content: string }>>,
   grades: GradeResult[],
@@ -1577,7 +1581,13 @@ ${q.prompt || ""}
 ${submission?.answer || "답안 없음"}
 ${chatHistoryText}
 
-점수: ${grade?.score || 0}점
+점수: ${formatSummaryScoreLabel({
+  score: grade?.score,
+  ungraded: grade?.ungraded,
+  hasSubmission: !!submission,
+  questionType: q.type,
+  isAssignment,
+})}
 ${grade?.stage_grading?.chat ? `채팅 단계 점수: ${grade.stage_grading.chat.score}점` : ""}
 ${grade?.stage_grading?.answer ? `답안 단계 점수: ${grade.stage_grading.answer.score}점` : ""}
 ${

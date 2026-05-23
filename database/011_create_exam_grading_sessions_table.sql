@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS public.exam_grading_sessions (
   instructor_id   text        NOT NULL,
   proposed_grades jsonb       NOT NULL DEFAULT '{}',
   status          text        NOT NULL DEFAULT 'draft'
-                              CHECK (status IN ('draft', 'committed')),
+                              CHECK (status IN ('draft', 'committing', 'committed')),
   committed_at    timestamptz,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),

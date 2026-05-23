@@ -244,6 +244,24 @@ export function gradeObjectiveAnswer(params: {
   return { score, comment, selectedIndex };
 }
 
+/** Format the score label used inside session-summary prompts. */
+export function formatSummaryScoreLabel(params: {
+  score?: number;
+  ungraded?: boolean;
+  hasSubmission: boolean;
+  questionType?: string;
+  isAssignment?: boolean;
+}): string {
+  const isUngradedCase =
+    !params.isAssignment &&
+    params.hasSubmission &&
+    !isObjectiveQuestion(params.questionType) &&
+    (params.ungraded || params.score === undefined);
+
+  if (isUngradedCase) return "미채점";
+  return `${params.score ?? 0}점`;
+}
+
 /** Calculate weighted score from chat and answer stages. */
 export function calculateWeightedScore(
   stageGrading: {

@@ -8,6 +8,7 @@ import {
   calculateAiDependencyPenalty,
   analyzeAiDependency,
   summarizeAiDependencyAssessments,
+  formatSummaryScoreLabel,
 } from "@/lib/grading-helpers";
 
 describe("selectBestSubmission", () => {
@@ -304,6 +305,47 @@ describe("analyzeAiDependency", () => {
     expect(assessment.recoveryObserved).toBe(true);
     expect(assessment.recoveryEvidence.length).toBeGreaterThan(0);
     expect(["low", "medium"]).toContain(assessment.overallRisk);
+  });
+});
+
+describe("formatSummaryScoreLabel", () => {
+  it("uses 미채점 for submitted case questions without a grade", () => {
+    expect(
+      formatSummaryScoreLabel({
+        hasSubmission: true,
+        questionType: "essay",
+      })
+    ).toBe("미채점");
+  });
+
+  it("uses 미채점 for explicit ungraded case placeholders", () => {
+    expect(
+      formatSummaryScoreLabel({
+        score: 0,
+        ungraded: true,
+        hasSubmission: true,
+        questionType: "short-answer",
+      })
+    ).toBe("미채점");
+  });
+
+  it("keeps a real manual zero distinct from ungraded", () => {
+    expect(
+      formatSummaryScoreLabel({
+        score: 0,
+        hasSubmission: true,
+        questionType: "essay",
+      })
+    ).toBe("0점");
+  });
+
+  it("does not mark missing objective grades as case 미채점", () => {
+    expect(
+      formatSummaryScoreLabel({
+        hasSubmission: true,
+        questionType: "multiple-choice",
+      })
+    ).toBe("0점");
   });
 });
 
