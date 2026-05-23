@@ -67,16 +67,26 @@ export async function POST(
       );
     }
 
-    // Claim the commit before writing grades. The intermediate `committing`
-    // state prevents concurrent requests from writing competing grade payloads,
-    // while still allowing recovery if the process dies before `committed`.
+    // [HIGH-1] Block commit while grading is in progress
+    const { data: currentSession } = await supabase
+      .from("exam_grading_sessions")
+      .select("status")
+      .eq("exam_id", examId)
+      .eq("instructor_id", access.ctx.user.id)
+      .maybeSingle();
+
+    if (currentSession?.status === "grading") {
+      return errorJson("CONFLICT", "채점이 진행 중입니다. 완료 후 확정하세요.", 409);
+    }
+
+    // Claim the commit before writing grades.
     const nowIso = new Date().toISOString();
     const { data: claimedSession, error: statusError } = await supabase
       .from("exam_grading_sessions")
       .update({ status: "committing", updated_at: nowIso })
       .eq("exam_id", examId)
       .eq("instructor_id", access.ctx.user.id)
-      .eq("status", "draft")
+      .in("status", ["draft", "grading_done"])
       .select("id, status")
       .maybeSingle();
 

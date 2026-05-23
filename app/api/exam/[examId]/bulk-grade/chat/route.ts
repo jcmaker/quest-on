@@ -1,4 +1,4 @@
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 import { NextRequest } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
@@ -13,18 +13,11 @@ import {
   buildAiTextMetadata,
   callTrackedChatCompletion,
 } from "@/lib/ai-tracking";
-import {
-  loadExamCaseData,
-  parseGradesFromAiResponse,
-  buildProposedGradesMap,
-  estimateTokenCount,
-} from "@/lib/bulk-grading";
-import { buildBulkGradingSystemPrompt } from "@/lib/prompts";
+import { loadExamMetaOnly } from "@/lib/bulk-grading";
+import { buildCriteriaDiscussionSystemPrompt } from "@/lib/prompts";
 import { getSupabaseServer } from "@/lib/supabase-server";
 
-const BULK_GRADE_CHAT_RATE_LIMIT = { limit: 5, windowSec: 60 };
-const GPT4O_MAX_TOKENS = 128_000;
-const CONTEXT_WARN_RATIO = 0.7;
+const BULK_GRADE_CHAT_RATE_LIMIT = { limit: 10, windowSec: 60 };
 
 export async function POST(
   request: NextRequest,
@@ -57,27 +50,17 @@ export async function POST(
 
     const supabase = getSupabaseServer();
 
-    // Load all student case data
-    let examCaseData;
+    // Load exam meta (no student data — fast)
+    let examMeta;
     try {
-      examCaseData = await loadExamCaseData(supabase, examId);
-    } catch (err) {
-      logError("bulk-grade chat: loadExamCaseData failed", err, {
-        path: `/api/exam/${examId}/bulk-grade/chat`,
-      });
+      examMeta = await loadExamMetaOnly(supabase, examId);
+    } catch {
       return errorJson("INTERNAL_ERROR", "Failed to load exam data", 500);
     }
 
-    if (examCaseData.caseQuestions.length === 0) {
+    if (examMeta.caseQuestions.length === 0) {
       return errorJson("VALIDATION_ERROR", "채점할 케이스 문제가 없습니다.", 400);
     }
-
-    if (examCaseData.students.length === 0) {
-      return errorJson("VALIDATION_ERROR", "채점할 학생 답안이 없습니다.", 400);
-    }
-
-    const validSessionIds = new Set(examCaseData.students.map((s) => s.sessionId));
-    const validQIdxes = new Set(examCaseData.caseQuestions.map((q) => q.qIdx));
 
     // Upsert grading session
     const { data: gradingSession, error: upsertError } = await supabase
@@ -91,18 +74,14 @@ export async function POST(
         },
         { onConflict: "exam_id,instructor_id" },
       )
-      .select("id, proposed_grades")
+      .select("id, status")
       .single();
 
     if (upsertError || !gradingSession) {
-      logError("bulk-grade chat: session upsert failed", upsertError, {
-        path: `/api/exam/${examId}/bulk-grade/chat`,
-      });
       return errorJson("INTERNAL_ERROR", "Failed to initialize grading session", 500);
     }
 
     const gradingSessionId = gradingSession.id as string;
-    const currentProposedGrades = (gradingSession.proposed_grades ?? {}) as Record<string, unknown>;
 
     // Save user message
     const { error: userMsgError } = await supabase
@@ -115,149 +94,92 @@ export async function POST(
       });
 
     if (userMsgError) {
-      logError("bulk-grade chat: save user message failed", userMsgError, {
-        path: `/api/exam/${examId}/bulk-grade/chat`,
-      });
       return errorJson("INTERNAL_ERROR", "Failed to save message", 500);
     }
 
-    // Load chat history for OpenAI context
+    // Load chat history
     const { data: historyRows } = await supabase
       .from("bulk_grading_messages")
       .select("role, content")
       .eq("session_id", gradingSessionId)
       .order("created_at", { ascending: true });
 
-    const systemPrompt = buildBulkGradingSystemPrompt({
-      examTitle: examCaseData.examTitle,
-      examDescription: examCaseData.examDescription,
-      caseQuestions: examCaseData.caseQuestions,
-      students: examCaseData.students,
-      language: examCaseData.examLanguage,
+    // Build criteria discussion prompt (no student data)
+    const systemPrompt = buildCriteriaDiscussionSystemPrompt({
+      examTitle: examMeta.examTitle,
+      examDescription: examMeta.examDescription,
+      caseQuestions: examMeta.caseQuestions,
+      language: examMeta.examLanguage,
     });
-
-    // Token pre-check
-    const estimatedTokens = estimateTokenCount(systemPrompt);
-    if (estimatedTokens > GPT4O_MAX_TOKENS * CONTEXT_WARN_RATIO) {
-      return errorJson(
-        "CONTEXT_TOO_LARGE",
-        `학생 수 또는 답안 길이가 너무 많습니다 (추정 ${estimatedTokens.toLocaleString()} 토큰). 시험을 분리하거나 답안 수를 줄이세요.`,
-        413,
-      );
-    }
 
     const openAiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
       { role: "system", content: systemPrompt },
     ];
-
     for (const row of historyRows ?? []) {
       if (row.role === "user" || row.role === "assistant") {
         openAiMessages.push({ role: row.role, content: row.content as string });
       }
     }
 
-    // Call OpenAI
-    let aiContent: string;
-    try {
-      const tracked = await callTrackedChatCompletion(
-        () =>
-          getOpenAI().chat.completions.create({
-            model: AI_MODEL,
-            messages: openAiMessages,
-            max_completion_tokens: 4000,
-          }),
-        {
-          feature: "bulk_grading_chat",
-          route: `/api/exam/${examId}/bulk-grade/chat`,
+    const tracked = await callTrackedChatCompletion(
+      () =>
+        getOpenAI().chat.completions.create({
           model: AI_MODEL,
-          userId: access.ctx.user.id,
-          examId,
-          metadata: buildAiTextMetadata({
-            inputText: [systemPrompt, message],
-            extra: { studentCount: examCaseData.students.length },
+          messages: openAiMessages,
+          max_completion_tokens: 2000,
+        }),
+      {
+        feature: "bulk_grading_chat",
+        route: `/api/exam/${examId}/bulk-grade/chat`,
+        model: AI_MODEL,
+        userId: access.ctx.user.id,
+        examId,
+        metadata: buildAiTextMetadata({ inputText: [systemPrompt, message] }),
+      },
+      {
+        metadataBuilder: (result) =>
+          buildAiTextMetadata({
+            outputText:
+              (result as { choices?: Array<{ message?: { content?: string | null } }> })
+                .choices?.[0]?.message?.content ?? null,
           }),
-        },
-        {
-          metadataBuilder: (result) =>
-            buildAiTextMetadata({
-              outputText:
-                (
-                  result as {
-                    choices?: Array<{ message?: { content?: string | null } }>;
-                  }
-                ).choices?.[0]?.message?.content ?? null,
-            }),
-        },
-      );
+      },
+    );
 
-      aiContent = tracked.data.choices[0]?.message?.content?.trim() || "";
-    } catch (err) {
-      const errMessage = err instanceof Error ? err.message : "";
-      if (errMessage.includes("context_length_exceeded")) {
-        return errorJson(
-          "CONTEXT_TOO_LARGE",
-          "학생 답안이 너무 많아 AI가 처리할 수 없습니다. 학생 수가 많은 경우 시험을 분리해 채점하세요.",
-          413,
-        );
-      }
-      logError("bulk-grade chat: OpenAI call failed", err, {
-        path: `/api/exam/${examId}/bulk-grade/chat`,
-      });
-      return errorJson("INTERNAL_ERROR", "AI 응답을 받지 못했습니다. 다시 시도해주세요.", 500);
-    }
-
+    const aiContent = tracked.data.choices[0]?.message?.content?.trim() ?? "";
     if (!aiContent) {
-      return errorJson("INTERNAL_ERROR", "AI 응답이 비어있습니다. 다시 시도해주세요.", 500);
+      return errorJson("INTERNAL_ERROR", "AI 응답을 받지 못했습니다.", 500);
     }
 
-    // Parse grades from AI response
-    const parsedGrades = parseGradesFromAiResponse(aiContent, validSessionIds, validQIdxes);
-    const proposedGrades = parsedGrades
-      ? buildProposedGradesMap(parsedGrades)
-      : (currentProposedGrades as ReturnType<typeof buildProposedGradesMap>);
+    // Save assistant message
+    const { data: assistantRow, error: assistantError } = await supabase
+      .from("bulk_grading_messages")
+      .insert({
+        session_id: gradingSessionId,
+        role: "assistant",
+        content: aiContent,
+        created_by: access.ctx.user.id,
+      })
+      .select("id, role, content")
+      .single();
 
-    // Save assistant message + update proposed_grades
-    const [assistantMsgResult] = await Promise.all([
-      supabase
-        .from("bulk_grading_messages")
-        .insert({
-          session_id: gradingSessionId,
-          role: "assistant",
-          content: aiContent,
-          created_by: access.ctx.user.id,
-        })
-        .select("id, role, content")
-        .single(),
-      supabase
-        .from("exam_grading_sessions")
-        .update({
-          proposed_grades: proposedGrades,
-          status: "draft",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", gradingSessionId),
-    ]);
-
-    if (assistantMsgResult.error || !assistantMsgResult.data) {
-      logError("bulk-grade chat: save assistant message failed", assistantMsgResult.error, {
+    if (assistantError || !assistantRow) {
+      logError("bulk-grade chat: save assistant message failed", assistantError, {
         path: `/api/exam/${examId}/bulk-grade/chat`,
       });
       return errorJson("INTERNAL_ERROR", "Failed to save assistant message", 500);
     }
 
-    const warning =
-      examCaseData.students.length > 40
-        ? `학생 수가 ${examCaseData.students.length}명으로 많아 채점에 시간이 걸렸습니다.`
-        : null;
+    // canStartGrading: at least one user+assistant exchange
+    const canStartGrading = (historyRows?.length ?? 0) >= 2;
 
     return successJson({
       assistantMessage: {
-        id: assistantMsgResult.data.id,
-        role: assistantMsgResult.data.role,
-        content: assistantMsgResult.data.content,
+        id: assistantRow.id,
+        role: assistantRow.role,
+        content: assistantRow.content,
       },
-      proposedGrades: parsedGrades ? proposedGrades : null,
-      warning,
+      canStartGrading,
     });
   } catch (error) {
     logError("bulk-grade chat POST handler error", error, {

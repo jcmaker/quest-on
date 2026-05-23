@@ -26,6 +26,12 @@ type ChatMessage = {
   created_at?: string;
 };
 
+type BulkGradeProgress = {
+  total: number;
+  completed: number;
+  failed: number;
+};
+
 type BulkGradeSession = {
   id: string;
   proposed_grades: Record<string, Record<number, { score: number; comment: string }>>;
@@ -33,6 +39,7 @@ type BulkGradeSession = {
   committed_at: string | null;
   updated_at: string;
   messages: ChatMessage[];
+  progress?: BulkGradeProgress;
 };
 
 type SessionData = {
@@ -68,9 +75,11 @@ export function BulkGradingPanel({
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
-  // editedGrades: local overrides (inline editing). Starts from proposedGrades on each AI response.
   const [editedGrades, setEditedGrades] = useState<ProposedGradesMap | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [canStartGrading, setCanStartGrading] = useState(false);
+  // Track grading state for polling — initialized from server data
+  const [isGradingActive, setIsGradingActive] = useState(false);
 
   const { data, isLoading } = useQuery<SessionData>({
     queryKey: qk.instructor.bulkGradeSession(examId),
@@ -84,13 +93,24 @@ export function BulkGradingPanel({
     },
     enabled: open && !!examId,
     staleTime: 0,
+    refetchInterval: isGradingActive ? 3000 : false,
   });
+
+  const sessionStatus = data?.session?.status ?? null;
+  const isGrading = sessionStatus === "grading";
+  const gradingDone = sessionStatus === "grading_done";
+  const progress = data?.session?.progress;
+
+  // Sync polling state with server status
+  useEffect(() => {
+    setIsGradingActive(isGrading);
+  }, [isGrading]);
 
   const messages = useMemo<ChatMessage[]>(() => {
     return data?.session?.messages ?? [];
   }, [data]);
 
-  // Restore editedGrades from server on load (if session exists)
+  // Restore editedGrades from server on load
   useEffect(() => {
     if (data?.session?.proposed_grades && editedGrades === null) {
       const serverGrades = data.session.proposed_grades as ProposedGradesMap;
@@ -120,25 +140,36 @@ export function BulkGradingPanel({
       }
       return res.json() as Promise<{
         assistantMessage: { id: string; role: string; content: string };
-        proposedGrades: ProposedGradesMap | null;
-        warning: string | null;
+        canStartGrading: boolean;
+        warning?: string | null;
       }>;
     },
     onSuccess: (result) => {
       setInput("");
-      if (result.proposedGrades) {
-        setEditedGrades(result.proposedGrades);
-      } else {
-        toast("AI가 채점 형식을 만들지 못했습니다. 채점 기준을 더 구체적으로 입력해 보세요.", {
-          icon: "⚠️",
-        });
-      }
-      if (result.warning) {
-        setWarning(result.warning);
-      }
+      if (result.canStartGrading) setCanStartGrading(true);
+      if (result.warning) setWarning(result.warning);
       queryClient.invalidateQueries({
         queryKey: qk.instructor.bulkGradeSession(examId),
       });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const startGradingMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/exam/${examId}/bulk-grade/start`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(err, "채점 시작에 실패했습니다.", res.status));
+      }
+      return res.json() as Promise<{ ok: boolean; total: number }>;
+    },
+    onSuccess: (result) => {
+      toast.success(`${result.total}명 학생 채점을 시작했습니다.`);
+      setIsGradingActive(true);
+      queryClient.invalidateQueries({ queryKey: qk.instructor.bulkGradeSession(examId) });
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -233,15 +264,55 @@ export function BulkGradingPanel({
           <div className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
             <SheetTitle>AI 일괄 채점</SheetTitle>
-          </div>
-          <p className="text-sm text-muted-foreground">
-            채점 기준을 입력하면 모든 학생의 케이스 문제를 AI가 일괄 채점합니다.
             {data?.studentCount != null && (
-              <span className="ml-1 font-medium">
+              <span className="text-sm text-muted-foreground font-normal">
                 (대상: {data.studentCount}명)
               </span>
             )}
-          </p>
+          </div>
+
+          {/* 단계 인디케이터 */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className={!isGrading && !gradingDone ? "text-primary font-medium" : ""}>
+              ① 기준 논의
+            </span>
+            <span>→</span>
+            <span className={isGrading ? "text-primary font-medium" : gradingDone ? "text-green-600 font-medium" : ""}>
+              {isGrading ? "② 채점 진행 중" : gradingDone ? "② 채점 완료" : "② 채점"}
+            </span>
+            <span>→</span>
+            <span className={sessionStatus === "committed" ? "text-green-600 font-medium" : ""}>
+              ③ 확정
+            </span>
+          </div>
+
+          {/* 진행률 bar */}
+          {isGrading && progress && progress.total > 0 && (
+            <div className="space-y-1 pt-1">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>채점 진행 중…</span>
+                <span>{progress.completed}/{progress.total} 학생</span>
+              </div>
+              <div className="h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-500"
+                  style={{
+                    width: `${Math.round((progress.completed / Math.max(progress.total, 1)) * 100)}%`,
+                  }}
+                />
+              </div>
+              {progress.failed > 0 && (
+                <p className="text-xs text-amber-600">{progress.failed}명 채점 실패 (재시도 중)</p>
+              )}
+            </div>
+          )}
+
+          {gradingDone && progress && progress.failed > 0 && (
+            <p className="text-xs text-amber-600">
+              ⚠️ {progress.failed}명 채점 실패 — 해당 학생 점수가 빠져 있습니다.
+            </p>
+          )}
+
           {warning && (
             <p className="text-sm text-amber-600">⚠️ {warning}</p>
           )}
@@ -400,7 +471,28 @@ export function BulkGradingPanel({
             </Button>
           </div>
 
-          {editedGrades && Object.keys(editedGrades).length > 0 && (
+          {/* 채점 시작 버튼: 기준 논의 후 draft 상태에서만 */}
+          {canStartGrading && !isGrading && !gradingDone && sessionStatus !== "committed" && (
+            <Button
+              type="button"
+              variant="default"
+              className="w-full"
+              onClick={() => startGradingMutation.mutate()}
+              disabled={startGradingMutation.isPending || chatMutation.isPending}
+            >
+              {startGradingMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  채점 준비 중…
+                </>
+              ) : (
+                `채점 시작 (${data?.studentCount ?? 0}명)`
+              )}
+            </Button>
+          )}
+
+          {/* 채점 확정: grading_done이거나 레거시 draft+proposed_grades */}
+          {editedGrades && Object.keys(editedGrades).length > 0 && !isGrading && (
             <Button
               type="button"
               className="w-full"

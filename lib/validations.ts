@@ -203,6 +203,12 @@ export const bulkGradeChatPostSchema = z.object({
   message: sanitizedString(z.string().min(1, "Message is required").max(10000)),
 });
 
+export const bulkGradeWorkerSchema = z.object({
+  gradingSessionId: z.string().uuid("Invalid gradingSessionId"),
+  studentSessionId: z.string().uuid("Invalid studentSessionId"),
+  examId: z.string().uuid("Invalid examId"),
+});
+
 export const bulkGradeCommitSchema = z.object({
   grades: z
     .array(

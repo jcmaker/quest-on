@@ -39,7 +39,7 @@ export async function GET(
         .not("submitted_at", "is", null),
       supabase
         .from("exam_grading_sessions")
-        .select("id, proposed_grades, status, committed_at, updated_at")
+        .select("id, proposed_grades, status, committed_at, updated_at, grading_total, grading_completed, grading_failed_count")
         .eq("exam_id", examId)
         .eq("instructor_id", access.ctx.user.id)
         .maybeSingle(),
@@ -82,6 +82,11 @@ export async function GET(
             committed_at: session.committed_at as string | null,
             updated_at: session.updated_at as string,
             messages,
+            progress: {
+              total: (session.grading_total as number) ?? 0,
+              completed: (session.grading_completed as number) ?? 0,
+              failed: (session.grading_failed_count as number) ?? 0,
+            },
           }
         : null,
       studentCount,

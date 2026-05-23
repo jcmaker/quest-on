@@ -304,3 +304,116 @@ export function buildProposedGradesMap(grades: ParsedGrade[]): ProposedGradesMap
 export function estimateTokenCount(text: string): number {
   return Math.ceil(text.length / 4);
 }
+
+// ─── loadExamMetaOnly ─────────────────────────────────────────────────────────
+
+export type ExamMeta = {
+  examId: string;
+  examTitle: string;
+  examDescription: string | null;
+  examLanguage: "ko" | "en";
+  caseQuestions: Array<{ qIdx: number; questionPrompt: string }>;
+};
+
+/**
+ * Lightweight exam metadata query — no student data.
+ * Used for criteria discussion chat (Phase A).
+ */
+export async function loadExamMetaOnly(
+  supabase: ReturnType<typeof getSupabaseServer>,
+  examId: string,
+): Promise<ExamMeta> {
+  const { data: exam, error } = await supabase
+    .from("exams")
+    .select("id, title, description, questions, language")
+    .eq("id", examId)
+    .single();
+
+  if (error || !exam) throw new Error("Exam not found");
+
+  const questions = normalizeQuestions(exam.questions);
+  const caseQuestions = questions
+    .filter((q) => !isObjectiveQuestion(q.type))
+    .map((q) => ({ qIdx: q.idx, questionPrompt: q.prompt ?? "" }));
+
+  return {
+    examId: exam.id as string,
+    examTitle: exam.title as string,
+    examDescription: (exam.description as string | null) ?? null,
+    examLanguage: (exam.language as string) === "en" ? "en" : "ko",
+    caseQuestions,
+  };
+}
+
+// ─── loadSingleStudentCaseData ────────────────────────────────────────────────
+
+/**
+ * Load one student's case answers and chat logs.
+ * Used by the QStash bulk grading worker (per-student).
+ */
+export async function loadSingleStudentCaseData(
+  supabase: ReturnType<typeof getSupabaseServer>,
+  studentSessionId: string,
+  caseQIdxes: number[],
+): Promise<BulkGradingStudentData> {
+  if (caseQIdxes.length === 0) {
+    return { studentName: "Unknown", sessionId: studentSessionId, answers: [] };
+  }
+
+  const [submissionsResult, messagesResult, sessionResult] = await Promise.all([
+    supabase
+      .from("submissions")
+      .select("session_id, q_idx, answer, compressed_answer_data, submitted_at, created_at, id")
+      .eq("session_id", studentSessionId)
+      .in("q_idx", caseQIdxes),
+    supabase
+      .from("messages")
+      .select("session_id, q_idx, role, content, compressed_content, created_at")
+      .eq("session_id", studentSessionId)
+      .in("q_idx", caseQIdxes)
+      .in("role", ["user", "ai"])
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("sessions")
+      .select("student_id")
+      .eq("id", studentSessionId)
+      .single(),
+  ]);
+
+  let studentName = `Student ${studentSessionId.slice(0, 8)}`;
+  if (sessionResult.data?.student_id) {
+    const { data: profile } = await supabase
+      .from("student_profiles")
+      .select("name")
+      .eq("student_id", sessionResult.data.student_id as string)
+      .maybeSingle();
+    if (profile?.name) studentName = profile.name as string;
+  }
+
+  const decompressedSubs = decompressSubmissions(
+    (submissionsResult.data ?? []) as Array<Record<string, unknown>>,
+  );
+  const decompressedMsgs = decompressMessages(
+    (messagesResult.data ?? []) as Array<Record<string, unknown>>,
+  );
+
+  const answers: BulkGradingAnswer[] = caseQIdxes.map((qIdx) => {
+    const sub = decompressedSubs[qIdx];
+    const msgs = decompressedMsgs[qIdx] ?? [];
+    const answer = sub?.answer ? sub.answer.slice(0, ANSWER_MAX_CHARS) : "";
+    const chatLines = msgs
+      .map((m) => {
+        const roleLabel = m.role === "user" ? "Student" : m.role === "ai" ? "AI" : m.role;
+        return `${roleLabel}: ${m.content}`;
+      })
+      .join("\n\n");
+    return {
+      qIdx,
+      questionPrompt: "",
+      answer,
+      chatSummary: chatLines.slice(0, CHAT_MAX_CHARS),
+    };
+  });
+
+  return { studentName, sessionId: studentSessionId, answers };
+}

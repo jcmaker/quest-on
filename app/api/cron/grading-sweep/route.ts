@@ -321,8 +321,38 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
   }
 
+  // Sweep stale bulk grading sessions (CRITICAL-3 보완)
+  let bulkSwept = 0;
+  try {
+    const bulkCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const { data: staleBulk } = await supabase
+      .from("exam_grading_sessions")
+      .select("id, grading_total, grading_completed, grading_failed_count")
+      .eq("status", "grading")
+      .lt("updated_at", bulkCutoff);
+
+    for (const row of staleBulk ?? []) {
+      const total = (row.grading_total as number) ?? 0;
+      const completed = (row.grading_completed as number) ?? 0;
+      const failed = (row.grading_failed_count as number) ?? 0;
+      if (total > 0 && completed + failed >= total) {
+        await supabase
+          .from("exam_grading_sessions")
+          .update({ status: "grading_done", updated_at: new Date().toISOString() })
+          .eq("id", row.id)
+          .eq("status", "grading");
+        bulkSwept++;
+      }
+    }
+  } catch (bulkErr) {
+    logError("[GRADING_SWEEP] Bulk session sweep failed", bulkErr, {
+      path: "/api/cron/grading-sweep",
+    });
+  }
+
   return NextResponse.json({
     swept: stuck.length,
+    bulkSwept,
     cutoff: cutoffIso,
     results,
   });
