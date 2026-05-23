@@ -71,6 +71,9 @@ export const qk = {
      */
     caseGradeChat: (sessionId: string, qIdx: number) =>
       ["instructor-case-grade-chat", sessionId, qIdx] as const,
+
+    bulkGradeSession: (examId: string) =>
+      ["instructor-bulk-grade-session", examId] as const,
   },
 
   student: {

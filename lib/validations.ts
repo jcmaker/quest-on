@@ -199,6 +199,28 @@ export const caseGradeCommitSchema = z.object({
   comment: z.string().max(5000).optional().transform((v) => (v ? sanitizeUserInput(v) : v)),
 });
 
+export const bulkGradeChatPostSchema = z.object({
+  message: sanitizedString(z.string().min(1, "Message is required").max(10000)),
+});
+
+export const bulkGradeCommitSchema = z.object({
+  grades: z
+    .array(
+      z.object({
+        session_id: z.string().uuid("Invalid session ID"),
+        q_idx: z.number().int().min(0),
+        score: z.number().int().min(0).max(100),
+        comment: z
+          .string()
+          .max(2000)
+          .optional()
+          .transform((v) => (v ? sanitizeUserInput(v) : v)),
+      }),
+    )
+    .min(1, "At least one grade is required")
+    .max(500, "Too many grades"),
+});
+
 // Supa route action schema
 export const supaActionSchema = z.object({
   action: z.string().min(1),

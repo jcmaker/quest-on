@@ -26,7 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, ChevronDown, ChevronUp, RefreshCw, Loader2, Eye, EyeOff, Download } from "lucide-react";
+import { Search, ChevronDown, ChevronUp, RefreshCw, Loader2, Eye, EyeOff, Download, Bot } from "lucide-react";
 import { StudentLiveMonitoring } from "@/components/instructor/StudentLiveMonitoring";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
@@ -40,6 +40,7 @@ import { buildInstructorExamContext } from "@/lib/instructor-utils";
 import { qk } from "@/lib/query-keys";
 import type { InstructorExam } from "@/lib/types/exam";
 import type { ExamStudentSummary } from "@/lib/types/student-summary";
+import { BulkGradingPanel } from "@/components/instructor/BulkGradingPanel";
 
 export default function ExamDetail({
   params,
@@ -52,6 +53,7 @@ export default function ExamDetail({
   const [monitoringStudent, setMonitoringStudent] = useState<ExamStudentSummary | null>(null);
   const [examInfoOpen, setExamInfoOpen] = useState(false);
   const [questionsOpen, setQuestionsOpen] = useState(false);
+  const [bulkGradingOpen, setBulkGradingOpen] = useState(false);
 
   const {
     exam,
@@ -157,6 +159,19 @@ export default function ExamDetail({
         s.caseProgress.graded < s.caseProgress.total
     );
   }, [students]);
+
+  const hasCaseQuestions = useMemo(() => {
+    if (!exam?.questions) return false;
+    const qs = Array.isArray(exam.questions) ? exam.questions : [];
+    return qs.some(
+      (q) => q.type !== "multiple-choice" && q.type !== "true-false",
+    );
+  }, [exam]);
+
+  const hasSubmittedStudents = useMemo(
+    () => students.some((s) => s.status === "submitted"),
+    [students],
+  );
 
   const handleExcelDownload = useCallback(() => {
     if (!exam) return;
@@ -387,6 +402,17 @@ export default function ExamDetail({
                 </SelectContent>
               </Select>
               <Button
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() => setBulkGradingOpen(true)}
+                disabled={!hasSubmittedStudents || !hasCaseQuestions}
+                title="AI 일괄 채점"
+              >
+                <Bot className="mr-1.5 h-4 w-4" />
+                AI 일괄 채점
+              </Button>
+              <Button
                 variant="ghost"
                 size="icon"
                 className="h-10 w-10 shrink-0"
@@ -484,6 +510,13 @@ export default function ExamDetail({
           )}
         </div>
       </SidebarInset>
+
+      <BulkGradingPanel
+        examId={exam.id}
+        open={bulkGradingOpen}
+        onOpenChange={setBulkGradingOpen}
+        onCommitted={() => void refetchSummaries()}
+      />
     </SidebarProvider>
   );
 }

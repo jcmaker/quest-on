@@ -1,0 +1,99 @@
+import { NextRequest } from "next/server";
+import { currentUser } from "@/lib/get-current-user";
+import { successJson, errorJson } from "@/lib/api-response";
+import { logError } from "@/lib/logger";
+import { validateUUID } from "@/lib/validate-params";
+import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { requireBulkGradeAccess } from "@/lib/bulk-grade-access";
+import { getSupabaseServer } from "@/lib/supabase-server";
+
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ examId: string }> },
+) {
+  try {
+    const { examId } = await params;
+    const invalidId = validateUUID(examId, "examId");
+    if (invalidId) return invalidId;
+
+    const user = await currentUser();
+
+    const rl = await checkRateLimitAsync(
+      `bulk-grade-load:${user?.id ?? "anon"}`,
+      RATE_LIMITS.sessionRead,
+    );
+    if (!rl.allowed) {
+      return errorJson("RATE_LIMITED", "Too many requests. Please wait.", 429);
+    }
+
+    const access = await requireBulkGradeAccess(examId, user);
+    if (!access.ok) return access.response;
+
+    const supabase = getSupabaseServer();
+
+    const [sessionResult, gradingSessionResult] = await Promise.all([
+      supabase
+        .from("sessions")
+        .select("id", { count: "exact", head: true })
+        .eq("exam_id", examId)
+        .not("submitted_at", "is", null),
+      supabase
+        .from("exam_grading_sessions")
+        .select("id, proposed_grades, status, committed_at, updated_at")
+        .eq("exam_id", examId)
+        .eq("instructor_id", access.ctx.user.id)
+        .maybeSingle(),
+    ]);
+
+    const studentCount = sessionResult.count ?? 0;
+
+    if (gradingSessionResult.error) {
+      logError("bulk-grade GET: grading session query failed", gradingSessionResult.error, {
+        path: `/api/exam/${examId}/bulk-grade`,
+      });
+      return errorJson("INTERNAL_ERROR", "Failed to load grading session", 500);
+    }
+
+    const session = gradingSessionResult.data;
+    let messages: Array<{ role: string; content: string; created_at: string }> = [];
+
+    if (session) {
+      const { data: msgs, error: msgsError } = await supabase
+        .from("bulk_grading_messages")
+        .select("role, content, created_at")
+        .eq("session_id", session.id)
+        .order("created_at", { ascending: true });
+
+      if (msgsError) {
+        logError("bulk-grade GET: messages query failed", msgsError, {
+          path: `/api/exam/${examId}/bulk-grade`,
+        });
+      } else {
+        messages = (msgs ?? []) as typeof messages;
+      }
+    }
+
+    return successJson({
+      session: session
+        ? {
+            id: session.id as string,
+            proposed_grades: session.proposed_grades as Record<string, unknown>,
+            status: session.status as string,
+            committed_at: session.committed_at as string | null,
+            updated_at: session.updated_at as string,
+            messages,
+          }
+        : null,
+      studentCount,
+      warning:
+        studentCount > 40
+          ? `학생 수가 ${studentCount}명으로 많아 처리 시간이 길 수 있습니다.`
+          : null,
+    });
+  } catch (error) {
+    logError("bulk-grade GET handler error", error, {
+      path: "/api/exam/bulk-grade",
+    });
+    return errorJson("INTERNAL_ERROR", "Internal server error", 500);
+  }
+}
