@@ -20,6 +20,15 @@ interface StudentExamScenarioOptions {
   withSubmissions?: boolean;
   withGrades?: boolean;
   withMessages?: boolean;
+  /**
+   * Whether the session should be seeded with preflight_accepted_at set.
+   * Default: true for sessions that have moved past the preflight stage
+   *   (waiting / in_progress / submitted), false otherwise (not_joined / joined).
+   * Pass `true` explicitly to skip the preflight modal in tests that simulate
+   * a session that has already accepted (e.g. "running exam reconciles a
+   * stale joined session and enters the live exam immediately").
+   */
+  preflightAccepted?: boolean;
 }
 
 /**
@@ -35,6 +44,7 @@ export async function seedStudentExamScenario(
     withSubmissions = false,
     withGrades = false,
     withMessages = false,
+    preflightAccepted,
   } = opts;
 
   const now = new Date().toISOString();
@@ -49,16 +59,18 @@ export async function seedStudentExamScenario(
 
   await seedStudentProfile("test-student-id");
 
+  const defaultPreflightAccepted =
+    sessionStatus !== "not_joined" && sessionStatus !== "joined";
+  const effectivePreflightAccepted =
+    preflightAccepted ?? defaultPreflightAccepted;
+
   const session = await seedSession(exam.id, "test-student-id", {
     status: sessionStatus,
     started_at:
       sessionStatus !== "not_joined" && sessionStatus !== "joined"
         ? now
         : null,
-    preflight_accepted_at:
-      sessionStatus !== "not_joined" && sessionStatus !== "joined"
-        ? now
-        : null,
+    preflight_accepted_at: effectivePreflightAccepted ? now : null,
     attempt_timer_started_at:
       sessionStatus === "in_progress" || sessionStatus === "submitted"
         ? now

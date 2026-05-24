@@ -314,7 +314,12 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
       started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
       attempt_timer_started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
     });
-    await seedSubmission(session.id, 0, { answer: "Timed-out answer draft" });
+    // Seed submissions for BOTH essay questions so the dev-fallback grading
+    // path runs per-question summaries (which create `grades` rows). With a
+    // single submission, autoGradeSession would skip per-question summaries
+    // and only update `sessions.ai_summary`, leaving `grades` empty.
+    await seedSubmission(session.id, 0, { answer: "Timed-out answer draft Q1" });
+    await seedSubmission(session.id, 1, { answer: "Timed-out answer draft Q2" });
 
     const res = await studentRequest.post("/api/supa", {
       data: {

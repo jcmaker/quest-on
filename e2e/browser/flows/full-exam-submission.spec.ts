@@ -20,6 +20,9 @@ test.describe("Full Exam Submission Flow", () => {
       examStatus: "running",
       sessionStatus: "joined",
       withSubmissions: false,
+      // Simulates a returning student whose preflight was previously accepted
+      // so the page reconciles directly into the live exam without re-prompting.
+      preflightAccepted: true,
     });
 
     const examPage = new StudentExamPage(studentPage);

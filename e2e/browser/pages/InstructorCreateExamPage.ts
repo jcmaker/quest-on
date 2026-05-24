@@ -54,13 +54,28 @@ export class InstructorCreateExamPage {
     }
   }
 
-  async addQuestion() {
+  /**
+   * Open the "+" picker and add a question.
+   *
+   * The picker defaults to `multiple-choice`, which requires options +
+   * correctOptionIndex to satisfy submitReasons validation. Tests that only
+   * fill prompt text (the common case) need an essay question so the submit
+   * button enables after `fillQuestion`. Override `questionType` when a test
+   * specifically needs MCQ/OX behaviour.
+   */
+  async addQuestion(
+    questionType: "essay" | "multiple-choice" | "true-false" = "essay",
+  ) {
     await this.ensureManualQuestionsOpen();
     // "+" 트리거가 문제 유형 선택 다이얼로그를 연다.
     await this.addQuestionBtn.first().click();
     // 다이얼로그가 열릴 때까지 대기
     const picker = this.page.getByTestId("add-question-picker");
     await picker.waitFor({ state: "visible" });
+    // 유형 선택 — 기본 multiple-choice 외에는 명시적으로 클릭한다.
+    if (questionType !== "multiple-choice") {
+      await this.page.locator(`#question-type-${questionType}`).click();
+    }
     // 다이얼로그의 "추가" 버튼이 선택한 유형의 빈 문제를 목록에 추가한다.
     await this.page.getByTestId("manual-add-question-btn").click();
     // 다이얼로그가 닫힐 때까지 대기

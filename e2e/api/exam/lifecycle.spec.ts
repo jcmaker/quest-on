@@ -227,7 +227,13 @@ test.describe("Exam Lifecycle — start / end / sessions", () => {
     const inProgressSession = await seedSession(exam.id, "student-1", {
       status: "in_progress",
     });
-    await seedSubmission(inProgressSession.id, 0, { answer: "Force end answer" });
+    // The default exam has 2 essay questions. We must seed a submission for
+    // each so the dev-fallback grading path (autoGradeSession) runs the
+    // per-question summary phase, which is what actually writes `grades`
+    // rows for essay-only exams. With a single submission, autoGradeSession
+    // jumps straight to session_summary and only updates `sessions.ai_summary`.
+    await seedSubmission(inProgressSession.id, 0, { answer: "Force end answer Q1" });
+    await seedSubmission(inProgressSession.id, 1, { answer: "Force end answer Q2" });
 
     const res = await instructorRequest.post(
       `/api/exam/${exam.id}/end`,

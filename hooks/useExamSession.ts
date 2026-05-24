@@ -221,18 +221,25 @@ export function useExamSession({
         initData.sessionStatus || initData.session.status || "not_joined";
       setSessionStatus(currentSessionStatus);
 
-      // Show preflight when:
-      // - Session is "joined" (pre-start join, not yet accepted preflight), or
-      // - Session is "waiting" with no preflight_accepted_at yet.
-      // "in_progress" is explicitly excluded: the API auto-promotes
-      // "joined" → "in_progress" when the exam is already running, and
-      // that path must not re-show the preflight dialog. Acceptance for
-      // in_progress sessions happens via /api/session/[id]/preflight which
-      // sets preflight_accepted_at and updates the session atomically.
+      // Show preflight when preflight_accepted_at is null and the session is
+      // in a state that needs acceptance.
+      // - "joined" / "waiting": pre-start join or waiting room — always show
+      //   when preflight not yet accepted.
+      // - "in_progress" with null preflight_accepted_at: the API auto-promotes
+      //   "joined" → "in_progress" on already-running exams without setting
+      //   preflight_accepted_at, so the modal must still appear here. Seed
+      //   data that wants to skip the modal (e.g. tests that simulate an
+      //   already-accepted session) must seed preflight_accepted_at.
+      // Excluded states: submitted / auto_submitted / late_pending — these
+      // either have no UI need for preflight or use a different gating path.
+      const needsPreflightStatuses = new Set([
+        "joined",
+        "waiting",
+        "in_progress",
+      ]);
       if (
-        currentSessionStatus === "joined" ||
-        (!initData.session.preflight_accepted_at &&
-          currentSessionStatus === "waiting")
+        !initData.session.preflight_accepted_at &&
+        needsPreflightStatuses.has(currentSessionStatus)
       ) {
         setShowPreflight(true);
       }

@@ -33,6 +33,9 @@ test.describe("Student — Join Exam Flow", () => {
     const { exam } = await seedStudentExamScenario({
       examStatus: "running",
       sessionStatus: "joined",
+      // Simulates a returning student whose preflight was already accepted —
+      // joining a live exam should skip the modal and enter the exam directly.
+      preflightAccepted: true,
     });
 
     await studentPage.goto("/join");

@@ -25,6 +25,9 @@ test.describe("Student — Exam Flow", () => {
     const { exam, session } = await seedStudentExamScenario({
       examStatus: "running",
       sessionStatus: "joined",
+      // Simulates a returning student whose preflight was previously accepted
+      // so the in_progress reconciliation does not re-show the preflight modal.
+      preflightAccepted: true,
     });
 
     const examPage = new StudentExamPage(studentPage);
