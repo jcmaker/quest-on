@@ -94,8 +94,12 @@ app.post("/v1/chat/completions", (req, res) => {
     })));
   }
 
-  if (sysPrompt.includes("전문 교육가")) {
-    // generate-summary
+  if (
+    sysPrompt.includes("케이스 기반 수업을 진행하는 경험 많은 교수") ||
+    sysPrompt.includes("Quest-On의 채팅 기반 리서치 과제")
+  ) {
+    // generate-summary (case-based assignment + chat-based research)
+    // 키워드는 lib/prompts.ts의 buildAssignmentGradingSummaryPrompt 등과 정합
     return res.json(chatCompletionResponse(JSON.stringify({
       sentiment: "positive",
       summary: "학생은 핵심 개념에 대한 이해도가 높으며, 논리적 전개가 우수합니다.",
