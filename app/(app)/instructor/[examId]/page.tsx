@@ -340,6 +340,8 @@ export default function ExamDetail({
           </div>
 
           <div className="space-y-4">
+            <h3 className="font-semibold">학생 목록</h3>
+
             {exam.status === "running" && (
               <LateEntryPanel examId={exam.id} examStatus={exam.status} />
             )}

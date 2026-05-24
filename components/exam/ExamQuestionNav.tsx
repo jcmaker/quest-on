@@ -136,7 +136,7 @@ function QuestionPill({
     <button
       type="button"
       onClick={onSelect}
-      data-testid={`exam-question-nav-${index}`}
+      data-testid={layout === "vertical" ? `exam-question-nav-${index}` : undefined}
       className={cn(
         "relative rounded-lg text-xs font-semibold border transition-all shrink-0 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
         layout === "vertical" ? "w-10 h-10 lg:w-11 lg:h-11" : "w-10 h-10",
