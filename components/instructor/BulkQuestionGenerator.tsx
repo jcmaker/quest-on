@@ -114,36 +114,39 @@ export function BulkQuestionGenerator({
     retryGroup,
     isLoading,
     allDone,
-    successQuestions,
     reset,
+    appendedGroupsRef,
   } = useBulkQuestionGeneration();
 
-  // 생성 완료 → 콜백 후 Sheet 닫기
-  const appendedRef = useRef(false);
+  // 생성 완료 → 유형별로 아직 append 안 된 성공 그룹만 처리 (중복 방지)
   useEffect(() => {
-    if (!allDone || appendedRef.current) return;
+    if (!allDone) return;
+
+    const newSuccessQuestions: GeneratedQuestion[] = [];
+    Object.entries(groupResults).forEach(([type, result]) => {
+      if (result.status === "success" && !appendedGroupsRef.current.has(type)) {
+        newSuccessQuestions.push(...result.questions);
+        appendedGroupsRef.current.add(type);
+      }
+    });
+
+    if (newSuccessQuestions.length > 0) {
+      onQuestionsAppend(newSuccessQuestions.map(toQuestion));
+    }
 
     const hasError = Object.values(groupResults).some((g) => g.status === "error");
-
-    if (hasError) {
-      // 실패 있으면 자동 닫기 안 함 — 재시도 UI 유지
-      // 단, 성공한 문제는 미리 반영
-      if (successQuestions.length > 0) {
-        appendedRef.current = true;
-        onQuestionsAppend(successQuestions.map(toQuestion));
-        toast.success(`${successQuestions.length}개 추가됨. 실패한 유형을 재시도하세요.`);
-      }
-    } else {
-      // 전부 성공
-      if (successQuestions.length > 0) {
-        appendedRef.current = true;
-        onQuestionsAppend(successQuestions.map(toQuestion));
+    if (!hasError) {
+      // 전부 성공 시만 Sheet 닫기
+      if (newSuccessQuestions.length > 0) {
         onOpenChange(false);
       }
+    } else if (newSuccessQuestions.length > 0) {
+      // 일부 성공 — Sheet 유지, 재시도 안내
+      toast.success(`${newSuccessQuestions.length}개 추가됨. 실패한 유형을 재시도하세요.`);
     }
-  }, [allDone, groupResults, successQuestions, onQuestionsAppend, onOpenChange]);
+  }, [allDone, groupResults]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sheet가 닫힐 때 상태 초기화
+  // Sheet가 닫힐 때 상태 초기화 (사용자 직접 닫기)
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (!nextOpen) {
@@ -152,13 +155,23 @@ export function BulkQuestionGenerator({
         setPromptByType({ mcq: "", "true-false": "", case: "" });
         setCountByType({ mcq: 3, "true-false": 3, case: 1 });
         setDragOverIdx(null);
-        appendedRef.current = false;
         reset();
       }
       onOpenChange(nextOpen);
     },
     [onOpenChange, reset],
   );
+
+  // open prop이 외부에서 false로 바뀔 때도 상태 초기화 (Fix 2: 자동 닫힘 후 상태 잔존)
+  useEffect(() => {
+    if (!open) {
+      setSlots([]);
+      setPromptByType({ mcq: "", "true-false": "", case: "" });
+      setCountByType({ mcq: 3, "true-false": 3, case: 1 });
+      setActiveTab("mcq");
+      reset();
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 슬롯 추가
   const addToSlots = useCallback(() => {
@@ -246,25 +259,25 @@ export function BulkQuestionGenerator({
   // 생성 실행
   const handleGenerate = useCallback(async () => {
     if (slots.length === 0 || isLoading) return;
-    appendedRef.current = false;
+    appendedGroupsRef.current.clear(); // 새 생성 시작 — append 이력 초기화
     await generateAll(slots, {
       examTitle,
       language,
       materialsText: materialsText.length > 0 ? materialsText : undefined,
     });
-  }, [slots, isLoading, generateAll, examTitle, language, materialsText]);
+  }, [slots, isLoading, generateAll, examTitle, language, materialsText, appendedGroupsRef]);
 
   // 재시도
   const handleRetry = useCallback(
     async (type: TabType) => {
-      appendedRef.current = false;
+      appendedGroupsRef.current.delete(type); // 해당 유형만 재시도 허용
       await retryGroup(type, slots, {
         examTitle,
         language,
         materialsText: materialsText.length > 0 ? materialsText : undefined,
       });
     },
-    [retryGroup, slots, examTitle, language, materialsText],
+    [retryGroup, slots, examTitle, language, materialsText, appendedGroupsRef],
   );
 
   const totalCount = slots.reduce((sum, s) => sum + s.count, 0);
