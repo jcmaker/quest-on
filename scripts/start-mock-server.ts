@@ -123,6 +123,44 @@ app.post("/v1/chat/completions", (req, res) => {
     })));
   }
 
+  // True/False (O·X) objective question generation/adjustment.
+  // Must be checked BEFORE the MCQ and "출제 전문가" handlers because the TF
+  // prompt also contains "출제 전문가" and "객관식 문제" 같은 키워드가 겹친다.
+  if (
+    sysPrompt.includes("O·X(참/거짓) 문제") ||
+    sysPrompt.includes("True/False (O·X)")
+  ) {
+    return res.json(chatCompletionResponse(JSON.stringify({
+      questions: [
+        {
+          text: "다형성(polymorphism)은 객체지향 프로그래밍의 핵심 원칙 중 하나이다.",
+          type: "true-false",
+          options: ["O", "X"],
+          correctOptionIndex: 0,
+          rationale: "다형성은 OOP의 4대 원칙(캡슐화, 상속, 다형성, 추상화) 중 하나로 분류된다.",
+        },
+      ],
+    })));
+  }
+
+  // 4-option multiple choice generation/adjustment.
+  if (
+    sysPrompt.includes("4지선다 객관식 문제") ||
+    sysPrompt.includes("4-option multiple-choice")
+  ) {
+    return res.json(chatCompletionResponse(JSON.stringify({
+      questions: [
+        {
+          text: "다음 중 객체지향 프로그래밍의 핵심 원칙이 아닌 것은?",
+          type: "multiple-choice",
+          options: ["캡슐화", "상속", "다형성", "정규화"],
+          correctOptionIndex: 3,
+          rationale: "정규화는 데이터베이스 설계 원칙이며, OOP의 4대 원칙은 캡슐화·상속·다형성·추상화이다.",
+        },
+      ],
+    })));
+  }
+
   if (sysPrompt.includes("출제 전문가")) {
     // generate-questions (case question generation)
     return res.json(chatCompletionResponse(JSON.stringify({

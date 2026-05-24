@@ -37,7 +37,10 @@ test.describe("AI — POST /api/ai/generate-questions", () => {
     expect(body.questions[0].text).toBeTruthy();
     expect(body.questions[0].type).toBe("essay");
 
-    expect(Object.keys(body)).toEqual(["questions"]);
+    // `successJson` wraps responses with a `success: true` envelope, so the
+    // body contains both `success` and `questions`. We only care that the
+    // questions payload is present and well-shaped.
+    expect(body).toMatchObject({ questions: expect.any(Array) });
   });
 
   test("minimal required fields → 200", async ({ instructorRequest }) => {
