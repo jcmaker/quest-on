@@ -69,7 +69,10 @@ export function useBulkQuestionGeneration() {
       }
 
       const data = await res.json() as { questions?: GeneratedQuestion[] };
-      return data.questions ?? [];
+      if (!data.questions || data.questions.length === 0) {
+        throw new Error("AI가 문제를 생성하지 못했습니다. 다시 시도해주세요.");
+      }
+      return data.questions;
     },
     []
   );

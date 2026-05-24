@@ -25,6 +25,7 @@ import {
 import type { Question } from "@/components/instructor/QuestionEditor";
 import type { GeneratedQuestion } from "@/hooks/useQuestionGeneration";
 import { AlertCircle, RefreshCw, Sparkles, GripVertical } from "lucide-react";
+import toast from "react-hot-toast";
 
 // ── 유형 상수 ────────────────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   examTitle: string;
-  language: string;
+  language: "ko" | "en";
   materialsText: Array<{ url: string; text: string; fileName: string }>;
   onQuestionsAppend: (questions: Question[]) => void;
 };
@@ -120,12 +121,27 @@ export function BulkQuestionGenerator({
   // 생성 완료 → 콜백 후 Sheet 닫기
   const appendedRef = useRef(false);
   useEffect(() => {
-    if (allDone && successQuestions.length > 0 && !appendedRef.current) {
-      appendedRef.current = true;
-      onQuestionsAppend(successQuestions.map(toQuestion));
-      onOpenChange(false);
+    if (!allDone || appendedRef.current) return;
+
+    const hasError = Object.values(groupResults).some((g) => g.status === "error");
+
+    if (hasError) {
+      // 실패 있으면 자동 닫기 안 함 — 재시도 UI 유지
+      // 단, 성공한 문제는 미리 반영
+      if (successQuestions.length > 0) {
+        appendedRef.current = true;
+        onQuestionsAppend(successQuestions.map(toQuestion));
+        toast.success(`${successQuestions.length}개 추가됨. 실패한 유형을 재시도하세요.`);
+      }
+    } else {
+      // 전부 성공
+      if (successQuestions.length > 0) {
+        appendedRef.current = true;
+        onQuestionsAppend(successQuestions.map(toQuestion));
+        onOpenChange(false);
+      }
     }
-  }, [allDone, successQuestions, onQuestionsAppend, onOpenChange]);
+  }, [allDone, groupResults, successQuestions, onQuestionsAppend, onOpenChange]);
 
   // Sheet가 닫힐 때 상태 초기화
   const handleOpenChange = useCallback(
@@ -148,6 +164,18 @@ export function BulkQuestionGenerator({
   const addToSlots = useCallback(() => {
     const prompt = promptByType[activeTab];
     const count = countByType[activeTab];
+
+    // 동일 유형의 기존 슬롯 count 합산 체크 (서버 max: 5)
+    const existingCount = slots
+      .filter((s) => s.type === activeTab)
+      .reduce((sum, s) => sum + s.count, 0);
+    if (existingCount + count > 5) {
+      toast.error(
+        `${TYPE_LABELS[activeTab]} 문제는 최대 5개까지 생성할 수 있습니다. (현재 ${existingCount}개)`
+      );
+      return;
+    }
+
     const newSlot: BulkSlot = {
       tempId: `${activeTab}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       type: activeTab,
@@ -155,7 +183,7 @@ export function BulkQuestionGenerator({
       count,
     };
     setSlots((prev) => [...prev, newSlot]);
-  }, [activeTab, promptByType, countByType]);
+  }, [activeTab, promptByType, countByType, slots]);
 
   // 슬롯 삭제
   const removeSlot = useCallback((tempId: string) => {
@@ -221,7 +249,7 @@ export function BulkQuestionGenerator({
     appendedRef.current = false;
     await generateAll(slots, {
       examTitle,
-      language: language as "ko" | "en",
+      language,
       materialsText: materialsText.length > 0 ? materialsText : undefined,
     });
   }, [slots, isLoading, generateAll, examTitle, language, materialsText]);
@@ -232,7 +260,7 @@ export function BulkQuestionGenerator({
       appendedRef.current = false;
       await retryGroup(type, slots, {
         examTitle,
-        language: language as "ko" | "en",
+        language,
         materialsText: materialsText.length > 0 ? materialsText : undefined,
       });
     },
@@ -349,7 +377,7 @@ export function BulkQuestionGenerator({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                      {Array.from({ length: 5 }, (_, i) => i + 1).map((n) => (
                         <SelectItem key={n} value={n.toString()}>
                           {n}개
                         </SelectItem>
