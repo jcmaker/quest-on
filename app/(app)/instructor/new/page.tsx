@@ -33,6 +33,7 @@ import {
   type CaseQuestionGeneratorHandle,
 } from "@/components/instructor/CaseQuestionGenerator";
 import { SimpleExamAuthoringForm } from "@/components/instructor/SimpleExamAuthoringForm";
+import { BulkQuestionGenerator } from "@/components/instructor/BulkQuestionGenerator";
 import { useAgentRunController } from "@/components/agent/AgentRunController";
 import { useAgentEditorExecutor } from "@/components/agent/useAgentEditorExecutor";
 import { Bot, Hand } from "lucide-react";
@@ -95,6 +96,9 @@ export default function CreateExam() {
 
   // P1-2: 새로 수락된 문제 하이라이트
   const [highlightedQuestionIds, setHighlightedQuestionIds] = useState<Set<string>>(new Set());
+
+  // AI 일괄 생성 Sheet
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
 
   // P0-2: adjustHistory ref for localStorage persistence
   const adjustHistoryRef = useRef<Map<string, ChatMessage[]>>(new Map());
@@ -851,9 +855,31 @@ export default function CreateExam() {
                     router.push("/instructor");
                   }
                 }}
+                onBulkGenerate={() => setIsBulkOpen(true)}
               />
             </div>
           </form>
+
+          {/* AI 일괄 생성 Sheet */}
+          <BulkQuestionGenerator
+            open={isBulkOpen}
+            onOpenChange={setIsBulkOpen}
+            examTitle={examData.title}
+            language={examData.language}
+            materialsText={fileUpload.getMaterialsText()}
+            onQuestionsAppend={(newQuestions) => {
+              const newIds = newQuestions.map((q) => q.id);
+              setQuestions((prev) => [...prev, ...newQuestions]);
+              setHighlightedQuestionIds(new Set(newIds));
+              setTimeout(() => setHighlightedQuestionIds(new Set()), 3000);
+              setTimeout(() => {
+                questionsListRef.current?.scrollIntoView({
+                  behavior: "smooth",
+                  block: "start",
+                });
+              }, 100);
+            }}
+          />
 
           {/* 출제 완료 Dialog */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

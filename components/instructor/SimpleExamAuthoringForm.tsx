@@ -31,6 +31,7 @@ import {
   FolderOpen,
   Loader2,
   Plus,
+  Sparkles,
   Upload,
   X,
 } from "lucide-react";
@@ -87,6 +88,8 @@ interface SimpleExamAuthoringFormProps {
   submitReasons: string[];
   isSubmitting: boolean;
   onCancel: () => void;
+  /** AI 일괄 생성 Sheet 열기 핸들러 (옵셔널 — 없으면 버튼 숨김). */
+  onBulkGenerate?: () => void;
 }
 
 function getStatusText(status?: ExtractionStatus): string {
@@ -266,6 +269,7 @@ export function SimpleExamAuthoringForm({
   submitReasons,
   isSubmitting,
   onCancel,
+  onBulkGenerate,
 }: SimpleExamAuthoringFormProps) {
   const [showAdvancedGrading, setShowAdvancedGrading] = useState(false);
   // "+" 문제 추가 — 문제 유형을 고르는 Dialog 의 열림 상태.
@@ -659,16 +663,31 @@ export function SimpleExamAuthoringForm({
 
             {/* "+" 문제 추가 트리거 — 클릭 시 문제 추가 Dialog 를 연다. */}
             {questions.length === 0 ? (
-              <button
-                type="button"
-                onClick={() => setIsAddPickerOpen(true)}
-                className="flex min-h-28 w-full items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground hover:bg-muted/50"
-                data-testid="empty-add-question-btn"
-              >
-                <Plus className="mr-2 h-4 w-4" />첫 문제 추가
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddPickerOpen(true)}
+                  className="flex min-h-28 w-full items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground hover:bg-muted/50"
+                  data-testid="empty-add-question-btn"
+                >
+                  <Plus className="mr-2 h-4 w-4" />첫 문제 추가
+                </button>
+                {onBulkGenerate && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={onBulkGenerate}
+                    className="w-full gap-2 border-dashed"
+                    data-testid="bulk-generate-btn"
+                  >
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    AI 일괄 생성
+                  </Button>
+                )}
+              </div>
             ) : (
-              <div className="flex justify-center pt-1">
+              <div className="flex items-center justify-center gap-2 pt-1">
                 <Button
                   type="button"
                   variant="outline"
@@ -680,6 +699,19 @@ export function SimpleExamAuthoringForm({
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
+                {onBulkGenerate && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={onBulkGenerate}
+                    className="gap-1.5"
+                    data-testid="bulk-generate-btn"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    AI 일괄 생성
+                  </Button>
+                )}
               </div>
             )}
           </div>
