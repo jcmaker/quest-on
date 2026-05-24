@@ -30,7 +30,7 @@ interface QuestionsListProps {
   onUpdate: (
     id: string,
     field: keyof Question,
-    value: string | boolean
+    value: string | boolean | number | string[]
   ) => void;
   onRemove?: (id: string) => void;
   onAdd?: () => void;
@@ -96,10 +96,13 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, m
     }
   }, [sheetQuestionId, questions]);
 
-  const handleApplyAdjustment = useCallback((newText: string) => {
-    if (!sheetQuestionId) return;
-    onUpdate(sheetQuestionId, "text", newText);
-  }, [sheetQuestionId, onUpdate]);
+  const handleApplyAdjustment = useCallback(
+    (update: { text: string }) => {
+      if (!sheetQuestionId) return;
+      onUpdate(sheetQuestionId, "text", update.text);
+    },
+    [sheetQuestionId, onUpdate],
+  );
 
   // Auto-expand when questions are added (e.g., from AI acceptance)
   useEffect(() => {

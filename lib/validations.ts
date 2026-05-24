@@ -71,7 +71,7 @@ export const canvasConfigSchema = z.object({
 });
 
 // ========== Exam JSON Column Schemas ==========
-// These validate the JSON stored in exams.questions, exams.rubric, exams.materials
+// These validate the JSON stored in exams.questions and exams.materials
 
 export const examQuestionItemSchema = z.object({
   id: z.union([z.string(), z.number()]),
@@ -81,16 +81,19 @@ export const examQuestionItemSchema = z.object({
   idx: z.number().optional(),
   ai_context: z.string().optional().nullable(),
   options: z.array(z.string()).optional(),
+  correctOptionIndex: z.number().int().min(0).optional(),
+  points: z.number().optional(),
 });
+
+/** 문제 유형 enum — 시험/과제 전반에서 단일 소스로 공유. */
+export const questionTypeEnum = z.enum([
+  "multiple-choice",
+  "true-false",
+  "essay",
+  "short-answer",
+]);
 
 export const examQuestionsSchema = z.array(examQuestionItemSchema);
-
-export const examRubricItemSchema = z.object({
-  evaluationArea: z.string(),
-  detailedCriteria: z.string(),
-});
-
-export const examRubricSchema = z.array(examRubricItemSchema);
 
 export const examMaterialsSchema = z.array(z.string());
 
@@ -185,6 +188,45 @@ export const singleGradeUpdateSchema = z.object({
   expected_updated_at: z.string().optional(),
 });
 
+export const caseGradeChatPostSchema = z.object({
+  qIdx: z.number().int().min(0),
+  message: sanitizedString(z.string().min(1, "Message is required").max(10000)),
+});
+
+export const caseGradeCommitSchema = z.object({
+  qIdx: z.number().int().min(0),
+  score: z.number().min(0).max(100),
+  comment: z.string().max(5000).optional().transform((v) => (v ? sanitizeUserInput(v) : v)),
+});
+
+export const bulkGradeChatPostSchema = z.object({
+  message: sanitizedString(z.string().min(1, "Message is required").max(10000)),
+});
+
+export const bulkGradeWorkerSchema = z.object({
+  gradingSessionId: z.string().uuid("Invalid gradingSessionId"),
+  studentSessionId: z.string().uuid("Invalid studentSessionId"),
+  examId: z.string().uuid("Invalid examId"),
+});
+
+export const bulkGradeCommitSchema = z.object({
+  grades: z
+    .array(
+      z.object({
+        session_id: z.string().uuid("Invalid session ID"),
+        q_idx: z.number().int().min(0),
+        score: z.number().int().min(0).max(100),
+        comment: z
+          .string()
+          .max(2000)
+          .optional()
+          .transform((v) => (v ? sanitizeUserInput(v) : v)),
+      }),
+    )
+    .min(1, "At least one grade is required")
+    .max(500, "Too many grades"),
+});
+
 // Supa route action schema
 export const supaActionSchema = z.object({
   action: z.string().min(1),
@@ -201,20 +243,61 @@ export const createExamSchema = z.object({
   questions: z.array(z.object({
     id: z.string(),
     text: z.string(),
-    type: z.enum(["multiple-choice", "essay", "short-answer"]),
+    type: questionTypeEnum,
     options: z.array(z.string()).optional(),
-  }).passthrough()),
+    correctOptionIndex: z.number().int().min(0).optional(),
+  }).passthrough()
+    .refine(
+      (q) =>
+        (q.type !== "multiple-choice" && q.type !== "true-false") ||
+        typeof q.correctOptionIndex === "number",
+      {
+        message: "객관식 문제에 정답이 지정되지 않았습니다.",
+        path: ["correctOptionIndex"],
+      },
+    )
+    .refine(
+      (q) => {
+        if (q.type !== "multiple-choice") return true;
+        const opts = q.options ?? [];
+        return (
+          opts.length >= 4 && opts.slice(0, 4).every((o) => o.trim() !== "")
+        );
+      },
+      {
+        message: "사지선다 문제의 선택지 4개를 모두 입력해주세요.",
+        path: ["options"],
+      },
+    )
+    .refine(
+      (q) => {
+        if (q.type !== "true-false") return true;
+        const opts = q.options ?? [];
+        return opts.length >= 2 && opts.slice(0, 2).every((o) => o.trim() !== "");
+      },
+      {
+        message: "O/X 문제의 선택지 2개를 모두 입력해주세요.",
+        path: ["options"],
+      },
+    )
+    .refine(
+      (q) => {
+        if (q.type !== "multiple-choice" && q.type !== "true-false") return true;
+        if (typeof q.correctOptionIndex !== "number") return true; // caught by prior refine
+        const opts = q.options ?? [];
+        return q.correctOptionIndex < opts.length;
+      },
+      {
+        message: "정답 인덱스가 선택지 범위를 벗어났습니다.",
+        path: ["correctOptionIndex"],
+      },
+    )),
   materials: z.array(z.string()).optional(),
   materials_text: z.array(z.object({
     url: z.string(),
     text: z.string(),
     fileName: z.string(),
   })).optional(),
-  rubric: z.array(z.object({
-    evaluationArea: z.string(),
-    detailedCriteria: z.string(),
-  })).optional(),
-  rubric_public: z.boolean().optional(),
   status: z.string().min(1),
   created_at: z.string(),
   updated_at: z.string(),
@@ -229,8 +312,6 @@ export const updateExamSchema = z.object({
     description: z.string().max(2000).nullable().optional(),
     duration: z.number().int().min(0).optional(),
     questions: z.unknown().optional(),
-    rubric: z.unknown().optional(),
-    rubric_public: z.boolean().optional(),
     materials: z.array(z.string()).optional(),
     materials_text: z.array(z.object({
       url: z.string(),
@@ -328,8 +409,9 @@ export const createAssignmentSchema = z.object({
   questions: z.array(z.object({
     id: z.string(),
     text: z.string(),
-    type: z.enum(["multiple-choice", "essay", "short-answer"]),
+    type: questionTypeEnum,
     options: z.array(z.string()).optional(),
+    correctOptionIndex: z.number().int().min(0).optional(),
   }).passthrough()),
   materials: z.array(z.string()).optional(),
   materials_text: z.array(z.object({
@@ -337,11 +419,6 @@ export const createAssignmentSchema = z.object({
     text: z.string(),
     fileName: z.string(),
   })).optional(),
-  rubric: z.array(z.object({
-    evaluationArea: z.string(),
-    detailedCriteria: z.string(),
-  })).optional(),
-  rubric_public: z.boolean().optional(),
   status: z.string().min(1),
   created_at: z.string(),
   updated_at: z.string(),
@@ -405,17 +482,6 @@ export const feedbackChatSchema = z.object({
   studentId: z.string().optional(),
 });
 
-// AI Rubric Generation
-export const generateRubricSchema = z.object({
-  examTitle: z.string().min(1, "Exam title is required").max(500),
-  questions: z.array(z.object({
-    text: z.string(),
-    type: z.string().optional(),
-  })).min(1, "At least one question is required"),
-  topics: z.string().max(500).optional(),
-  language: z.enum(["ko", "en"]).default("ko"),
-});
-
 // AI Case Question Generation
 export const generateCaseQuestionsSchema = z.object({
   examTitle: z.string().min(1).max(500),
@@ -428,14 +494,42 @@ export const generateCaseQuestionsSchema = z.object({
     text: z.string(),
     fileName: z.string(),
   })).optional(),
-  existingRubric: z.array(examRubricItemSchema).optional(),
   language: z.enum(["ko", "en"]).default("ko"),
   generationMode: z.enum(["case", "research-assignment"]).default("case"),
+  /** 생성할 문제 유형. mcq=사지선다, true-false=O/X, case=사례형(서술). */
+  questionType: z.enum(["mcq", "true-false", "case"]).default("case"),
+});
+
+// ── AI-generated objective question response validation ──
+// Strictly validate the parsed AI output per question type before it is
+// mapped into Question objects. MCQ: 4 options + index 0..3. TF: index 0..1.
+
+export const aiMcqQuestionSchema = z.object({
+  text: z.string().min(1).max(4000),
+  options: z.array(z.string().min(1).max(500)).length(4),
+  correctOptionIndex: z.number().int().min(0).max(3),
+  rationale: z.string().max(1000).optional(),
+});
+
+export const aiTrueFalseQuestionSchema = z.object({
+  text: z.string().min(1).max(4000),
+  options: z.array(z.string().min(1).max(500)).length(2),
+  correctOptionIndex: z.number().int().min(0).max(1),
+  rationale: z.string().max(1000).optional(),
+});
+
+export const aiMcqResponseSchema = z.object({
+  questions: z.array(aiMcqQuestionSchema).min(1),
+});
+
+export const aiTrueFalseResponseSchema = z.object({
+  questions: z.array(aiTrueFalseQuestionSchema).min(1),
 });
 
 // AI Case Question Adjustment
 export const adjustCaseQuestionSchema = z.object({
-  questionText: z.string().min(1),
+  // 빈 문자열 허용 — "AI로 문제 생성"은 빈 문제에서 시작한다(생성 모드).
+  questionText: z.string(),
   instruction: z.string().min(1).max(2000),
   conversationHistory: z.array(z.object({
     role: z.enum(["user", "assistant"]),
@@ -444,6 +538,15 @@ export const adjustCaseQuestionSchema = z.object({
   examTitle: z.string().optional(),
   language: z.enum(["ko", "en"]).default("ko"),
   generationMode: z.enum(["case", "research-assignment"]).default("case"),
+  /**
+   * 수정 대상 문제의 유형. essay = 서술형(기본, 기존 동작), multiple-choice =
+   * 사지선다, true-false = O/X. 객관식 유형은 본문 + 선택지 + 정답을 함께 생성한다.
+   */
+  questionType: z.enum(["multiple-choice", "true-false", "essay"]).default("essay"),
+  /** 객관식 유형일 때, 반복 수정의 기준이 되는 현재 선택지들. */
+  currentOptions: z.array(z.string()).optional(),
+  /** 객관식 유형일 때, 반복 수정의 기준이 되는 현재 정답 인덱스. */
+  currentCorrectOptionIndex: z.number().int().min(0).optional(),
 });
 
 // Helper to validate and return typed result or error response

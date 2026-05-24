@@ -63,7 +63,7 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 type SweepAction =
-  | { kind: "heal"; sessionId: string }
+  | { kind: "heal"; sessionId: string; phase?: GradingProgress["phase"] }
   | { kind: "retrigger"; sessionId: string; nextAttempt: number }
   | { kind: "give_up"; sessionId: string; reason: string }
   | { kind: "skip"; sessionId: string; reason: string };
@@ -127,23 +127,31 @@ async function decideAction(
       .map((g) => (g as { q_idx: number }).q_idx)
   );
 
-  const allGradedSuccessfully =
-    questionIdxs.length > 0 &&
-    questionIdxs.every((idx) => successfulGradedIdxs.has(idx));
+  const allGradedSuccessfully = questionIdxs.every((idx) =>
+    successfulGradedIdxs.has(idx)
+  );
 
   if (hasRealSummary && allGradedSuccessfully) {
-    return { kind: "heal", sessionId };
+    return { kind: "heal", sessionId, phase: "done" };
+  }
+
+  if (allGradedSuccessfully) {
+    return { kind: "heal", sessionId, phase: "objective_only_done" };
   }
 
   return { kind: "retrigger", sessionId, nextAttempt: attempts + 1 };
 }
 
-async function applyHeal(sessionId: string, gp: GradingProgress): Promise<void> {
+async function applyHeal(
+  sessionId: string,
+  gp: GradingProgress,
+  phase: GradingProgress["phase"] = "done"
+): Promise<void> {
   const supabase = getSupabaseServer();
   const patched: GradingProgress = {
     ...gp,
     status: "completed",
-    phase: "done",
+    phase,
     last_swept_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -276,7 +284,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       }
 
       if (action.kind === "heal") {
-        await applyHeal(sessionId, gp);
+        await applyHeal(sessionId, gp, action.phase);
         results.push({ sessionId, action: "heal", ok: true });
         continue;
       }
@@ -313,8 +321,38 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
   }
 
+  // Sweep stale bulk grading sessions (CRITICAL-3 보완)
+  let bulkSwept = 0;
+  try {
+    const bulkCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+    const { data: staleBulk } = await supabase
+      .from("exam_grading_sessions")
+      .select("id, grading_total, grading_completed, grading_failed_count")
+      .eq("status", "grading")
+      .lt("updated_at", bulkCutoff);
+
+    for (const row of staleBulk ?? []) {
+      const total = (row.grading_total as number) ?? 0;
+      const completed = (row.grading_completed as number) ?? 0;
+      const failed = (row.grading_failed_count as number) ?? 0;
+      if (total > 0 && completed + failed >= total) {
+        await supabase
+          .from("exam_grading_sessions")
+          .update({ status: "grading_done", updated_at: new Date().toISOString() })
+          .eq("id", row.id)
+          .eq("status", "grading");
+        bulkSwept++;
+      }
+    }
+  } catch (bulkErr) {
+    logError("[GRADING_SWEEP] Bulk session sweep failed", bulkErr, {
+      path: "/api/cron/grading-sweep",
+    });
+  }
+
   return NextResponse.json({
     swept: stuck.length,
+    bulkSwept,
     cutoff: cutoffIso,
     results,
   });

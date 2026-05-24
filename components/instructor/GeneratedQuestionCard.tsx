@@ -253,7 +253,7 @@ export function GeneratedQuestionCard({
         history={adjustHistory}
         isAdjusting={isAdjusting}
         onSendInstruction={onAdjust}
-        onApply={onApplyAdjustment}
+        onApply={(update) => onApplyAdjustment(update.text)}
         generationMode={generationMode}
       />
     </>

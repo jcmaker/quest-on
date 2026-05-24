@@ -82,12 +82,13 @@ export type GradingProgressStatus =
 /**
  * Phase that the grading pipeline is currently executing.
  * Chained QStash jobs progress through these in order:
- *   grade → qsummary → session_summary → done
+ *   grade → objective_only_done
  */
 export type GradingPhaseName =
   | "grade"
   | "qsummary"
   | "session_summary"
+  | "objective_only_done"
   | "done";
 
 export interface GradingProgress {

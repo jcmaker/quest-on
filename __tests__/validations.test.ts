@@ -10,6 +10,7 @@ import {
   createFolderSchema,
   gradeUpdateSchema,
   saveFinalAnswerSchema,
+  adjustCaseQuestionSchema,
 } from "@/lib/validations";
 
 describe("validateRequest helper", () => {
@@ -95,10 +96,10 @@ describe("createExamSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("accepts exam with rubric", () => {
+  it("accepts exam with chat weight", () => {
     const result = createExamSchema.safeParse({
       ...validExam,
-      rubric: [{ evaluationArea: "Logic", detailedCriteria: "Clear reasoning" }],
+      chat_weight: 40,
     });
     expect(result.success).toBe(true);
   });
@@ -241,5 +242,45 @@ describe("saveFinalAnswerSchema", () => {
       finalAnswer: "a".repeat(50_000),
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe("adjustCaseQuestionSchema", () => {
+  const validBase = {
+    questionText: "기존 문제 본문입니다.",
+    instruction: "난이도를 높여주세요",
+  };
+
+  it("validates an adjust request with existing question text", () => {
+    const result = adjustCaseQuestionSchema.safeParse(validBase);
+    expect(result.success).toBe(true);
+  });
+
+  // 회귀: "AI로 문제 생성"은 빈 문제(text:"")에서 시작하므로
+  // questionText 빈 문자열을 허용해야 한다 (이전엔 min(1) 때문에 400).
+  it("allows empty questionText (AI 문제 생성 — 빈 문제에서 생성)", () => {
+    const result = adjustCaseQuestionSchema.safeParse({
+      questionText: "",
+      instruction: "다형성 개념을 묻는 사지선다 문제를 만들어줘",
+      questionType: "multiple-choice",
+      currentOptions: ["", "", "", ""],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects empty instruction", () => {
+    const result = adjustCaseQuestionSchema.safeParse({
+      ...validBase,
+      instruction: "",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("defaults questionType to essay", () => {
+    const result = adjustCaseQuestionSchema.safeParse(validBase);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.questionType).toBe("essay");
+    }
   });
 });

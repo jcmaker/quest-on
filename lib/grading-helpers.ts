@@ -155,10 +155,22 @@ export function decompressMessages(
   return result;
 }
 
+/** A question normalized for the grading pipeline. */
+export interface NormalizedQuestion {
+  idx: number;
+  prompt?: string;
+  ai_context?: string;
+  rubric?: Array<{ evaluationArea: string; detailedCriteria: string }>;
+  /** 문제 유형. 객관식/OX(objective)는 결정론적 채점 경로를 탄다. */
+  type?: string;
+  /** 객관식/OX 선택지. */
+  options?: string[];
+  /** 객관식/OX 정답 인덱스. */
+  correctOptionIndex?: number;
+}
+
 /** Normalize DB question rows into a standard shape. */
-export function normalizeQuestions(
-  questions: unknown
-): Array<{ idx: number; prompt?: string; ai_context?: string; rubric?: Array<{ evaluationArea: string; detailedCriteria: string }> }> {
+export function normalizeQuestions(questions: unknown): NormalizedQuestion[] {
   if (!questions || !Array.isArray(questions)) return [];
 
   return questions.map((q: Record<string, unknown>, index: number) => ({
@@ -171,71 +183,83 @@ export function normalizeQuestions(
         : undefined,
     ai_context: typeof q.ai_context === "string" ? q.ai_context : undefined,
     rubric: Array.isArray(q.rubric) ? (q.rubric as Array<{ evaluationArea: string; detailedCriteria: string }>) : undefined,
+    type: typeof q.type === "string" ? q.type : undefined,
+    options: Array.isArray(q.options)
+      ? (q.options as unknown[]).filter((o): o is string => typeof o === "string")
+      : undefined,
+    correctOptionIndex:
+      typeof q.correctOptionIndex === "number" && Number.isInteger(q.correctOptionIndex)
+        ? q.correctOptionIndex
+        : undefined,
   }));
 }
 
-/** Default rubric used when neither question-level nor exam-level rubric exists. */
-const DEFAULT_RUBRIC: Array<{ evaluationArea: string; detailedCriteria: string }> = [
-  {
-    evaluationArea: "전반적 답변 품질",
-    detailedCriteria:
-      "답변의 정확성, 논리적 구조, 관련 개념의 적절한 활용, 문제 요구사항 충족 정도를 종합적으로 평가",
-  },
-];
-
-/** Resolve rubric for a specific question: use per-question rubric if available, else fall back to exam-level rubric, then default. */
-export function resolveQuestionRubric(
-  question: { rubric?: Array<{ evaluationArea: string; detailedCriteria: string }> },
-  examRubric: unknown
-): Array<{ evaluationArea: string; detailedCriteria: string }> {
-  if (question.rubric && Array.isArray(question.rubric) && question.rubric.length > 0) {
-    return question.rubric;
-  }
-  if (examRubric && Array.isArray(examRubric) && examRubric.length > 0) {
-    return examRubric as Array<{ evaluationArea: string; detailedCriteria: string }>;
-  }
-  return DEFAULT_RUBRIC;
+/** True when a question is graded deterministically (no LLM): 객관식/OX. */
+export function isObjectiveQuestion(type?: string): boolean {
+  return type === "multiple-choice" || type === "true-false";
 }
 
-/** Ensure the mandatory "AI 활용 및 자기주도 탐구" criterion exists in a rubric array. */
-export function ensureAiCriterion(
-  rubric: Array<{ evaluationArea: string; detailedCriteria: string }>
-): Array<{ evaluationArea: string; detailedCriteria: string }> {
-  const hasAiCriterion = rubric.some((item) =>
-    item.evaluationArea.includes("AI 활용")
-  );
-  if (hasAiCriterion) return rubric;
-  return [
-    ...rubric,
-    {
-      evaluationArea: "AI 활용 및 자기주도 탐구",
-      detailedCriteria:
-        "학생이 AI를 정보 탐색 도구로 활용하면서도 독립적인 분석과 판단을 수행했는가. AI에 대한 의존도와 비판적 사고의 균형",
-    },
-  ];
+/**
+ * Deterministically grade an objective (mcq/true-false) question.
+ *
+ * The student's submitted answer is stored as the chosen option index in
+ * string form (e.g. "2"). We parse it, compare against `correctOptionIndex`,
+ * and return a 100/0 score with a Korean comment. No OpenAI call.
+ *
+ * Returns `null` when the question is not gradeable deterministically
+ * (missing/invalid correctOptionIndex) so the caller can fall back.
+ */
+export function gradeObjectiveAnswer(params: {
+  rawAnswer: string;
+  options?: string[];
+  correctOptionIndex?: number;
+}): { score: number; comment: string; selectedIndex: number | null } | null {
+  const { rawAnswer, options, correctOptionIndex } = params;
+  if (
+    typeof correctOptionIndex !== "number" ||
+    !Number.isInteger(correctOptionIndex) ||
+    correctOptionIndex < 0
+  ) {
+    return null;
+  }
+
+  const trimmed = (rawAnswer ?? "").trim();
+  const parsed = Number.parseInt(trimmed, 10);
+  const selectedIndex =
+    trimmed !== "" && Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+
+  const optionLabel = (idx: number | null): string => {
+    if (idx === null) return "무응답";
+    return options && options[idx] !== undefined ? options[idx] : `${idx + 1}번`;
+  };
+
+  const correct = selectedIndex !== null && selectedIndex === correctOptionIndex;
+  const score = correct ? 100 : 0;
+  const comment = correct
+    ? `정답입니다. 선택: ${optionLabel(selectedIndex)}`
+    : `오답입니다. 선택: ${optionLabel(selectedIndex)} / 정답: ${optionLabel(
+        correctOptionIndex
+      )}`;
+
+  return { score, comment, selectedIndex };
 }
 
-/** Build rubric prompt text from rubric items array. */
-export function buildRubricText(
-  rubric: unknown
-): string {
-  if (!rubric || !Array.isArray(rubric) || rubric.length === 0) return "";
+/** Format the score label used inside session-summary prompts. */
+export function formatSummaryScoreLabel(params: {
+  score?: number;
+  ungraded?: boolean;
+  hasSubmission: boolean;
+  questionType?: string;
+  isAssignment?: boolean;
+}): string {
+  const isUngradedCase =
+    !params.isAssignment &&
+    params.hasSubmission &&
+    !isObjectiveQuestion(params.questionType) &&
+    (params.ungraded || params.score === undefined);
 
-  const items = rubric as Array<{
-    evaluationArea: string;
-    detailedCriteria: string;
-  }>;
-
-  return `
-**평가 루브릭 기준:**
-${items
-  .map(
-    (item, index) =>
-      `${index + 1}. ${item.evaluationArea}
-   - 세부 기준: ${item.detailedCriteria}`
-  )
-  .join("\n")}
-`;
+  if (isUngradedCase) return "미채점";
+  return `${params.score ?? 0}점`;
 }
 
 /** Calculate weighted score from chat and answer stages. */

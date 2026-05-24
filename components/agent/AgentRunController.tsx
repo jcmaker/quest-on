@@ -116,7 +116,6 @@ function fallbackPageState(route: string): AgentPageState {
     examTitle: "",
     questionCount: 0,
     questions: [],
-    rubricRowCount: 0,
     isGenerating: false,
   };
 }

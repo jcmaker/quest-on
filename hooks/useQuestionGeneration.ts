@@ -5,13 +5,11 @@ import { useState, useCallback, useRef } from "react";
 export interface GeneratedQuestion {
   id: string;
   text: string;
-  type: "essay";
-  rubric?: RubricItem[];
-}
-
-export interface RubricItem {
-  evaluationArea: string;
-  detailedCriteria: string;
+  type: "essay" | "multiple-choice" | "true-false";
+  /** 객관식/OX 선택지 (objective 문제 전용). */
+  options?: string[];
+  /** 객관식/OX 정답 인덱스 (objective 문제 전용). */
+  correctOptionIndex?: number;
 }
 
 export interface ChatMessage {
@@ -19,6 +17,8 @@ export interface ChatMessage {
   content: string;
   questionText?: string; // AI가 제안한 수정본
   explanation?: string; // 변경 사항 요약
+  options?: string[]; // 객관식/OX 선택지 (objective 문제 생성 시)
+  correctOptionIndex?: number; // 객관식/OX 정답 인덱스
 }
 
 export interface GenerationProgress {
@@ -36,6 +36,8 @@ interface GenerateParams {
   materialsText?: Array<{ url: string; text: string; fileName: string }>;
   language?: "ko" | "en";
   generationMode?: "case" | "research-assignment";
+  /** 생성할 문제 유형. mcq=사지선다, true-false=O/X, case=사례형. */
+  questionType?: "mcq" | "true-false" | "case";
 }
 
 interface AdjustResult {
@@ -45,7 +47,6 @@ interface AdjustResult {
 
 export interface UseQuestionGenerationReturn {
   generatedQuestions: GeneratedQuestion[];
-  suggestedRubric: RubricItem[];
   isGenerating: boolean;
   regeneratingId: string | null;
   adjustingId: string | null;
@@ -90,23 +91,6 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
       current: 0,
       total: 0,
     });
-
-  // Derive suggestedRubric from all generated questions' rubrics (merged, deduplicated by evaluationArea)
-  const suggestedRubric: RubricItem[] = (() => {
-    const seen = new Set<string>();
-    const merged: RubricItem[] = [];
-    for (const q of generatedQuestions) {
-      if (q.rubric) {
-        for (const item of q.rubric) {
-          if (!seen.has(item.evaluationArea)) {
-            seen.add(item.evaluationArea);
-            merged.push(item);
-          }
-        }
-      }
-    }
-    return merged;
-  })();
 
   // Per-question conversation history
   const adjustHistoryRef = useRef<Map<string, ChatMessage[]>>(new Map());
@@ -444,7 +428,6 @@ export function useQuestionGeneration(): UseQuestionGenerationReturn {
 
   return {
     generatedQuestions,
-    suggestedRubric,
     isGenerating,
     regeneratingId,
     adjustingId,

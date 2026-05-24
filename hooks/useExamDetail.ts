@@ -215,130 +215,13 @@ export function useExamDetail({
     if (!examDetailData?.exam) return;
     setExam((prev) => {
       if (!prev || prev.id !== examDetailData.exam.id) return examDetailData.exam; // 최초 로드/시험 전환
-      // refetch: students를 갱신하되, 기존 score/finalScore 등 analytics 데이터 보존
-      const mergedStudents = examDetailData.exam.students.map((newStudent) => {
-        const existing = prev.students.find((s) => s.id === newStudent.id);
-        if (!existing) return newStudent;
-        return {
-          ...newStudent,
-          score: existing.score ?? newStudent.score,
-          finalScore: existing.finalScore ?? newStudent.finalScore,
-          isGraded: existing.isGraded || newStudent.isGraded,
-          gradeType: existing.gradeType ?? newStudent.gradeType,
-          aiComment: existing.aiComment ?? newStudent.aiComment,
-          questionCount: existing.questionCount ?? newStudent.questionCount,
-          answerLength: existing.answerLength ?? newStudent.answerLength,
-          // Always prefer freshest grading_progress snapshot from server
-          gradingProgress: newStudent.gradingProgress ?? existing.gradingProgress,
-        };
-      });
-      return { ...prev, students: mergedStudents, grades_released: examDetailData.exam.grades_released };
-    });
-  }, [examDetailData]);
-
-  // Final grades
-  const { data: finalGradesData } = useQuery({
-    queryKey: qk.instructor.finalGrades(examId),
-    queryFn: async () => {
-      const response = await fetch(`/api/exam/${examId}/final-grades`).catch(() => null);
-      if (!response?.ok) return null;
-      return response.json();
-    },
-    enabled: !!exam && exam.students.length > 0,
-    staleTime: Infinity,
-    gcTime: 5 * 60 * 1000,
-  });
-
-  useEffect(() => {
-    if (!finalGradesData?.grades) return;
-
-    const finalGradesMap = new Map<
-      string,
-      { score: number; gradeStatus?: string; aiComment?: string | null }
-    >();
-    finalGradesData.grades.forEach(
-      (g: { session_id: string; score: number; gradeStatus?: string; aiComment?: string | null }) => {
-        finalGradesMap.set(g.session_id, g);
-      }
-    );
-
-    setExam((prev) => {
-      if (!prev) return prev;
       return {
         ...prev,
-        students: prev.students.map((student) => {
-          const gradeData = finalGradesMap.get(student.id);
-          if (!gradeData) return student;
-          const isManuallyGraded = gradeData.gradeStatus === "manually_graded";
-          return {
-            ...student,
-            score: gradeData.score ?? student.score,
-            finalScore: isManuallyGraded ? gradeData.score : student.finalScore,
-            isGraded: isManuallyGraded,
-            gradeType: (gradeData.gradeStatus as InstructorStudent["gradeType"]) ?? student.gradeType,
-            aiComment: gradeData.aiComment ?? student.aiComment,
-          };
-        }),
+        students: examDetailData.exam.students,
+        grades_released: examDetailData.exam.grades_released,
       };
     });
-  }, [finalGradesData]);
-
-  // 시험 종료 후 아직 가채점 안 된 학생이 있으면 폴링
-  const hasUngradedStudents = useMemo(() => {
-    if (!exam || exam.status !== "closed") return false;
-    return exam.students.some(
-      (s) => s.status === "completed" && (s.score === undefined || s.score === null)
-    );
-  }, [exam]);
-
-  // Analytics
-  const { data: analyticsData, isLoading: analyticsLoading } = useQuery({
-    queryKey: qk.instructor.examAnalytics(examId),
-    queryFn: async ({ signal }) => {
-      const response = await fetch(`/api/analytics/exam/${examId}/overview`, { signal });
-      if (!response.ok) throw new Error("Failed to fetch analytics");
-      return response.json();
-    },
-    enabled: !!examId && isLoaded && isSignedIn && !!exam && exam.students.length > 0,
-    staleTime: hasUngradedStudents ? 0 : 30000,
-    gcTime: 5 * 60 * 1000,
-    refetchOnMount: true,
-    refetchOnWindowFocus: true,
-    refetchInterval: hasUngradedStudents ? 10000 : false,
-  });
-
-  // Update student scores from analytics
-  useEffect(() => {
-    if (!exam || !analyticsData || exam.students.length === 0) return;
-
-    const analyticsStudentsMap = analyticsData.students
-      ? new Map(analyticsData.students.map((s: Record<string, unknown>) => [s.sessionId, s]))
-      : new Map();
-
-    setExam((prev) => {
-      if (!prev) return prev;
-      const updatedStudents = prev.students.map((student) => {
-        const analyticsStudent = analyticsStudentsMap.get(student.id) as Record<string, unknown> | undefined;
-        return {
-          ...student,
-          score:
-            analyticsStudent?.score !== null && analyticsStudent?.score !== undefined
-              ? analyticsStudent.score as number
-              : student.score,
-          questionCount:
-            analyticsStudent?.questionCount !== null && analyticsStudent?.questionCount !== undefined
-              ? analyticsStudent.questionCount as number
-              : student.questionCount,
-          answerLength:
-            analyticsStudent?.answerLength !== null && analyticsStudent?.answerLength !== undefined
-              ? analyticsStudent.answerLength as number
-              : student.answerLength,
-        };
-      });
-      return { ...prev, students: updatedStudents };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run when analyticsData or exam identity changes, uses setExam functional updater
-  }, [analyticsData, exam?.id]);
+  }, [examDetailData]);
 
   return {
     exam,
@@ -349,8 +232,5 @@ export function useExamDetail({
     examDetailError,
     loading,
     error,
-    analyticsData,
-    analyticsLoading,
-    finalGradesData,
   };
 }

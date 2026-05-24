@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 export type AuditAction =
   | "grade_update"
+  | "grade_bulk_commit"
   | "exam_status_change"
   | "exam_delete"
   | "session_submit"

@@ -75,7 +75,7 @@ export async function GET(
       });
     }
 
-    // Normalize questions format (text -> prompt)
+    // Normalize questions format (text -> prompt); keep objective grading fields
     if (exam.questions && Array.isArray(exam.questions)) {
       exam.questions = exam.questions.map((q: Record<string, unknown>) => ({
         id: q.id,
@@ -83,6 +83,14 @@ export async function GET(
         type: q.type,
         prompt: q.prompt || q.text, // Support both field names
         ai_context: q.ai_context,
+        options: Array.isArray(q.options)
+          ? (q.options as unknown[]).filter((o): o is string => typeof o === "string")
+          : undefined,
+        correctOptionIndex:
+          typeof q.correctOptionIndex === "number" &&
+          Number.isInteger(q.correctOptionIndex)
+            ? q.correctOptionIndex
+            : undefined,
       }));
     }
 
@@ -363,7 +371,8 @@ export async function GET(
     let overallScore = null;
     if (grades && grades.length > 0) {
       const validGrades = (grades as Array<Record<string, unknown>>).filter(
-        (g) => g.grade_type !== "ai_failed"
+        (g) =>
+          g.grade_type !== "ai_failed" && g.grade_type !== "ai_summary"
       );
       if (validGrades.length > 0) {
         const totalScore = validGrades.reduce(
@@ -597,7 +606,7 @@ export async function PUT(
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("instructor_id, rubric")
+      .select("instructor_id")
       .eq("id", session.exam_id)
       .single();
 
@@ -609,15 +618,6 @@ export async function PUT(
     const rl = await checkRateLimitAsync(`ai:auto-grade:${user.id}`, RATE_LIMITS.ai);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many grading requests. Please wait.", 429);
-    }
-
-    // Validate rubric exists before auto-grading
-    if (!exam.rubric || !Array.isArray(exam.rubric) || exam.rubric.length === 0) {
-      return errorJson(
-        "RUBRIC_REQUIRED",
-        "루브릭이 설정되지 않아 자동 채점을 할 수 없습니다. 시험 편집에서 루브릭을 먼저 추가해주세요.",
-        400
-      );
     }
 
     // Check if already graded (unless force regrade)

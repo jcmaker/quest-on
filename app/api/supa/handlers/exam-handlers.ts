@@ -49,11 +49,6 @@ export async function createExam(data: {
     text: string;
     fileName: string;
   }>;
-  rubric?: {
-    evaluationArea: string;
-    detailedCriteria: string;
-  }[];
-  rubric_public?: boolean;
   chat_weight?: number | null;
   status: string;
   created_at: string;
@@ -134,8 +129,6 @@ export async function createExam(data: {
       questions: sanitizedQuestions,
       materials: data.materials || [],
       materials_text: data.materials_text || [], // 추출된 텍스트 저장
-      rubric: data.rubric || [],
-      rubric_public: data.rubric_public || false,
       chat_weight: data.chat_weight ?? 50,
       status: data.status,
       instructor_id: user.id, // Clerk user ID (e.g., "user_31ihNg56wMaE27ft10H4eApjc1J")
@@ -143,42 +136,27 @@ export async function createExam(data: {
       updated_at: data.updated_at,
     };
 
-    // exams + exam_nodes를 단일 트랜잭션으로 생성 (RPC)
-    // sort_order 계산도 RPC 내부에서 처리하므로 레이스 컨디션 없음
     const parentId = data.parent_folder_id || null;
 
     const MAX_INSERT_RETRIES = 3;
-    let rpcResult: { exam: Record<string, unknown> & { id: string }; exam_node: Record<string, unknown> } | null = null;
+    let insertedExam: (Record<string, unknown> & { id: string }) | null = null;
     let lastInsertError = null;
 
     for (let attempt = 0; attempt < MAX_INSERT_RETRIES; attempt++) {
-      const { data: rpcData, error: rpcError } = await getSupabase()
-        .rpc("create_exam_with_node", {
-          p_title: examData.title,
-          p_code: examData.code,
-          p_description: examData.description,
-          p_duration: examData.duration,
-          p_questions: examData.questions,
-          p_materials: examData.materials,
-          p_materials_text: examData.materials_text,
-          p_rubric: examData.rubric,
-          p_rubric_public: examData.rubric_public,
-          p_chat_weight: examData.chat_weight,
-          p_status: examData.status,
-          p_instructor_id: examData.instructor_id,
-          p_created_at: examData.created_at,
-          p_updated_at: examData.updated_at,
-          p_parent_folder_id: parentId,
-        });
+      const { data: examInsertData, error: insertError } = await getSupabase()
+        .from("exams")
+        .insert(examData)
+        .select()
+        .single();
 
-      if (!rpcError) {
-        rpcResult = rpcData as { exam: Record<string, unknown> & { id: string }; exam_node: Record<string, unknown> };
+      if (!insertError) {
+        insertedExam = examInsertData as Record<string, unknown> & { id: string };
         lastInsertError = null;
         break;
       }
 
       // Postgres UNIQUE violation = code 23505 → 코드 재생성 후 재시도
-      if (rpcError.code === "23505" && attempt < MAX_INSERT_RETRIES - 1) {
+      if (insertError.code === "23505" && attempt < MAX_INSERT_RETRIES - 1) {
         const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         let retryCode = "";
         for (let i = 0; i < 6; i++) {
@@ -189,17 +167,49 @@ export async function createExam(data: {
         continue;
       }
 
-      lastInsertError = rpcError;
+      lastInsertError = insertError;
       break;
     }
 
-    if (lastInsertError || !rpcResult) {
+    if (lastInsertError || !insertedExam) {
       logError("[createExam] Database error during exam insert", lastInsertError, { path: "/api/supa/exam-handlers" });
       return errorJson("DATABASE_ERROR", "Database error", 500);
     }
 
-    const exam = rpcResult.exam;
-    const examNode = rpcResult.exam_node;
+    const exam = insertedExam;
+
+    let maxNodeQuery = getSupabase()
+      .from("exam_nodes")
+      .select("sort_order")
+      .eq("instructor_id", user.id)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+
+    maxNodeQuery = parentId === null
+      ? maxNodeQuery.is("parent_id", null)
+      : maxNodeQuery.eq("parent_id", parentId);
+
+    const { data: maxNode } = await maxNodeQuery.maybeSingle();
+
+    const { data: examNode, error: nodeError } = await getSupabase()
+      .from("exam_nodes")
+      .insert({
+        instructor_id: user.id,
+        parent_id: parentId,
+        kind: "exam",
+        name: examData.title,
+        exam_id: exam.id,
+        sort_order:
+          typeof maxNode?.sort_order === "number" ? maxNode.sort_order + 1 : 0,
+      })
+      .select()
+      .single();
+
+    if (nodeError) {
+      await getSupabase().from("exams").delete().eq("id", exam.id);
+      logError("[createExam] Database error during exam node insert", nodeError, { path: "/api/supa/exam-handlers" });
+      return errorJson("DATABASE_ERROR", "Database error", 500);
+    }
 
     // 언어 설정 (기본값 'ko'는 DB 기본값으로 처리되므로, 'en'인 경우에만 업데이트)
     if (data.language === "en") {
@@ -275,9 +285,13 @@ export async function updateExam(data: {
       }
     }
 
+    const updateWithoutRubric = { ...data.update };
+    delete updateWithoutRubric.rubric;
+    delete updateWithoutRubric.rubric_public;
+
     const { data: exam, error } = await getSupabase()
       .from("exams")
-      .update(data.update)
+      .update(updateWithoutRubric)
       .eq("id", data.id)
       .eq("instructor_id", user.id)
       .select()

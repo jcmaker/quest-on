@@ -39,10 +39,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import {
-  useQuestionGeneration,
-  type RubricItem,
-} from "@/hooks/useQuestionGeneration";
+import { useQuestionGeneration } from "@/hooks/useQuestionGeneration";
 import { GeneratedQuestionCard } from "./GeneratedQuestionCard";
 import { QuestionSkeletonCard } from "./QuestionSkeletonCard";
 import type { Question } from "./QuestionEditor";
@@ -79,13 +76,15 @@ interface CaseQuestionGeneratorProps {
     "uploading" | "extracting" | "done" | "failed"
   >;
   onQuestionsAccepted: (questions: Question[]) => void;
-  onRubricSuggested: (rubric: RubricItem[]) => void;
   language?: "ko" | "en";
   mode?: "exam" | "assignment";
   variant?: "card" | "line";
   /** AI 에이전트 실행 레이어가 생성기를 프로그램적으로 조작하기 위한 ref. */
   agentHandleRef?: Ref<CaseQuestionGeneratorHandle>;
 }
+
+/** AI 생성 모드에서 만들 문제 유형. case=사례형(서술). */
+type PickerQuestionType = "mcq" | "true-false" | "case";
 
 function getStageMessage(
   stage: string,
@@ -111,7 +110,6 @@ export function CaseQuestionGenerator({
   extractedTexts,
   extractionStatus,
   onQuestionsAccepted,
-  onRubricSuggested,
   language,
   mode = "exam",
   variant = "card",
@@ -121,6 +119,8 @@ export function CaseQuestionGenerator({
   const difficulty = "basic" as const;
   const [questionCount, setQuestionCount] = useState(1);
   const [freeformPrompt, setFreeformPrompt] = useState("");
+  // 시험 모드 AI 생성은 사례형(case) 고정. assignment 모드는 research-assignment.
+  const questionType: PickerQuestionType = "case";
   const isAssignmentMode = mode === "assignment";
 
   // AI 에이전트 체화 애니메이션이 가리킬 DOM 요소 ref.
@@ -131,7 +131,6 @@ export function CaseQuestionGenerator({
 
   const {
     generatedQuestions,
-    suggestedRubric,
     isGenerating,
     regeneratingId,
     adjustingId,
@@ -163,10 +162,10 @@ export function CaseQuestionGenerator({
             id: q.id,
             text: q.text,
             type: q.type as Question["type"],
-            rubric: q.rubric,
+            options: q.options,
+            correctOptionIndex: q.correctOptionIndex,
           })),
         );
-        applyRubricIfNeeded();
         toast.success(`${all.length}개 문제가 추가되었습니다.`);
       }
     }
@@ -183,6 +182,11 @@ export function CaseQuestionGenerator({
       }),
     );
 
+    // assignment 모드는 항상 리서치 과제(case). 시험 모드에서만 피커 유형 적용.
+    const effectiveType: PickerQuestionType = isAssignmentMode
+      ? "case"
+      : questionType;
+
     return {
       examTitle,
       difficulty,
@@ -191,6 +195,7 @@ export function CaseQuestionGenerator({
       materialsText: !isAssignmentMode && materialsText.length > 0 ? materialsText : undefined,
       language,
       generationMode: isAssignmentMode ? "research-assignment" as const : "case" as const,
+      questionType: effectiveType,
     };
   };
 
@@ -232,17 +237,6 @@ export function CaseQuestionGenerator({
     // state/handleGenerate 를 참조하게 한다. ref 소비자(에이전트 실행기)는
     // 핸들 객체 정체성에 의존하지 않으므로 무해하다.
   );
-
-  // P1-5: Track if rubric has been suggested to avoid duplicate toasts
-  const rubricSuggestedRef = useRef(false);
-
-  const applyRubricIfNeeded = () => {
-    if (!isAssignmentMode && suggestedRubric.length > 0 && !rubricSuggestedRef.current) {
-      onRubricSuggested(suggestedRubric);
-      rubricSuggestedRef.current = true;
-      toast("AI 루브릭 제안을 확인하세요.", { icon: "📋" });
-    }
-  };
 
   const isDisabled = !examTitle.trim() || (isAssignmentMode && !freeformPrompt.trim());
 

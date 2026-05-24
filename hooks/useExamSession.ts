@@ -221,10 +221,16 @@ export function useExamSession({
         initData.sessionStatus || initData.session.status || "not_joined";
       setSessionStatus(currentSessionStatus);
 
+      // Show preflight when:
+      // 1. Session is explicitly "joined" (pre-start join), or
+      // 2. preflight_accepted_at is null and the session has not been
+      //    submitted / auto-submitted / late-pending.
+      // Note: "in_progress" is intentionally NOT excluded here — the API
+      // promotes "joined" → "in_progress" when the exam is already running,
+      // so a fresh in_progress session may still require preflight acceptance.
       if (
         currentSessionStatus === "joined" ||
         (!initData.session.preflight_accepted_at &&
-          currentSessionStatus !== "in_progress" &&
           currentSessionStatus !== "submitted" &&
           currentSessionStatus !== "auto_submitted" &&
           currentSessionStatus !== "late_pending")

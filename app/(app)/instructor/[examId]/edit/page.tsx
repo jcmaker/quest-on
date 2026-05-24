@@ -16,10 +16,6 @@ import {
 } from "lucide-react";
 import { ExamInfoForm } from "@/components/instructor/ExamInfoForm";
 import { FileUpload } from "@/components/instructor/FileUpload";
-import {
-  RubricTable,
-  type RubricItem,
-} from "@/components/instructor/RubricTable";
 import { QuestionsList } from "@/components/instructor/QuestionsList";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { CaseQuestionGenerator } from "@/components/instructor/CaseQuestionGenerator";
@@ -51,8 +47,6 @@ export default function EditExam({
   const [canAddMoreFiles, setCanAddMoreFiles] = useState(true);
   const [isDragOver, setIsDragOver] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [rubric, setRubric] = useState<RubricItem[]>([]);
-  const [isRubricPublic, setIsRubricPublic] = useState(false);
   const [chatWeight, setChatWeight] = useState<number | null>(null);
   const fileUpload = useFileUpload();
   const isSubmittingRef = useRef(false);
@@ -91,18 +85,6 @@ export default function EditExam({
           language: (exam.language === "en" ? "en" : "ko") as "ko" | "en",
         });
         setQuestions(exam.questions || []);
-        setRubric(
-          exam.rubric && exam.rubric.length > 0
-            ? exam.rubric
-            : [
-                {
-                  id: Date.now().toString(),
-                  evaluationArea: "",
-                  detailedCriteria: "",
-                },
-              ]
-        );
-        setIsRubricPublic(exam.rubric_public || false);
         setChatWeight(exam.chat_weight ?? null);
 
         // 기존 materials + materials_text를 fileUpload hook에 로드
@@ -410,7 +392,7 @@ export default function EditExam({
   const updateQuestion = (
     id: string,
     field: keyof Question,
-    value: string | boolean
+    value: string | boolean | number | string[]
   ) => {
     setQuestions(
       questions.map((q) => (q.id === id ? { ...q, [field]: value } : q))
@@ -425,31 +407,6 @@ export default function EditExam({
       [newQuestions[index], newQuestions[targetIndex]] = [newQuestions[targetIndex], newQuestions[index]];
       return newQuestions;
     });
-  };
-
-  const addRubricItem = () => {
-    const newRubricItem: RubricItem = {
-      id: Date.now().toString(),
-      evaluationArea: "",
-      detailedCriteria: "",
-    };
-    setRubric([...rubric, newRubricItem]);
-  };
-
-  const updateRubricItem = (
-    id: string,
-    field: keyof RubricItem,
-    value: string
-  ) => {
-    const updatedRubric = rubric.map((item) =>
-      item.id === id ? { ...item, [field]: value } : item
-    );
-    setRubric(updatedRubric);
-  };
-
-  const removeRubricItem = (id: string) => {
-    const newRubric = rubric.filter((item) => item.id !== id);
-    setRubric(newRubric);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -503,8 +460,6 @@ export default function EditExam({
         code: examData.code,
         duration: examData.duration,
         questions: questions,
-        rubric: rubric,
-        rubric_public: isRubricPublic,
         chat_weight: chatWeight,
         materials: materialUrls,
         materials_text: materialsText,
@@ -647,17 +602,9 @@ export default function EditExam({
               ...newQuestions.map((q) => ({
                 id: q.id,
                 text: q.text,
-                type: q.type as "essay" | "short-answer" | "multiple-choice",
-              })),
-            ]);
-          }}
-          onRubricSuggested={(newRubric) => {
-            setRubric((prev) => [
-              ...prev,
-              ...newRubric.map((r) => ({
-                id: Date.now().toString() + Math.random().toString(36).slice(2),
-                evaluationArea: r.evaluationArea,
-                detailedCriteria: r.detailedCriteria,
+                type: q.type,
+                options: q.options,
+                correctOptionIndex: q.correctOptionIndex,
               })),
             ]);
           }}
@@ -673,17 +620,6 @@ export default function EditExam({
           }}
           onAdd={addQuestion}
           onMove={moveQuestion}
-        />
-
-        <RubricTable
-          rubric={rubric}
-          onAdd={addRubricItem}
-          onUpdate={updateRubricItem}
-          onRemove={removeRubricItem}
-          isPublic={isRubricPublic}
-          onPublicChange={setIsRubricPublic}
-          chatWeight={chatWeight}
-          onChatWeightChange={setChatWeight}
         />
 
         {/* Submit */}

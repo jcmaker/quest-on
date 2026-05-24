@@ -2,7 +2,6 @@
 
 import { useEffect, useCallback, useRef, useState } from "react";
 import type { Question } from "@/components/instructor/QuestionEditor";
-import type { RubricItem } from "@/components/instructor/RubricTable";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 
 const STORAGE_KEY = "quest-on:exam-draft";
@@ -14,8 +13,6 @@ export interface ExamDraftData {
   duration: number;
   code: string;
   questions: Question[];
-  rubric: RubricItem[];
-  isRubricPublic: boolean;
   chatWeight: number | null;
   adjustHistory: Record<string, ChatMessage[]>;
   savedAt: string;
@@ -26,8 +23,6 @@ interface UseExamDraftAutoSaveOptions {
   duration: number;
   code: string;
   questions: Question[];
-  rubric: RubricItem[];
-  isRubricPublic: boolean;
   chatWeight: number | null;
   adjustHistoryRef: React.RefObject<Map<string, ChatMessage[]>>;
 }
@@ -115,8 +110,6 @@ export function useExamDraftAutoSave(options: UseExamDraftAutoSaveOptions) {
       duration: opts.duration,
       code: opts.code,
       questions: opts.questions,
-      rubric: opts.rubric,
-      isRubricPublic: opts.isRubricPublic,
       chatWeight: opts.chatWeight,
       adjustHistory: Object.fromEntries(opts.adjustHistoryRef.current ?? new Map()),
       savedAt: new Date().toISOString(),

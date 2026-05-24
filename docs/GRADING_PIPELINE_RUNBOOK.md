@@ -6,7 +6,21 @@ Read this before touching any grading, QStash, sweeper, or `ai_summary` related 
 
 ## Overview
 
-Grading runs as a chained QStash job sequence triggered after a student submits an exam session. In local dev without QStash configured, grading runs in-process inline. On Vercel without QStash, the trigger fails loudly with `reason: "qstash_not_configured"` — it never silently drops.
+After a student submits an exam session:
+
+1. **Objective questions** (`multiple-choice`, `true-false`) are auto-graded via a QStash `grade_question` chain.
+2. **Chat/answer summaries** are generated on submit (no system prompt changes — existing summary generators):
+   - **0 case questions** → pipeline ends at `objective_only_done` (no session summary).
+   - **1 case question** → `session_summary` only (`sessions.ai_summary`).
+   - **≥2 case questions** → `question_summary` per case (`grades.ai_summary`, `grade_type: ai_summary`) then `session_summary`.
+
+Essay/case **scores** are not auto-graded on submit. Instructors set scores later via `/api/session/[sessionId]/case-grade/chat` and `/api/session/[sessionId]/case-grade/commit`. Commit does **not** re-run summary generation.
+
+When an exam has zero objective and zero case submissions, `grading_progress` is set to `{ status: "completed", phase: "objective_only_done" }`.
+
+In local dev without QStash configured, objective grading runs in-process inline. On Vercel without QStash, the trigger fails loudly with `reason: "qstash_not_configured"` — it never silently drops.
+
+Legacy `exams.rubric` columns remain in the database but are no longer read by the grading pipeline.
 
 ---
 

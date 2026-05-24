@@ -3,8 +3,16 @@ export const maxDuration = 120;
 import { NextRequest } from "next/server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
-import { generateCaseQuestionsSchema, validateRequest } from "@/lib/validations";
-import { buildCaseQuestionGenerationPrompt } from "@/lib/prompts";
+import {
+  generateCaseQuestionsSchema,
+  validateRequest,
+  aiMcqResponseSchema,
+  aiTrueFalseResponseSchema,
+} from "@/lib/validations";
+import {
+  buildCaseQuestionGenerationPrompt,
+  buildObjectiveQuestionGenerationPrompt,
+} from "@/lib/prompts";
 import { getOpenAI, AI_MODEL_HEAVY } from "@/lib/openai";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
@@ -15,6 +23,15 @@ import {
 
 const MATERIALS_CHAR_LIMIT = 8000;
 const GENERATION_TIMEOUT_MS = 60_000;
+
+/** Generated question payload returned to the client. */
+interface GeneratedQuestionDto {
+  id: string;
+  text: string;
+  type: "essay" | "multiple-choice" | "true-false";
+  options?: string[];
+  correctOptionIndex?: number;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,6 +60,8 @@ export async function POST(request: NextRequest) {
     }
 
     const data = validation.data;
+    const questionType = data.questionType ?? "case";
+    const questionCount = data.questionCount ?? 2;
 
     // Forward mock headers when running against mock server (OPENAI_BASE_URL points to localhost)
     const mockHeaders: Record<string, string> = {};
@@ -65,28 +84,31 @@ export async function POST(request: NextRequest) {
           : combined;
     }
 
-    // Build prompt
-    const { system, user: userPrompt } = buildCaseQuestionGenerationPrompt({
-      examTitle: data.examTitle,
-      difficulty: data.difficulty ?? "intermediate",
-      questionCount: data.questionCount ?? 2,
-      topics: data.topics,
-      customInstructions: data.customInstructions,
-      materialsContext,
-      language: data.language,
-      generationMode: data.generationMode,
-    });
+    // Build prompt — dispatch by questionType. Objective types (mcq / true-false)
+    // reuse buildObjectiveQuestionGenerationPrompt; case stays the case builder.
+    const isObjective = questionType === "mcq" || questionType === "true-false";
+    const { system, user: userPrompt } = isObjective
+      ? buildObjectiveQuestionGenerationPrompt({
+          examTitle: data.examTitle,
+          questionType: questionType === "mcq" ? "mcq" : "true-false",
+          questionCount,
+          topics: data.topics,
+          customInstructions: data.customInstructions,
+          materialsContext,
+          language: data.language,
+        })
+      : buildCaseQuestionGenerationPrompt({
+          examTitle: data.examTitle,
+          difficulty: data.difficulty ?? "intermediate",
+          questionCount,
+          topics: data.topics,
+          customInstructions: data.customInstructions,
+          materialsContext,
+          language: data.language,
+          generationMode: data.generationMode,
+        });
 
-    // Call OpenAI with extended timeout for generation
-    let parsedResponse: {
-      questions: Array<{ text: string; type: string }>;
-      suggestedRubric: Array<{
-        evaluationArea: string;
-        detailedCriteria: string;
-      }>;
-    };
-
-    const attemptGeneration = async () => {
+    const attemptGeneration = async (): Promise<unknown> => {
       const tracked = await callTrackedChatCompletion(
         () =>
           getOpenAI().chat.completions.create(
@@ -110,7 +132,8 @@ export async function POST(request: NextRequest) {
           metadata: buildAiTextMetadata({
             inputText: [system, userPrompt],
             extra: {
-              question_count: data.questionCount ?? 2,
+              question_count: questionCount,
+              question_type: questionType,
               difficulty: data.difficulty ?? "intermediate",
               has_materials: !!materialsContext,
               generation_mode: data.generationMode,
@@ -139,6 +162,7 @@ export async function POST(request: NextRequest) {
     };
 
     // Try generation with 1 retry on parse failure (skip retry for mock errors)
+    let parsedResponse: unknown;
     try {
       parsedResponse = await attemptGeneration();
     } catch (firstError) {
@@ -156,11 +180,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Validate and enrich questions
-    if (
-      !parsedResponse.questions ||
-      !Array.isArray(parsedResponse.questions)
-    ) {
+    // ── Objective (mcq / true-false): strictly validate the AI output ──
+    if (isObjective) {
+      const schema =
+        questionType === "mcq" ? aiMcqResponseSchema : aiTrueFalseResponseSchema;
+      const result = schema.safeParse(parsedResponse);
+      if (!result.success) {
+        return errorJson(
+          "AI_GENERATION_FAILED",
+          "AI가 올바른 형식의 문제를 생성하지 못했습니다.",
+          500
+        );
+      }
+      const questions: GeneratedQuestionDto[] = result.data.questions.map((q) => ({
+        id: crypto.randomUUID(),
+        text: q.text,
+        type: questionType === "mcq" ? "multiple-choice" : "true-false",
+        options: q.options,
+        correctOptionIndex: q.correctOptionIndex,
+      }));
+      return successJson({ questions });
+    }
+
+    // ── Case: existing essay-question shape ──
+    const caseResponse = parsedResponse as {
+      questions?: Array<{ text: string; type?: string }>;
+    };
+    if (!caseResponse.questions || !Array.isArray(caseResponse.questions)) {
       return errorJson(
         "AI_GENERATION_FAILED",
         "AI 응답 형식이 올바르지 않습니다.",
@@ -168,17 +214,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const questions = parsedResponse.questions.map((q) => ({
+    const questions: GeneratedQuestionDto[] = caseResponse.questions.map((q) => ({
       id: crypto.randomUUID(),
       text: q.text,
       type: "essay" as const,
     }));
 
-    const suggestedRubric = Array.isArray(parsedResponse.suggestedRubric)
-      ? parsedResponse.suggestedRubric
-      : [];
-
-    return successJson({ questions, suggestedRubric });
+    return successJson({ questions });
   } catch (error) {
     logError("Question generation failed", error, { path: "/api/ai/generate-questions" });
     return errorJson("INTERNAL_ERROR", "문제 생성 중 오류가 발생했습니다.", 500);

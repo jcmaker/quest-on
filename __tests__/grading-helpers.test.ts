@@ -4,11 +4,11 @@ import {
   decompressSubmissions,
   decompressMessages,
   normalizeQuestions,
-  buildRubricText,
   calculateWeightedScore,
   calculateAiDependencyPenalty,
   analyzeAiDependency,
   summarizeAiDependencyAssessments,
+  formatSummaryScoreLabel,
 } from "@/lib/grading-helpers";
 
 describe("selectBestSubmission", () => {
@@ -267,39 +267,6 @@ describe("normalizeQuestions", () => {
   });
 });
 
-describe("buildRubricText", () => {
-  it("formats rubric items correctly", () => {
-    const rubric = [
-      { evaluationArea: "논리성", detailedCriteria: "논리적 구조가 명확한가" },
-      { evaluationArea: "정확성", detailedCriteria: "사실관계가 정확한가" },
-    ];
-    const result = buildRubricText(rubric);
-    expect(result).toContain("평가 루브릭 기준");
-    expect(result).toContain("1. 논리성");
-    expect(result).toContain("세부 기준: 논리적 구조가 명확한가");
-    expect(result).toContain("2. 정확성");
-    expect(result).toContain("세부 기준: 사실관계가 정확한가");
-  });
-
-  it("returns empty string for empty rubric", () => {
-    expect(buildRubricText([])).toBe("");
-  });
-
-  it("returns empty string for null/undefined", () => {
-    expect(buildRubricText(null)).toBe("");
-    expect(buildRubricText(undefined)).toBe("");
-  });
-
-  it("includes evaluationArea and detailedCriteria", () => {
-    const rubric = [
-      { evaluationArea: "Area1", detailedCriteria: "Criteria1" },
-    ];
-    const result = buildRubricText(rubric);
-    expect(result).toContain("Area1");
-    expect(result).toContain("Criteria1");
-  });
-});
-
 describe("analyzeAiDependency", () => {
   it("detects delegation and starting-point dependency without recovery", () => {
     const assessment = analyzeAiDependency({
@@ -338,6 +305,47 @@ describe("analyzeAiDependency", () => {
     expect(assessment.recoveryObserved).toBe(true);
     expect(assessment.recoveryEvidence.length).toBeGreaterThan(0);
     expect(["low", "medium"]).toContain(assessment.overallRisk);
+  });
+});
+
+describe("formatSummaryScoreLabel", () => {
+  it("uses 미채점 for submitted case questions without a grade", () => {
+    expect(
+      formatSummaryScoreLabel({
+        hasSubmission: true,
+        questionType: "essay",
+      })
+    ).toBe("미채점");
+  });
+
+  it("uses 미채점 for explicit ungraded case placeholders", () => {
+    expect(
+      formatSummaryScoreLabel({
+        score: 0,
+        ungraded: true,
+        hasSubmission: true,
+        questionType: "short-answer",
+      })
+    ).toBe("미채점");
+  });
+
+  it("keeps a real manual zero distinct from ungraded", () => {
+    expect(
+      formatSummaryScoreLabel({
+        score: 0,
+        hasSubmission: true,
+        questionType: "essay",
+      })
+    ).toBe("0점");
+  });
+
+  it("does not mark missing objective grades as case 미채점", () => {
+    expect(
+      formatSummaryScoreLabel({
+        hasSubmission: true,
+        questionType: "multiple-choice",
+      })
+    ).toBe("0점");
   });
 });
 

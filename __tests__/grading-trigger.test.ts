@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   autoGradeSessionMock,
   listQuestionsToGradeMock,
+  listCaseQuestionsForSummaryMock,
+  isAssignmentGradingSessionMock,
+  markObjectiveOnlyGradingDoneMock,
   enqueueGradingPhaseMock,
   isQStashEnabledMock,
   logErrorMock,
@@ -10,6 +13,9 @@ const {
 } = vi.hoisted(() => ({
   autoGradeSessionMock: vi.fn(),
   listQuestionsToGradeMock: vi.fn(),
+  listCaseQuestionsForSummaryMock: vi.fn(),
+  isAssignmentGradingSessionMock: vi.fn(),
+  markObjectiveOnlyGradingDoneMock: vi.fn(),
   enqueueGradingPhaseMock: vi.fn(),
   isQStashEnabledMock: vi.fn(),
   logErrorMock: vi.fn(),
@@ -21,6 +27,9 @@ const {
 vi.mock("@/lib/grading", () => ({
   autoGradeSession: autoGradeSessionMock,
   listQuestionsToGrade: listQuestionsToGradeMock,
+  listCaseQuestionsForSummary: listCaseQuestionsForSummaryMock,
+  isAssignmentGradingSession: isAssignmentGradingSessionMock,
+  markObjectiveOnlyGradingDone: markObjectiveOnlyGradingDoneMock,
 }));
 
 vi.mock("@/lib/qstash", () => ({
@@ -125,6 +134,9 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
       messageId: "m1",
     });
     listQuestionsToGradeMock.mockResolvedValue([0]);
+    listCaseQuestionsForSummaryMock.mockResolvedValue([]);
+    isAssignmentGradingSessionMock.mockResolvedValue(false);
+    markObjectiveOnlyGradingDoneMock.mockResolvedValue(undefined);
   });
 
   it("skips when successful grades exist AND a real session summary is already saved", async () => {
@@ -169,6 +181,28 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
     expect(enqueueGradingPhaseMock).toHaveBeenCalled();
   });
 
+  it("skips completed objective-only sessions even without a real summary", async () => {
+    mockDb({
+      gradeRows: [{ grade_type: "auto" }],
+      sessionMeta: {
+        ai_summary: null,
+        grading_progress: {
+          status: "completed",
+          phase: "objective_only_done",
+          updated_at: new Date().toISOString(),
+        },
+      },
+    });
+
+    const result = await triggerGradingIfNeeded(
+      "550e8400-e29b-41d4-a716-446655440000",
+      "heartbeat"
+    );
+
+    expect(result).toEqual({ queued: false, reason: "already_graded" });
+    expect(enqueueGradingPhaseMock).not.toHaveBeenCalled();
+  });
+
   it("skips when grading_progress is actively running and fresh", async () => {
     mockDb({
       gradeRows: [],
@@ -202,8 +236,23 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
     expect(enqueueGradingPhaseMock).toHaveBeenCalled();
   });
 
-  it("falls back to session_summary phase when no questions have submissions", async () => {
+  it("completes immediately when no objective and no case questions", async () => {
     listQuestionsToGradeMock.mockResolvedValue([]);
+    listCaseQuestionsForSummaryMock.mockResolvedValue([]);
+    mockDb({
+      gradeRows: [],
+      sessionMeta: { ai_summary: null, grading_progress: null },
+    });
+
+    const result = await triggerGradingIfNeeded("550e8400-e29b-41d4-a716-446655440000", "submit_exam");
+
+    expect(result).toEqual({ queued: false, reason: "objective_only_done" });
+    expect(enqueueGradingPhaseMock).not.toHaveBeenCalled();
+  });
+
+  it("queues session_summary when exam has one case question and no objective", async () => {
+    listQuestionsToGradeMock.mockResolvedValue([]);
+    listCaseQuestionsForSummaryMock.mockResolvedValue([0]);
     mockDb({
       gradeRows: [],
       sessionMeta: { ai_summary: null, grading_progress: null },
@@ -212,9 +261,10 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
     const result = await triggerGradingIfNeeded("550e8400-e29b-41d4-a716-446655440000", "submit_exam");
 
     expect(result).toEqual({ queued: true, reason: "qstash" });
-    expect(enqueueGradingPhaseMock).toHaveBeenCalledWith(
-      expect.objectContaining({ phase: "session_summary" })
-    );
+    expect(enqueueGradingPhaseMock).toHaveBeenCalledWith({
+      sessionId: "550e8400-e29b-41d4-a716-446655440000",
+      phase: "session_summary",
+    });
   });
 
   it("returns qstash_not_configured on Vercel when QStash is disabled", async () => {

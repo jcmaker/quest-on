@@ -23,6 +23,22 @@ interface QuestionNavigationProps {
   hideScores?: boolean;
 }
 
+function getTypePrefix(type: string): string {
+  if (type === "multiple-choice") return "사지선다";
+  if (type === "true-false") return "OX";
+  return "CASE";
+}
+
+/** 문제 유형별 번호를 붙인 레이블 배열 반환. 예: ["사지선다 1", "사지선다 2", "OX 1", "CASE 1"] */
+function buildQuestionLabels(questions: Question[]): string[] {
+  const counters: Record<string, number> = {};
+  return questions.map((q) => {
+    const prefix = getTypePrefix(q.type);
+    counters[prefix] = (counters[prefix] ?? 0) + 1;
+    return `${prefix} ${counters[prefix]}`;
+  });
+}
+
 export function QuestionNavigation({
   questions,
   selectedQuestionIdx,
@@ -38,6 +54,8 @@ export function QuestionNavigation({
     );
   }
 
+  const labels = buildQuestionLabels(questions);
+
   return (
     <div className="mb-6">
       <div className="flex gap-2 flex-wrap">
@@ -49,7 +67,7 @@ export function QuestionNavigation({
             onClick={() => onSelectQuestion(idx)}
             data-testid={`question-nav-${idx}`}
           >
-            문제 {idx + 1}
+            {labels[idx]}
             {grades[idx] && !hideScores && (
               <Badge
                 variant="secondary"
@@ -64,4 +82,6 @@ export function QuestionNavigation({
     </div>
   );
 }
+
+export { buildQuestionLabels, getTypePrefix };
 

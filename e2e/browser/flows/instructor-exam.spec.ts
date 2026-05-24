@@ -30,7 +30,7 @@ test.describe("Instructor — Exam & Grading Flow", () => {
     await expect(instructorPage.getByText(/Final Exam/)).toBeVisible();
   });
 
-  test("exam detail page shows student list and stats", async ({
+  test("exam detail page shows student cards with progress", async ({
     instructorPage,
   }) => {
     const { exam, students } = await seedInstructorGradingScenario({
@@ -39,15 +39,21 @@ test.describe("Instructor — Exam & Grading Flow", () => {
 
     await instructorPage.goto(`/instructor/${exam.id}`);
 
-    // Should show exam title
     await expect(instructorPage.getByText(exam.title)).toBeVisible({
       timeout: TIMEOUTS.PAGE_LOAD,
     });
 
-    // Should show student list heading
     await expect(
       instructorPage.getByRole("heading", { name: /학생 목록/i }),
     ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
+
+    const sessionId = students[0].session.id;
+    await expect(
+      instructorPage.locator(`[data-testid="exam-student-row-${sessionId}"]`),
+    ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
+
+    await expect(instructorPage.getByText("서술")).toBeVisible();
+    await expect(instructorPage.getByRole("link", { name: /채점/i })).toBeVisible();
   });
 
   test("grading page loads with question, answer, and grading panel", async ({

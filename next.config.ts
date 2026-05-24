@@ -1,6 +1,18 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Legacy route redirects.
+  // /exam/[code]/answer was consolidated into /exam/[code] (PR #12). 308 keeps
+  // method + body for any bookmarked or in-flight links.
+  async redirects() {
+    return [
+      {
+        source: "/exam/:code/answer",
+        destination: "/exam/:code",
+        permanent: true,
+      },
+    ];
+  },
   // Security headers
   async headers() {
     return [

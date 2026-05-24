@@ -16,6 +16,8 @@ export type AiFeature =
   | "generate_summary"
   | "assignment_quiz"
   | "instructor_agent"
+  | "case_grading_chat"
+  | "bulk_grading_chat"
   | "embedding";
 
 export const AI_FEATURES: AiFeature[] = [
@@ -32,6 +34,8 @@ export const AI_FEATURES: AiFeature[] = [
   "generate_summary",
   "assignment_quiz",
   "instructor_agent",
+  "case_grading_chat",
+  "bulk_grading_chat",
   "embedding",
 ];
 

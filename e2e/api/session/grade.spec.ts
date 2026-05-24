@@ -213,7 +213,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
     expect(res.status()).toBe(403);
   });
 
-  test("auto-grade without rubric → 400 RUBRIC_REQUIRED", async ({
+  test("auto-grade without rubric completes objective-only path", async ({
     instructorRequest,
   }) => {
     const exam = await seedExam({ rubric: [] }); // empty rubric
@@ -228,8 +228,8 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
       { data: { forceRegrade: true } }
     );
 
-    expect(res.status()).toBe(400);
+    expect(res.status()).toBe(200);
     const body = await res.json();
-    expect(body.error).toBe("RUBRIC_REQUIRED");
+    expect(body.reason).toBeDefined();
   });
 });

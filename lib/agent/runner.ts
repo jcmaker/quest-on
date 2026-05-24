@@ -102,7 +102,6 @@ function describePageState(state: AgentPageState): string {
     `- 경로: ${state.route}`,
     `- 시험 제목: ${state.examTitle || "(비어 있음)"}`,
     `- 문항 수: ${state.questionCount}`,
-    `- 루브릭 행 수: ${state.rubricRowCount}`,
     `- 문제 생성 진행 중: ${state.isGenerating ? "예" : "아니오"}`,
     "- 문제 목록:",
     questionLines,
@@ -585,7 +584,6 @@ function extractFirstPageState(record: AgentRunRecord): AgentPageState {
     examTitle: "",
     questionCount: 0,
     questions: [],
-    rubricRowCount: 0,
     isGenerating: false,
   };
 }
@@ -598,7 +596,6 @@ function isAgentPageState(value: unknown): value is AgentPageState {
     typeof v.examTitle === "string" &&
     typeof v.questionCount === "number" &&
     Array.isArray(v.questions) &&
-    typeof v.rubricRowCount === "number" &&
     typeof v.isGenerating === "boolean"
   );
 }

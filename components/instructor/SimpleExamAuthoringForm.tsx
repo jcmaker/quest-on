@@ -1,11 +1,10 @@
 "use client";
 
-import type { ReactNode, Ref } from "react";
+import type { KeyboardEvent, ReactNode, Ref } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -17,6 +16,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
@@ -25,15 +31,15 @@ import {
   FolderOpen,
   Loader2,
   Plus,
-  Sparkles,
-  Trash2,
   Upload,
   X,
 } from "lucide-react";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { QuestionEditor } from "@/components/instructor/QuestionEditor";
-import { QuestionAdjustSheet } from "@/components/instructor/QuestionAdjustSheet";
-import type { RubricItem } from "@/components/instructor/RubricTable";
+import {
+  QuestionAdjustSheet,
+  type QuestionAdjustApply,
+} from "@/components/instructor/QuestionAdjustSheet";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 import toast from "react-hot-toast";
 
@@ -60,33 +66,24 @@ interface SimpleExamAuthoringFormProps {
   onDragAreaClick: () => void;
   onRemoveFile: (index: number) => void;
   getFileIcon: (fileName: string) => ReactNode;
+  /**
+   * AI 에이전트 실행 레이어가 쓰는 숨은 문제 생성기.
+   * 다이얼로그에는 렌더링하지 않지만, 에이전트 ref 핸들이 살아 있도록
+   * 폼 내부에 시각적으로 숨겨 마운트한다.
+   */
   generator: ReactNode;
   questions: Question[];
   highlightedIds?: Set<string>;
-  onQuestionAdd: () => void;
+  onQuestionAdd: (type?: Question["type"], count?: number) => void;
   onQuestionUpdate: (
     id: string,
     field: keyof Question,
-    value: string | boolean,
+    value: string | boolean | number | string[],
   ) => void;
   onQuestionRemove: (id: string) => void;
   onQuestionMove: (index: number, direction: "up" | "down") => void;
-  rubric: RubricItem[];
-  onRubricAdd: () => void;
-  onRubricUpdate: (id: string, field: keyof RubricItem, value: string) => void;
-  onRubricRemove: (id: string) => void;
-  isRubricPublic: boolean;
-  onRubricPublicChange: (value: boolean) => void;
   chatWeight: number | null;
   onChatWeightChange: (value: number | null) => void;
-  pendingAISuggestions: RubricItem[];
-  onAcceptAISuggestions: () => void;
-  onDismissAISuggestions: () => void;
-  onAIGenerateRubric: (params?: {
-    topics?: string;
-    customInstructions?: string;
-  }) => void;
-  isAIGeneratingRubric: boolean;
   submitReasons: string[];
   isSubmitting: boolean;
   onCancel: () => void;
@@ -158,6 +155,84 @@ function Field({
   );
 }
 
+/** 문제 추가 다이얼로그에서 고르는 문제 유형. */
+const QUESTION_TYPE_OPTIONS: {
+  type: Question["type"];
+  label: string;
+  description: string;
+}[] = [
+  {
+    type: "multiple-choice",
+    label: "사지선다",
+    description: "4지선다 객관식",
+  },
+  { type: "true-false", label: "O·X", description: "참·거짓 O/X" },
+  { type: "essay", label: "사례형", description: "서술형 사례" },
+];
+
+/**
+ * 문제 추가 다이얼로그의 유형 선택기.
+ * 단일 선택이므로 radiogroup 으로 노출하고 좌우/상하 방향키 이동을 지원한다.
+ */
+function QuestionTypePicker({
+  value,
+  onChange,
+}: {
+  value: Question["type"];
+  onChange: (type: Question["type"]) => void;
+}) {
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp"];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    const currentIndex = QUESTION_TYPE_OPTIONS.findIndex(
+      (o) => o.type === value,
+    );
+    const delta =
+      e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+    const nextIndex =
+      (currentIndex + delta + QUESTION_TYPE_OPTIONS.length) %
+      QUESTION_TYPE_OPTIONS.length;
+    const next = QUESTION_TYPE_OPTIONS[nextIndex];
+    onChange(next.type);
+    document.getElementById(`question-type-${next.type}`)?.focus();
+  };
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="문제 유형"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+    >
+      {QUESTION_TYPE_OPTIONS.map((option) => {
+        const isSelected = value === option.type;
+        return (
+          <button
+            key={option.type}
+            id={`question-type-${option.type}`}
+            type="button"
+            role="radio"
+            aria-checked={isSelected}
+            tabIndex={isSelected ? 0 : -1}
+            onClick={() => onChange(option.type)}
+            onKeyDown={handleKeyDown}
+            className={`flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed p-4 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:aspect-square ${
+              isSelected
+                ? "border-primary bg-primary/5 text-primary"
+                : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
+            }`}
+          >
+            <span className="text-base font-semibold">{option.label}</span>
+            <span className="text-xs text-muted-foreground">
+              {option.description}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function SimpleExamAuthoringForm({
   title,
   duration,
@@ -179,34 +254,27 @@ export function SimpleExamAuthoringForm({
   onDragAreaClick,
   onRemoveFile,
   getFileIcon,
-  // generator,  // AI 문제 초안 임시 비활성화 — 복원 시 주석 해제
+  generator,
   questions,
   highlightedIds,
   onQuestionAdd,
   onQuestionUpdate,
   onQuestionRemove,
   onQuestionMove,
-  rubric,
-  onRubricAdd,
-  onRubricUpdate,
-  onRubricRemove,
-  isRubricPublic,
-  onRubricPublicChange,
   chatWeight,
   onChatWeightChange,
-  pendingAISuggestions,
-  onAcceptAISuggestions,
-  onDismissAISuggestions,
-  onAIGenerateRubric,
-  isAIGeneratingRubric,
   submitReasons,
   isSubmitting,
   onCancel,
 }: SimpleExamAuthoringFormProps) {
-  const [showRubricDetails, setShowRubricDetails] = useState(false);
   const [showAdvancedGrading, setShowAdvancedGrading] = useState(false);
-  const [rubricTopics, setRubricTopics] = useState("");
-  const [rubricInstructions, setRubricInstructions] = useState("");
+  // "+" 문제 추가 — 문제 유형을 고르는 Dialog 의 열림 상태.
+  const [isAddPickerOpen, setIsAddPickerOpen] = useState(false);
+  // 추가 다이얼로그에서 선택 중인 문제 유형.
+  const [pickedType, setPickedType] =
+    useState<Question["type"]>("multiple-choice");
+  // 추가 다이얼로그에서 한 번에 추가할 문제 개수 (1~5).
+  const [pickedCount, setPickedCount] = useState(1);
 
   const isUnlimited = duration === 0;
   const ready = submitReasons.length === 0;
@@ -244,6 +312,24 @@ export function SimpleExamAuthoringForm({
     ? (adjustHistories.get(sheetQuestionId) ?? [])
     : [];
 
+  const handleApplyAdjustment = useCallback(
+    (update: QuestionAdjustApply) => {
+      if (!sheetQuestionId) return;
+      onQuestionUpdate(sheetQuestionId, "text", update.text);
+      if (update.options) {
+        onQuestionUpdate(sheetQuestionId, "options", update.options);
+      }
+      if (typeof update.correctOptionIndex === "number") {
+        onQuestionUpdate(
+          sheetQuestionId,
+          "correctOptionIndex",
+          update.correctOptionIndex,
+        );
+      }
+    },
+    [sheetQuestionId, onQuestionUpdate],
+  );
+
   const handleAdjust = useCallback(
     async (instruction: string) => {
       if (!sheetQuestionId) return null;
@@ -261,6 +347,12 @@ export function SimpleExamAuthoringForm({
       });
 
       try {
+        // 라우트 enum 에는 short-answer 가 없으므로 essay 로 매핑한다.
+        const questionType: "multiple-choice" | "true-false" | "essay" =
+          question.type === "multiple-choice" ||
+          question.type === "true-false"
+            ? question.type
+            : "essay";
         const res = await fetch("/api/ai/adjust-question", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -269,12 +361,21 @@ export function SimpleExamAuthoringForm({
             questionText: question.text,
             instruction,
             language,
+            questionType,
+            ...(question.options && question.options.length > 0
+              ? { currentOptions: question.options }
+              : {}),
+            ...(typeof question.correctOptionIndex === "number"
+              ? { currentCorrectOptionIndex: question.correctOptionIndex }
+              : {}),
           }),
         });
         if (!res.ok) throw new Error("Failed");
         const data = (await res.json()) as {
           questionText: string;
           explanation: string;
+          options?: string[];
+          correctOptionIndex?: number;
         };
         setAdjustHistories((prev) => {
           const next = new Map(prev);
@@ -284,9 +385,17 @@ export function SimpleExamAuthoringForm({
               role: "assistant",
               content: data.explanation,
               questionText: data.questionText,
+              options: data.options,
+              correctOptionIndex: data.correctOptionIndex,
             },
           ]);
           return next;
+        });
+        // 새 생성 결과는 적용하기 버튼 없이 즉시 문제에 반영한다.
+        handleApplyAdjustment({
+          text: data.questionText,
+          options: data.options,
+          correctOptionIndex: data.correctOptionIndex,
         });
         return data;
       } catch {
@@ -296,15 +405,7 @@ export function SimpleExamAuthoringForm({
         setIsAdjusting(false);
       }
     },
-    [sheetQuestionId, questions, language],
-  );
-
-  const handleApplyAdjustment = useCallback(
-    (newText: string) => {
-      if (!sheetQuestionId) return;
-      onQuestionUpdate(sheetQuestionId, "text", newText);
-    },
-    [sheetQuestionId, onQuestionUpdate],
+    [sheetQuestionId, questions, language, handleApplyAdjustment],
   );
 
   return (
@@ -390,7 +491,7 @@ export function SimpleExamAuthoringForm({
         <Field
           label="수업 자료"
           optional
-          helper="업로드하면 AI가 자료를 근거로 문제와 평가 기준을 만듭니다."
+          helper="업로드하면 AI가 자료를 근거로 문제를 만듭니다."
         >
           <div className="space-y-3">
             <Input
@@ -498,19 +599,7 @@ export function SimpleExamAuthoringForm({
           </Select>
         </Field>
 
-        {/* AI 문제 초안 — 임시 비활성화. MCQ·O/X 등 문제 유형 확장에 맞춰
-            문제별 AI 초안 생성으로 전환 검토 중. 복원: 위 generator prop 주석
-            해제 + 아래 블록 주석 해제.
-        <Field
-          label="AI 문제 초안"
-          optional
-          helper="주제를 입력하면 AI가 문제 초안을 만들어 아래 문제 목록에 추가합니다."
-        >
-          <div className="space-y-3">{generator}</div>
-        </Field>
-        */}
-
-        {/* 문제 */}
+        {/* 문제 — "+" 버튼이 문제 추가 Dialog(유형/개수/AI 프롬프트)를 연다. */}
         <Field
           label="문제"
           required
@@ -521,298 +610,128 @@ export function SimpleExamAuthoringForm({
           }
         >
           <div className="space-y-3" data-testid="manual-questions-section">
+            {questions.map((question, index) => (
+              <div
+                key={question.id}
+                className={`relative transition-all duration-500 ${
+                  highlightedIds?.has(question.id)
+                    ? "rounded-md ring-2 ring-primary ring-offset-2"
+                    : ""
+                }`}
+              >
+                {questions.length > 1 && (
+                  <div className="absolute right-3 top-11 z-10 flex gap-1">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="size-7"
+                      disabled={index === 0}
+                      onClick={() => onQuestionMove(index, "up")}
+                      aria-label="위로 이동"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="icon"
+                      className="size-7"
+                      disabled={index === questions.length - 1}
+                      onClick={() => onQuestionMove(index, "down")}
+                      aria-label="아래로 이동"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+                <QuestionEditor
+                  question={question}
+                  index={index}
+                  onUpdate={onQuestionUpdate}
+                  onRemove={onQuestionRemove}
+                  onAIEdit={() => setSheetQuestionId(question.id)}
+                  mode="exam"
+                  variant="line"
+                />
+              </div>
+            ))}
+
+            {/* "+" 문제 추가 트리거 — 클릭 시 문제 추가 Dialog 를 연다. */}
             {questions.length === 0 ? (
               <button
                 type="button"
-                onClick={onQuestionAdd}
+                onClick={() => setIsAddPickerOpen(true)}
                 className="flex min-h-28 w-full items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground hover:bg-muted/50"
                 data-testid="empty-add-question-btn"
               >
-                <Plus className="mr-2 h-4 w-4" />첫 문제 입력
+                <Plus className="mr-2 h-4 w-4" />첫 문제 추가
               </button>
             ) : (
-              <>
-                {questions.map((question, index) => (
-                  <div
-                    key={question.id}
-                    className={`relative transition-all duration-500 ${
-                      highlightedIds?.has(question.id)
-                        ? "rounded-md ring-2 ring-primary ring-offset-2"
-                        : ""
-                    }`}
-                  >
-                    {questions.length > 1 && (
-                      <div className="absolute right-3 top-11 z-10 flex gap-1">
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="icon"
-                          className="size-7"
-                          disabled={index === 0}
-                          onClick={() => onQuestionMove(index, "up")}
-                          aria-label="위로 이동"
-                        >
-                          <ArrowUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="icon"
-                          className="size-7"
-                          disabled={index === questions.length - 1}
-                          onClick={() => onQuestionMove(index, "down")}
-                          aria-label="아래로 이동"
-                        >
-                          <ArrowDown className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                    <QuestionEditor
-                      question={question}
-                      index={index}
-                      onUpdate={onQuestionUpdate}
-                      onRemove={onQuestionRemove}
-                      onAIEdit={() => setSheetQuestionId(question.id)}
-                      mode="exam"
-                      variant="line"
-                    />
-                  </div>
-                ))}
-                <div className="flex justify-center pt-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={onQuestionAdd}
-                    className="size-10 rounded-full"
-                    aria-label="문제 추가"
-                    data-testid="add-question-btn"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </>
+              <div className="flex justify-center pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setIsAddPickerOpen(true)}
+                  className="size-10 rounded-full"
+                  aria-label="문제 추가"
+                  data-testid="add-question-btn"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
             )}
           </div>
         </Field>
 
-        {/* 평가 기준 */}
+        {/* 채점 비중 */}
         <Field
-          label="평가 기준"
+          label="채점 비중"
           optional
-          helper="AI 채점에 사용할 기준입니다. 비워두면 기본 기준으로 채점됩니다."
+          helper="AI 대화 과정과 최종 답안을 채점에 반영하는 비율입니다. 비워두면 기본값 50:50으로 채점됩니다."
         >
-          <div className="space-y-3">
+          <div className="rounded-md border bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                size="sm"
-                onClick={() =>
-                  onAIGenerateRubric({
-                    topics: rubricTopics.trim() || undefined,
-                    customInstructions:
-                      rubricInstructions.trim() || undefined,
-                  })
-                }
-                disabled={isAIGeneratingRubric}
-                className="gap-1.5"
-              >
-                {isAIGeneratingRubric ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                AI 생성
-              </Button>
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">
+                대화 {effectiveWeight}% / 최종 답안 {100 - effectiveWeight}%
+              </span>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowRubricDetails((prev) => !prev)}
+                onClick={() => setShowAdvancedGrading((prev) => !prev)}
+                className="ml-auto"
               >
-                {showRubricDetails ? "접기" : "편집"}
-              </Button>
-              <div className="ml-auto flex items-center gap-2">
-                <Label htmlFor="simple-rubric-public" className="text-sm">
-                  학생에게 공개
-                </Label>
-                <Switch
-                  id="simple-rubric-public"
-                  checked={isRubricPublic}
-                  onCheckedChange={onRubricPublicChange}
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="rubric-topics" className="text-sm">
-                  주제 / 키워드
-                </Label>
-                <Input
-                  id="rubric-topics"
-                  value={rubricTopics}
-                  onChange={(e) => setRubricTopics(e.target.value)}
-                  placeholder="예: 주요 개념, 특정 주제, 응용 사례"
-                  maxLength={500}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="rubric-instructions" className="text-sm">
-                  추가 지시사항{" "}
-                  <span className="font-normal text-muted-foreground">
-                    (선택)
-                  </span>
-                </Label>
-                <Input
-                  id="rubric-instructions"
-                  value={rubricInstructions}
-                  onChange={(e) => setRubricInstructions(e.target.value)}
-                  placeholder="예: 한국 기업 사례를 활용해주세요"
-                  maxLength={1000}
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-center pt-1">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  onRubricAdd();
-                  setShowRubricDetails(true);
-                }}
-                className="size-10 rounded-full"
-                aria-label="평가 기준 추가"
-              >
-                <Plus className="h-4 w-4" />
+                조정
               </Button>
             </div>
-
-            {pendingAISuggestions.length > 0 && (
-              <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium">
-                    AI 제안 {pendingAISuggestions.length}개
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={onDismissAISuggestions}
-                  >
-                    무시
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={onAcceptAISuggestions}
-                  >
-                    적용
-                  </Button>
+            {showAdvancedGrading && (
+              <div className="mt-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="simple-custom-weight"
+                    checked={isCustomWeight}
+                    onCheckedChange={(checked) =>
+                      onChatWeightChange(checked ? 50 : null)
+                    }
+                  />
+                  <Label htmlFor="simple-custom-weight" className="text-sm">
+                    직접 설정
+                  </Label>
                 </div>
-              </div>
-            )}
-
-            {showRubricDetails && (
-              <div className="space-y-2">
-                {rubric.length === 0 ? (
-                  <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                    평가 기준이 없으면 기본 기준으로 채점됩니다.
-                  </p>
-                ) : (
-                  rubric.map((item) => (
-                    <div
-                      key={item.id}
-                      className="grid gap-2 rounded-md border p-3 lg:grid-cols-[180px_minmax(0,1fr)_auto]"
-                    >
-                      <Textarea
-                        value={item.evaluationArea}
-                        onChange={(e) =>
-                          onRubricUpdate(
-                            item.id,
-                            "evaluationArea",
-                            e.target.value,
-                          )
-                        }
-                        placeholder="평가 영역"
-                        className="min-h-11 resize-y"
-                      />
-                      <Textarea
-                        value={item.detailedCriteria}
-                        onChange={(e) =>
-                          onRubricUpdate(
-                            item.id,
-                            "detailedCriteria",
-                            e.target.value,
-                          )
-                        }
-                        placeholder="세부 기준"
-                        className="min-h-11 resize-y"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onRubricRemove(item.id)}
-                        className="text-destructive hover:text-destructive"
-                        aria-label="평가 기준 삭제"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))
+                {isCustomWeight && (
+                  <Slider
+                    value={[effectiveWeight]}
+                    onValueChange={([value]) => onChatWeightChange(value)}
+                    min={0}
+                    max={100}
+                    step={10}
+                  />
                 )}
               </div>
             )}
-
-            <div className="rounded-md border bg-muted/20 p-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">
-                  채점 비중: 대화 {effectiveWeight}% / 최종 답안{" "}
-                  {100 - effectiveWeight}%
-                </span>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowAdvancedGrading((prev) => !prev)}
-                  className="ml-auto"
-                >
-                  조정
-                </Button>
-              </div>
-              {showAdvancedGrading && (
-                <div className="mt-3 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      id="simple-custom-weight"
-                      checked={isCustomWeight}
-                      onCheckedChange={(checked) =>
-                        onChatWeightChange(checked ? 50 : null)
-                      }
-                    />
-                    <Label
-                      htmlFor="simple-custom-weight"
-                      className="text-sm"
-                    >
-                      직접 설정
-                    </Label>
-                  </div>
-                  {isCustomWeight && (
-                    <Slider
-                      value={[effectiveWeight]}
-                      onValueChange={([value]) => onChatWeightChange(value)}
-                      min={0}
-                      max={100}
-                      step={10}
-                    />
-                  )}
-                </div>
-              )}
-            </div>
           </div>
         </Field>
       </div>
@@ -828,13 +747,7 @@ export function SimpleExamAuthoringForm({
                 {duration === 0 ? "무제한" : `${duration}분`}
               </Badge>
               <Badge variant="outline">문제 {questions.length}개</Badge>
-              <Badge variant="outline">
-                루브릭 {rubric.length > 0 ? `${rubric.length}개` : "없음"}
-              </Badge>
               <Badge variant="outline">{materialSummary}</Badge>
-              <Badge variant="outline">
-                {isRubricPublic ? "루브릭 공개" : "루브릭 비공개"}
-              </Badge>
             </div>
             {submitReasons.length > 0 && (
               <div
@@ -858,6 +771,70 @@ export function SimpleExamAuthoringForm({
         </div>
       </div>
 
+      {/*
+        AI 에이전트 실행 레이어가 쓰는 숨은 문제 생성기.
+        다이얼로그 UI 에서는 AI 생성을 제거했지만, 에이전트 ref 핸들이
+        살아 있도록 시각적으로 숨겨 마운트만 유지한다.
+      */}
+      <div className="sr-only" aria-hidden>
+        {generator}
+      </div>
+
+      {/* 문제 추가 Dialog — 문제 유형만 고른다. */}
+      <Dialog open={isAddPickerOpen} onOpenChange={setIsAddPickerOpen}>
+        <DialogContent
+          className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+          data-testid="add-question-picker"
+        >
+          <DialogHeader>
+            <DialogTitle>문제 추가</DialogTitle>
+            <DialogDescription>
+              추가할 문제 유형을 선택하세요.
+            </DialogDescription>
+          </DialogHeader>
+          <QuestionTypePicker value={pickedType} onChange={setPickedType} />
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="add-question-count" className="text-sm">
+                개수
+              </Label>
+              <Select
+                value={pickedCount.toString()}
+                onValueChange={(value) =>
+                  setPickedCount(Number.parseInt(value, 10))
+                }
+              >
+                <SelectTrigger
+                  id="add-question-count"
+                  className="h-9 w-20"
+                  data-testid="add-question-count"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <SelectItem key={n} value={n.toString()}>
+                      {n}개
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              onClick={() => {
+                onQuestionAdd(pickedType, pickedCount);
+                setIsAddPickerOpen(false);
+                setPickedCount(1);
+              }}
+              data-testid="manual-add-question-btn"
+            >
+              추가
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {sheetQuestion && (
         <QuestionAdjustSheet
           open={sheetQuestionId !== null}
@@ -865,6 +842,9 @@ export function SimpleExamAuthoringForm({
             if (!open) setSheetQuestionId(null);
           }}
           questionText={sheetQuestion.text}
+          questionType={sheetQuestion.type}
+          questionOptions={sheetQuestion.options}
+          questionCorrectOptionIndex={sheetQuestion.correctOptionIndex}
           history={sheetHistory}
           isAdjusting={isAdjusting}
           onSendInstruction={handleAdjust}

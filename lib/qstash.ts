@@ -87,6 +87,85 @@ export function gradingDedupId(payload: GradingPhasePayload): string {
   return `grading-${payload.sessionId}-${payload.phase}-${payload.qIdx}`;
 }
 
+// ─── Bulk Grading Jobs ────────────────────────────────────────────────────────
+
+export type BulkGradeJobPayload = {
+  gradingSessionId: string;
+  studentSessionId: string;
+  examId: string;
+};
+
+export function bulkGradingDedupId(
+  gradingSessionId: string,
+  studentSessionId: string,
+): string {
+  return `bulk-grade-${gradingSessionId}-${studentSessionId}`;
+}
+
+export type EnqueueBulkGradeJobsResult = {
+  published: number;
+  failed: number;
+};
+
+/**
+ * Enqueues bulk grading jobs for all students.
+ * Splits into chunks of 100 (QStash batchJSON limit).
+ * Payload contains only IDs — worker loads data from DB.
+ */
+export async function enqueueBulkGradeJobs(
+  jobs: BulkGradeJobPayload[],
+): Promise<EnqueueBulkGradeJobsResult> {
+  const qstash = getQStash();
+  if (!qstash) {
+    return { published: 0, failed: jobs.length };
+  }
+
+  const baseUrl = getWorkerBaseUrl();
+  if (!baseUrl) {
+    return { published: 0, failed: jobs.length };
+  }
+
+  const CHUNK_SIZE = 100;
+  let published = 0;
+  let failed = 0;
+
+  for (let i = 0; i < jobs.length; i += CHUNK_SIZE) {
+    const chunk = jobs.slice(i, i + CHUNK_SIZE);
+    const messages = chunk.map((job) => ({
+      url: `${baseUrl}/api/internal/bulk-grade-worker`,
+      body: job,
+      retries: 3,
+      headers: {
+        "Upstash-Deduplication-Id": bulkGradingDedupId(
+          job.gradingSessionId,
+          job.studentSessionId,
+        ),
+      },
+    }));
+
+    try {
+      // batchJSON publishes all messages in a single HTTP request
+      type QStashWithBatch = Client & { batchJSON?: (msgs: typeof messages) => Promise<unknown[]> };
+      const client = qstash as QStashWithBatch;
+      if (typeof client.batchJSON === "function") {
+        await client.batchJSON(messages);
+      } else {
+        // Fallback: publishJSON sequentially if batchJSON not available
+        await Promise.all(messages.map((m) => qstash.publishJSON(m)));
+      }
+      published += chunk.length;
+    } catch (err) {
+      logError("[QSTASH] Bulk grade batch publish failed", err, {
+        path: "lib/qstash.ts",
+        additionalData: { chunkStart: i, chunkSize: chunk.length },
+      });
+      failed += chunk.length;
+    }
+  }
+
+  return { published, failed };
+}
+
 export type EnqueueGradingPhaseResult =
   | { ok: true; dedupId: string; messageId: string | null }
   | { ok: false; reason: "qstash_disabled" | "no_base_url" | "publish_failed"; error?: unknown };

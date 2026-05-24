@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOpenAI, AI_MODEL } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { searchRelevantMaterials } from "@/lib/material-search";
-import { type RubricItem, type PromptLanguage, buildStudentChatSystemPrompt } from "@/lib/prompts";
+import { type PromptLanguage, buildStudentChatSystemPrompt } from "@/lib/prompts";
 import { handleCorsPreFlight } from "@/lib/cors";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateRequest, chatRequestSchema } from "@/lib/validations";
@@ -357,7 +357,6 @@ async function handleChatLogic(params: {
   examCode: string;
   examId?: string;
   examMaterialsText?: Array<{ url: string; text: string; fileName: string }>;
-  rubric?: RubricItem[];
   currentQuestionText?: string;
   currentQuestionAiContext?: string;
   skipIncrementUsedClarifications?: boolean;
@@ -378,7 +377,6 @@ async function handleChatLogic(params: {
     examCode,
     examId,
     examMaterialsText,
-    rubric,
     currentQuestionText,
     currentQuestionAiContext,
     skipIncrementUsedClarifications,
@@ -453,7 +451,6 @@ async function handleChatLogic(params: {
     currentQuestionText,
     currentQuestionAiContext,
     relevantMaterialsText: rag.relevantMaterialsText,
-    rubric,
     language,
   }) + ragWarning;
 
@@ -739,7 +736,7 @@ export async function POST(request: NextRequest) {
 
     const { data: exam, error: examError } = await getSupabase()
       .from("exams")
-      .select("id, code, title, rubric, questions, materials_text, chat_weight, status, language")
+      .select("id, code, title, questions, materials_text, chat_weight, status, language")
       .eq("id", session.exam_id)
       .single();
 
@@ -758,13 +755,6 @@ export async function POST(request: NextRequest) {
 
     const effectiveExamId = examId || exam.id;
 
-    // Per-question rubric: look up current question's rubric, fall back to exam-level
-    let rubric: RubricItem[] | undefined;
-    if (Array.isArray(exam.questions) && exam.questions[safeQIdx]?.rubric?.length > 0) {
-      rubric = exam.questions[safeQIdx].rubric as RubricItem[];
-    } else if (Array.isArray(exam.rubric)) {
-      rubric = exam.rubric as RubricItem[];
-    }
     const materialsText = Array.isArray(exam.materials_text)
       ? (exam.materials_text as Array<{
           url: string;
@@ -784,7 +774,6 @@ export async function POST(request: NextRequest) {
       examCode: exam.code,
       examId: effectiveExamId,
       examMaterialsText: materialsText,
-      rubric,
       currentQuestionText,
       currentQuestionAiContext,
       userId: user?.id ?? session.student_id,

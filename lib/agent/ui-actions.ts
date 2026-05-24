@@ -65,7 +65,6 @@ export interface AgentPageState {
   questionCount: number;
   /** 각 문제의 인덱스 + 유형 + 본문 요약(전체 HTML 아님) */
   questions: Array<{ index: number; type: string; summary: string }>;
-  rubricRowCount: number;
   /** 스트리밍 생성이 진행 중인지 */
   isGenerating: boolean;
 }

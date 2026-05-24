@@ -12,8 +12,7 @@
 
 // ── 런(run) 분류 ────────────────────────────────────────────
 export type AgentRunType = "exam_creation";
-// 향후 확장: "rubric_generation" | "grading_assistant"
-//          | "student_reflection" | "integrity_analysis"
+// 향후 확장: "grading_assistant" | "student_reflection" | "integrity_analysis"
 
 export type AgentRunStatus =
   | "queued" //            생성 직후, 아직 루프 시작 전
@@ -70,20 +69,12 @@ export interface AgentRunInput {
   pageContext: AgentPageContext;
 }
 
-// ── exam_creation draft 산출물 ──────────────────────────────
-export interface DraftRubricItem {
-  evaluationArea: string;
-  detailedCriteria: string;
-}
-
 export interface DraftQuestion {
   id: string;
   /** HTML 본문 */
   text: string;
   /** "essay" 등 */
   type: string;
-  /** 문제별 루브릭 */
-  rubric?: DraftRubricItem[];
 }
 
 /**

@@ -4,9 +4,9 @@
 
 ## 1. System Overview
 
-Quest-On is an AI-powered exam and assignment platform where instructors create assessments, students take them with AI tutoring support, and AI auto-grades submissions for instructor review.
+Quest-On is an AI-powered exam and assignment platform where instructors create assessments, students take them with AI tutoring support, and instructors grade case questions with AI-assisted chat after submission.
 
-**Core Flow:** Instructor creates exam → uploads materials → AI generates questions/rubric → Students join via code → AI tutors during exam → Students submit → AI auto-grades → Instructor reviews & adjusts
+**Core Flow:** Instructor creates exam → uploads materials → AI generates questions → Students join via code → AI tutors during exam → Students submit → MCQ/OX auto-graded → Instructor grades case questions via AI chat → adjusts scores
 
 **Stack:** Next.js 16 (App Router) | React 19 | TypeScript 5 | Tailwind 4 | Prisma ORM | Supabase PostgreSQL + pgvector | Clerk Auth | OpenAI API | Upstash Redis | Vercel (iad1)
 
@@ -46,7 +46,7 @@ Quest-On is an AI-powered exam and assignment platform where instructors create 
 |---------|---------|---------------|----------|
 | **Clerk** | User auth (OAuth/passwordless), role management | Publishable + Secret key | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` |
 | **Supabase** | PostgreSQL database, file storage, realtime subscriptions, pgvector | Anon key (client) + Service role key (server) | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL` |
-| **OpenAI** | Chat tutoring, auto-grading, question generation, rubric creation, summarization | API key | `OPENAI_API_KEY` |
+| **OpenAI** | Chat tutoring, objective auto-grading, case grading chat, question generation, summarization | API key | `OPENAI_API_KEY` |
 | **Upstash Redis** | Distributed rate limiting across serverless instances | REST URL + Token | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
 | **Vercel** | Hosting, serverless functions, analytics | Platform-managed | `VERCEL_URL` |
 
@@ -148,7 +148,6 @@ Defined in `lib/rate-limit.ts`. Uses Upstash Redis (distributed) with in-memory 
 |--------|-------|---------|---------|
 | POST | `/api/ai/generate-questions` | Generate exam questions from materials | default |
 | POST | `/api/ai/generate-questions-stream` | Streaming question generation | default |
-| POST | `/api/ai/generate-rubric` | Generate grading rubric | default |
 | POST | `/api/ai/adjust-question` | Adjust question wording | default |
 
 ### Chat / Feedback
@@ -274,8 +273,9 @@ Key performance indexes on: `exams.code`, `exams.instructor_id`, `exams.status`,
 4. **Start Exam:** `POST /api/exam/[examId]/start` → sets `started_at`, students transition from waiting → in_progress
 5. **Student Chat:** `POST /api/chat` → RAG search materials → OpenAI chat completion → message stored in `messages`
 6. **Submit:** Student submits → `POST /api/supa` (submission handler) → `submissions` row, session status → submitted
-7. **Auto-Grade:** `PUT /api/session/[sessionId]/grade` → OpenAI grades against rubric → `grades` rows with stage_grading
-8. **Review:** Instructor views grades, adjusts manually → grade_type changes to "manual"
+7. **Auto-Grade (objective only):** Submit triggers QStash `grade_question` for MCQ/OX → deterministic `grades` rows (`grade_type: auto`)
+8. **Case grading:** Instructor opens grade UI → `POST /api/session/[sessionId]/case-grade/chat` → `POST .../case-grade/commit` → `grades` rows (`grade_type: manual`)
+9. **Review:** Instructor dashboard `GET /api/exam/[examId]/student-summaries` shows MCQ/OX/case progress per student
 
 ### AI Pipeline
 ```

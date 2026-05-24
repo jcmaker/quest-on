@@ -22,6 +22,7 @@ interface WaitingRoomProps {
   studentId?: string;
   examDuration?: number;
   questionCount?: number;
+  examHasEssay: boolean;
 }
 
 export function WaitingRoom({
@@ -34,6 +35,7 @@ export function WaitingRoom({
   examId,
   examDuration,
   questionCount,
+  examHasEssay,
 }: WaitingRoomProps) {
   const [isWaiting, setIsWaiting] = useState(true);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -235,7 +237,9 @@ export function WaitingRoom({
                 </p>
                 {!allowDraftInWaiting && !allowChatInWaiting && (
                   <p className="text-sm text-muted-foreground mt-2">
-                    시험이 시작되기 전까지 답안 작성이나 AI 채팅이 불가능합니다.
+                    {examHasEssay
+                      ? "시험이 시작되기 전까지 답안 작성이나 AI 채팅이 불가능합니다."
+                      : "시험이 시작되기 전까지 답안 작성이 불가능합니다."}
                   </p>
                 )}
               </div>

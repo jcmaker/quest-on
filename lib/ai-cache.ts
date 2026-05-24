@@ -1,10 +1,10 @@
 /**
  * AI 응답 캐싱 레이어
  *
- * 루브릭 생성, 문제 조정 등 동일한 입력에 대해 반복 호출되는 AI 작업을 캐싱.
+ * 문제 조정 등 동일한 입력에 대해 반복 호출되는 AI 작업을 캐싱.
  * Upstash Redis 사용 가능 시 Redis, 그렇지 않으면 인메모리 Map 폴백.
  *
- * 대상: generate-rubric, adjust-question
+ * 대상: adjust-question
  * 제외: 채팅(세션별 고유), 채점(정확성 중요)
  */
 

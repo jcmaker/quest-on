@@ -6,7 +6,7 @@ test.describe("AI — POST /api/ai/generate-questions", () => {
     await cleanupTestData();
   });
 
-  test("instructor generates questions → 200, returns questions + rubric", async ({
+  test("instructor generates questions → 200, returns questions", async ({
     instructorRequest,
   }) => {
     const res = await instructorRequest.post("/api/ai/generate-questions", {
@@ -37,13 +37,10 @@ test.describe("AI — POST /api/ai/generate-questions", () => {
     expect(body.questions[0].text).toBeTruthy();
     expect(body.questions[0].type).toBe("essay");
 
-    // Suggested rubric
-    expect(body.suggestedRubric).toBeTruthy();
-    expect(Array.isArray(body.suggestedRubric)).toBe(true);
-    if (body.suggestedRubric.length > 0) {
-      expect(body.suggestedRubric[0].evaluationArea).toBeTruthy();
-      expect(body.suggestedRubric[0].detailedCriteria).toBeTruthy();
-    }
+    // `successJson` wraps responses with a `success: true` envelope, so the
+    // body contains both `success` and `questions`. We only care that the
+    // questions payload is present and well-shaped.
+    expect(body).toMatchObject({ questions: expect.any(Array) });
   });
 
   test("minimal required fields → 200", async ({ instructorRequest }) => {
