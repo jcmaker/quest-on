@@ -703,7 +703,7 @@ export function SimpleExamAuthoringForm({
               : "최소 1개 이상 필요합니다."
           }
         >
-          <div className="space-y-3" data-testid="manual-questions-section">
+          <div className="space-y-8" data-testid="manual-questions-section">
             {questions.map((question, index) => (
               <div
                 key={question.id}
