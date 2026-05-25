@@ -46,8 +46,8 @@ export async function POST(request: NextRequest) {
       return errorJson("FORBIDDEN", "교수자만 문제를 생성할 수 있습니다.", 403);
     }
 
-    // Rate limit: expensive OpenAI call (bulk generation context)
-    const rl = await checkRateLimitAsync(`bulk-generate:${user.id}`, RATE_LIMITS.bulkGenerate);
+    // Rate limit: expensive OpenAI call — 키를 분리해 다른 AI 호출과 독립 카운팅
+    const rl = await checkRateLimitAsync(`bulk-generate:${user.id}`, RATE_LIMITS.ai);
     if (!rl.allowed) {
       return errorJson("RATE_LIMITED", "Too many requests. Please wait.", 429);
     }
