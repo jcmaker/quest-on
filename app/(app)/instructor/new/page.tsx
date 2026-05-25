@@ -670,6 +670,7 @@ export default function CreateExam() {
   };
 
   return (
+    <div className="min-h-screen bg-muted/40">
     <ScrollProgressProvider
       global
       transition={{ stiffness: 150, damping: 30, bounce: 0 }}
@@ -993,5 +994,6 @@ export default function CreateExam() {
         </div>
       </div>
     </ScrollProgressProvider>
+    </div>
   );
 }
