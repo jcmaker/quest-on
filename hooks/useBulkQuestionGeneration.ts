@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback } from "react";
 import type { GeneratedQuestion } from "./useQuestionGeneration";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -41,9 +41,6 @@ export function useBulkQuestionGeneration() {
   const [groupResults, setGroupResults] = useState<
     Record<string, GroupResult>
   >({});
-
-  /** 이미 append된 유형 그룹을 추적 (중복 append 방지) */
-  const appendedGroupsRef = useRef<Set<string>>(new Set());
 
   /** 단일 유형 그룹에 대한 API 호출 */
   const callGenerate = useCallback(
@@ -201,7 +198,6 @@ export function useBulkQuestionGeneration() {
   /** 상태 초기화 */
   const reset = useCallback(() => {
     setGroupResults({});
-    appendedGroupsRef.current.clear();
   }, []);
 
   return {
@@ -212,6 +208,5 @@ export function useBulkQuestionGeneration() {
     allDone,
     successQuestions,
     reset,
-    appendedGroupsRef,
   };
 }

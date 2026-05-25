@@ -864,7 +864,9 @@ export function SimpleExamAuthoringForm({
         open={isAddPickerOpen}
         onOpenChange={(open) => {
           if (!open) {
+            if (isBulkGenerating) return; // 로딩 중 닫기 차단
             setPickedPrompt("");
+            setPickedCount(1);
             resetBulk();
           }
           setIsAddPickerOpen(open);
