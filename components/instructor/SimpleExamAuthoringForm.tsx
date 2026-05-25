@@ -305,12 +305,35 @@ export function SimpleExamAuthoringForm({
     correctOptionIndex: gq.correctOptionIndex,
   }), []);
 
-  // AI 생성 완료 감지 → 문제 append 후 Dialog 닫기
+  // AI 생성 완료 감지 → 성공분 append + 에러 toast + Dialog 조건부 닫기
   useEffect(() => {
-    if (!bulkAllDone || successQuestions.length === 0) return;
-    onQuestionsAppend?.(successQuestions.map(toQuestion));
-    setIsAddPickerOpen(false);
-    setPickedPrompt("");
+    if (!bulkAllDone) return;
+
+    const results = Object.values(groupResults);
+    const successQs = results.flatMap((r) =>
+      r.status === "success" ? r.questions : [],
+    );
+    const errorTypes = results
+      .filter((r) => r.status === "error")
+      .map((r) => r.type);
+
+    // 성공분 append
+    if (successQs.length > 0) {
+      onQuestionsAppend?.(successQs.map(toQuestion));
+    }
+
+    // 에러 알림
+    if (errorTypes.length > 0) {
+      toast.error("일부 문제 생성에 실패했습니다. 다시 시도해주세요.");
+    }
+
+    // 전부 성공이면 Dialog 닫기 (에러가 있으면 열린 채로 프롬프트 유지)
+    if (errorTypes.length === 0 && successQs.length > 0) {
+      setIsAddPickerOpen(false);
+      setPickedPrompt("");
+    }
+
+    // 상태 초기화
     resetBulk();
   }, [bulkAllDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -324,6 +347,10 @@ export function SimpleExamAuthoringForm({
       return;
     }
     // 프롬프트 있음 → AI 생성
+    if (!title?.trim()) {
+      toast.error("AI 문제 생성 전에 시험 제목을 입력해주세요.");
+      return;
+    }
     const slots = [
       {
         tempId: crypto.randomUUID(),
@@ -342,16 +369,6 @@ export function SimpleExamAuthoringForm({
       materialsText: materialsText && materialsText.length > 0 ? materialsText : undefined,
     });
   }, [pickedPrompt, pickedType, pickedCount, onQuestionAdd, generateAll, title, language, materialsText]);
-
-  // 에러 메시지 (생성 실패 시 toast)
-  useEffect(() => {
-    if (!bulkAllDone) return;
-    const errorResults = Object.values(groupResults).filter((r) => r.status === "error");
-    if (errorResults.length > 0) {
-      toast.error(errorResults[0]?.error ?? "AI 문제 생성에 실패했습니다.");
-      resetBulk();
-    }
-  }, [bulkAllDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isUnlimited = duration === 0;
   const ready = submitReasons.length === 0;
