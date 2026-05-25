@@ -233,4 +233,6 @@ export const RATE_LIMITS = {
   pasteLog: { limit: 120, windowSec: 60 } satisfies RateLimitConfig,
   /** Final answer auto-save (assignment): 60 saves per minute (debounced 2.5s on client) */
   finalAnswerSave: { limit: 60, windowSec: 60 } satisfies RateLimitConfig,
+  /** AI 일괄 문제 생성용 (유형별 병렬 3콜 × 최대 제한): 5 requests per minute per user */
+  bulkGenerate: { limit: 5, windowSec: 60 } satisfies RateLimitConfig,
 } as const;

@@ -1,13 +1,14 @@
 "use client";
 
 import type { KeyboardEvent, ReactNode, Ref } from "react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -31,6 +32,7 @@ import {
   FolderOpen,
   Loader2,
   Plus,
+  Sparkles,
   Upload,
   X,
 } from "lucide-react";
@@ -40,7 +42,8 @@ import {
   QuestionAdjustSheet,
   type QuestionAdjustApply,
 } from "@/components/instructor/QuestionAdjustSheet";
-import type { ChatMessage } from "@/hooks/useQuestionGeneration";
+import type { ChatMessage, GeneratedQuestion } from "@/hooks/useQuestionGeneration";
+import { useBulkQuestionGeneration } from "@/hooks/useBulkQuestionGeneration";
 import toast from "react-hot-toast";
 
 type ExtractionStatus = "uploading" | "extracting" | "done" | "failed";
@@ -87,6 +90,10 @@ interface SimpleExamAuthoringFormProps {
   submitReasons: string[];
   isSubmitting: boolean;
   onCancel: () => void;
+  /** 업로드된 강의 자료 텍스트 목록 (AI 문제 생성 시 사용). */
+  materialsText?: Array<{ url: string; text: string; fileName: string }>;
+  /** AI 일괄 생성으로 만들어진 문제들을 목록에 append 하는 콜백. */
+  onQuestionsAppend?: (questions: Question[]) => void;
 }
 
 function getStatusText(status?: ExtractionStatus): string {
@@ -266,6 +273,8 @@ export function SimpleExamAuthoringForm({
   submitReasons,
   isSubmitting,
   onCancel,
+  materialsText,
+  onQuestionsAppend,
 }: SimpleExamAuthoringFormProps) {
   const [showAdvancedGrading, setShowAdvancedGrading] = useState(false);
   // "+" 문제 추가 — 문제 유형을 고르는 Dialog 의 열림 상태.
@@ -275,6 +284,91 @@ export function SimpleExamAuthoringForm({
     useState<Question["type"]>("multiple-choice");
   // 추가 다이얼로그에서 한 번에 추가할 문제 개수 (1~5).
   const [pickedCount, setPickedCount] = useState(1);
+  // 추가 다이얼로그에서 입력하는 AI 생성 프롬프트.
+  const [pickedPrompt, setPickedPrompt] = useState("");
+
+  const {
+    generateAll,
+    isLoading: isBulkGenerating,
+    successQuestions,
+    allDone: bulkAllDone,
+    reset: resetBulk,
+    groupResults,
+  } = useBulkQuestionGeneration();
+
+  // GeneratedQuestion → Question 변환
+  const toQuestion = useCallback((gq: GeneratedQuestion): Question => ({
+    id: gq.id,
+    text: gq.text,
+    type: gq.type,
+    options: gq.options,
+    correctOptionIndex: gq.correctOptionIndex,
+  }), []);
+
+  // AI 생성 완료 감지 → 성공분 append + 에러 toast + Dialog 조건부 닫기
+  useEffect(() => {
+    if (!bulkAllDone) return;
+
+    const results = Object.values(groupResults);
+    const successQs = results.flatMap((r) =>
+      r.status === "success" ? r.questions : [],
+    );
+    const errorTypes = results
+      .filter((r) => r.status === "error")
+      .map((r) => r.type);
+
+    // 성공분 append
+    if (successQs.length > 0) {
+      onQuestionsAppend?.(successQs.map(toQuestion));
+    }
+
+    // 에러 알림
+    if (errorTypes.length > 0) {
+      toast.error("일부 문제 생성에 실패했습니다. 다시 시도해주세요.");
+    }
+
+    // 전부 성공이면 Dialog 닫기 (에러가 있으면 열린 채로 프롬프트 유지)
+    if (errorTypes.length === 0 && successQs.length > 0) {
+      setIsAddPickerOpen(false);
+      setPickedPrompt("");
+    }
+
+    // 상태 초기화
+    resetBulk();
+  }, [bulkAllDone]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // "추가" 버튼 핸들러
+  const handleAdd = useCallback(async () => {
+    if (!pickedPrompt.trim()) {
+      // 프롬프트 없음 → 빈 문제 추가
+      onQuestionAdd(pickedType, pickedCount);
+      setIsAddPickerOpen(false);
+      setPickedCount(1);
+      return;
+    }
+    // 프롬프트 있음 → AI 생성
+    if (!title?.trim()) {
+      toast.error("AI 문제 생성 전에 시험 제목을 입력해주세요.");
+      return;
+    }
+    const slots = [
+      {
+        tempId: crypto.randomUUID(),
+        type: (pickedType === "multiple-choice"
+          ? "mcq"
+          : pickedType === "true-false"
+            ? "true-false"
+            : "case") as "mcq" | "true-false" | "case",
+        prompt: pickedPrompt,
+        count: pickedCount,
+      },
+    ];
+    await generateAll(slots, {
+      examTitle: title,
+      language,
+      materialsText: materialsText && materialsText.length > 0 ? materialsText : undefined,
+    });
+  }, [pickedPrompt, pickedType, pickedCount, onQuestionAdd, generateAll, title, language, materialsText]);
 
   const isUnlimited = duration === 0;
   const ready = submitReasons.length === 0;
@@ -609,7 +703,7 @@ export function SimpleExamAuthoringForm({
               : "최소 1개 이상 필요합니다."
           }
         >
-          <div className="space-y-3" data-testid="manual-questions-section">
+          <div className="space-y-8" data-testid="manual-questions-section">
             {questions.map((question, index) => (
               <div
                 key={question.id}
@@ -659,16 +753,18 @@ export function SimpleExamAuthoringForm({
 
             {/* "+" 문제 추가 트리거 — 클릭 시 문제 추가 Dialog 를 연다. */}
             {questions.length === 0 ? (
-              <button
-                type="button"
-                onClick={() => setIsAddPickerOpen(true)}
-                className="flex min-h-28 w-full items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground hover:bg-muted/50"
-                data-testid="empty-add-question-btn"
-              >
-                <Plus className="mr-2 h-4 w-4" />첫 문제 추가
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddPickerOpen(true)}
+                  className="flex min-h-28 w-full items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground hover:bg-muted/50"
+                  data-testid="empty-add-question-btn"
+                >
+                  <Plus className="mr-2 h-4 w-4" />첫 문제 추가
+                </button>
+              </div>
             ) : (
-              <div className="flex justify-center pt-1">
+              <div className="flex items-center justify-center gap-2 pt-1">
                 <Button
                   type="button"
                   variant="outline"
@@ -780,8 +876,19 @@ export function SimpleExamAuthoringForm({
         {generator}
       </div>
 
-      {/* 문제 추가 Dialog — 문제 유형만 고른다. */}
-      <Dialog open={isAddPickerOpen} onOpenChange={setIsAddPickerOpen}>
+      {/* 문제 추가 Dialog — 유형 선택 + 프롬프트 입력 */}
+      <Dialog
+        open={isAddPickerOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (isBulkGenerating) return; // 로딩 중 닫기 차단
+            setPickedPrompt("");
+            setPickedCount(1);
+            resetBulk();
+          }
+          setIsAddPickerOpen(open);
+        }}
+      >
         <DialogContent
           className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
           data-testid="add-question-picker"
@@ -820,16 +927,44 @@ export function SimpleExamAuthoringForm({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* 프롬프트 입력란 */}
+          <div className="mt-1">
+            <label className="text-sm font-medium text-muted-foreground mb-1.5 block">
+              어떤 문제를 만들고 싶은지 입력하세요{" "}
+              <span className="text-xs">(비워두면 빈 문제 추가)</span>
+            </label>
+            <Textarea
+              value={pickedPrompt}
+              onChange={(e) => setPickedPrompt(e.target.value)}
+              placeholder="예: AI 기술이 의료 산업에 미치는 영향을 분석하는 문제"
+              rows={3}
+              className="resize-none"
+              disabled={isBulkGenerating}
+            />
+          </div>
+
+          <div className="flex justify-end border-t pt-4">
             <Button
               type="button"
-              onClick={() => {
-                onQuestionAdd(pickedType, pickedCount);
-                setIsAddPickerOpen(false);
-                setPickedCount(1);
-              }}
+              onClick={handleAdd}
+              disabled={isBulkGenerating}
               data-testid="manual-add-question-btn"
             >
-              추가
+              {isBulkGenerating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  생성 중...
+                </>
+              ) : pickedPrompt.trim() ? (
+                <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  AI로 {pickedCount}개 생성
+                </>
+              ) : (
+                "추가"
+              )}
             </Button>
           </div>
         </DialogContent>

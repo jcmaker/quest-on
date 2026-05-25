@@ -449,6 +449,20 @@ export default function CreateExam() {
     });
   };
 
+  // AI 일괄 생성 콜백 — memoize하여 불필요한 리렌더 방지
+  const handleQuestionsAppend = useCallback((newQuestions: Question[]) => {
+    const newIds = newQuestions.map((q) => q.id);
+    setQuestions((prev) => [...prev, ...newQuestions]);
+    setHighlightedQuestionIds(new Set(newIds));
+    setTimeout(() => setHighlightedQuestionIds(new Set()), 3000);
+    setTimeout(() => {
+      questionsListRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 100);
+  }, []); // setQuestions, setHighlightedQuestionIds는 stable setState reference
+
   // ── AI 에이전트 클라이언트 실행 레이어 연결 ──────────────────────
   // 컨트롤러에 활성 런이 있고 running 단계이면 "에이전트 작성 중" 모드.
   // URL 파라미터가 아니라 컨트롤러 상태로 판별한다. 일반 사용에는 무영향.
@@ -656,6 +670,7 @@ export default function CreateExam() {
   };
 
   return (
+    <div className="min-h-screen bg-muted/40">
     <ScrollProgressProvider
       global
       transition={{ stiffness: 150, damping: 30, bounce: 0 }}
@@ -851,6 +866,8 @@ export default function CreateExam() {
                     router.push("/instructor");
                   }
                 }}
+                materialsText={fileUpload.getMaterialsText()}
+                onQuestionsAppend={handleQuestionsAppend}
               />
             </div>
           </form>
@@ -977,5 +994,6 @@ export default function CreateExam() {
         </div>
       </div>
     </ScrollProgressProvider>
+    </div>
   );
 }
