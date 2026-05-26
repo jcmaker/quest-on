@@ -8,10 +8,11 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Radio } from "@/components/animate-ui/icons/radio";
 import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
-import type {
-  ExamStudentOverallStatus,
-  ExamStudentSessionStatus,
-  ExamStudentSummary,
+import {
+  caseStatusLabel,
+  type ExamStudentOverallStatus,
+  type ExamStudentSessionStatus,
+  type ExamStudentSummary,
 } from "@/lib/types/student-summary";
 
 interface ExamStudentCardProps {
@@ -163,7 +164,7 @@ export function ExamStudentCard({
           <div>
             <dt className="text-muted-foreground">서술</dt>
             <dd className="font-medium tabular-nums">
-              {formatProgress(student.caseProgress.graded, student.caseProgress.total)}
+              {caseStatusLabel(student.status, student.caseProgress)}
             </dd>
           </div>
         </dl>

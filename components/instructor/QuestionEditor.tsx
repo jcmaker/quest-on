@@ -168,6 +168,9 @@ export function QuestionEditor({
 }: QuestionEditorProps) {
   const isObjective =
     question.type === "multiple-choice" || question.type === "true-false";
+  const isEmpty =
+    !question.text ||
+    question.text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
 
   if (variant === "line") {
     return (
@@ -198,7 +201,7 @@ export function QuestionEditor({
                 className="h-8 gap-1.5"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                AI로 문제 생성
+                {isEmpty ? "AI 생성" : "AI 수정"}
               </Button>
             )}
             {onRemove && (
@@ -271,7 +274,7 @@ export function QuestionEditor({
                 className="relative overflow-hidden gap-1.5 rounded-full"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
-                AI로 문제 생성
+                {isEmpty ? "AI 생성" : "AI 수정"}
               </Button>
             </Shine>
           )}
@@ -295,7 +298,7 @@ export function QuestionEditor({
       </div>
       {onAIEdit && (
         <p className="text-xs text-muted-foreground mb-4">
-          문제·선택지·정답을 AI로 생성
+          {isEmpty ? "AI로 문제를 생성하세요" : "AI로 문제, 선택지, 정답을 수정"}
         </p>
       )}
       <div className="space-y-4">

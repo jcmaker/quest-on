@@ -125,7 +125,7 @@ export function QuestionAdjustSheet({
   const sheetTitle =
     generationMode === "research-assignment"
       ? "AI로 과제 생성"
-      : "AI로 문제 생성";
+      : "AI 수정";
   const emptyHint = isObjective
     ? questionType === "true-false"
       ? "원하는 O·X 문제를 한 문장으로 적어주세요. 문장과 정답을 AI가 만들어 줍니다."

@@ -707,6 +707,7 @@ export function SimpleExamAuthoringForm({
             {questions.map((question, index) => (
               <div
                 key={question.id}
+                id={`question-card-${question.id}`}
                 className={`relative transition-all duration-500 ${
                   highlightedIds?.has(question.id)
                     ? "rounded-md ring-2 ring-primary ring-offset-2"
@@ -751,33 +752,26 @@ export function SimpleExamAuthoringForm({
               </div>
             ))}
 
-            {/* "+" 문제 추가 트리거 — 클릭 시 문제 추가 Dialog 를 연다. */}
-            {questions.length === 0 ? (
-              <div className="flex flex-col gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddPickerOpen(true)}
-                  className="flex min-h-28 w-full items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground hover:bg-muted/50"
-                  data-testid="empty-add-question-btn"
-                >
-                  <Plus className="mr-2 h-4 w-4" />첫 문제 추가
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center justify-center gap-2 pt-1">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => setIsAddPickerOpen(true)}
-                  className="size-10 rounded-full"
-                  aria-label="문제 추가"
-                  data-testid="add-question-btn"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-            )}
+            {/* "+" 문제 추가 트리거 — 파일 추가 영역과 동일 톤의 큰 점선 박스. 클릭 시 문제 추가 Dialog 를 연다. */}
+            <button
+              type="button"
+              onClick={() => setIsAddPickerOpen(true)}
+              aria-label="문제 추가"
+              data-testid={
+                questions.length === 0
+                  ? "empty-add-question-btn"
+                  : "add-question-btn"
+              }
+              className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border py-10 text-center transition-colors hover:border-muted-foreground hover:bg-muted/50"
+            >
+              <Plus className="h-8 w-8 text-muted-foreground" />
+              <span className="text-sm font-medium">
+                {questions.length === 0 ? "첫 문제 추가" : "문제 추가"}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                직접 작성하거나 AI로 생성하세요
+              </span>
+            </button>
           </div>
         </Field>
 

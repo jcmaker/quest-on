@@ -41,3 +41,15 @@ export type ExamStudentSummarySortOption =
   | "studentNumber"
   | "submittedAt"
   | "overallStatus";
+
+/** 채점 현황 카드/행의 "서술" 칸에 표시할 상태 텍스트. */
+export function caseStatusLabel(
+  status: ExamStudentSessionStatus,
+  caseProgress: CaseProgress,
+): string {
+  if (status !== "submitted" || caseProgress.total === 0) return "—";
+  if (caseProgress.graded === 0) return `제출됨 0/${caseProgress.total}`;
+  if (caseProgress.graded >= caseProgress.total)
+    return `채점 완료 ${caseProgress.total}/${caseProgress.total}`;
+  return `제출됨 ${caseProgress.graded}/${caseProgress.total}`;
+}
