@@ -505,9 +505,9 @@ export function SimpleExamAuthoringForm({
   return (
     <div className="space-y-8">
       <div className="space-y-10">
-        {/* 시험명 */}
+        {/* 시험 제목 */}
         <Field
-          label="시험명"
+          label="시험 제목"
           htmlFor="simple-title"
           required
           helper="학생이 입장 화면과 결과지에서 보게 될 이름입니다."
@@ -519,7 +519,7 @@ export function SimpleExamAuthoringForm({
             value={title}
             onChange={(e) => onTitleChange(e.target.value)}
             placeholder="예) 국제경영론 25-1 중간고사"
-            className="h-12 text-base"
+            className="h-12 text-base bg-white"
             required
           />
         </Field>
@@ -540,7 +540,7 @@ export function SimpleExamAuthoringForm({
               disabled={isUnlimited}
               onChange={(e) => handleDurationTextChange(e.target.value)}
               placeholder={isUnlimited ? "무제한" : "60"}
-              className="h-11 w-28 text-center"
+              className="h-11 w-28 text-center bg-white"
             />
             <span className="text-sm text-muted-foreground">분</span>
             {[30, 60, 90, 120].map((value) => (
@@ -683,7 +683,7 @@ export function SimpleExamAuthoringForm({
             value={language}
             onValueChange={(value) => onLanguageChange(value as "ko" | "en")}
           >
-            <SelectTrigger className="h-11 w-44">
+            <SelectTrigger className="h-11 w-44 bg-white">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
