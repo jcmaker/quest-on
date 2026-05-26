@@ -7,9 +7,10 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Radio } from "@/components/animate-ui/icons/radio";
 import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
-import type {
-  ExamStudentOverallStatus,
-  ExamStudentSummary,
+import {
+  caseStatusLabel,
+  type ExamStudentOverallStatus,
+  type ExamStudentSummary,
 } from "@/lib/types/student-summary";
 
 function formatProgress(correct: number, total: number): string {
@@ -77,7 +78,7 @@ export function ExamStudentRow({
         {formatProgress(student.ox.correct, student.ox.total)}
       </div>
       <div className="text-sm tabular-nums text-center">
-        {formatProgress(student.caseProgress.graded, student.caseProgress.total)}
+        {caseStatusLabel(student.status, student.caseProgress)}
       </div>
 
       <div className="text-xs text-muted-foreground">

@@ -8,11 +8,11 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Radio } from "@/components/animate-ui/icons/radio";
 import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
-import type {
-  CaseProgress,
-  ExamStudentOverallStatus,
-  ExamStudentSessionStatus,
-  ExamStudentSummary,
+import {
+  caseStatusLabel,
+  type ExamStudentOverallStatus,
+  type ExamStudentSessionStatus,
+  type ExamStudentSummary,
 } from "@/lib/types/student-summary";
 
 interface ExamStudentCardProps {
@@ -24,18 +24,6 @@ interface ExamStudentCardProps {
 function formatProgress(correct: number, total: number): string {
   if (total === 0) return "—";
   return `${correct}/${total}`;
-}
-
-function caseStatusLabel(
-  status: ExamStudentSessionStatus,
-  caseProgress: CaseProgress,
-): string {
-  if (status !== "submitted" || caseProgress.total === 0) return "—";
-  if (caseProgress.graded === 0) return "제출됨";
-  if (caseProgress.graded < caseProgress.total) {
-    return `제출됨 ${caseProgress.graded}/${caseProgress.total}`;
-  }
-  return "채점 완료";
 }
 
 function sessionStatusLabel(status: ExamStudentSessionStatus): string {
