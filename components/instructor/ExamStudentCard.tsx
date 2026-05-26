@@ -9,6 +9,7 @@ import { Radio } from "@/components/animate-ui/icons/radio";
 import { ClipboardCheck } from "@/components/animate-ui/icons/clipboard-check";
 import { AnimateIcon } from "@/components/animate-ui/icons/icon";
 import type {
+  CaseProgress,
   ExamStudentOverallStatus,
   ExamStudentSessionStatus,
   ExamStudentSummary,
@@ -23,6 +24,18 @@ interface ExamStudentCardProps {
 function formatProgress(correct: number, total: number): string {
   if (total === 0) return "—";
   return `${correct}/${total}`;
+}
+
+function caseStatusLabel(
+  status: ExamStudentSessionStatus,
+  caseProgress: CaseProgress,
+): string {
+  if (status !== "submitted" || caseProgress.total === 0) return "—";
+  if (caseProgress.graded === 0) return "제출됨";
+  if (caseProgress.graded < caseProgress.total) {
+    return `제출됨 ${caseProgress.graded}/${caseProgress.total}`;
+  }
+  return "채점 완료";
 }
 
 function sessionStatusLabel(status: ExamStudentSessionStatus): string {
@@ -163,7 +176,7 @@ export function ExamStudentCard({
           <div>
             <dt className="text-muted-foreground">서술</dt>
             <dd className="font-medium tabular-nums">
-              {formatProgress(student.caseProgress.graded, student.caseProgress.total)}
+              {caseStatusLabel(student.status, student.caseProgress)}
             </dd>
           </div>
         </dl>

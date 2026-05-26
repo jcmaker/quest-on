@@ -456,9 +456,12 @@ export default function CreateExam() {
     setHighlightedQuestionIds(new Set(newIds));
     setTimeout(() => setHighlightedQuestionIds(new Set()), 3000);
     setTimeout(() => {
-      questionsListRef.current?.scrollIntoView({
+      const target = newIds[0]
+        ? document.getElementById(`question-card-${newIds[0]}`)
+        : null;
+      (target ?? questionsListRef.current)?.scrollIntoView({
         behavior: "smooth",
-        block: "start",
+        block: "center",
       });
     }, 100);
   }, []); // setQuestions, setHighlightedQuestionIds는 stable setState reference
@@ -839,9 +842,14 @@ export default function CreateExam() {
                         3000,
                       );
                       setTimeout(() => {
-                        questionsListRef.current?.scrollIntoView({
+                        const target = newIds[0]
+                          ? document.getElementById(
+                              `question-card-${newIds[0]}`,
+                            )
+                          : null;
+                        (target ?? questionsListRef.current)?.scrollIntoView({
                           behavior: "smooth",
-                          block: "start",
+                          block: "center",
                         });
                       }, 100);
                     }}
