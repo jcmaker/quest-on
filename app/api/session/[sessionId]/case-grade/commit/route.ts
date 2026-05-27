@@ -30,7 +30,9 @@ export async function POST(
 
     const { qIdx, score, comment } = validation.data;
 
-    const access = await requireCaseGradeAccess(sessionId, user, qIdx);
+    const access = await requireCaseGradeAccess(sessionId, user, qIdx, {
+      requireClosed: true,
+    });
     if (!access.ok) return access.response;
 
     const rl = await checkRateLimitAsync(

@@ -4,15 +4,20 @@ import type { AppUser } from "@/lib/get-current-user";
 
 export type BulkGradeAccessContext = {
   supabase: ReturnType<typeof getSupabaseServer>;
-  exam: {
-    id: string;
-    instructor_id: string;
-    title: string;
-    description: string | null;
-    questions: unknown;
-    language: string;
-  };
-  user: AppUser;
+	  exam: {
+	    id: string;
+	    instructor_id: string;
+	    title: string;
+	    description: string | null;
+	    questions: unknown;
+	    language: string;
+	    status: string | null;
+	  };
+	  user: AppUser;
+	};
+
+type BulkGradeAccessOptions = {
+  requireClosed?: boolean;
 };
 
 /**
@@ -22,6 +27,7 @@ export type BulkGradeAccessContext = {
 export async function requireBulkGradeAccess(
   examId: string,
   user: AppUser | null,
+  options: BulkGradeAccessOptions = {},
 ): Promise<
   | { ok: true; ctx: BulkGradeAccessContext }
   | { ok: false; response: ReturnType<typeof errorJson> }
@@ -36,19 +42,30 @@ export async function requireBulkGradeAccess(
 
   const supabase = getSupabaseServer();
 
-  const { data: exam, error: examError } = await supabase
-    .from("exams")
-    .select("id, instructor_id, title, description, questions, language")
-    .eq("id", examId)
-    .single();
+	  const { data: exam, error: examError } = await supabase
+	    .from("exams")
+	    .select("id, instructor_id, title, description, questions, language, status")
+	    .eq("id", examId)
+	    .single();
 
   if (examError || !exam) {
     return { ok: false, response: errorJson("NOT_FOUND", "Exam not found", 404) };
   }
 
-  if (exam.instructor_id !== user.id) {
-    return { ok: false, response: errorJson("FORBIDDEN", "Forbidden", 403) };
-  }
+	  if (exam.instructor_id !== user.id) {
+	    return { ok: false, response: errorJson("FORBIDDEN", "Forbidden", 403) };
+	  }
+
+	  if (options.requireClosed && exam.status !== "closed") {
+	    return {
+	      ok: false,
+	      response: errorJson(
+	        "EXAM_NOT_CLOSED",
+	        "시험 종료 후에 채점을 시작할 수 있습니다.",
+	        409,
+	      ),
+	    };
+	  }
 
   return {
     ok: true,
@@ -58,10 +75,11 @@ export async function requireBulkGradeAccess(
         id: exam.id as string,
         instructor_id: exam.instructor_id as string,
         title: exam.title as string,
-        description: (exam.description as string | null) ?? null,
-        questions: exam.questions,
-        language: (exam.language as string) ?? "ko",
-      },
+	        description: (exam.description as string | null) ?? null,
+	        questions: exam.questions,
+	        language: (exam.language as string) ?? "ko",
+	        status: (exam.status as string | null) ?? null,
+	      },
       user,
     },
   };

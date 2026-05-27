@@ -17,7 +17,10 @@ import {
   buildAiTextMetadata,
   callTrackedChatCompletion,
 } from "@/lib/ai-tracking";
-import { requireCaseGradeAccess } from "@/lib/case-grade-access";
+import {
+  questionPromptByQIdx,
+  requireCaseGradeAccess,
+} from "@/lib/case-grade-access";
 
 type GradingChatRow = {
   id: string;
@@ -32,13 +35,6 @@ function parseQIdx(searchParams: URLSearchParams): number | null {
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 0) return null;
   return n;
-}
-
-function questionPromptAt(questions: unknown, qIdx: number): string {
-  if (!Array.isArray(questions)) return "";
-  const q = questions[qIdx] as Record<string, unknown> | undefined;
-  if (!q) return "";
-  return String(q.prompt ?? q.text ?? "");
 }
 
 async function loadStudentAnswer(
@@ -125,7 +121,9 @@ export async function GET(
     }
 
     const user = await currentUser();
-    const access = await requireCaseGradeAccess(sessionId, user, qIdx);
+    const access = await requireCaseGradeAccess(sessionId, user, qIdx, {
+      requireClosed: true,
+    });
     if (!access.ok) return access.response;
 
     const { data: rows, error } = await access.ctx.supabase
@@ -176,7 +174,9 @@ export async function POST(
 
     const { qIdx, message } = validation.data;
 
-    const access = await requireCaseGradeAccess(sessionId, user, qIdx);
+    const access = await requireCaseGradeAccess(sessionId, user, qIdx, {
+      requireClosed: true,
+    });
     if (!access.ok) return access.response;
 
     const rl = await checkRateLimitAsync(
@@ -220,7 +220,7 @@ export async function POST(
     }
 
     const examLanguage: "ko" | "en" = exam.language === "en" ? "en" : "ko";
-    const questionPrompt = questionPromptAt(exam.questions, qIdx);
+    const questionPrompt = questionPromptByQIdx(exam.questions, qIdx);
 
     const systemPrompt = buildCaseGradingChatSystemPrompt({
       questionPrompt,

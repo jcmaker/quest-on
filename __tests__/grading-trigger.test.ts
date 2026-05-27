@@ -169,6 +169,21 @@ describe("triggerGradingIfNeeded (phase-chained)", () => {
     );
   });
 
+  it("re-enqueues when existing rows are only ai_summary placeholders", async () => {
+    mockDb({
+      gradeRows: [{ grade_type: "ai_summary" }],
+      sessionMeta: {
+        ai_summary: { summary: "세션 요약만 존재합니다." },
+        grading_progress: null,
+      },
+    });
+
+    const result = await triggerGradingIfNeeded("550e8400-e29b-41d4-a716-446655440000", "feedback");
+
+    expect(result).toEqual({ queued: true, reason: "qstash" });
+    expect(enqueueGradingPhaseMock).toHaveBeenCalledTimes(1);
+  });
+
   it("re-enqueues when grades are successful but session summary is still missing", async () => {
     mockDb({
       gradeRows: [{ grade_type: "auto" }],

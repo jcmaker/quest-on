@@ -70,6 +70,31 @@ test.describe("Student Sessions — GET /api/student/sessions", () => {
     expect(typeof s.averageScore).toBe("number");
   });
 
+  test("ai_summary placeholder does not mark released session as graded", async ({
+    studentRequest,
+  }) => {
+    const exam = await seedExam({ status: "closed", grades_released: true });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+      started_at: new Date().toISOString(),
+    });
+    await seedGrade(session.id, 0, 0, "Summary placeholder", "ai_summary");
+
+    const res = await studentRequest.get("/api/student/sessions");
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    const s = body.sessions.find(
+      (ss: Record<string, unknown>) => ss.id === session.id
+    );
+    expect(s).toBeTruthy();
+    expect(s.isGraded).toBe(false);
+    expect(s.averageScore).toBeNull();
+    expect(s.score).toBeNull();
+    expect(s.maxScore).toBeNull();
+  });
+
   test("empty sessions returns empty array", async ({ studentRequest }) => {
     const res = await studentRequest.get("/api/student/sessions");
 
