@@ -52,7 +52,7 @@ test.describe("Instructor — Exam & Grading Flow", () => {
       instructorPage.locator(`[data-testid="exam-student-row-${sessionId}"]`),
     ).toBeVisible({ timeout: TIMEOUTS.ELEMENT_VISIBLE });
 
-    await expect(instructorPage.getByText("서술")).toBeVisible();
+    await expect(instructorPage.getByText("서술", { exact: true })).toBeVisible();
     await expect(instructorPage.getByRole("link", { name: /채점/i })).toBeVisible();
   });
 
