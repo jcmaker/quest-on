@@ -10,7 +10,12 @@ import {
   normalizeQuestions,
   selectBestSubmission,
 } from "@/lib/grading-helpers";
-import { deduplicateGrades } from "@/lib/grade-utils";
+import {
+  calculateScoreFromItems,
+  deduplicateGrades,
+  normalizeScoreWeights,
+  type ScoreItem,
+} from "@/lib/grade-utils";
 import { logError } from "@/lib/logger";
 import type {
   ExamStudentOverallStatus,
@@ -190,7 +195,7 @@ export async function GET(
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, instructor_id, questions, status")
+      .select("id, instructor_id, questions, status, score_weights")
       .eq("id", examId)
       .single();
 
@@ -203,6 +208,7 @@ export async function GET(
     }
 
     const questions = normalizeQuestions(exam.questions);
+    const scoreWeights = normalizeScoreWeights(exam.score_weights);
     const canShowFinalScores = exam.status === "closed";
     const mcqIndices = questions
       .filter((q) => q.type === "multiple-choice")
@@ -408,10 +414,32 @@ export async function GET(
           ? Math.round(caseScores.reduce((a, b) => a + b, 0) / caseScores.length)
           : undefined;
 
-      const allScores = [...mcqScores, ...oxScores, ...caseScores];
+      const scoreItems: ScoreItem[] = questions.map((q) => {
+        if (q.type === "multiple-choice" || q.type === "true-false") {
+          const sub = subsByQ.get(q.idx);
+          return {
+            qIdx: q.idx,
+            type: q.type,
+            score: objectiveScoreFromRawAnswer({
+              rawAnswer: (sub?.answer as string) ?? "",
+              options: q.options,
+              correctOptionIndex: q.correctOptionIndex,
+            }),
+          };
+        }
+
+        const best = gradeByQ.get(q.idx);
+        return {
+          qIdx: q.idx,
+          type: q.type,
+          score: best && isCaseGraded(best.grade_type) ? best.score : undefined,
+        };
+      });
+      const scoreResult = calculateScoreFromItems(scoreItems, scoreWeights);
       const overallScore =
-        allScores.length > 0
-          ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length)
+        scoreResult.overallScore !== null &&
+        (scoreResult.mode === "weighted" || scoreResult.gradedCount > 0)
+          ? scoreResult.overallScore
           : undefined;
 
       return {

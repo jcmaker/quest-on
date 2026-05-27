@@ -3,6 +3,11 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { auditLog } from "@/lib/audit";
 import { logError } from "@/lib/logger";
+import {
+  normalizeScoreWeights,
+  validateScoreWeightsForQuestions,
+  type ScoreWeights,
+} from "@/lib/grade-utils";
 
 // Lazy Supabase client getter — creates a fresh client per invocation
 // to avoid stale connections in serverless environments
@@ -50,6 +55,7 @@ export async function createExam(data: {
     fileName: string;
   }>;
   chat_weight?: number | null;
+  score_weights?: ScoreWeights | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -120,6 +126,16 @@ export async function createExam(data: {
       };
       return rest;
     });
+    const scoreWeights = normalizeScoreWeights(data.score_weights);
+    const scoreWeightErrors = validateScoreWeightsForQuestions(
+      scoreWeights,
+      sanitizedQuestions.map((q) => q.type)
+    );
+    if (scoreWeightErrors.length > 0) {
+      return errorJson("INVALID_SCORE_WEIGHTS", scoreWeightErrors[0], 400, {
+        errors: scoreWeightErrors,
+      });
+    }
 
     const examData = {
       title: data.title,
@@ -130,6 +146,7 @@ export async function createExam(data: {
       materials: data.materials || [],
       materials_text: data.materials_text || [], // 추출된 텍스트 저장
       chat_weight: data.chat_weight ?? 50,
+      score_weights: scoreWeights,
       status: data.status,
       instructor_id: user.id, // Clerk user ID (e.g., "user_31ihNg56wMaE27ft10H4eApjc1J")
       created_at: data.created_at,
@@ -289,6 +306,31 @@ export async function updateExam(data: {
     delete updateWithoutRubric.rubric;
     delete updateWithoutRubric.rubric_public;
 
+    if ("score_weights" in updateWithoutRubric) {
+      const nextQuestions = Array.isArray(updateWithoutRubric.questions)
+        ? updateWithoutRubric.questions
+        : [];
+      const scoreWeights = normalizeScoreWeights(updateWithoutRubric.score_weights);
+      const scoreWeightErrors = Array.isArray(updateWithoutRubric.questions)
+        ? validateScoreWeightsForQuestions(
+            scoreWeights,
+            nextQuestions.map((q) => {
+              const type =
+                q && typeof q === "object" && "type" in q
+                  ? (q as { type?: unknown }).type
+                  : undefined;
+              return typeof type === "string" ? type : undefined;
+            })
+          )
+        : [];
+      if (scoreWeightErrors.length > 0) {
+        return errorJson("INVALID_SCORE_WEIGHTS", scoreWeightErrors[0], 400, {
+          errors: scoreWeightErrors,
+        });
+      }
+      updateWithoutRubric.score_weights = scoreWeights;
+    }
+
     const { data: exam, error } = await getSupabase()
       .from("exams")
       .update(updateWithoutRubric)
@@ -325,7 +367,7 @@ export async function getExam(data: { code: string }) {
   try {
     const { data: exam, error } = await getSupabase()
       .from("exams")
-      .select("id, title, code, description, duration, questions, rubric, rubric_public, chat_weight, status, instructor_id, materials, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, type, deadline, assignment_prompt")
+      .select("id, title, code, description, duration, questions, rubric, rubric_public, chat_weight, score_weights, status, instructor_id, materials, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, type, deadline, assignment_prompt")
       .eq("code", data.code)
       .single();
 
@@ -404,7 +446,7 @@ export async function getExamById(data: { id: string }) {
     const { data: exam, error } = await getSupabase()
       .from("exams")
       .select(
-        "id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, type, deadline, assignment_prompt, grades_released, language"
+        "id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, score_weights, status, instructor_id, created_at, updated_at, open_at, close_at, started_at, allow_draft_in_waiting, allow_chat_in_waiting, type, deadline, assignment_prompt, grades_released, language"
       )
       .eq("id", data.id)
       .eq("instructor_id", user.id) // Only allow instructors to view their own exams
@@ -506,7 +548,7 @@ export async function copyExam(data: { exam_id: string }) {
     // Get the original exam
     const { data: originalExam, error: examError } = await getSupabase()
       .from("exams")
-      .select("id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, status, instructor_id, created_at, updated_at, language")
+      .select("id, title, code, description, duration, questions, materials, materials_text, rubric, rubric_public, chat_weight, score_weights, status, instructor_id, created_at, updated_at, language")
       .eq("id", data.exam_id)
       .eq("instructor_id", user.id)
       .single();
@@ -581,6 +623,7 @@ export async function copyExam(data: { exam_id: string }) {
       rubric: originalExam.rubric || [],
       rubric_public: originalExam.rubric_public || false,
       chat_weight: originalExam.chat_weight ?? 50,
+      score_weights: normalizeScoreWeights(originalExam.score_weights),
       status: "draft", // 복사본은 초안 상태로 시작
       instructor_id: user.id,
       created_at: now,

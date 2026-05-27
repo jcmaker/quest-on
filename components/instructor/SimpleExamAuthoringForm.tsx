@@ -39,6 +39,12 @@ import {
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { QuestionEditor } from "@/components/instructor/QuestionEditor";
 import {
+  scoreBucketForQuestionType,
+  validateScoreWeightsForQuestions,
+  type ScoreWeightBucket,
+  type ScoreWeights,
+} from "@/lib/grade-utils";
+import {
   QuestionAdjustSheet,
   type QuestionAdjustApply,
 } from "@/components/instructor/QuestionAdjustSheet";
@@ -87,6 +93,8 @@ interface SimpleExamAuthoringFormProps {
   onQuestionMove: (index: number, direction: "up" | "down") => void;
   chatWeight: number | null;
   onChatWeightChange: (value: number | null) => void;
+  scoreWeights: ScoreWeights | null;
+  onScoreWeightsChange: (value: ScoreWeights | null) => void;
   submitReasons: string[];
   isSubmitting: boolean;
   onCancel: () => void;
@@ -188,6 +196,36 @@ const QUESTION_TYPE_OPTIONS: {
   { type: "essay", label: "사례형", description: "서술형 사례" },
 ];
 
+const SCORE_BUCKET_LABELS: Record<ScoreWeightBucket, string> = {
+  "multiple-choice": "사지선다",
+  "true-false": "O/X",
+  case: "Case",
+};
+
+function getPresentScoreBuckets(questions: Question[]): ScoreWeightBucket[] {
+  const buckets = new Set<ScoreWeightBucket>();
+  questions.forEach((question) => {
+    const bucket = scoreBucketForQuestionType(question.type);
+    if (bucket) buckets.add(bucket);
+  });
+  return (["multiple-choice", "true-false", "case"] as const).filter((bucket) =>
+    buckets.has(bucket)
+  );
+}
+
+function buildDefaultScoreWeights(questions: Question[]): ScoreWeights | null {
+  const buckets = getPresentScoreBuckets(questions);
+  if (buckets.length === 0) return null;
+  const base = Math.floor(100 / buckets.length);
+  let remainder = 100 - base * buckets.length;
+  const typeWeights: Partial<Record<ScoreWeightBucket, number>> = {};
+  buckets.forEach((bucket) => {
+    typeWeights[bucket] = base + (remainder > 0 ? 1 : 0);
+    remainder -= 1;
+  });
+  return { version: 1, typeWeights, distribution: "equal_by_type" };
+}
+
 /**
  * 문제 추가 다이얼로그의 유형 선택기.
  * 단일 선택이므로 radiogroup 으로 노출하고 좌우/상하 방향키 이동을 지원한다.
@@ -281,6 +319,8 @@ export function SimpleExamAuthoringForm({
   onQuestionMove,
   chatWeight,
   onChatWeightChange,
+  scoreWeights,
+  onScoreWeightsChange,
   submitReasons,
   isSubmitting,
   onCancel,
@@ -306,7 +346,6 @@ export function SimpleExamAuthoringForm({
   const {
     generateAll,
     isLoading: isBulkGenerating,
-    successQuestions,
     allDone: bulkAllDone,
     reset: resetBulk,
     groupResults,
@@ -390,6 +429,40 @@ export function SimpleExamAuthoringForm({
   const ready = submitReasons.length === 0;
   const effectiveWeight = chatWeight ?? 50;
   const isCustomWeight = chatWeight !== null;
+  const presentScoreBuckets = useMemo(
+    () => getPresentScoreBuckets(questions),
+    [questions]
+  );
+  const scoreWeightSum = useMemo(
+    () =>
+      scoreWeights
+        ? Object.values(scoreWeights.typeWeights).reduce(
+            (sum, weight) => sum + (weight ?? 0),
+            0
+          )
+        : 0,
+    [scoreWeights]
+  );
+  const scoreWeightErrors = useMemo(
+    () =>
+      validateScoreWeightsForQuestions(
+        scoreWeights,
+        questions.map((question) => question.type)
+      ),
+    [questions, scoreWeights]
+  );
+
+  const setScoreWeight = (bucket: ScoreWeightBucket, value: number) => {
+    const current = scoreWeights ?? buildDefaultScoreWeights(questions);
+    if (!current) return;
+    onScoreWeightsChange({
+      ...current,
+      typeWeights: {
+        ...current.typeWeights,
+        [bucket]: Math.max(1, Math.min(100, value)),
+      },
+    });
+  };
 
   const materialSummary = useMemo(() => {
     if (files.length === 0) return "자료 없음";
@@ -842,6 +915,75 @@ export function SimpleExamAuthoringForm({
                 직접 작성하거나 AI로 생성하세요
               </span>
             </button>
+          </div>
+        </Field>
+
+        {/* 최종 점수 비중 */}
+        <Field
+          label="최종 점수 비중"
+          optional
+          helper="전체 100점 중 문제 유형별 반영 비율입니다. 유형 안의 문항은 동일하게 나눠 계산됩니다."
+        >
+          <div className="rounded-md border bg-muted/20 p-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Switch
+                id="simple-score-weights"
+                checked={scoreWeights !== null}
+                disabled={presentScoreBuckets.length === 0}
+                onCheckedChange={(checked) =>
+                  onScoreWeightsChange(
+                    checked ? buildDefaultScoreWeights(questions) : null
+                  )
+                }
+              />
+              <Label htmlFor="simple-score-weights" className="text-sm">
+                유형별 비중 사용
+              </Label>
+              <span className="text-sm text-muted-foreground">
+                {scoreWeights
+                  ? `현재 합계 ${scoreWeightSum}점`
+                  : "사용하지 않으면 기존 문항 평균으로 계산"}
+              </span>
+            </div>
+            {scoreWeights && (
+              <div className="mt-3 space-y-3">
+                {presentScoreBuckets.map((bucket) => (
+                  <div
+                    key={bucket}
+                    className="flex flex-wrap items-center gap-3"
+                  >
+                    <Label className="w-20 text-sm">
+                      {SCORE_BUCKET_LABELS[bucket]}
+                    </Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={scoreWeights.typeWeights[bucket] ?? ""}
+                      onChange={(e) =>
+                        setScoreWeight(
+                          bucket,
+                          Number.parseInt(e.target.value, 10) || 1
+                        )
+                      }
+                      className="h-9 w-24 bg-white text-center"
+                      aria-label={`${SCORE_BUCKET_LABELS[bucket]} 비중`}
+                    />
+                    <span className="text-sm text-muted-foreground">점</span>
+                  </div>
+                ))}
+                {scoreWeightErrors.length > 0 && (
+                  <div className="space-y-1 text-sm text-amber-600 dark:text-amber-400">
+                    {scoreWeightErrors.map((error) => (
+                      <p key={error} className="flex items-center gap-1.5">
+                        <AlertTriangle className="h-4 w-4" />
+                        {error}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </Field>
 

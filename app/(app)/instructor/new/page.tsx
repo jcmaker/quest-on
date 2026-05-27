@@ -43,6 +43,10 @@ import {
 import { useExamDraftAutoSave } from "@/hooks/useExamDraftAutoSave";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
+import {
+  validateScoreWeightsForQuestions,
+  type ScoreWeights,
+} from "@/lib/grade-utils";
 
 function isQuestionContentEmpty(text: string): boolean {
   return text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
@@ -83,6 +87,7 @@ export default function CreateExam() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [chatWeight, setChatWeight] = useState<number | null>(null);
+  const [scoreWeights, setScoreWeights] = useState<ScoreWeights | null>(null);
   // 파일 업로드 + 텍스트 추출 통합 hook
   const fileUpload = useFileUpload();
 
@@ -112,6 +117,7 @@ export default function CreateExam() {
     code: examData.code,
     questions,
     chatWeight,
+    scoreWeights,
     adjustHistoryRef,
   });
 
@@ -128,6 +134,7 @@ export default function CreateExam() {
         setQuestions(draft.questions);
       }
       setChatWeight(draft.chatWeight ?? null);
+      setScoreWeights(draft.scoreWeights ?? null);
       // P0-2: Restore adjust history
       if (draft.adjustHistory) {
         adjustHistoryRef.current = new Map(Object.entries(draft.adjustHistory));
@@ -489,6 +496,10 @@ export default function CreateExam() {
     questions.some((q) => isObjectiveQuestionIncomplete(q))
       ? "객관식 문제의 선택지와 정답을 입력해주세요"
       : null,
+    ...validateScoreWeightsForQuestions(
+      scoreWeights,
+      questions.map((q) => q.type)
+    ),
   ].filter((reason): reason is string => Boolean(reason));
 
   const agentExecutor = useAgentEditorExecutor({
@@ -520,6 +531,7 @@ export default function CreateExam() {
       duration: number;
       questions: Question[];
       chat_weight: number | null;
+      score_weights: ScoreWeights | null;
       materials: string[];
       status: string;
       created_at: string;
@@ -648,6 +660,7 @@ export default function CreateExam() {
         duration: examData.duration,
         questions: questions,
         chat_weight: chatWeight, // 채점 가중치 (null = 기본값 50)
+        score_weights: scoreWeights,
         materials: materialUrls, // Array of file URLs
         materials_text: materialsText, // 추출된 텍스트 배열
         language: examData.language, // AI 시스템 프롬프트 언어 (ko | en)
@@ -865,6 +878,8 @@ export default function CreateExam() {
                 onQuestionMove={moveQuestion}
                 chatWeight={chatWeight}
                 onChatWeightChange={setChatWeight}
+                scoreWeights={scoreWeights}
+                onScoreWeightsChange={setScoreWeights}
                 submitReasons={submitReasons}
                 isSubmitting={isLoading}
                 onCancel={() => {

@@ -18,6 +18,10 @@ import {
 import { SimpleExamAuthoringForm } from "@/components/instructor/SimpleExamAuthoringForm";
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { useFileUpload } from "@/hooks/useFileUpload";
+import {
+  validateScoreWeightsForQuestions,
+  type ScoreWeights,
+} from "@/lib/grade-utils";
 
 // ─── 헬퍼 ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +65,7 @@ export default function EditExam({
   const [isDragOver, setIsDragOver] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [chatWeight, setChatWeight] = useState<number | null>(null);
+  const [scoreWeights, setScoreWeights] = useState<ScoreWeights | null>(null);
   const fileUpload = useFileUpload();
   const isSubmittingRef = useRef(false);
   // 무제한 토글 OFF 시 이전 duration 복원
@@ -93,6 +98,7 @@ export default function EditExam({
         setQuestions(exam.questions || []);
         const loadedWeight = exam.chat_weight ?? null;
         setChatWeight(loadedWeight);
+        setScoreWeights(exam.score_weights ?? null);
         fileUpload.initExistingData(exam.materials || [], exam.materials_text);
       } catch {
         toast.error("시험 데이터를 불러오는 중 오류가 발생했습니다.");
@@ -285,6 +291,7 @@ export default function EditExam({
         duration: examData.duration,
         questions,
         chat_weight: chatWeight,
+        score_weights: scoreWeights,
         materials: fileUpload.getUploadedUrls(),
         materials_text: fileUpload.getMaterialsText(),
         language: examData.language,
@@ -309,7 +316,7 @@ export default function EditExam({
       setIsLoading(false);
       isSubmittingRef.current = false;
     }
-  }, [examData, questions, chatWeight, fileUpload, resolvedParams.examId]);
+  }, [examData, questions, chatWeight, scoreWeights, fileUpload, resolvedParams.examId]);
 
   // ── 제출 사유 ─────────────────────────────────────────────────────────────
   const submitReasons = useMemo(() => {
@@ -326,8 +333,12 @@ export default function EditExam({
       questions.some((q) => isObjectiveQuestionIncomplete(q))
         ? "객관식 문제의 선택지와 정답을 입력해주세요"
         : null,
+      ...validateScoreWeightsForQuestions(
+        scoreWeights,
+        questions.map((q) => q.type)
+      ),
     ].filter(Boolean) as string[];
-  }, [examData.title, examData.code, examData.duration, questions, canAddMoreFiles]);
+  }, [examData.title, examData.duration, questions, canAddMoreFiles, scoreWeights]);
 
   // ── 로딩 스피너 ───────────────────────────────────────────────────────────
   if (isLoadingExam) {
@@ -405,6 +416,8 @@ export default function EditExam({
             // ── 채점 비중 ───────────────────────────────────────────────────
             chatWeight={chatWeight}
             onChatWeightChange={setChatWeight}
+            scoreWeights={scoreWeights}
+            onScoreWeightsChange={setScoreWeights}
             // ── 폼 제출 제어 ────────────────────────────────────────────────
             submitReasons={submitReasons}
             isSubmitting={isLoading}
