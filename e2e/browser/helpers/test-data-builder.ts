@@ -144,8 +144,9 @@ export async function seedInstructorGradingScenario(
   }));
 
   const exam = await seedExam({
-    status: "running",
+    status: "closed",
     started_at: now,
+    close_at: now,
     questions,
     rubric,
     // Scenario covers instructor grading → student report assertion, which

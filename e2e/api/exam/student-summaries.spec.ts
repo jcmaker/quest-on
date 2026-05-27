@@ -270,7 +270,7 @@ test.describe("GET /api/exam/[examId]/student-summaries", () => {
       status: "submitted",
       submitted_at: new Date().toISOString(),
     });
-    await seedGrade(session.id, 0, 0, "Summary placeholder", "ai_summary");
+    await seedGrade(session.id, 99, 0, "Summary placeholder", "ai_summary");
     await seedGrade(session.id, 0, 90, "Auto case grade", "auto");
 
     const res = await instructorRequest.get(
