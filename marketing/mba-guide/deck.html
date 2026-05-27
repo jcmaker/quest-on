@@ -24,8 +24,15 @@
   html,body{background:#3E434B;}
   body{font-family:"Nanum",sans-serif; color:var(--text); -webkit-font-smoothing:antialiased; letter-spacing:-.2px; line-height:1.5;}
 
-  .slide{position:relative; width:1280px; height:720px; background:var(--bg); overflow:hidden; display:block;}
+  .slide{position:relative; width:1280px; height:720px; background:var(--bg); overflow:hidden; display:block;
+    page-break-after:always; break-after:page;}
+  .slide:last-child{page-break-after:auto; break-after:auto;}
   .pad{position:absolute; inset:0; padding:62px 84px 0;}
+
+  /* Print: one slide per page. Chrome ignores px in @page size → use inches.
+     1280px / 96dpi = 13.3333in, 720px / 96dpi = 7.5in (16:9 widescreen, 960x540pt). */
+  @page { size: 13.3333in 7.5in; margin: 0; }
+  @media print { html,body{ width:1280px; background:#fff; } }
 
   /* ---------- type utilities ---------- */
   .kicker{display:inline-flex; align-items:center; gap:9px; font-size:var(--fs-kicker); font-weight:800;
