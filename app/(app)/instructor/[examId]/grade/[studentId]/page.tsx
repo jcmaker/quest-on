@@ -199,6 +199,7 @@ export default function GradeStudentPage({
     };
   }, [searchParams]);
 
+  const questionType = searchParams.get("questionType") ?? undefined;
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
   const [examStatsOpen, setExamStatsOpen] = useState<boolean>(true);
   // Redirect non-instructors
@@ -241,6 +242,21 @@ export default function GradeStudentPage({
       return status === "queued" || status === "running" ? 5000 : false;
     },
   });
+
+  // questionType URL 파라미터에 따라 해당 유형 첫 번째 문제로 초기 이동
+  useEffect(() => {
+    if (!sessionData?.exam?.questions || !questionType) return;
+    const qs = sessionData.exam.questions;
+    const targetIdx = qs.findIndex((q: { type: string }) => {
+      if (questionType === "case") {
+        return q.type !== "multiple-choice" && q.type !== "true-false";
+      }
+      return q.type === questionType;
+    });
+    if (targetIdx !== -1) setSelectedQuestionIdx(targetIdx);
+  // questionType은 URL에서 오므로 sessionData 로드 후 한 번만 실행
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionData?.exam?.questions]);
 
   // AI 재채점 상태
   const [isRegrading, setIsRegrading] = useState(false);
@@ -564,6 +580,7 @@ export default function GradeStudentPage({
                   selectedQuestionIdx={selectedQuestionIdx}
                   onSelectQuestion={setSelectedQuestionIdx}
                   grades={sessionData.grades}
+                  initialFilter={questionType}
                 />
               }
             />

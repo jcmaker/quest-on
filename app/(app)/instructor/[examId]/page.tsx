@@ -379,6 +379,29 @@ export default function ExamDetail({
               </Button>
             </div>
 
+            {hasCaseQuestions && hasSubmittedStudents && (
+              <div className="flex items-center justify-between p-3 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-950/30">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
+                  <div>
+                    <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Case AI 자동 채점하기
+                    </span>
+                    <span className="text-xs text-blue-600 dark:text-blue-400 hidden sm:inline ml-2">
+                      강사 인터뷰 후 AI가 서술형 문제를 일괄 채점합니다
+                    </span>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 text-white shrink-0"
+                  onClick={() => setBulkGradingOpen(true)}
+                >
+                  채점 시작
+                </Button>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
@@ -403,17 +426,6 @@ export default function ExamDetail({
                   <SelectItem value="overallStatus">채점 상태순</SelectItem>
                 </SelectContent>
               </Select>
-              <Button
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() => setBulkGradingOpen(true)}
-                disabled={!hasSubmittedStudents || !hasCaseQuestions}
-                title="AI 일괄 채점"
-              >
-                <Bot className="mr-1.5 h-4 w-4" />
-                AI 일괄 채점
-              </Button>
               <Button
                 variant="ghost"
                 size="icon"

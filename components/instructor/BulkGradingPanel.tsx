@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { Bot, Loader2, Send } from "lucide-react";
+import { Bot, ExternalLink, Loader2, Send } from "lucide-react";
 import { qk } from "@/lib/query-keys";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -326,11 +326,16 @@ export function BulkGradingPanel({
               불러오는 중…
             </div>
           ) : displayMessages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              채점 기준을 자유롭게 입력해 보세요.
-              <br />
-              예: &quot;논리적 근거 제시 여부 40%, 답변 완성도 30%, 핵심 개념 활용 30%&quot;
-            </p>
+            <div className="space-y-3 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">어떻게 채점할까요?</p>
+              <p>
+                이 시험의 채점 기준과 중요하게 볼 포인트를 알려주세요.
+                AI가 기준에 맞게 모든 학생의 Case 문제를 일괄 채점합니다.
+              </p>
+              <p className="text-xs">
+                예시: &quot;논리적 근거 제시 여부 40%, 답변 완성도 30%, 핵심 개념 활용 30%. 부분 점수 허용.&quot;
+              </p>
+            </div>
           ) : (
             <div className="space-y-3 pr-2">
               {displayMessages.map((msg, i) => (
@@ -396,7 +401,8 @@ export function BulkGradingPanel({
                   <th className="pb-1 pr-2 font-normal">학생</th>
                   <th className="pb-1 pr-2 font-normal">문제</th>
                   <th className="pb-1 pr-2 font-normal">점수</th>
-                  <th className="pb-1 font-normal">코멘트</th>
+                  <th className="pb-1 pr-2 font-normal">코멘트</th>
+                  <th className="pb-1 font-normal"></th>
                 </tr>
               </thead>
               <tbody>
@@ -434,8 +440,19 @@ export function BulkGradingPanel({
                         className="w-14 rounded border px-1 py-0.5 text-right"
                       />
                     </td>
-                    <td className="py-1.5 max-w-[200px] truncate text-muted-foreground" title={row.comment}>
+                    <td className="py-1.5 pr-2 max-w-[200px] truncate text-muted-foreground" title={row.comment}>
                       {row.comment}
+                    </td>
+                    <td className="py-1.5">
+                      <a
+                        href={`/instructor/${examId}/grade/${row.sessionId}?questionType=case`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-0.5 text-blue-600 hover:underline whitespace-nowrap"
+                      >
+                        개별 채점
+                        <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                      </a>
                     </td>
                   </tr>
                 ))}
