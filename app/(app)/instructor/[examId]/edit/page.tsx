@@ -203,6 +203,8 @@ export default function EditExam({
   const [showAdvancedGrading, setShowAdvancedGrading] = useState(false);
   const fileUpload = useFileUpload();
   const isSubmittingRef = useRef(false);
+  // 무제한 토글 OFF 시 이전 duration 복원용
+  const prevDurationRef = useRef<number>(60);
 
   // 문제 추가 Dialog 상태
   const [isAddPickerOpen, setIsAddPickerOpen] = useState(false);
@@ -290,19 +292,28 @@ export default function EditExam({
       toast.success(`${successQuestions.length}개 문제가 추가되었습니다.`);
     }
 
-    results
-      .filter((r) => r.status === "error")
-      .forEach((r) => toast.error(r.error || "문제 생성에 실패했습니다."));
+    const errorResults = results.filter((r) => r.status === "error");
+    errorResults.forEach((r) => toast.error(r.error || "문제 생성에 실패했습니다."));
 
-    setIsAddPickerOpen(false);
-    setPickedPrompt("");
-    setPickedCount(1);
+    // 에러가 없을 때만 Dialog 닫기 (에러 시 프롬프트 유지로 재시도 가능)
+    if (errorResults.length === 0) {
+      setIsAddPickerOpen(false);
+      setPickedPrompt("");
+      setPickedCount(1);
+    }
     resetBulk();
   }, [groupResults, resetBulk]);
 
   // ── 헬퍼 ──────────────────────────────────────────────────────────────────
 
   const generateExamCode = () => {
+    if (
+      examData.code &&
+      !window.confirm(
+        "코드를 재생성하면 기존에 코드를 받은 학생들은 새 코드로 입장해야 합니다.\n계속하시겠습니까?"
+      )
+    )
+      return;
     const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let result = "";
     for (let i = 0; i < 6; i++)
@@ -479,6 +490,8 @@ export default function EditExam({
         type: pickedType,
         ...(pickedType === "multiple-choice"
           ? { options: ["", "", "", ""], correctOptionIndex: 0 }
+          : pickedType === "true-false"
+          ? { options: ["O", "X"] }
           : {}),
       }));
       setQuestions((prev) => [...prev, ...newQs]);
@@ -486,6 +499,10 @@ export default function EditExam({
       setPickedPrompt("");
       setPickedCount(1);
     } else {
+      if (!examData.title.trim()) {
+        toast.error("AI 문제 생성 전에 시험 제목을 입력해주세요.");
+        return;
+      }
       generateAll(
         [
           {
@@ -683,28 +700,7 @@ export default function EditExam({
             </div>
           </Field>
 
-          {/* 3. AI 응답 언어 */}
-          <Field
-            label="AI 응답 언어"
-            helper="학생이 시험 중 AI 튜터와 대화할 때 사용할 언어입니다."
-          >
-            <Select
-              value={examData.language}
-              onValueChange={(v) =>
-                setExamData((p) => ({ ...p, language: v as "ko" | "en" }))
-              }
-            >
-              <SelectTrigger className="h-11 w-44 bg-white">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ko">한국어 AI</SelectItem>
-                <SelectItem value="en">English AI</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-
-          {/* 4. 시험 시간 */}
+          {/* 3. 시험 시간 */}
           <Field
             label="시험 시간"
             htmlFor="edit-duration"
@@ -746,19 +742,21 @@ export default function EditExam({
                   disabled={examData.duration === 0}
                   onClick={() => setExamData((p) => ({ ...p, duration: v }))}
                 >
-                  {v}분
+                  {v}
                 </Button>
               ))}
               <div className="ml-auto flex items-center gap-2">
                 <Switch
                   id="edit-unlimited"
                   checked={examData.duration === 0}
-                  onCheckedChange={(checked) =>
-                    setExamData((p) => ({
-                      ...p,
-                      duration: checked ? 0 : 60,
-                    }))
-                  }
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      prevDurationRef.current = examData.duration || 60;
+                      setExamData((p) => ({ ...p, duration: 0 }));
+                    } else {
+                      setExamData((p) => ({ ...p, duration: prevDurationRef.current }));
+                    }
+                  }}
                 />
                 <Label htmlFor="edit-unlimited" className="cursor-pointer text-sm">
                   무제한
@@ -773,7 +771,7 @@ export default function EditExam({
             )}
           </Field>
 
-          {/* 5. 수업 자료 */}
+          {/* 4. 수업 자료 */}
           <Field
             label="수업 자료"
             optional
@@ -802,11 +800,90 @@ export default function EditExam({
             />
           </Field>
 
-          {/* 6. 채점 비중 */}
+          {/* 5. AI 응답 언어 */}
+          <Field
+            label="AI 응답 언어"
+            helper="학생이 시험 중 AI 튜터와 대화할 때 사용할 언어입니다."
+          >
+            <Select
+              value={examData.language}
+              onValueChange={(v) =>
+                setExamData((p) => ({ ...p, language: v as "ko" | "en" }))
+              }
+            >
+              <SelectTrigger className="h-11 w-44 bg-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ko">한국어 AI</SelectItem>
+                <SelectItem value="en">English AI</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+
+          {/* 6. 문제 */}
+          <Field
+            label="문제"
+            required
+            helper={
+              questions.length > 0
+                ? `${questions.length}개 작성됨`
+                : "최소 1개 이상 필요합니다."
+            }
+          >
+            <div className="space-y-4">
+              {/* 문제가 있을 때만 QuestionsList 표시 */}
+              {questions.length > 0 && (
+                <QuestionsList
+                  questions={questions}
+                  defaultOpen={true}
+                  language={examData.language}
+                  variant="line"
+                  onUpdate={(id, field, value) =>
+                    setQuestions((prev) =>
+                      prev.map((q) => (q.id === id ? { ...q, [field]: value } : q))
+                    )
+                  }
+                  onRemove={(id) =>
+                    setQuestions((prev) => prev.filter((q) => q.id !== id))
+                  }
+                  onMove={(index, direction) =>
+                    setQuestions((prev) => {
+                      const next = [...prev];
+                      const target = direction === "up" ? index - 1 : index + 1;
+                      if (target < 0 || target >= next.length) return prev;
+                      [next[index], next[target]] = [next[target], next[index]];
+                      return next;
+                    })
+                  }
+                />
+              )}
+              {/* 점선 박스 추가 버튼 — 시험 만들기와 동일한 스타일 */}
+              <button
+                type="button"
+                onClick={() => setIsAddPickerOpen(true)}
+                aria-label="문제 추가"
+                data-testid={
+                  questions.length === 0 ? "empty-add-question-btn" : "add-question-btn"
+                }
+                className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border py-10 text-center transition-colors hover:border-muted-foreground hover:bg-muted/50"
+              >
+                <Plus className="h-8 w-8 text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground">
+                  {questions.length === 0 ? "첫 문제 추가" : "문제 추가"}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  직접 작성하거나 AI로 생성하세요
+                </span>
+              </button>
+            </div>
+          </Field>
+
+          {/* 7. 채점 비중 */}
           <Field
             label="채점 비중"
             optional
-            helper="AI 대화 과정과 최종 답안을 채점에 반영하는 비율입니다."
+            helper="AI 대화 과정과 최종 답안을 채점에 반영하는 비율입니다. 비워두면 기본값 50:50으로 채점됩니다."
           >
             <div className="rounded-md border bg-muted/20 p-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -822,7 +899,7 @@ export default function EditExam({
                   onClick={() => setShowAdvancedGrading((p) => !p)}
                   className="ml-auto"
                 >
-                  {showAdvancedGrading ? "닫기" : "조정"}
+                  조정
                 </Button>
               </div>
               {showAdvancedGrading && (
@@ -837,7 +914,7 @@ export default function EditExam({
                     />
                     <Label
                       htmlFor="edit-custom-weight"
-                      className="cursor-pointer text-sm"
+                      className="text-sm"
                     >
                       직접 설정
                     </Label>
@@ -853,61 +930,6 @@ export default function EditExam({
                   )}
                 </div>
               )}
-            </div>
-          </Field>
-
-          {/* 7. 문제 */}
-          <Field
-            label="문제"
-            required
-            helper={
-              questions.length > 0
-                ? `${questions.length}개 작성됨`
-                : "최소 1개 이상 필요합니다."
-            }
-          >
-            <div className="space-y-4">
-              <QuestionsList
-                questions={questions}
-                defaultOpen={true}
-                language={examData.language}
-                variant="line"
-                onUpdate={(id, field, value) =>
-                  setQuestions((prev) =>
-                    prev.map((q) => (q.id === id ? { ...q, [field]: value } : q))
-                  )
-                }
-                onRemove={(id) =>
-                  setQuestions((prev) => prev.filter((q) => q.id !== id))
-                }
-                onAdd={() => setIsAddPickerOpen(true)}
-                onMove={(index, direction) =>
-                  setQuestions((prev) => {
-                    const next = [...prev];
-                    const target =
-                      direction === "up" ? index - 1 : index + 1;
-                    if (target < 0 || target >= next.length) return prev;
-                    [next[index], next[target]] = [next[target], next[index]];
-                    return next;
-                  })
-                }
-              />
-              <button
-                type="button"
-                onClick={() => setIsAddPickerOpen(true)}
-                aria-label="문제 추가"
-                data-testid={
-                  questions.length === 0
-                    ? "empty-add-question-btn"
-                    : "add-question-btn"
-                }
-                className="flex w-full flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border py-10 text-center transition-colors hover:border-muted-foreground hover:bg-muted/50"
-              >
-                <Plus className="h-8 w-8 text-muted-foreground" />
-                <span className="text-sm font-medium text-muted-foreground">
-                  {questions.length === 0 ? "첫 문제 추가" : "문제 추가"}
-                </span>
-              </button>
             </div>
           </Field>
         </div>
