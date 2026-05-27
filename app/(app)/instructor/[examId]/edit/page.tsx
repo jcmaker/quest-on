@@ -115,21 +115,6 @@ export default function EditExam({
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
 
-  // ── 코드 재생성 ───────────────────────────────────────────────────────────
-  const generateExamCode = useCallback(() => {
-    if (
-      examData.code &&
-      !window.confirm(
-        "코드를 재생성하면 기존에 코드를 받은 학생들은 새 코드로 입장해야 합니다.\n계속하시겠습니까?"
-      )
-    )
-      return;
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let result = "";
-    for (let i = 0; i < 6; i++)
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    setExamData((prev) => ({ ...prev, code: result }));
-  }, [examData.code]);
 
   // ── 파일 관련 ─────────────────────────────────────────────────────────────
   const calculateTotalSize = (files: File[]) =>
@@ -330,7 +315,6 @@ export default function EditExam({
   const submitReasons = useMemo(() => {
     return [
       !examData.title ? "시험 제목을 입력해주세요" : null,
-      !examData.code ? "시험 코드를 생성해주세요" : null,
       questions.length === 0 ? "문제를 1개 이상 추가해주세요" : null,
       questions.length > 0 && questions.every((q) => isQuestionContentEmpty(q.text))
         ? "문제 내용을 입력해주세요"
@@ -429,8 +413,6 @@ export default function EditExam({
             materialsText={fileUpload.getMaterialsText()}
             onQuestionsAppend={handleQuestionsAppend}
             // ── 편집 전용 ───────────────────────────────────────────────────
-            examCode={examData.code}
-            onCodeRegenerate={generateExamCode}
             submitButtonText="변경사항 저장"
             existingFiles={fileUpload.existingUrls.map((url, i) => ({
               url,
