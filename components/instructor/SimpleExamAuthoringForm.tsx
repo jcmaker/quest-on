@@ -72,9 +72,9 @@ interface SimpleExamAuthoringFormProps {
   /**
    * AI 에이전트 실행 레이어가 쓰는 숨은 문제 생성기.
    * 다이얼로그에는 렌더링하지 않지만, 에이전트 ref 핸들이 살아 있도록
-   * 폼 내부에 시각적으로 숨겨 마운트한다.
+   * 폼 내부에 시각적으로 숨겨 마운트한다. (에이전트 미사용 시 생략 가능)
    */
-  generator: ReactNode;
+  generator?: ReactNode;
   questions: Question[];
   highlightedIds?: Set<string>;
   onQuestionAdd: (type?: Question["type"], count?: number) => void;
@@ -94,6 +94,17 @@ interface SimpleExamAuthoringFormProps {
   materialsText?: Array<{ url: string; text: string; fileName: string }>;
   /** AI 일괄 생성으로 만들어진 문제들을 목록에 append 하는 콜백. */
   onQuestionsAppend?: (questions: Question[]) => void;
+  // ── 편집 모드 전용 (new/page에서는 사용 안 함) ──────────────────────────
+  /** 있으면 제목 아래에 "시험 코드" 섹션을 렌더링한다. */
+  examCode?: string;
+  /** 코드 재생성 버튼 핸들러. examCode가 있을 때만 유효. */
+  onCodeRegenerate?: () => void;
+  /** 제출 버튼 텍스트. 기본값 "출제하기". 편집 시 "변경사항 저장" 등. */
+  submitButtonText?: string;
+  /** 이미 업로드된 기존 파일 목록 (편집 시 DB에서 로드한 URL 기반). */
+  existingFiles?: Array<{ url: string; name: string; index: number }>;
+  /** 기존 파일 삭제 핸들러. */
+  onRemoveExistingFile?: (index: number) => void;
 }
 
 function getStatusText(status?: ExtractionStatus): string {
@@ -275,6 +286,11 @@ export function SimpleExamAuthoringForm({
   onCancel,
   materialsText,
   onQuestionsAppend,
+  examCode,
+  onCodeRegenerate,
+  submitButtonText,
+  existingFiles,
+  onRemoveExistingFile,
 }: SimpleExamAuthoringFormProps) {
   const [showAdvancedGrading, setShowAdvancedGrading] = useState(false);
   // "+" 문제 추가 — 문제 유형을 고르는 Dialog 의 열림 상태.
@@ -524,6 +540,34 @@ export function SimpleExamAuthoringForm({
           />
         </Field>
 
+        {/* 시험 코드 — 편집 모드에서만 표시 */}
+        {examCode != null && (
+          <Field
+            label="시험 코드"
+            required
+            helper="학생이 시험에 입장할 때 사용하는 코드입니다. 변경 시 학생들에게 새 코드를 알려주세요."
+          >
+            <div className="flex items-center gap-2">
+              <Input
+                value={examCode}
+                readOnly
+                className="h-11 w-40 font-mono text-base tracking-widest bg-white"
+                aria-label="시험 코드"
+              />
+              {onCodeRegenerate && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onCodeRegenerate}
+                >
+                  재생성
+                </Button>
+              )}
+            </div>
+          </Field>
+        )}
+
         {/* 시험 시간 */}
         <Field
           label="시험 시간"
@@ -626,6 +670,32 @@ export function SimpleExamAuthoringForm({
                 PPT · PDF · 워드 · 엑셀 · CSV · 한글 · 이미지 (최대 50MB)
               </span>
             </button>
+            {/* 기존 파일 chips (편집 모드에서 DB에서 로드한 파일) */}
+            {existingFiles && existingFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {existingFiles.map(({ url, name, index }) => (
+                  <span
+                    key={url}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{name}</span>
+                    {onRemoveExistingFile && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-6 shrink-0"
+                        onClick={() => onRemoveExistingFile(index)}
+                        aria-label={`${name} 삭제`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
             {(files.length > 0 || !canAddMoreFiles) && (
               <div className="flex flex-wrap gap-2">
                 {files.map((file, index) => {
@@ -855,7 +925,9 @@ export function SimpleExamAuthoringForm({
               취소
             </Button>
             <Button type="submit" disabled={isSubmitting || !ready}>
-              {isSubmitting ? "출제 중..." : "출제하기"}
+              {isSubmitting
+                ? (submitButtonText ? "저장 중..." : "출제 중...")
+                : (submitButtonText ?? "출제하기")}
             </Button>
           </div>
         </div>
