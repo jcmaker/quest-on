@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { useAppUser } from "@/components/providers/AppAuthProvider";
-import { useState, useEffect, use, useMemo } from "react";
+import { useState, useEffect, use, useMemo, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { qk } from "@/lib/query-keys";
@@ -54,14 +54,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { ChartContainer } from "@/components/ui/chart";
 import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart";
-import {
-  Bar,
-  BarChart,
   XAxis,
   YAxis,
   Area,
@@ -160,6 +154,41 @@ interface SessionData {
   assignmentQuiz?: SessionQuizAttempt | null;
 }
 
+function parseQIdxParam(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function findQuestionArrayIndexByQIdx(
+  questions: Question[],
+  qIdx: number,
+): number {
+  const explicitIdxMatch = questions.findIndex((q) => q.idx === qIdx);
+  if (explicitIdxMatch !== -1) return explicitIdxMatch;
+
+  const hasExplicitIdx = questions.some((q) => Number.isInteger(q.idx));
+  if (!hasExplicitIdx && qIdx < questions.length) return qIdx;
+
+  return -1;
+}
+
+function isCaseNavigationQuestionType(type?: string): boolean {
+  return type === "case" || type === "essay" || type === "short-answer";
+}
+
+function findFirstQuestionArrayIndexByType(
+  questions: Question[],
+  questionType?: string,
+): number {
+  if (!questionType) return -1;
+
+  return questions.findIndex((q) => {
+    if (questionType === "case") return isCaseNavigationQuestionType(q.type);
+    return q.type === questionType;
+  });
+}
+
 export default function GradeStudentPage({
   params,
 }: {
@@ -167,7 +196,7 @@ export default function GradeStudentPage({
 }) {
   const resolvedParams = use(params);
   const searchParams = useSearchParams();
-  const { isSignedIn, isLoaded, user, profile } = useAppUser();
+  const { isSignedIn, isLoaded, profile } = useAppUser();
   const queryClient = useQueryClient();
 
   // URL 쿼리 파라미터에서 전체 평균 및 표준편차 데이터 읽기
@@ -200,6 +229,8 @@ export default function GradeStudentPage({
   }, [searchParams]);
 
   const questionType = searchParams.get("questionType") ?? undefined;
+  const qIdxParam = searchParams.get("qIdx");
+  const initialSelectionAppliedRef = useRef<string | null>(null);
   const [selectedQuestionIdx, setSelectedQuestionIdx] = useState<number>(0);
   const [examStatsOpen, setExamStatsOpen] = useState<boolean>(true);
   // Redirect non-instructors
@@ -210,7 +241,7 @@ export default function GradeStudentPage({
     ) {
       redirect("/student");
     }
-  }, [isLoaded, isSignedIn, user]);
+  }, [isLoaded, isSignedIn, profile?.role]);
 
   // Query for session data
   const { data: sessionData, isLoading: loading, error: sessionError, refetch } = useQuery({
@@ -243,20 +274,30 @@ export default function GradeStudentPage({
     },
   });
 
-  // questionType URL 파라미터에 따라 해당 유형 첫 번째 문제로 초기 이동
+  // URL 파라미터(qIdx 우선, questionType 보조)에 따라 초기 문항만 선택한다.
   useEffect(() => {
-    if (!sessionData?.exam?.questions || !questionType) return;
+    if (!sessionData?.exam?.questions) return;
+    if (sessionData.exam.questions.length === 0) return;
+
+    const selectionKey = [
+      resolvedParams.studentId,
+      qIdxParam ?? "",
+      questionType ?? "",
+    ].join(":");
+    if (initialSelectionAppliedRef.current === selectionKey) return;
+
     const qs = sessionData.exam.questions;
-    const targetIdx = qs.findIndex((q: { type: string }) => {
-      if (questionType === "case") {
-        return q.type !== "multiple-choice" && q.type !== "true-false";
-      }
-      return q.type === questionType;
-    });
-    if (targetIdx !== -1) setSelectedQuestionIdx(targetIdx);
-  // questionType은 URL에서 오므로 sessionData 로드 후 한 번만 실행
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionData?.exam?.questions]);
+    const qIdx = parseQIdxParam(qIdxParam);
+    const targetIdx =
+      qIdx !== null
+        ? findQuestionArrayIndexByQIdx(qs, qIdx)
+        : findFirstQuestionArrayIndexByType(qs, questionType);
+
+    if (targetIdx !== -1) {
+      setSelectedQuestionIdx(targetIdx);
+    }
+    initialSelectionAppliedRef.current = selectionKey;
+  }, [qIdxParam, questionType, resolvedParams.studentId, sessionData?.exam?.questions]);
 
   // AI 재채점 상태
   const [isRegrading, setIsRegrading] = useState(false);
@@ -307,13 +348,14 @@ export default function GradeStudentPage({
   const chatContext = useMemo(() => {
     if (!sessionData) return "";
     const currentQuestion = sessionData.exam?.questions?.[selectedQuestionIdx];
-    const currentSubmission = sessionData.submissions?.[selectedQuestionIdx] as
+    const currentQuestionQIdx = currentQuestion?.idx ?? selectedQuestionIdx;
+    const currentSubmission = sessionData.submissions?.[currentQuestionQIdx] as
       | Submission
       | undefined;
     return [
       `시험 제목: ${sessionData.exam.title}`,
       `시험 코드: ${sessionData.exam.code}`,
-      `선택된 문항 번호: ${selectedQuestionIdx + 1}`,
+      `선택된 문항 번호: ${currentQuestionQIdx + 1}`,
       currentQuestion
         ? `문항 프롬프트: ${currentQuestion.prompt}`
         : "현재 문항 정보를 찾을 수 없습니다.",
@@ -503,10 +545,11 @@ export default function GradeStudentPage({
 
   // Get current question data
   const currentQuestion = sessionData.exam?.questions?.[selectedQuestionIdx];
-  const currentSubmission = sessionData.submissions?.[selectedQuestionIdx] as
+  const selectedQuestionQIdx = currentQuestion?.idx ?? selectedQuestionIdx;
+  const currentSubmission = sessionData.submissions?.[selectedQuestionQIdx] as
     | Submission
     | undefined;
-  const currentGrade = sessionData.grades?.[selectedQuestionIdx] as
+  const currentGrade = sessionData.grades?.[selectedQuestionQIdx] as
     | Grade
     | undefined;
 
@@ -516,7 +559,7 @@ export default function GradeStudentPage({
     currentGrade?.stage_grading?.answer?.comment ?? currentGrade?.comment ?? "";
 
   // Try to get messages by both index and question.id (for backward compatibility)
-  let currentMessages = (sessionData.messages?.[selectedQuestionIdx] ||
+  let currentMessages = (sessionData.messages?.[selectedQuestionQIdx] ||
     []) as Conversation[];
 
   // If no messages found by index, try using question.id
@@ -1421,7 +1464,7 @@ export default function GradeStudentPage({
                           </h4>
                           <div className="flex flex-wrap gap-3">
                             {Object.entries(examStats.questionTypeCount)
-                              .filter(([_, count]) => count > 0)
+                              .filter((entry) => entry[1] > 0)
                               .map(([type, count]) => (
                                 <div
                                   key={type}
@@ -1524,7 +1567,7 @@ export default function GradeStudentPage({
             <div className="lg:col-span-2 space-y-6">
               <QuestionPromptCard
                 question={currentQuestion}
-                questionNumber={selectedQuestionIdx + 1}
+                questionNumber={selectedQuestionQIdx + 1}
               />
 
               {isObjectiveQuestion(currentQuestion?.type) ? (
@@ -1543,7 +1586,7 @@ export default function GradeStudentPage({
                     pasteLogs={
                       currentQuestion
                         ? sessionData.pasteLogs?.[currentQuestion.id] ||
-                          sessionData.pasteLogs?.[String(selectedQuestionIdx)]
+                          sessionData.pasteLogs?.[String(selectedQuestionQIdx)]
                         : undefined
                     }
                     questionId={currentQuestion?.id}
@@ -1562,10 +1605,10 @@ export default function GradeStudentPage({
 
               {!isObjectiveQuestion(currentQuestion?.type) && (
                 <CaseGradingChat
-                  key={selectedQuestionIdx}
+                  key={selectedQuestionQIdx}
                   sessionId={sessionData.session.id}
-                  qIdx={selectedQuestionIdx}
-                  questionNumber={selectedQuestionIdx + 1}
+                  qIdx={selectedQuestionQIdx}
+                  questionNumber={selectedQuestionQIdx + 1}
                   initialScore={caseGradeInitialScore}
                   initialComment={caseGradeInitialComment}
                 />

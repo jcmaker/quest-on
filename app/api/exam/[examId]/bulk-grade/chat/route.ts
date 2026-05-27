@@ -45,7 +45,9 @@ export async function POST(
       return errorJson("RATE_LIMITED", "Too many requests. Please wait.", 429);
     }
 
-    const access = await requireBulkGradeAccess(examId, user);
+    const access = await requireBulkGradeAccess(examId, user, {
+      requireClosed: true,
+    });
     if (!access.ok) return access.response;
 
     const supabase = getSupabaseServer();

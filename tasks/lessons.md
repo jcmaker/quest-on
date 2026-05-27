@@ -26,3 +26,11 @@
 - DB는 Prisma 클라이언트가 아닌 Supabase JS(`getSupabaseServer()`) 사용 — 과거 문서가 잘못 안내했음. `database/NNN_*.sql`이 DDL의 source of truth, `prisma/schema.prisma`는 introspection용.
 - Skill/Command 구분: Skill은 description 매칭으로 자동 호출, Command는 사용자가 `/`로 명시 호출. qa-* 9종은 진입 비용 때문에 사장됐던 자산 — Skill 3개(api-route, data-flow-audit, test-author)로 압축.
 - 자가 진화는 화이트리스트 파일만 (`tasks/lessons.md`, `.claude/CHANGELOG.md`). 소스 코드 자동 commit 절대 금지, push도 절대 금지.
+
+## 2026-05-27 — PR #17 채점 UX 정책
+
+- 강사 case/essay 채점 진입은 시험 종료 후(`exam.status === "closed"`)에만 허용한다. 대시보드 CTA는 종료된 시험에서 제출 학생 중 미채점 case/essay가 있을 때만 보인다.
+- MCQ/OX는 AI/grade row를 쓰지 않고 학생의 raw selected answer와 `correctOptionIndex`만으로 정오답과 점수를 계산한다.
+- `grade_type: "ai_summary"`는 요약 placeholder일 뿐이므로 점수, 진행률, 채점 완료 여부, 재채점 스킵 조건에 포함하지 않는다.
+- 대시보드 최종 점수는 시험 종료 후에만 노출하고, 개별 채점 화면에서는 종료 후 문항별/문제별 점수를 볼 수 있게 한다.
+- 문항 deep link는 배열 위치가 아니라 명시적 `qIdx`/`question.idx` 기준으로 처리한다. non-contiguous idx를 가정하고 API와 UI를 함께 검증한다.

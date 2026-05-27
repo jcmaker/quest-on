@@ -4,7 +4,12 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { errorJson } from "@/lib/api-response";
 import { batchGetUserInfo } from "@/lib/app-users";
-import { deduplicateGrades } from "@/lib/grade-utils";
+import { deduplicateGrades, isScoringGrade } from "@/lib/grade-utils";
+import {
+  gradeObjectiveAnswer,
+  isObjectiveQuestion,
+  selectBestSubmission,
+} from "@/lib/grading-helpers";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { validateUUID } from "@/lib/validate-params";
@@ -13,6 +18,9 @@ type Question = {
   idx?: number;
   text?: string;
   prompt?: string;
+  type?: string;
+  options?: string[];
+  correctOptionIndex?: number;
 };
 
 type GradeRow = {
@@ -20,6 +28,14 @@ type GradeRow = {
   q_idx: number;
   score: number;
   grade_type?: string;
+};
+
+type SubmissionRow = {
+  id: string;
+  session_id: string;
+  q_idx: number;
+  answer: string | null;
+  created_at: string | null;
 };
 
 type StudentExportRow = {
@@ -93,7 +109,7 @@ export async function GET(
     const supabase = getSupabase();
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, code, description, duration, instructor_id, questions")
+      .select("id, title, code, description, duration, instructor_id, questions, status")
       .eq("id", examId)
       .single();
 
@@ -103,6 +119,14 @@ export async function GET(
 
     if (exam.instructor_id !== user.id) {
       return errorJson("FORBIDDEN", "Forbidden", 403);
+    }
+
+    if (exam.status !== "closed") {
+      return errorJson(
+        "EXAM_NOT_CLOSED",
+        "시험 종료 후에 내보낼 수 있습니다.",
+        409
+      );
     }
 
     const { data: sessions, error: sessionsError } = await supabase
@@ -131,7 +155,7 @@ export async function GET(
       ...new Set((sessions ?? []).map((session) => session.student_id)),
     ];
 
-    const [profilesResult, gradesResult, clerkUserMap] = await Promise.all([
+    const [profilesResult, gradesResult, submissionsResult, clerkUserMap] = await Promise.all([
       studentIds.length > 0
         ? supabase
             .from("student_profiles")
@@ -144,6 +168,12 @@ export async function GET(
             .select("session_id, q_idx, score, grade_type")
             .in("session_id", sessionIds)
         : Promise.resolve({ data: [], error: null }),
+      sessionIds.length > 0
+        ? supabase
+            .from("submissions")
+            .select("id, session_id, q_idx, answer, created_at")
+            .in("session_id", sessionIds)
+        : Promise.resolve({ data: [], error: null }),
       batchGetUserInfo(studentIds),
     ]);
 
@@ -152,6 +182,9 @@ export async function GET(
     }
     if (gradesResult.error) {
       return errorJson("INTERNAL_ERROR", "Failed to fetch grades", 500);
+    }
+    if (submissionsResult.error) {
+      return errorJson("INTERNAL_ERROR", "Failed to fetch submissions", 500);
     }
 
     const profileByStudentId = new Map(
@@ -167,6 +200,22 @@ export async function GET(
         gradesBySessionId.set(grade.session_id, []);
       }
       gradesBySessionId.get(grade.session_id)?.push(grade as GradeRow);
+    });
+
+    const submissionsBySessionQuestion = new Map<string, Map<number, SubmissionRow>>();
+    (submissionsResult.data ?? []).forEach((submission) => {
+      const row = submission as SubmissionRow;
+      if (!submissionsBySessionQuestion.has(row.session_id)) {
+        submissionsBySessionQuestion.set(row.session_id, new Map());
+      }
+      const byQuestion = submissionsBySessionQuestion.get(row.session_id)!;
+      const existing = byQuestion.get(row.q_idx);
+      byQuestion.set(
+        row.q_idx,
+        existing
+          ? (selectBestSubmission([existing, row]) as SubmissionRow)
+          : row
+      );
     });
 
     const workbook = new ExcelJS.Workbook();
@@ -195,13 +244,24 @@ export async function GET(
         `Student ${session.student_id.slice(0, 8)}`;
       const dedupedGrades = deduplicateGrades(
         gradesBySessionId.get(session.id) ?? []
-      ).filter((grade) => grade.grade_type !== "ai_failed");
+      ).filter(isScoringGrade);
       const scoreByQuestion = new Map(
         dedupedGrades.map((grade) => [grade.q_idx, grade.score])
       );
-      const questionScores = orderedQuestions.map((question) =>
-        scoreByQuestion.get(question.qIdx)
-      );
+      const submissionsByQuestion =
+        submissionsBySessionQuestion.get(session.id) ?? new Map();
+      const questionScores = orderedQuestions.map((question) => {
+        if (isObjectiveQuestion(question.type)) {
+          const submission = submissionsByQuestion.get(question.qIdx);
+          const objective = gradeObjectiveAnswer({
+            rawAnswer: submission?.answer ?? "",
+            options: question.options,
+            correctOptionIndex: question.correctOptionIndex,
+          });
+          return submission && objective ? objective.score : undefined;
+        }
+        return scoreByQuestion.get(question.qIdx);
+      });
       const gradedScores = questionScores.filter(
         (score): score is number => typeof score === "number"
       );

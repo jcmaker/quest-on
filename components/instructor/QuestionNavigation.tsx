@@ -37,7 +37,7 @@ function getTypePrefix(type: string): string {
 }
 
 function isCaseType(type: string): boolean {
-  return type !== "multiple-choice" && type !== "true-false";
+  return type === "case" || type === "essay" || type === "short-answer";
 }
 
 function normalizeFilter(raw?: string): FilterType {
@@ -125,6 +125,7 @@ export function QuestionNavigation({
                   if (firstIdx !== -1) onSelectQuestion(firstIdx);
                 }
               }}
+              aria-pressed={activeFilter === tab.key}
             >
               {tab.label}
             </Button>
@@ -133,25 +134,30 @@ export function QuestionNavigation({
       )}
 
       <div className="flex gap-2 flex-wrap">
-        {visibleQuestions.map(({ q, arrIdx, label }) => (
-          <Button
-            key={q.id || arrIdx}
-            variant={selectedQuestionIdx === arrIdx ? "default" : "outline"}
-            size="sm"
-            onClick={() => onSelectQuestion(arrIdx)}
-            data-testid={`question-nav-${arrIdx}`}
-          >
-            {label}
-            {grades[arrIdx] && !hideScores && (
-              <Badge
-                variant="secondary"
-                className="ml-2 bg-green-100 text-green-800"
-              >
-                {grades[arrIdx]?.score || 0}점
-              </Badge>
-            )}
-          </Button>
-        ))}
+        {visibleQuestions.map(({ q, arrIdx, label }) => {
+          const qIdx = Number.isInteger(q.idx) ? q.idx : arrIdx;
+          const grade = grades[qIdx];
+          return (
+            <Button
+              key={q.id || arrIdx}
+              variant={selectedQuestionIdx === arrIdx ? "default" : "outline"}
+              size="sm"
+              onClick={() => onSelectQuestion(arrIdx)}
+              aria-current={selectedQuestionIdx === arrIdx ? "true" : undefined}
+              data-testid={`question-nav-${arrIdx}`}
+            >
+              {label}
+              {grade && !hideScores && (
+                <Badge
+                  variant="secondary"
+                  className="ml-2 bg-green-100 text-green-800"
+                >
+                  {grade.score || 0}점
+                </Badge>
+              )}
+            </Button>
+          );
+        })}
       </div>
     </div>
   );

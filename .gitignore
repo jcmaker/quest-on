@@ -25,6 +25,9 @@
 # misc
 .DS_Store
 *.pem
+exports/
+*_export.csv
+/scripts/export-sessions.ts
 
 # debug
 npm-debug.log*
@@ -56,5 +59,3 @@ next-env.d.ts
 *.sql
 # SQL files in database directory (can be committed if needed)
 !database/*.sql
-
-

@@ -24,7 +24,7 @@ function getSupabase() {
 }
 
 function isCaseQuestion(type?: string): boolean {
-  return type === "essay" || type === "short-answer";
+  return type === "case" || type === "essay" || type === "short-answer";
 }
 
 function isCaseGraded(gradeType?: string): boolean {
@@ -136,20 +136,27 @@ function deriveOverallStatus(params: {
 
 function isObjectiveCorrect(params: {
   qIdx: number;
-  gradeScore: number | undefined;
   rawAnswer: string;
   options?: string[];
   correctOptionIndex?: number;
 }): boolean {
-  if (params.gradeScore === 100) return true;
-  if (params.gradeScore !== undefined && params.gradeScore !== 100) return false;
-
   const result = gradeObjectiveAnswer({
     rawAnswer: params.rawAnswer,
     options: params.options,
     correctOptionIndex: params.correctOptionIndex,
   });
-  return result?.score === 100;
+  if (result) return result.score === 100;
+
+  return false;
+}
+
+function objectiveScoreFromRawAnswer(params: {
+  rawAnswer: string;
+  options?: string[];
+  correctOptionIndex?: number;
+}): number | undefined {
+  const result = gradeObjectiveAnswer(params);
+  return result?.score;
 }
 
 export async function GET(
@@ -183,7 +190,7 @@ export async function GET(
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, instructor_id, questions")
+      .select("id, instructor_id, questions, status")
       .eq("id", examId)
       .single();
 
@@ -196,6 +203,7 @@ export async function GET(
     }
 
     const questions = normalizeQuestions(exam.questions);
+    const canShowFinalScores = exam.status === "closed";
     const mcqIndices = questions
       .filter((q) => q.type === "multiple-choice")
       .map((q) => q.idx);
@@ -321,26 +329,22 @@ export async function GET(
       const mcqScores: number[] = [];
       for (const qIdx of mcqIndices) {
         const q = questionByIdx.get(qIdx);
-        const grade = gradeByQ.get(qIdx);
         const sub = subsByQ.get(qIdx);
         const rawAnswer = (sub?.answer as string) ?? "";
         const correct = isObjectiveCorrect({
           qIdx,
-          gradeScore: grade?.score,
           rawAnswer,
           options: q?.options,
           correctOptionIndex: q?.correctOptionIndex,
         });
         if (correct) mcqCorrect += 1;
-        // ai_failed/ai_summary는 유효 점수가 아니므로 제외 (형제 코드 grade-utils.ts 불변량)
-        const isValidGrade =
-          grade?.score !== undefined &&
-          grade.grade_type !== "ai_failed" &&
-          grade.grade_type !== "ai_summary";
-        if (isValidGrade) {
-          mcqScores.push(grade!.score);
-        } else if (sub && !grade) {
-          mcqScores.push(correct ? 100 : 0);
+        const rawScore = objectiveScoreFromRawAnswer({
+          rawAnswer,
+          options: q?.options,
+          correctOptionIndex: q?.correctOptionIndex,
+        });
+        if (sub && rawScore !== undefined) {
+          mcqScores.push(rawScore);
         }
       }
 
@@ -348,25 +352,22 @@ export async function GET(
       const oxScores: number[] = [];
       for (const qIdx of oxIndices) {
         const q = questionByIdx.get(qIdx);
-        const grade = gradeByQ.get(qIdx);
         const sub = subsByQ.get(qIdx);
         const rawAnswer = (sub?.answer as string) ?? "";
         const correct = isObjectiveCorrect({
           qIdx,
-          gradeScore: grade?.score,
           rawAnswer,
           options: q?.options,
           correctOptionIndex: q?.correctOptionIndex,
         });
         if (correct) oxCorrect += 1;
-        const isValidGrade =
-          grade?.score !== undefined &&
-          grade.grade_type !== "ai_failed" &&
-          grade.grade_type !== "ai_summary";
-        if (isValidGrade) {
-          oxScores.push(grade!.score);
-        } else if (sub && !grade) {
-          oxScores.push(correct ? 100 : 0);
+        const rawScore = objectiveScoreFromRawAnswer({
+          rawAnswer,
+          options: q?.options,
+          correctOptionIndex: q?.correctOptionIndex,
+        });
+        if (sub && rawScore !== undefined) {
+          oxScores.push(rawScore);
         }
       }
 
@@ -426,8 +427,8 @@ export async function GET(
         ox: { correct: oxCorrect, total: oxIndices.length },
         caseProgress: { graded: caseGraded, total: caseIndices.length },
         overallStatus,
-        caseScore,
-        overallScore,
+        caseScore: canShowFinalScores ? caseScore : undefined,
+        overallScore: canShowFinalScores ? overallScore : undefined,
       };
     });
 

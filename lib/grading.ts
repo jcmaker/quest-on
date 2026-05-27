@@ -31,6 +31,7 @@ import {
   normalizeAssignmentGradeScore,
   scoreToAssignmentLabel,
 } from "@/lib/grading-utils";
+import { isSuccessfulGradeType } from "@/lib/grade-utils";
 import type {
   StageGrading,
   SummaryData,
@@ -844,7 +845,7 @@ export async function markObjectiveOnlyGradingDone(
 }
 
 /**
- * Ordered list of q_idxes that have a successful (non-`ai_failed`) grade
+ * Ordered list of q_idxes that have a real successful grade
  * row — these are the ones we generate per-question summaries for.
  */
 /**
@@ -876,7 +877,7 @@ export async function listGradedQuestionsForSummary(
   return (data || [])
     .filter(
       (g) =>
-        (g as { grade_type?: string }).grade_type !== "ai_failed" &&
+        isSuccessfulGradeType((g as { grade_type?: string }).grade_type) &&
         typeof (g as { q_idx?: unknown }).q_idx === "number"
     )
     .map((g) => (g as { q_idx: number }).q_idx)
@@ -917,7 +918,7 @@ export async function gradeOneQuestion(
   if (
     existing &&
     (existing as { grade_type?: string }).grade_type &&
-    (existing as { grade_type?: string }).grade_type !== "ai_failed"
+    isSuccessfulGradeType((existing as { grade_type?: string }).grade_type)
   ) {
     return { skipped: true, graded: true };
   }
@@ -1245,8 +1246,7 @@ export async function generateSessionSummaryPhase(
   let grades: GradeResult[] = (gradesData || [])
     .filter(
       (g) =>
-        (g as { grade_type?: string }).grade_type !== "ai_failed" &&
-        (g as { grade_type?: string }).grade_type !== "ai_summary"
+        isSuccessfulGradeType((g as { grade_type?: string }).grade_type)
     )
     .map((g) => {
       const row = g as {

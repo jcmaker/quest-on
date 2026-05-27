@@ -69,12 +69,14 @@ function overallStatusBadge(status: ExamStudentOverallStatus) {
 interface ExamStudentRowProps {
   student: ExamStudentSummary;
   examId: string;
+  canOpenGrading?: boolean;
   onLiveMonitoring?: (student: ExamStudentSummary) => void;
 }
 
 export function ExamStudentRow({
   student,
   examId,
+  canOpenGrading = false,
   onLiveMonitoring,
 }: ExamStudentRowProps) {
   const subInfo = [student.studentNumber, student.school]
@@ -111,7 +113,7 @@ export function ExamStudentRow({
       </div>
 
       <div className="text-sm tabular-nums text-center">
-        {student.status === "submitted" && student.mcq.total > 0 ? (
+        {canOpenGrading && student.status === "submitted" && student.mcq.total > 0 ? (
           <Link
             href={`/instructor/${examId}/grade/${student.sessionId}?questionType=multiple-choice`}
             className="text-primary underline decoration-dotted underline-offset-4 hover:decoration-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
@@ -123,7 +125,7 @@ export function ExamStudentRow({
         )}
       </div>
       <div className="text-sm tabular-nums text-center">
-        {student.status === "submitted" && student.ox.total > 0 ? (
+        {canOpenGrading && student.status === "submitted" && student.ox.total > 0 ? (
           <Link
             href={`/instructor/${examId}/grade/${student.sessionId}?questionType=true-false`}
             className="text-primary underline decoration-dotted underline-offset-4 hover:decoration-solid focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
@@ -135,7 +137,7 @@ export function ExamStudentRow({
         )}
       </div>
       <div className="text-sm tabular-nums text-center">
-        {student.status === "submitted" && student.caseProgress.total > 0 ? (
+        {canOpenGrading && student.status === "submitted" && student.caseProgress.total > 0 ? (
           <Link
             href={`/instructor/${examId}/grade/${student.sessionId}?questionType=case`}
             className="flex justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"
@@ -183,7 +185,7 @@ export function ExamStudentRow({
             </Button>
           </AnimateIcon>
         )}
-        {student.status === "submitted" && (
+        {canOpenGrading && student.status === "submitted" && (
           <AnimateIcon animateOnHover loop loopDelay={700} asChild>
             <Link href={`/instructor/${examId}/grade/${student.sessionId}`}>
               <Button

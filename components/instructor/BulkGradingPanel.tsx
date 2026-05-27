@@ -445,9 +445,11 @@ export function BulkGradingPanel({
                     </td>
                     <td className="py-1.5">
                       <a
-                        href={`/instructor/${examId}/grade/${row.sessionId}?questionType=case`}
+                        href={`/instructor/${examId}/grade/${row.sessionId}?questionType=case&qIdx=${row.qIdx}`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        aria-label={`${row.studentLabel} Q${row.qIdx + 1} 개별 채점 새 탭에서 열기`}
+                        data-testid={`bulk-grade-row-link-${row.sessionId}-${row.qIdx}`}
                         className="inline-flex items-center gap-0.5 text-blue-600 hover:underline whitespace-nowrap"
                       >
                         개별 채점

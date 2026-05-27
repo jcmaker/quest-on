@@ -11,6 +11,8 @@ import { validateUUID } from "@/lib/validate-params";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 import { singleGradeUpdateSchema, validateRequest } from "@/lib/validations";
 import { upsertGradesBySessionQuestion } from "@/lib/grades-upsert";
+import { isScoringGrade, isSuccessfulGradeType } from "@/lib/grade-utils";
+import { hasQuestionWithQIdx } from "@/lib/case-grade-access";
 
 // Auto-grading (PUT) calls AI_MODEL_HEAVY multiple times — needs 300s
 export const maxDuration = 300;
@@ -26,7 +28,6 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
-  const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
 
@@ -65,7 +66,7 @@ export async function GET(
     // Get exam data
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, code, instructor_id, questions, rubric")
+      .select("id, title, code, instructor_id, questions, rubric, status")
       .eq("id", session.exam_id)
       .single();
 
@@ -369,10 +370,14 @@ export async function GET(
 
     // Calculate overall score if grades exist
     let overallScore = null;
-    if (grades && grades.length > 0) {
+    if (exam.status === "closed" && grades && grades.length > 0) {
       const validGrades = (grades as Array<Record<string, unknown>>).filter(
         (g) =>
-          g.grade_type !== "ai_failed" && g.grade_type !== "ai_summary"
+          isScoringGrade({
+            score: typeof g.score === "number" ? g.score : null,
+            grade_type:
+              typeof g.grade_type === "string" ? g.grade_type : null,
+          })
       );
       if (validGrades.length > 0) {
         const totalScore = validGrades.reduce(
@@ -434,7 +439,6 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
-  const requestStartTime = Date.now();
   try {
     const { sessionId } = await params;
 
@@ -476,7 +480,7 @@ export async function POST(
     // Get exam to check instructor and validate q_idx upper bound
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("instructor_id, questions")
+      .select("instructor_id, questions, status")
       .eq("id", session.exam_id)
       .single();
 
@@ -489,12 +493,20 @@ export async function POST(
       return errorJson("FORBIDDEN", "Forbidden", 403);
     }
 
+    if (exam.status !== "closed") {
+      return errorJson(
+        "EXAM_NOT_CLOSED",
+        "시험 종료 후에 채점할 수 있습니다.",
+        409
+      );
+    }
+
     // Validate q_idx bounds against exam questions (P1-2: also reject negative)
     if (questionIdx < 0) {
       return errorJson("VALIDATION_ERROR", `Invalid question index: ${questionIdx}`, 400);
     }
-    if (Array.isArray(exam.questions) && questionIdx >= exam.questions.length) {
-      return errorJson("VALIDATION_ERROR", `Invalid question index: ${questionIdx} (exam has ${exam.questions.length} questions)`, 400);
+    if (Array.isArray(exam.questions) && !hasQuestionWithQIdx(exam.questions, questionIdx)) {
+      return errorJson("VALIDATION_ERROR", `Invalid question index: ${questionIdx}`, 400);
     }
 
     // Optimistic locking: if client sends expected_updated_at, verify no concurrent edit
@@ -606,12 +618,20 @@ export async function PUT(
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("instructor_id")
+      .select("instructor_id, status")
       .eq("id", session.exam_id)
       .single();
 
     if (examError || !exam || exam.instructor_id !== user.id) {
       return errorJson("FORBIDDEN", "Forbidden", 403);
+    }
+
+    if (exam.status !== "closed") {
+      return errorJson(
+        "EXAM_NOT_CLOSED",
+        "시험 종료 후에 채점할 수 있습니다.",
+        409
+      );
     }
 
     // Rate limit: expensive OpenAI auto-grading
@@ -629,7 +649,7 @@ export async function PUT(
         .eq("session_id", sessionId);
 
       const hasSuccessfulGrade = existingGrades?.some(
-        (g) => g.grade_type !== "ai_failed"
+        (g) => isSuccessfulGradeType(g.grade_type)
       );
 
       if (hasSuccessfulGrade) {

@@ -11,6 +11,7 @@ import {
   enqueueGradingPhase,
   isQStashEnabled,
 } from "@/lib/qstash";
+import { isSuccessfulGradeType } from "@/lib/grade-utils";
 import type { GradingProgress } from "@/lib/types/grading";
 
 type TriggerSource =
@@ -122,11 +123,11 @@ export async function triggerGradingIfNeeded(
       });
     }
 
-    // Only block re-trigger if at least one non-`ai_failed` grade exists.
-    // Sessions whose grades are ALL `ai_failed` need recovery — we allow
-    // the trigger to enqueue a re-grade of those questions.
+    // Only block re-trigger if at least one real grade exists. Placeholder
+    // `ai_summary` rows only store per-question summaries and must not mark
+    // the session as graded.
     const successfulGrades = (existingGrades || []).filter(
-      (g) => (g as { grade_type?: string }).grade_type !== "ai_failed"
+      (g) => isSuccessfulGradeType((g as { grade_type?: string }).grade_type)
     );
 
     // Check if session-level summary has been produced yet.

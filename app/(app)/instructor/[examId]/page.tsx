@@ -42,6 +42,10 @@ import type { InstructorExam } from "@/lib/types/exam";
 import type { ExamStudentSummary } from "@/lib/types/student-summary";
 import { BulkGradingPanel } from "@/components/instructor/BulkGradingPanel";
 
+function isCaseGradingQuestionType(type?: string): boolean {
+  return type === "case" || type === "essay" || type === "short-answer";
+}
+
 export default function ExamDetail({
   params,
 }: {
@@ -141,7 +145,10 @@ export default function ExamDetail({
 
   const questionsCount = examDetailData?.questionsCount ?? null;
   const questionsLoading = examDetailLoading;
-  const questions = (questionsOpen ? examDetailData?.questionsRaw : null) ?? [];
+  const questions = useMemo(
+    () => (questionsOpen ? examDetailData?.questionsRaw ?? [] : []),
+    [examDetailData?.questionsRaw, questionsOpen],
+  );
 
   const handleLiveMonitoring = (student: ExamStudentSummary) => {
     setMonitoringStudent(student);
@@ -161,20 +168,26 @@ export default function ExamDetail({
   }, [students]);
 
   const hasCaseQuestions = useMemo(() => {
-    if (!exam?.questions) return false;
-    const qs = Array.isArray(exam.questions) ? exam.questions : [];
-    return qs.some(
-      (q) => q.type !== "multiple-choice" && q.type !== "true-false",
+    const detailQuestions = Array.isArray(examDetailData?.questionsRaw)
+      ? examDetailData.questionsRaw
+      : [];
+    return (
+      detailQuestions.some((q) => isCaseGradingQuestionType(q.type)) ||
+      students.some((s) => s.caseProgress.total > 0)
     );
-  }, [exam]);
+  }, [examDetailData, students]);
 
-  const hasSubmittedStudents = useMemo(
-    () => students.some((s) => s.status === "submitted"),
-    [students],
+  const showBulkCaseGradingCta = useMemo(
+    () => exam?.status === "closed" && hasCaseQuestions && hasIncompleteGrading,
+    [exam?.status, hasCaseQuestions, hasIncompleteGrading],
   );
 
   const handleExcelDownload = useCallback(() => {
     if (!exam) return;
+    if (exam.status !== "closed") {
+      window.alert("시험 종료 후에 이용해주세요");
+      return;
+    }
     if (hasIncompleteGrading) {
       window.alert("채점이 완료돼지 않았습니다. 채점을 완료한 후에 이용해주세요");
       return;
@@ -379,7 +392,7 @@ export default function ExamDetail({
               </Button>
             </div>
 
-            {hasCaseQuestions && hasSubmittedStudents && (
+            {showBulkCaseGradingCta && (
               <div className="flex items-center justify-between p-3 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-950/30">
                 <div className="flex items-center gap-2">
                   <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
@@ -501,6 +514,7 @@ export default function ExamDetail({
                         key={student.sessionId}
                         student={student}
                         examId={exam.id}
+                        canOpenGrading={exam.status === "closed"}
                         onLiveMonitoring={handleLiveMonitoring}
                       />
                     ),
