@@ -39,6 +39,7 @@ import {
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { QuestionEditor } from "@/components/instructor/QuestionEditor";
 import {
+  buildDefaultScoreWeightsForQuestionTypes,
   scoreBucketForQuestionType,
   validateScoreWeightsForQuestions,
   type ScoreWeightBucket,
@@ -199,7 +200,7 @@ const QUESTION_TYPE_OPTIONS: {
 const SCORE_BUCKET_LABELS: Record<ScoreWeightBucket, string> = {
   "multiple-choice": "사지선다",
   "true-false": "O/X",
-  case: "Case",
+  case: "사례형",
 };
 
 function getPresentScoreBuckets(questions: Question[]): ScoreWeightBucket[] {
@@ -214,16 +215,9 @@ function getPresentScoreBuckets(questions: Question[]): ScoreWeightBucket[] {
 }
 
 function buildDefaultScoreWeights(questions: Question[]): ScoreWeights | null {
-  const buckets = getPresentScoreBuckets(questions);
-  if (buckets.length === 0) return null;
-  const base = Math.floor(100 / buckets.length);
-  let remainder = 100 - base * buckets.length;
-  const typeWeights: Partial<Record<ScoreWeightBucket, number>> = {};
-  buckets.forEach((bucket) => {
-    typeWeights[bucket] = base + (remainder > 0 ? 1 : 0);
-    remainder -= 1;
-  });
-  return { version: 1, typeWeights, distribution: "equal_by_type" };
+  return buildDefaultScoreWeightsForQuestionTypes(
+    questions.map((question) => question.type)
+  );
 }
 
 /**
@@ -922,7 +916,7 @@ export function SimpleExamAuthoringForm({
         <Field
           label="최종 점수 비중"
           optional
-          helper="전체 100점 중 문제 유형별 반영 비율입니다. 유형 안의 문항은 동일하게 나눠 계산됩니다."
+          helper="전체 100점 중 문제 유형별 반영 비율입니다. 학습 목표의 중요도에 맞춰 정하고, 같은 유형 안의 문항은 동일하게 나눠 계산됩니다."
         >
           <div className="rounded-md border bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-3">
@@ -973,13 +967,25 @@ export function SimpleExamAuthoringForm({
                   </div>
                 ))}
                 {scoreWeightErrors.length > 0 && (
-                  <div className="space-y-1 text-sm text-amber-600 dark:text-amber-400">
-                    {scoreWeightErrors.map((error) => (
-                      <p key={error} className="flex items-center gap-1.5">
-                        <AlertTriangle className="h-4 w-4" />
-                        {error}
-                      </p>
-                    ))}
+                  <div className="flex flex-wrap items-start justify-between gap-2 text-sm text-amber-600 dark:text-amber-400">
+                    <div className="space-y-1">
+                      {scoreWeightErrors.map((error) => (
+                        <p key={error} className="flex items-center gap-1.5">
+                          <AlertTriangle className="h-4 w-4" />
+                          {error}
+                        </p>
+                      ))}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        onScoreWeightsChange(buildDefaultScoreWeights(questions))
+                      }
+                    >
+                      현재 문항 기준 재설정
+                    </Button>
                   </div>
                 )}
               </div>

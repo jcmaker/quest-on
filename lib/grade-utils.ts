@@ -204,14 +204,58 @@ export function normalizeScoreWeights(value: unknown): ScoreWeights | null {
     typeWeights?: unknown;
     distribution?: unknown;
   };
+  if (raw.version !== 1) return null;
+  if (raw.distribution !== "equal_by_type") return null;
   if (!raw.typeWeights || typeof raw.typeWeights !== "object") return null;
 
   const input = raw.typeWeights as Partial<Record<ScoreWeightBucket, unknown>>;
   const typeWeights: Partial<Record<ScoreWeightBucket, number>> = {};
   for (const bucket of ["multiple-choice", "true-false", "case"] as const) {
     const weight = input[bucket];
-    if (typeof weight !== "number" || !Number.isFinite(weight)) continue;
+    if (
+      typeof weight !== "number" ||
+      !Number.isFinite(weight) ||
+      !Number.isInteger(weight) ||
+      weight < 1 ||
+      weight > 100
+    ) {
+      continue;
+    }
     typeWeights[bucket] = weight;
+  }
+
+  const total = Object.values(typeWeights).reduce(
+    (sum, weight) => sum + (weight ?? 0),
+    0
+  );
+  if (total !== 100) return null;
+
+  return {
+    version: 1,
+    typeWeights,
+    distribution: "equal_by_type",
+  };
+}
+
+export function buildDefaultScoreWeightsForQuestionTypes(
+  questionTypes: Array<string | null | undefined>
+): ScoreWeights | null {
+  const presentBuckets = new Set(
+    questionTypes
+      .map((type) => scoreBucketForQuestionType(type))
+      .filter((bucket): bucket is ScoreWeightBucket => bucket !== null)
+  );
+  const buckets = (["multiple-choice", "true-false", "case"] as const).filter(
+    (bucket) => presentBuckets.has(bucket)
+  );
+  if (buckets.length === 0) return null;
+
+  const base = Math.floor(100 / buckets.length);
+  let remainder = 100 - base * buckets.length;
+  const typeWeights: Partial<Record<ScoreWeightBucket, number>> = {};
+  for (const bucket of buckets) {
+    typeWeights[bucket] = base + (remainder > 0 ? 1 : 0);
+    remainder -= 1;
   }
 
   return {
@@ -273,6 +317,46 @@ export function calculateScoreFromItems(
       (item): item is ScoreItem & { score: number } =>
         typeof item.score === "number" && Number.isFinite(item.score)
     );
+    const caseItems = items.filter(
+      (item) => scoreBucketForQuestionType(item.type) === "case"
+    );
+    const hasUngradedCaseItem = caseItems.some(
+      (item) => typeof item.score !== "number" || !Number.isFinite(item.score)
+    );
+    if (hasUngradedCaseItem) {
+      const caseValid = caseItems.filter(
+        (item): item is ScoreItem & { score: number } =>
+          typeof item.score === "number" && Number.isFinite(item.score)
+      );
+      return {
+        overallScore: null,
+        gradedCount: valid.length,
+        totalCount: items.length,
+        mode: "legacy",
+        incompleteBuckets: ["case"],
+        missingBuckets: [],
+        ungradedBuckets: ["case"],
+        bucketScores: {},
+        bucketMeta: {
+          ...emptyBucketMetaRecord(),
+          case: {
+            weight: 0,
+            averageScore: caseValid.length
+              ? roundScore(
+                  caseValid.reduce((acc, item) => acc + item.score, 0) /
+                    caseValid.length
+                )
+              : null,
+            contribution: null,
+            gradedCount: caseValid.length,
+            totalCount: caseItems.length,
+            status: "ungraded",
+          },
+        },
+        totalConfiguredWeight: 0,
+        isComplete: false,
+      };
+    }
     if (valid.length === 0) {
       return {
         overallScore: 0,
@@ -399,7 +483,7 @@ function scoreCandidatePriority(candidate: {
   source: "objective" | "grade";
   grade_type?: string | null;
 }): number {
-  if (candidate.source === "objective") return 2;
+  if (candidate.source === "objective") return 4;
   return GRADE_PRIORITY[candidate.grade_type || "auto"] ?? 2;
 }
 
@@ -477,7 +561,7 @@ export function calculateWeightedOverallScore({
     });
   }
 
-  if (!scoreWeights && objectiveScores.length === 0) {
+  if (!scoreWeights && objectiveScores.length === 0 && questions.length === 0) {
     const legacy = calculateOverallScore([...grades, ...caseGrades], totalQuestionCount);
     return {
       overallScore: legacy.overallScore,

@@ -264,7 +264,7 @@ export async function GET(
             options: question.options,
             correctOptionIndex: question.correctOptionIndex,
           });
-          return submission && objective ? objective.score : undefined;
+          return objective ? objective.score : undefined;
         }
         return scoreByQuestion.get(question.qIdx);
       });

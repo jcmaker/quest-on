@@ -44,6 +44,7 @@ import { useExamDraftAutoSave } from "@/hooks/useExamDraftAutoSave";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import type { ChatMessage } from "@/hooks/useQuestionGeneration";
 import {
+  buildDefaultScoreWeightsForQuestionTypes,
   validateScoreWeightsForQuestions,
   type ScoreWeights,
 } from "@/lib/grade-utils";
@@ -141,6 +142,18 @@ export default function CreateExam() {
       }
     }
   }, [restoreDraft]);
+
+  useEffect(() => {
+    setScoreWeights((prev) => {
+      if (questions.length === 0) return null;
+      return (
+        prev ??
+        buildDefaultScoreWeightsForQuestionTypes(
+          questions.map((question) => question.type)
+        )
+      );
+    });
+  }, [questions]);
 
   // 폼 변경 감지 (이탈 경고용)
   const hasFormData = useCallback(() => {
@@ -496,6 +509,9 @@ export default function CreateExam() {
     questions.some((q) => isObjectiveQuestionIncomplete(q))
       ? "객관식 문제의 선택지와 정답을 입력해주세요"
       : null,
+    questions.length > 0 && !scoreWeights
+      ? "최종 점수 비중을 설정해주세요"
+      : null,
     ...validateScoreWeightsForQuestions(
       scoreWeights,
       questions.map((q) => q.type)
@@ -641,6 +657,20 @@ export default function CreateExam() {
     if (questions.length === 0) {
       isSubmittingRef.current = false;
       toast.error("최소 1개 이상의 문제를 추가해주세요.");
+      return;
+    }
+    if (!scoreWeights) {
+      isSubmittingRef.current = false;
+      toast.error("최종 점수 비중을 설정해주세요.");
+      return;
+    }
+    const scoreWeightErrors = validateScoreWeightsForQuestions(
+      scoreWeights,
+      questions.map((q) => q.type)
+    );
+    if (scoreWeightErrors.length > 0) {
+      isSubmittingRef.current = false;
+      toast.error(scoreWeightErrors[0]);
       return;
     }
 

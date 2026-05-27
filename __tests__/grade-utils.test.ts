@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateOverallScore,
+  calculateScoreFromItems,
   calculateWeightedOverallScore,
   deduplicateGrades,
   isScoringGrade,
   isSuccessfulGradeType,
+  normalizeScoreWeights,
   type ScoreWeights,
 } from "@/lib/grade-utils";
 
@@ -158,6 +160,58 @@ describe("grade-utils", () => {
       totalCount: 1,
       status: "ungraded",
     });
+  });
+
+  it("withholds legacy final score when any case question is ungraded", () => {
+    const result = calculateScoreFromItems(
+      [
+        { qIdx: 0, type: "multiple-choice", score: 100 },
+        { qIdx: 1, type: "essay", score: null },
+      ],
+      null
+    );
+
+    expect(result).toMatchObject({
+      mode: "legacy",
+      overallScore: null,
+      gradedCount: 1,
+      totalCount: 2,
+      incompleteBuckets: ["case"],
+      ungradedBuckets: ["case"],
+      isComplete: false,
+    });
+  });
+
+  it("uses deterministic objective raw score over stale manual objective grade", () => {
+    const result = calculateWeightedOverallScore({
+      questions: [{ idx: 0, type: "multiple-choice" }],
+      objectiveScores: [{ qIdx: 0, score: 100 }],
+      grades: [{ q_idx: 0, score: 0, grade_type: "manual" }],
+      scoreWeights: {
+        version: 1,
+        distribution: "equal_by_type",
+        typeWeights: { "multiple-choice": 100 },
+      },
+    });
+
+    expect(result.overallScore).toBe(100);
+  });
+
+  it("rejects malformed runtime score weights instead of silently normalizing them", () => {
+    expect(
+      normalizeScoreWeights({
+        version: 2,
+        distribution: "equal_by_type",
+        typeWeights: { "multiple-choice": 100 },
+      })
+    ).toBeNull();
+    expect(
+      normalizeScoreWeights({
+        version: 1,
+        distribution: "equal_by_type",
+        typeWeights: { "multiple-choice": 60 },
+      })
+    ).toBeNull();
   });
 
   it("keeps legacy calculateOverallScore behavior when score weights are absent", () => {
