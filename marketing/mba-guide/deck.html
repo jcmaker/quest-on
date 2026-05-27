@@ -22,7 +22,7 @@
   }
   *{box-sizing:border-box; margin:0; padding:0; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
   html,body{background:#3E434B;}
-  body{font-family:"Nanum",sans-serif; color:var(--text); -webkit-font-smoothing:antialiased; letter-spacing:-.2px;}
+  body{font-family:"Nanum",sans-serif; color:var(--text); -webkit-font-smoothing:antialiased; letter-spacing:-.2px; line-height:1.5;}
 
   .slide{position:relative; width:1280px; height:720px; background:var(--bg); overflow:hidden; display:block;}
   .pad{position:absolute; inset:0; padding:62px 84px 0;}
@@ -31,9 +31,9 @@
   .kicker{display:inline-flex; align-items:center; gap:9px; font-size:var(--fs-kicker); font-weight:800;
     letter-spacing:1.6px; text-transform:uppercase; color:var(--blue);}
   .kicker .ksq{width:11px;height:11px;border-radius:3px;background:linear-gradient(135deg,var(--sky),var(--navy));}
-  .title{font-weight:800; font-size:var(--fs-h1); line-height:1.16; color:var(--ink); letter-spacing:-1px; margin-top:18px;}
-  .lead{font-size:var(--fs-lead); line-height:1.45; color:var(--muted); margin-top:18px; max-width:1000px; font-weight:400;}
-  .h3{font-weight:800; font-size:var(--fs-h3); line-height:1.3; color:var(--ink); letter-spacing:-.4px;}
+  .title{font-weight:800; font-size:var(--fs-h1); line-height:1.3; color:var(--ink); letter-spacing:-1px; margin-top:18px;}
+  .lead{font-size:var(--fs-lead); line-height:1.55; color:var(--muted); margin-top:18px; max-width:1000px; font-weight:400;}
+  .h3{font-weight:800; font-size:var(--fs-h3); line-height:1.42; color:var(--ink); letter-spacing:-.4px;}
   .body{font-size:var(--fs-body); line-height:1.55; color:var(--text);}
   .cap{font-size:var(--fs-cap); line-height:1.4; color:var(--muted); font-weight:700;}
   .b{font-weight:800;} .em-ink{color:var(--ink);font-weight:800;} .em-blue{color:var(--blue-d);font-weight:800;}
@@ -58,8 +58,8 @@
   .soft{background:var(--panel); border:1px solid var(--line-2); border-radius:18px;}
 
   /* bullets */
-  .bullets{list-style:none; display:flex; flex-direction:column; gap:20px;}
-  .bullets li{display:flex; gap:16px; align-items:flex-start; font-size:var(--fs-body); line-height:1.45; color:var(--text);}
+  .bullets{list-style:none; display:flex; flex-direction:column; gap:22px;}
+  .bullets li{display:flex; gap:16px; align-items:flex-start; font-size:var(--fs-body); line-height:1.6; color:var(--text);}
   .bullets .bi{flex:none; width:38px;height:38px;border-radius:11px; display:flex;align-items:center;justify-content:center; font-weight:800; font-size:18px;}
   .ic-b{background:var(--blue-50); color:var(--blue-d);}
   .ic-g{background:var(--green-50); color:var(--green);}
@@ -72,7 +72,7 @@
   .wow .lab{position:absolute; left:20px; top:20px; width:34px;height:34px;border-radius:10px; background:rgba(255,255,255,.16);
     display:flex;align-items:center;justify-content:center; font-size:18px;}
   .wow .wt{font-size:13px; font-weight:800; letter-spacing:1.6px; text-transform:uppercase; opacity:.85;}
-  .wow .wb{font-size:19px; line-height:1.45; font-weight:700; margin-top:4px;}
+  .wow .wb{font-size:19px; line-height:1.55; font-weight:700; margin-top:5px;}
   .wow .wb b{color:#BFDBFE;}
 
   /* tags */
@@ -128,7 +128,7 @@
     </div>
     <div style="margin-top:48px">
       <div style="font-size:19px;font-weight:800;letter-spacing:2px;color:var(--blue);text-transform:uppercase">AI 시대, 평가의 기준을 다시 씁니다</div>
-      <h1 style="font-weight:800;font-size:66px;line-height:1.18;letter-spacing:-1.8px;color:var(--ink);margin-top:22px">
+      <h1 style="font-weight:800;font-size:66px;line-height:1.3;letter-spacing:-1.8px;color:var(--ink);margin-top:22px">
         생성형 AI를 <span style="position:relative;white-space:nowrap">‘컨닝 도구’<span style="position:absolute;left:0;right:0;bottom:11px;height:16px;background:rgba(220,38,38,.22);z-index:-1;border-radius:3px"></span></span>가 아닌<br/>
         <span class="grad">‘사고력 파트너’</span>로
       </h1>
