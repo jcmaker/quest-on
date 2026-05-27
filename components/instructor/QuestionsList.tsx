@@ -27,6 +27,8 @@ interface QuestionsListProps {
   defaultOpen?: boolean;
   mode?: "exam" | "assignment";
   language?: "ko" | "en";
+  /** QuestionEditor 레이아웃 variant. 편집 페이지에서는 "line" 사용. 기본값 "line". */
+  variant?: "card" | "line";
   onUpdate: (
     id: string,
     field: keyof Question,
@@ -42,7 +44,7 @@ interface AdjustResult {
   explanation: string;
 }
 
-export function QuestionsList({ questions, highlightedIds, defaultOpen = true, mode = "exam", language, onUpdate, onRemove, onAdd, onMove }: QuestionsListProps) {
+export function QuestionsList({ questions, highlightedIds, defaultOpen = true, mode = "exam", language, variant = "line", onUpdate, onRemove, onAdd, onMove }: QuestionsListProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [adjustHistories, setAdjustHistories] = useState<Map<string, ChatMessage[]>>(new Map());
@@ -97,9 +99,11 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, m
   }, [sheetQuestionId, questions]);
 
   const handleApplyAdjustment = useCallback(
-    (update: { text: string }) => {
+    (update: { text: string; options?: string[]; correctOptionIndex?: number }) => {
       if (!sheetQuestionId) return;
       onUpdate(sheetQuestionId, "text", update.text);
+      if (update.options !== undefined) onUpdate(sheetQuestionId, "options", update.options);
+      if (update.correctOptionIndex !== undefined) onUpdate(sheetQuestionId, "correctOptionIndex", update.correctOptionIndex);
     },
     [sheetQuestionId, onUpdate],
   );
@@ -202,6 +206,7 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, m
                       onRemove={onRemove}
                       onAIEdit={() => setSheetQuestionId(question.id)}
                       mode={mode}
+                      variant={variant}
                     />
                   </div>
                 ))}
@@ -232,6 +237,9 @@ export function QuestionsList({ questions, highlightedIds, defaultOpen = true, m
           open={sheetQuestionId !== null}
           onOpenChange={(open) => { if (!open) setSheetQuestionId(null); }}
           questionText={sheetQuestion.text}
+          questionType={sheetQuestion.type}
+          questionOptions={sheetQuestion.options}
+          questionCorrectOptionIndex={sheetQuestion.correctOptionIndex}
           history={sheetHistory}
           isAdjusting={isAdjusting}
           onSendInstruction={handleAdjust}
