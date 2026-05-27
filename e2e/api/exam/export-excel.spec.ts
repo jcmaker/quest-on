@@ -25,7 +25,7 @@ test.describe("GET /api/exam/[examId]/export/excel", () => {
 
     expect(res.status()).toBe(409);
     const body = await res.json();
-    expect(body.code).toBe("EXAM_NOT_CLOSED");
+    expect(body.error).toBe("EXAM_NOT_CLOSED");
   });
 
   test("exports objective scores from raw submissions instead of stale grade rows", async ({

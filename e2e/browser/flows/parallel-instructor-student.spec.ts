@@ -133,6 +133,13 @@ test.describe("Parallel Instructor + Student — Full Cross-Role E2E", () => {
         expect(s.submitted_at).not.toBeNull();
       }).toPass({ timeout: 20_000, intervals: [1_000] });
 
+      // Grading is only available after the exam has ended.
+      const { error: closeExamError } = await supabase
+        .from("exams")
+        .update({ status: "closed", close_at: new Date().toISOString() })
+        .eq("id", exam.id);
+      expect(closeExamError).toBeNull();
+
       // ── Step 8: Instructor navigates to grading page ──
       const gradePage = new InstructorGradePage(iPage);
       await gradePage.goto(exam.id, sessionId);

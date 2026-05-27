@@ -60,7 +60,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
   test("instructor saves manual grade → 200", async ({
     instructorRequest,
   }) => {
-    const exam = await seedExam({});
+    const exam = await seedExam({ status: "closed" });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: new Date().toISOString(),
@@ -179,7 +179,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
 
     expect(res.status()).toBe(409);
     const body = await res.json();
-    expect(body.code).toBe("EXAM_NOT_CLOSED");
+    expect(body.error).toBe("EXAM_NOT_CLOSED");
   });
 
   // ── PUT — AI auto-grade ──
@@ -275,6 +275,6 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
 
     expect(res.status()).toBe(409);
     const body = await res.json();
-    expect(body.code).toBe("EXAM_NOT_CLOSED");
+    expect(body.error).toBe("EXAM_NOT_CLOSED");
   });
 });

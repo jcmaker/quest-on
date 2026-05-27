@@ -152,7 +152,7 @@ test.describe("Case grading chat API", () => {
 
     expect(res.status()).toBe(409);
     const body = await res.json();
-    expect(body.code).toBe("EXAM_NOT_CLOSED");
+    expect(body.error).toBe("EXAM_NOT_CLOSED");
   });
 
   test("student cannot access case-grade chat", async ({ studentRequest }) => {
