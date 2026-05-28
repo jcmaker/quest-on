@@ -35,10 +35,16 @@ type BulkGradeProgress = {
 type BulkGradeSession = {
   id: string;
   proposed_grades: Record<string, Record<number, { score: number; comment: string }>>;
+  calibration_sample_session_ids: string[];
+  calibration_sample_grades: Record<string, Record<number, { score: number; comment: string }>>;
+  calibration_status: string;
+  grading_scope: "sample" | "full" | string;
+  calibration_attempt: number;
   status: string;
   committed_at: string | null;
   updated_at: string;
   messages: ChatMessage[];
+  sampleStudents?: SampleStudent[];
   progress?: BulkGradeProgress;
 };
 
@@ -46,6 +52,18 @@ type SessionData = {
   session: BulkGradeSession | null;
   studentCount: number;
   warning: string | null;
+};
+
+type SampleStudent = {
+  studentName: string;
+  sessionId: string;
+  overallSummary?: string;
+  answers: Array<{
+    qIdx: number;
+    questionPrompt: string;
+    answer: string;
+    chatSummary: string;
+  }>;
 };
 
 // Row in the proposed grades table, with student info for display
@@ -78,8 +96,6 @@ export function BulkGradingPanel({
   const [editedGrades, setEditedGrades] = useState<ProposedGradesMap | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [canStartGrading, setCanStartGrading] = useState(false);
-  // Track grading state for polling — initialized from server data
-  const [isGradingActive, setIsGradingActive] = useState(false);
 
   const { data, isLoading } = useQuery<SessionData>({
     queryKey: qk.instructor.bulkGradeSession(examId),
@@ -93,11 +109,19 @@ export function BulkGradingPanel({
     },
     enabled: open && !!examId,
     staleTime: 0,
-    refetchInterval: isGradingActive ? 3000 : false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.session?.status;
+      const calibrationStatus = query.state.data?.session?.calibration_status;
+      return status === "grading" || calibrationStatus === "sample_grading" ? 3000 : false;
+    },
   });
 
   const sessionStatus = data?.session?.status ?? null;
-  const isGrading = sessionStatus === "grading";
+  const calibrationStatus = data?.session?.calibration_status ?? "draft";
+  const isSampleGrading = calibrationStatus === "sample_grading";
+  const sampleReview = calibrationStatus === "sample_review";
+  const sampleFailed = calibrationStatus === "sample_failed";
+  const isFullGrading = sessionStatus === "grading" && data?.session?.grading_scope !== "sample";
   const gradingDone = sessionStatus === "grading_done";
   const gradingFailed = sessionStatus === "grading_failed";
   const committed = sessionStatus === "committed";
@@ -108,11 +132,15 @@ export function BulkGradingPanel({
     ? Math.round((processedCount / Math.max(progress.total, 1)) * 100)
     : 0;
   const hasPartialFailure = gradingDone && (progress?.failed ?? 0) > 0;
-
-  // Sync polling state with server status
-  useEffect(() => {
-    setIsGradingActive(isGrading);
-  }, [isGrading]);
+  const sampleStudents = data?.session?.sampleStudents ?? [];
+  const activeGradeSource = sampleReview || sampleFailed || isSampleGrading
+    ? data?.session?.calibration_sample_grades
+    : data?.session?.proposed_grades;
+  const activeScope: "sample" | "full" =
+    sampleReview || sampleFailed || isSampleGrading ? "sample" : "full";
+  const serverProposedGrades = data?.session?.proposed_grades as ProposedGradesMap | undefined;
+  const currentFullGrades = editedGrades ?? serverProposedGrades ?? null;
+  const displayWarning = warning ?? data?.warning ?? null;
 
   const messages = useMemo<ChatMessage[]>(() => {
     return data?.session?.messages ?? [];
@@ -120,29 +148,32 @@ export function BulkGradingPanel({
 
   const hasAssistantCriteriaResponse = messages.some((m) => m.role === "assistant");
 
-  // Restore editedGrades from server on load
-  useEffect(() => {
-    if (data?.session?.proposed_grades && editedGrades === null) {
-      const serverGrades = data.session.proposed_grades as ProposedGradesMap;
-      if (Object.keys(serverGrades).length > 0) {
-        setEditedGrades(serverGrades);
-      }
-    }
-    if (data?.warning) {
-      setWarning(data.warning);
-    }
-  }, [data, editedGrades]);
-
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // 패널이 열리고 메시지가 없으면 AI가 자동으로 인터뷰를 시작
+  // initCalledRef가 진짜 중복 방지 장치 (isPending은 deps에 없어 stale closure이므로 제외)
+  const initCalledRef = useRef(false);
+  useEffect(() => {
+    if (!open || isLoading || messages.length > 0 || initCalledRef.current) return;
+    initCalledRef.current = true;
+    chatMutation.mutate({ init: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isLoading, messages.length]);
+
+  // 패널이 닫히면 init 플래그 초기화
+  useEffect(() => {
+    if (!open) initCalledRef.current = false;
+  }, [open]);
+
   const chatMutation = useMutation({
-    mutationFn: async (message: string) => {
+    mutationFn: async (payload: { message: string } | { init: true }) => {
+      const body = "init" in payload ? { init: true } : { message: payload.message };
       const res = await fetch(`/api/exam/${examId}/bulk-grade/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -162,26 +193,37 @@ export function BulkGradingPanel({
         queryKey: qk.instructor.bulkGradeSession(examId),
       });
     },
-    onError: (error: Error) => {
-      toast.error(error.message);
+    onError: (error: Error, payload) => {
+      // init 실패 시 재시도 가능하도록 ref 초기화
+      if ("init" in payload) initCalledRef.current = false;
+      // 409(이미 시작됨)는 무시 — 서버가 중복 차단한 것이므로 에러 표시 불필요
+      const isConflict = error.message.includes("409") || error.message.includes("이미 시작됐습니다");
+      if (!isConflict) toast.error(error.message);
     },
   });
 
   const startGradingMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/exam/${examId}/bulk-grade/start`, { method: "POST" });
+    mutationFn: async (scope: "sample" | "full") => {
+      const res = await fetch(`/api/exam/${examId}/bulk-grade/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope }),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(extractErrorMessage(err, "채점 시작에 실패했습니다.", res.status));
       }
-      return res.json() as Promise<{ ok: boolean; total: number }>;
+      return res.json() as Promise<{ ok: boolean; total: number; scope: "sample" | "full" }>;
     },
     onSuccess: (result) => {
-      toast.success(`${result.total}명 학생 채점을 시작했습니다.`);
+      toast.success(
+        result.scope === "sample"
+          ? `${result.total}명 샘플 가채점을 시작했습니다.`
+          : `${result.total}명 전체 가채점을 시작했습니다.`,
+      );
       setCanStartGrading(false);
       setEditedGrades(null);
       setWarning(null);
-      setIsGradingActive(true);
       queryClient.invalidateQueries({ queryKey: qk.instructor.bulkGradeSession(examId) });
     },
     onError: (error: Error) => {
@@ -191,10 +233,10 @@ export function BulkGradingPanel({
 
   const commitMutation = useMutation({
     mutationFn: async () => {
-      if (!editedGrades || Object.keys(editedGrades).length === 0) {
+      if (!currentFullGrades || Object.keys(currentFullGrades).length === 0) {
         throw new Error("확정할 채점 결과가 없습니다.");
       }
-      const grades = Object.entries(editedGrades).flatMap(([sessionId, qMap]) =>
+      const grades = Object.entries(currentFullGrades).flatMap(([sessionId, qMap]) =>
         Object.entries(qMap).map(([qIdxStr, { score, comment }]) => ({
           session_id: sessionId,
           q_idx: Number(qIdxStr),
@@ -227,18 +269,19 @@ export function BulkGradingPanel({
   });
 
   const showActiveGrading =
-    startGradingMutation.isPending || isGrading || (isGradingActive && !gradingDone && !gradingFailed);
+    startGradingMutation.isPending || isSampleGrading || isFullGrading;
   const isChatLocked = showActiveGrading || commitMutation.isPending;
   const canShowStartButton =
     (canStartGrading || hasAssistantCriteriaResponse || gradingFailed || hasPartialFailure) &&
     !showActiveGrading &&
-    (!gradingDone || hasPartialFailure) &&
+    (!gradingDone || hasPartialFailure || sampleReview) &&
     !committed;
+  const canStartFullGrading = sampleReview && !showActiveGrading && !committed;
 
   const handleSend = () => {
     const trimmed = input.trim();
     if (!trimmed || chatMutation.isPending || isChatLocked) return;
-    chatMutation.mutate(trimmed);
+    chatMutation.mutate({ message: trimmed });
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -250,10 +293,13 @@ export function BulkGradingPanel({
 
   // Build sorted grade rows for the table
   const gradeRows = useMemo<GradeRow[]>(() => {
-    if (!editedGrades) return [];
+    const gradeMap = activeScope === "sample"
+      ? (activeGradeSource as ProposedGradesMap | undefined)
+      : currentFullGrades;
+    if (!gradeMap) return [];
     const rows: GradeRow[] = [];
     let studentIdx = 1;
-    for (const [sessionId, qMap] of Object.entries(editedGrades)) {
+    for (const [sessionId, qMap] of Object.entries(gradeMap)) {
       for (const [qIdxStr, { score, comment }] of Object.entries(qMap)) {
         rows.push({
           sessionId,
@@ -267,7 +313,7 @@ export function BulkGradingPanel({
     }
     rows.sort((a, b) => a.sessionId.localeCompare(b.sessionId) || a.qIdx - b.qIdx);
     return rows;
-  }, [editedGrades]);
+  }, [activeGradeSource, activeScope, currentFullGrades]);
 
   const totalGrades = gradeRows.length;
 
@@ -308,16 +354,20 @@ export function BulkGradingPanel({
 
           {/* 단계 인디케이터 */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className={!isGrading && !gradingDone ? "text-primary font-medium" : ""}>
+            <span className={!isSampleGrading && !isFullGrading && !gradingDone ? "text-primary font-medium" : ""}>
               ① 기준 논의
             </span>
             <span>→</span>
-            <span className={isGrading ? "text-primary font-medium" : gradingDone ? "text-green-600 font-medium" : ""}>
-              {isGrading ? "② 채점 진행 중" : gradingDone ? "② 채점 완료" : "② 채점"}
+            <span className={isSampleGrading || sampleReview ? "text-primary font-medium" : ""}>
+              {isSampleGrading ? "② 샘플 가채점 중" : sampleReview ? "② 샘플 검토" : "② 샘플"}
+            </span>
+            <span>→</span>
+            <span className={isFullGrading ? "text-primary font-medium" : gradingDone ? "text-green-600 font-medium" : ""}>
+              {isFullGrading ? "③ 전체 채점 중" : gradingDone ? "③ 전체 채점 완료" : "③ 전체 채점"}
             </span>
             <span>→</span>
             <span className={sessionStatus === "committed" ? "text-green-600 font-medium" : ""}>
-              ③ 확정
+              ④ 확정
             </span>
           </div>
 
@@ -325,10 +375,12 @@ export function BulkGradingPanel({
             <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-100">
               <div className="flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" />
-                <span className="font-medium">학생 답안을 백그라운드에서 채점 중입니다.</span>
+                <span className="font-medium">
+                  {isSampleGrading ? "샘플 답안을 백그라운드에서 가채점 중입니다." : "학생 답안을 백그라운드에서 채점 중입니다."}
+                </span>
               </div>
               <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">
-                창을 닫아도 계속 진행됩니다. 완료되면 제안 점수를 검토하고 확정할 수 있습니다.
+                창을 닫아도 계속 진행됩니다. 샘플 결과가 맞으면 전체 가채점을 시작할 수 있습니다.
               </p>
             </div>
           )}
@@ -338,7 +390,7 @@ export function BulkGradingPanel({
             <div className="space-y-1 pt-1">
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>
-                  처리 {processedCount}/{progress.total}명
+                  {isSampleGrading ? "샘플 처리" : "처리"} {processedCount}/{progress.total}명
                   {progress.failed > 0
                     ? ` · 성공 ${progress.completed}명 · 실패 ${progress.failed}명`
                     : ""}
@@ -377,6 +429,13 @@ export function BulkGradingPanel({
             </div>
           )}
 
+          {sampleReview && !showActiveGrading && (
+            <div className="flex items-start gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-200">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>샘플 가채점이 완료되었습니다. 결과가 기준에 맞으면 전체 학생 가채점을 시작하세요.</p>
+            </div>
+          )}
+
           {gradingFailed && (
             <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -386,28 +445,63 @@ export function BulkGradingPanel({
             </div>
           )}
 
-          {warning && (
-            <p className="text-sm text-amber-600">{warning}</p>
+          {displayWarning && (
+            <p className="text-sm text-amber-600">{displayWarning}</p>
           )}
         </SheetHeader>
 
         {/* Chat area */}
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          {!isLoading && sampleStudents.length > 0 && (
+            <div className="mb-4 rounded-md border bg-blue-50/60 p-3 text-xs dark:bg-blue-950/20">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="font-medium text-blue-950 dark:text-blue-100">
+                  기준 보정 샘플 {sampleStudents.length}명
+                </p>
+                {sampleReview && (
+                  <span className="text-blue-700 dark:text-blue-300">샘플 가채점 완료</span>
+                )}
+              </div>
+              <div className="space-y-2">
+                {sampleStudents.map((student, index) => (
+                  <details
+                    key={student.sessionId}
+                    className="rounded border bg-background/80 px-2 py-1.5"
+                    open={index === 0 && displayMessages.length === 0}
+                  >
+                    <summary className="cursor-pointer font-medium">
+                      샘플 {index + 1} · {student.studentName}
+                    </summary>
+                    {student.overallSummary && (
+                      <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                        {student.overallSummary}
+                      </p>
+                    )}
+                    {student.answers.slice(0, 2).map((answer) => (
+                      <div key={answer.qIdx} className="mt-2 space-y-1">
+                        <p className="font-medium">Q{answer.qIdx + 1}</p>
+                        <p className="line-clamp-3 text-muted-foreground">
+                          {answer.answer || "제출 답안 없음"}
+                        </p>
+                      </div>
+                    ))}
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
+
           {isLoading ? (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               불러오는 중…
             </div>
           ) : displayMessages.length === 0 ? (
-            <div className="space-y-3 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">어떻게 채점할까요?</p>
-              <p>
-                이 시험의 채점 기준과 중요하게 볼 포인트를 알려주세요.
-                AI가 기준에 맞게 모든 학생의 Case 문제를 일괄 채점합니다.
-              </p>
-              <p className="text-xs">
-                예시: &quot;논리적 근거 제시 여부 40%, 답변 완성도 30%, 핵심 개념 활용 30%. 부분 점수 허용.&quot;
-              </p>
+            <div className="flex h-full items-center justify-center">
+              <div className="space-y-2 text-center text-sm text-muted-foreground">
+                <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                <p>샘플 학생 답안을 분석하고 있습니다…</p>
+              </div>
             </div>
           ) : (
             <div className="space-y-3 pr-2">
@@ -467,7 +561,9 @@ export function BulkGradingPanel({
         {/* Proposed grades table */}
         {gradeRows.length > 0 && (
           <div className="max-h-[280px] shrink-0 overflow-y-auto border-t px-6 py-3">
-            <p className="mb-2 text-sm font-medium">제안 점수 ({totalGrades}개)</p>
+            <p className="mb-2 text-sm font-medium">
+              {activeScope === "sample" ? "샘플 제안 점수" : "전체 제안 점수"} ({totalGrades}개)
+            </p>
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-background">
                 <tr className="border-b text-left text-muted-foreground">
@@ -494,16 +590,19 @@ export function BulkGradingPanel({
                         min={0}
                         max={100}
                         value={row.score}
+                        disabled={activeScope === "sample"}
                         onChange={(e) => {
+                          if (activeScope === "sample") return;
                           const v = Math.min(100, Math.max(0, Number(e.target.value)));
                           setEditedGrades((prev) => {
-                            if (!prev) return prev;
+                            const base = prev ?? currentFullGrades;
+                            if (!base) return prev;
                             return {
-                              ...prev,
+                              ...base,
                               [row.sessionId]: {
-                                ...prev[row.sessionId],
+                                ...base[row.sessionId],
                                 [row.qIdx]: {
-                                  ...prev[row.sessionId]?.[row.qIdx],
+                                  ...base[row.sessionId]?.[row.qIdx],
                                   score: v,
                                 },
                               },
@@ -580,7 +679,7 @@ export function BulkGradingPanel({
               type="button"
               variant="default"
               className="w-full"
-              onClick={() => startGradingMutation.mutate()}
+              onClick={() => startGradingMutation.mutate("sample")}
               disabled={startGradingMutation.isPending || chatMutation.isPending}
             >
               {startGradingMutation.isPending ? (
@@ -588,18 +687,41 @@ export function BulkGradingPanel({
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   채점 작업 등록 중…
                 </>
+              ) : sampleReview ? (
+                "샘플 다시 가채점"
+              ) : sampleFailed ? (
+                "샘플 다시 가채점"
               ) : gradingFailed ? (
-                "다시 채점 시작"
+                "샘플부터 다시 가채점"
               ) : hasPartialFailure ? (
-                "전체 다시 채점 시작"
+                "샘플부터 다시 확인"
               ) : (
-                `채점 시작 (${data?.studentCount ?? 0}명)`
+                `샘플 가채점 시작 (${sampleStudents.length || 3}명)`
+              )}
+            </Button>
+          )}
+
+          {canStartFullGrading && (
+            <Button
+              type="button"
+              variant="default"
+              className="w-full"
+              onClick={() => startGradingMutation.mutate("full")}
+              disabled={startGradingMutation.isPending || chatMutation.isPending}
+            >
+              {startGradingMutation.isPending ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  전체 채점 작업 등록 중…
+                </>
+              ) : (
+                `이 기준으로 전체 가채점 시작 (${data?.studentCount ?? 0}명)`
               )}
             </Button>
           )}
 
           {/* 채점 확정: grading_done이거나 레거시 draft+proposed_grades */}
-          {editedGrades && Object.keys(editedGrades).length > 0 && !showActiveGrading && !gradingFailed && (
+          {activeScope === "full" && gradingDone && currentFullGrades && Object.keys(currentFullGrades).length > 0 && !showActiveGrading && !gradingFailed && (
             <Button
               type="button"
               className="w-full"

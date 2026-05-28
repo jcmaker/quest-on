@@ -4,6 +4,7 @@ import {
   parseGradesFromAiResponse,
   buildProposedGradesMap,
   estimateTokenCount,
+  selectCalibrationSampleSessionIds,
 } from "@/lib/bulk-grading";
 
 const SESSION_A = "11111111-1111-1111-1111-111111111111";
@@ -215,5 +216,71 @@ describe("estimateTokenCount", () => {
 
   it("returns 0 for empty string", () => {
     expect(estimateTokenCount("")).toBe(0);
+  });
+});
+
+// ─── selectCalibrationSampleSessionIds ───────────────────────────────────────
+
+describe("selectCalibrationSampleSessionIds", () => {
+  it("keeps existing valid sample ids fixed", () => {
+    const result = selectCalibrationSampleSessionIds(
+      [SESSION_A, SESSION_B],
+      [SESSION_B],
+      3,
+      () => 0,
+    );
+    expect(result).toEqual([SESSION_B]);
+  });
+
+  it("filters stale sample ids that are no longer submitted", () => {
+    const result = selectCalibrationSampleSessionIds(
+      [SESSION_A, SESSION_B],
+      [UNKNOWN_SESSION, SESSION_A],
+      3,
+      () => 0,
+    );
+    expect(result).toEqual([SESSION_A]);
+  });
+
+  it("returns all submitted ids when fewer than sample size", () => {
+    const result = selectCalibrationSampleSessionIds(
+      [SESSION_A, SESSION_B],
+      [],
+      3,
+      () => 0,
+    );
+    expect(result).toHaveLength(2);
+    expect(new Set(result)).toEqual(new Set([SESSION_A, SESSION_B]));
+  });
+
+  it("selects one from each equal chunk for even distribution (random=0 picks start of each chunk)", () => {
+    const sessionC = "33333333-3333-3333-3333-333333333333";
+    const sessionD = "44444444-4444-4444-4444-444444444444";
+    // n=4, sampleSize=3 → chunkSize≈1.33
+    // chunk0: [0,1) → idx 0 = SESSION_A
+    // chunk1: [1,2) → idx 1 = SESSION_B
+    // chunk2: [2,4) → idx 2 = sessionC  (random=0 → start of chunk)
+    const result = selectCalibrationSampleSessionIds(
+      [SESSION_A, SESSION_B, sessionC, sessionD],
+      [],
+      3,
+      () => 0,
+    );
+    expect(result).toEqual([SESSION_A, SESSION_B, sessionC]);
+  });
+
+  it("selects last element of each chunk when random=0.99", () => {
+    const sessionC = "33333333-3333-3333-3333-333333333333";
+    const sessionD = "44444444-4444-4444-4444-444444444444";
+    // chunk2: [2,4), size=2 → floor(0.99*2)=1 → idx 3 = sessionD
+    const result = selectCalibrationSampleSessionIds(
+      [SESSION_A, SESSION_B, sessionC, sessionD],
+      [],
+      3,
+      () => 0.99,
+    );
+    expect(result).toHaveLength(3);
+    // last chunk [2,4) with random≈1 picks sessionD
+    expect(result[2]).toEqual(sessionD);
   });
 });

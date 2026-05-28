@@ -13,7 +13,12 @@ import {
   buildAiTextMetadata,
   callTrackedChatCompletion,
 } from "@/lib/ai-tracking";
-import { loadExamMetaOnly } from "@/lib/bulk-grading";
+import {
+  CALIBRATION_SAMPLE_SIZE,
+  loadCalibrationSampleData,
+  loadExamMetaOnly,
+  selectCalibrationSampleSessionIds,
+} from "@/lib/bulk-grading";
 import { buildCriteriaDiscussionSystemPrompt } from "@/lib/prompts";
 import { getSupabaseServer } from "@/lib/supabase-server";
 
@@ -35,7 +40,8 @@ export async function POST(
       return errorJson("VALIDATION_ERROR", validation.error, 400);
     }
 
-    const { message } = validation.data;
+    const isInit = "init" in validation.data && validation.data.init === true;
+    const message = isInit ? "" : (validation.data as { message: string }).message;
 
     const rl = await checkRateLimitAsync(
       `bulk-grade-chat:${user?.id ?? "anon"}:${examId}`,
@@ -64,7 +70,42 @@ export async function POST(
       return errorJson("VALIDATION_ERROR", "채점할 케이스 문제가 없습니다.", 400);
     }
 
-    // Upsert grading session
+    const { data: submittedSessions, error: submittedError } = await supabase
+      .from("sessions")
+      .select("id")
+      .eq("exam_id", examId)
+      .not("submitted_at", "is", null)
+      .order("submitted_at", { ascending: true });
+
+    if (submittedError || !submittedSessions?.length) {
+      return errorJson("VALIDATION_ERROR", "제출한 학생이 없습니다.", 400);
+    }
+
+    const submittedIds = submittedSessions.map((s) => s.id as string);
+    const { data: currentSession } = await supabase
+      .from("exam_grading_sessions")
+      .select("id, status, calibration_status, calibration_sample_session_ids")
+      .eq("exam_id", examId)
+      .eq("instructor_id", access.ctx.user.id)
+      .maybeSingle();
+
+    if (currentSession?.status === "grading" || currentSession?.status === "committing") {
+      return errorJson("CONFLICT", "채점이 진행 중입니다. 완료 후 기준을 수정하세요.", 409);
+    }
+    if (currentSession?.calibration_status === "sample_grading") {
+      return errorJson("CONFLICT", "샘플 가채점이 진행 중입니다. 완료 후 기준을 수정하세요.", 409);
+    }
+    if (currentSession?.status === "committed") {
+      return errorJson("CONFLICT", "이미 확정된 채점입니다.", 409);
+    }
+
+    const sampleSessionIds = selectCalibrationSampleSessionIds(
+      submittedIds,
+      currentSession?.calibration_sample_session_ids,
+      CALIBRATION_SAMPLE_SIZE,
+    );
+
+    // Upsert grading session and mark the calibration criteria as being edited.
     const { data: gradingSession, error: upsertError } = await supabase
       .from("exam_grading_sessions")
       .upsert(
@@ -72,6 +113,10 @@ export async function POST(
           exam_id: examId,
           instructor_id: access.ctx.user.id,
           status: "draft",
+          calibration_status: "interviewing",
+          calibration_sample_session_ids: sampleSessionIds,
+          calibration_sample_grades: {},
+          proposed_grades: {},
           updated_at: new Date().toISOString(),
         },
         { onConflict: "exam_id,instructor_id" },
@@ -85,18 +130,33 @@ export async function POST(
 
     const gradingSessionId = gradingSession.id as string;
 
-    // Save user message
-    const { error: userMsgError } = await supabase
-      .from("bulk_grading_messages")
-      .insert({
-        session_id: gradingSessionId,
-        role: "user",
-        content: message,
-        created_by: access.ctx.user.id,
-      });
+    // init 모드: 이미 assistant 메시지가 있으면 중복 생성 방지
+    if (isInit) {
+      const { data: existingMessages } = await supabase
+        .from("bulk_grading_messages")
+        .select("id")
+        .eq("session_id", gradingSessionId)
+        .eq("role", "assistant")
+        .limit(1);
+      if (existingMessages && existingMessages.length > 0) {
+        return errorJson("CONFLICT", "인터뷰가 이미 시작됐습니다.", 409);
+      }
+    }
 
-    if (userMsgError) {
-      return errorJson("INTERNAL_ERROR", "Failed to save message", 500);
+    // init 모드가 아닐 때만 강사 메시지 저장
+    if (!isInit) {
+      const { error: userMsgError } = await supabase
+        .from("bulk_grading_messages")
+        .insert({
+          session_id: gradingSessionId,
+          role: "user",
+          content: message,
+          created_by: access.ctx.user.id,
+        });
+
+      if (userMsgError) {
+        return errorJson("INTERNAL_ERROR", "Failed to save message", 500);
+      }
     }
 
     // Load chat history
@@ -106,11 +166,27 @@ export async function POST(
       .eq("session_id", gradingSessionId)
       .order("created_at", { ascending: true });
 
-    // Build criteria discussion prompt (no student data)
+    const caseQIdxes = examMeta.caseQuestions.map((q) => q.qIdx);
+    const sampleStudents = await loadCalibrationSampleData(
+      supabase,
+      sampleSessionIds,
+      caseQIdxes,
+    );
+    const sampleStudentsWithPrompts = sampleStudents.map((student) => ({
+      ...student,
+      answers: student.answers.map((answer) => ({
+        ...answer,
+        questionPrompt:
+          examMeta.caseQuestions.find((q) => q.qIdx === answer.qIdx)?.questionPrompt ?? "",
+      })),
+    }));
+
+    // Build criteria discussion prompt with fixed sample student data.
     const systemPrompt = buildCriteriaDiscussionSystemPrompt({
       examTitle: examMeta.examTitle,
       examDescription: examMeta.examDescription,
       caseQuestions: examMeta.caseQuestions,
+      sampleStudents: sampleStudentsWithPrompts,
       language: examMeta.examLanguage,
     });
 
@@ -136,7 +212,7 @@ export async function POST(
         model: AI_MODEL,
         userId: access.ctx.user.id,
         examId,
-        metadata: buildAiTextMetadata({ inputText: [systemPrompt, message] }),
+        metadata: buildAiTextMetadata({ inputText: [systemPrompt, ...(isInit ? [] : [message])] }),
       },
       {
         metadataBuilder: (result) =>
@@ -172,8 +248,9 @@ export async function POST(
       return errorJson("INTERNAL_ERROR", "Failed to save assistant message", 500);
     }
 
-    // canStartGrading: at least one user+assistant exchange
-    const canStartGrading = (historyRows?.length ?? 0) >= 2;
+    // canStartGrading: 강사가 최소 1회 발화했을 때 (init AI 질문만으로는 불충분)
+    const canStartGrading =
+      (historyRows ?? []).filter((r) => r.role === "user").length >= 1;
 
     return successJson({
       assistantMessage: {

@@ -223,14 +223,23 @@ export const caseGradeCommitSchema = z.object({
   comment: z.string().max(5000).optional().transform((v) => (v ? sanitizeUserInput(v) : v)),
 });
 
-export const bulkGradeChatPostSchema = z.object({
-  message: sanitizedString(z.string().min(1, "Message is required").max(10000)),
-});
+export const bulkGradeChatPostSchema = z.union([
+  z.object({
+    init: z.literal(true),
+    message: z.undefined().optional(),
+  }),
+  z.object({
+    init: z.undefined().optional(),
+    message: sanitizedString(z.string().min(1, "Message is required").max(10000)),
+  }),
+]);
 
 export const bulkGradeWorkerSchema = z.object({
   gradingSessionId: z.string().uuid("Invalid gradingSessionId"),
   studentSessionId: z.string().uuid("Invalid studentSessionId"),
   examId: z.string().uuid("Invalid examId"),
+  scope: z.enum(["sample", "full"]).default("full"),
+  attemptId: z.string().uuid("Invalid attemptId").optional(),
 });
 
 export const bulkGradeCommitSchema = z.object({

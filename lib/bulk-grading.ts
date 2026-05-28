@@ -22,6 +22,7 @@ export type BulkGradingStudentData = {
   studentName: string;
   sessionId: string;
   answers: BulkGradingAnswer[];
+  overallSummary?: string;
 };
 
 export type ExamCaseData = {
@@ -41,11 +42,13 @@ export type ParsedGrade = {
 
 export type ProposedGrade = { score: number; comment: string };
 export type ProposedGradesMap = Record<string, Record<number, ProposedGrade>>;
+export type BulkGradingScope = "sample" | "full";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ANSWER_MAX_CHARS = 2000;
 const CHAT_MAX_CHARS = 2000;
+export const CALIBRATION_SAMPLE_SIZE = 3;
 
 // ─── Zod schema for AI response parsing ──────────────────────────────────────
 
@@ -307,6 +310,42 @@ export function buildProposedGradesMap(grades: ParsedGrade[]): ProposedGradesMap
   return map;
 }
 
+export function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+/**
+ * 샘플 학생 선정: 고르게 분포된 3명을 선택합니다.
+ * - 기존 샘플이 있으면 유지 (재현성)
+ * - 없으면 학생 목록을 sampleSize 구간으로 나눠 각 구간에서 1명씩 선택 (균등 분포)
+ * - 학생이 sampleSize 미만이면 전원 선택
+ */
+export function selectCalibrationSampleSessionIds(
+  submittedSessionIds: string[],
+  existingSampleSessionIds: unknown,
+  sampleSize = CALIBRATION_SAMPLE_SIZE,
+  random = Math.random,
+): string[] {
+  const submitted = [...new Set(submittedSessionIds)];
+  const submittedSet = new Set(submitted);
+  const existing = asStringArray(existingSampleSessionIds).filter((sid) => submittedSet.has(sid));
+  if (existing.length > 0) return existing;
+
+  const n = submitted.length;
+  if (n <= sampleSize) return submitted;
+
+  // 균등 분포: 목록을 sampleSize 구간으로 나눠 각 구간에서 1명씩 무작위 선택
+  const selected: string[] = [];
+  const chunkSize = n / sampleSize;
+  for (let i = 0; i < sampleSize; i++) {
+    const start = Math.floor(i * chunkSize);
+    const end = Math.min(Math.floor((i + 1) * chunkSize), n);
+    const idx = start + Math.floor(random() * (end - start));
+    selected.push(submitted[idx]);
+  }
+  return selected;
+}
+
 export function hasGradesForEveryExpectedQuestion(
   grades: ParsedGrade[],
   expectedQIdxes: Iterable<number>,
@@ -334,6 +373,23 @@ export type ExamMeta = {
   examLanguage: "ko" | "en";
   caseQuestions: Array<{ qIdx: number; questionPrompt: string }>;
 };
+
+function summarizeJsonValue(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  const summary = typeof record.summary === "string" ? record.summary : "";
+  const strengths = Array.isArray(record.strengths)
+    ? record.strengths.filter((v): v is string => typeof v === "string").slice(0, 3)
+    : [];
+  const weaknesses = Array.isArray(record.weaknesses)
+    ? record.weaknesses.filter((v): v is string => typeof v === "string").slice(0, 3)
+    : [];
+  return [
+    summary,
+    strengths.length > 0 ? `강점: ${strengths.join(" / ")}` : "",
+    weaknesses.length > 0 ? `보완점: ${weaknesses.join(" / ")}` : "",
+  ].filter(Boolean).join("\n");
+}
 
 /**
  * Lightweight exam metadata query — no student data.
@@ -395,7 +451,7 @@ export async function loadSingleStudentCaseData(
       .order("created_at", { ascending: true }),
     supabase
       .from("sessions")
-      .select("student_id")
+      .select("student_id, ai_summary")
       .eq("id", studentSessionId)
       .single(),
   ]);
@@ -450,5 +506,21 @@ export async function loadSingleStudentCaseData(
     };
   });
 
-  return { studentName, sessionId: studentSessionId, answers };
+  return {
+    studentName,
+    sessionId: studentSessionId,
+    answers,
+    overallSummary: summarizeJsonValue(sessionResult.data?.ai_summary),
+  };
+}
+
+export async function loadCalibrationSampleData(
+  supabase: ReturnType<typeof getSupabaseServer>,
+  sampleSessionIds: string[],
+  caseQIdxes: number[],
+): Promise<BulkGradingStudentData[]> {
+  const students = await Promise.all(
+    sampleSessionIds.map((sid) => loadSingleStudentCaseData(supabase, sid, caseQIdxes)),
+  );
+  return students;
 }
