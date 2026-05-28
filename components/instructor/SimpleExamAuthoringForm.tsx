@@ -206,9 +206,9 @@ const SCORE_BUCKET_LABELS: Record<ScoreWeightBucket, string> = {
 };
 
 const SCORE_BUCKET_COLORS: Record<ScoreWeightBucket, string> = {
-  "multiple-choice": "bg-foreground/70",
-  "true-false": "bg-foreground/50",
-  case: "bg-foreground/30",
+  "multiple-choice": "bg-primary",
+  "true-false": "bg-primary/65",
+  case: "bg-primary/35",
 };
 
 function getPresentScoreBuckets(questions: Question[]): ScoreWeightBucket[] {
