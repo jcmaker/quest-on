@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifySignatureAppRouter } from "@upstash/qstash/nextjs";
-import { getOpenAI, AI_MODEL } from "@/lib/openai";
+import { getOpenAI, AI_MODEL_BULK_GRADING_WORKER } from "@/lib/openai";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { logError } from "@/lib/logger";
 import { bulkGradeWorkerSchema, validateRequest } from "@/lib/validations";
@@ -126,14 +126,14 @@ async function handler(request: NextRequest): Promise<NextResponse> {
       const tracked = await callTrackedChatCompletion(
         () =>
           getOpenAI().chat.completions.create({
-            model: AI_MODEL,
+            model: AI_MODEL_BULK_GRADING_WORKER,
             messages: [{ role: "system", content: systemPrompt }],
             max_completion_tokens: 1500,
           }),
         {
           feature: "bulk_grading_chat",
           route: "/api/internal/bulk-grade-worker",
-          model: AI_MODEL,
+          model: AI_MODEL_BULK_GRADING_WORKER,
           examId,
           sessionId: studentSessionId,
           metadata: buildAiTextMetadata({

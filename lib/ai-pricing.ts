@@ -74,6 +74,11 @@ const OPENAI_MODEL_PRICING: Record<string, ModelPricing> = {
     outputUsdPer1M: 10,
     cachedInputUsdPer1M: 0.125,
   },
+  "gpt-4o-mini": {
+    inputUsdPer1M: 0.15,
+    outputUsdPer1M: 0.60,
+    cachedInputUsdPer1M: 0.075,
+  },
   "text-embedding-3-small": {
     inputUsdPer1M: 0.02,
     outputUsdPer1M: 0,
