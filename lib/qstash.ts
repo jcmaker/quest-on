@@ -93,13 +93,15 @@ export type BulkGradeJobPayload = {
   gradingSessionId: string;
   studentSessionId: string;
   examId: string;
+  attemptId?: string;
 };
 
 export function bulkGradingDedupId(
   gradingSessionId: string,
   studentSessionId: string,
+  attemptId?: string,
 ): string {
-  return `bulk-grade-${gradingSessionId}-${studentSessionId}`;
+  return `bulk-grade-${gradingSessionId}-${studentSessionId}-${attemptId ?? "default"}`;
 }
 
 export type EnqueueBulkGradeJobsResult = {
@@ -139,6 +141,7 @@ export async function enqueueBulkGradeJobs(
         "Upstash-Deduplication-Id": bulkGradingDedupId(
           job.gradingSessionId,
           job.studentSessionId,
+          job.attemptId,
         ),
       },
     }));

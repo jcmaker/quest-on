@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  hasGradesForEveryExpectedQuestion,
   parseGradesFromAiResponse,
   buildProposedGradesMap,
   estimateTokenCount,
@@ -27,6 +28,31 @@ describe("parseGradesFromAiResponse", () => {
     expect(result).not.toBeNull();
     expect(result).toHaveLength(1);
     expect(result![0]).toMatchObject({ session_id: SESSION_A, q_idx: 0, score: 85 });
+  });
+
+  it("parses raw JSON with a top-level session_id from the worker prompt contract", () => {
+    const content = JSON.stringify({
+      session_id: SESSION_A,
+      grades: [{ q_idx: 0, score: 88, comment: "근거가 명확함" }],
+    });
+
+    const result = parseGradesFromAiResponse(content, validSessionIds, validQIdxes);
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(1);
+    expect(result![0]).toMatchObject({ session_id: SESSION_A, q_idx: 0, score: 88 });
+  });
+
+  it("parses fenced JSON with a top-level session_id from the worker prompt contract", () => {
+    const content = `
+\`\`\`json
+{"session_id":"${SESSION_A}","grades":[{"q_idx":1,"score":72,"comment":"핵심 개념 일부 누락"}]}
+\`\`\`
+`;
+
+    const result = parseGradesFromAiResponse(content, validSessionIds, validQIdxes);
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(1);
+    expect(result![0]).toMatchObject({ session_id: SESSION_A, q_idx: 1, score: 72 });
   });
 
   it("returns null when no JSON block is present", () => {
@@ -155,6 +181,27 @@ describe("buildProposedGradesMap", () => {
     ];
     const map = buildProposedGradesMap(grades);
     expect(map[SESSION_A][0].score).toBe(80);
+  });
+});
+
+// ─── hasGradesForEveryExpectedQuestion ───────────────────────────────────────
+
+describe("hasGradesForEveryExpectedQuestion", () => {
+  it("returns false when AI output omits an expected case question", () => {
+    const grades = [
+      { session_id: SESSION_A, q_idx: 0, score: 80, comment: "Q0" },
+    ];
+
+    expect(hasGradesForEveryExpectedQuestion(grades, [0, 1])).toBe(false);
+  });
+
+  it("returns true when every expected case question has a grade", () => {
+    const grades = [
+      { session_id: SESSION_A, q_idx: 0, score: 80, comment: "Q0" },
+      { session_id: SESSION_A, q_idx: 1, score: 75, comment: "Q1" },
+    ];
+
+    expect(hasGradesForEveryExpectedQuestion(grades, [0, 1])).toBe(true);
   });
 });
 

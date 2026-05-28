@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
-import { Bot, ExternalLink, Loader2, Send } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, ExternalLink, Loader2, Send } from "lucide-react";
 import { qk } from "@/lib/query-keys";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -99,7 +99,15 @@ export function BulkGradingPanel({
   const sessionStatus = data?.session?.status ?? null;
   const isGrading = sessionStatus === "grading";
   const gradingDone = sessionStatus === "grading_done";
+  const gradingFailed = sessionStatus === "grading_failed";
+  const committed = sessionStatus === "committed";
   const progress = data?.session?.progress;
+  const hasProgress = !!progress && progress.total > 0;
+  const processedCount = progress ? Math.min(progress.total, progress.completed + progress.failed) : 0;
+  const progressPercent = hasProgress
+    ? Math.round((processedCount / Math.max(progress.total, 1)) * 100)
+    : 0;
+  const hasPartialFailure = gradingDone && (progress?.failed ?? 0) > 0;
 
   // Sync polling state with server status
   useEffect(() => {
@@ -109,6 +117,8 @@ export function BulkGradingPanel({
   const messages = useMemo<ChatMessage[]>(() => {
     return data?.session?.messages ?? [];
   }, [data]);
+
+  const hasAssistantCriteriaResponse = messages.some((m) => m.role === "assistant");
 
   // Restore editedGrades from server on load
   useEffect(() => {
@@ -168,6 +178,9 @@ export function BulkGradingPanel({
     },
     onSuccess: (result) => {
       toast.success(`${result.total}명 학생 채점을 시작했습니다.`);
+      setCanStartGrading(false);
+      setEditedGrades(null);
+      setWarning(null);
       setIsGradingActive(true);
       queryClient.invalidateQueries({ queryKey: qk.instructor.bulkGradeSession(examId) });
     },
@@ -213,9 +226,18 @@ export function BulkGradingPanel({
     },
   });
 
+  const showActiveGrading =
+    startGradingMutation.isPending || isGrading || (isGradingActive && !gradingDone && !gradingFailed);
+  const isChatLocked = showActiveGrading || commitMutation.isPending;
+  const canShowStartButton =
+    (canStartGrading || hasAssistantCriteriaResponse || gradingFailed || hasPartialFailure) &&
+    !showActiveGrading &&
+    (!gradingDone || hasPartialFailure) &&
+    !committed;
+
   const handleSend = () => {
     const trimmed = input.trim();
-    if (!trimmed || chatMutation.isPending) return;
+    if (!trimmed || chatMutation.isPending || isChatLocked) return;
     chatMutation.mutate(trimmed);
   };
 
@@ -248,6 +270,19 @@ export function BulkGradingPanel({
   }, [editedGrades]);
 
   const totalGrades = gradeRows.length;
+
+  const handleCommit = () => {
+    if (
+      progress?.failed &&
+      progress.failed > 0 &&
+      !window.confirm(
+        `${progress.failed}명 채점에 실패했습니다. 성공한 제안 점수만 확정하시겠습니까?`,
+      )
+    ) {
+      return;
+    }
+    commitMutation.mutate();
+  };
 
   const displayMessages = useMemo(
     () => messages.filter((m) => m.role === "user" || m.role === "assistant"),
@@ -286,35 +321,73 @@ export function BulkGradingPanel({
             </span>
           </div>
 
+          {showActiveGrading && (
+            <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-100">
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" />
+                <span className="font-medium">학생 답안을 백그라운드에서 채점 중입니다.</span>
+              </div>
+              <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">
+                창을 닫아도 계속 진행됩니다. 완료되면 제안 점수를 검토하고 확정할 수 있습니다.
+              </p>
+            </div>
+          )}
+
           {/* 진행률 bar */}
-          {isGrading && progress && progress.total > 0 && (
+          {showActiveGrading && hasProgress && (
             <div className="space-y-1 pt-1">
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>채점 진행 중…</span>
-                <span>{progress.completed}/{progress.total} 학생</span>
+                <span>
+                  처리 {processedCount}/{progress.total}명
+                  {progress.failed > 0
+                    ? ` · 성공 ${progress.completed}명 · 실패 ${progress.failed}명`
+                    : ""}
+                </span>
+                <span>{progressPercent}%</span>
               </div>
               <div className="h-2 rounded-full bg-muted overflow-hidden">
                 <div
                   className="h-full bg-primary transition-all duration-500"
-                  style={{
-                    width: `${Math.round((progress.completed / Math.max(progress.total, 1)) * 100)}%`,
-                  }}
+                  style={{ width: `${progressPercent}%` }}
                 />
               </div>
-              {progress.failed > 0 && (
-                <p className="text-xs text-amber-600">{progress.failed}명 채점 실패 (재시도 중)</p>
-              )}
+            </div>
+          )}
+
+          {showActiveGrading && !hasProgress && (
+            <div className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <span>채점 작업을 등록하고 있습니다.</span>
             </div>
           )}
 
           {gradingDone && progress && progress.failed > 0 && (
-            <p className="text-xs text-amber-600">
-              ⚠️ {progress.failed}명 채점 실패 — 해당 학생 점수가 빠져 있습니다.
-            </p>
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                {progress.failed}명 채점에 실패했습니다. 성공한 제안 점수만 확정하거나 전체 학생을 다시 채점할 수 있습니다.
+              </p>
+            </div>
+          )}
+
+          {gradingDone && progress && progress.failed === 0 && (
+            <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200">
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              <span>AI 제안 점수 생성이 완료되었습니다. 검토 후 확정하세요.</span>
+            </div>
+          )}
+
+          {gradingFailed && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                AI 채점이 완료되지 않았습니다. 다시 채점을 시작하면 이전 제안 점수를 초기화하고 새로 생성합니다.
+              </p>
+            </div>
           )}
 
           {warning && (
-            <p className="text-sm text-amber-600">⚠️ {warning}</p>
+            <p className="text-sm text-amber-600">{warning}</p>
           )}
         </SheetHeader>
 
@@ -382,7 +455,7 @@ export function BulkGradingPanel({
                   </div>
                   <div className="flex items-center gap-1 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>채점 중…</span>
+                    <span>AI가 답변 작성 중…</span>
                   </div>
                 </div>
               )}
@@ -470,16 +543,20 @@ export function BulkGradingPanel({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder='예: "논리적 근거 제시 40%, 답변 완성도 30%, 핵심 개념 활용 30%"'
+              placeholder={
+                isChatLocked
+                  ? "채점 진행 중에는 기준을 수정할 수 없습니다."
+                  : '예: "논리적 근거 제시 40%, 답변 완성도 30%, 핵심 개념 활용 30%"'
+              }
               rows={2}
-              disabled={chatMutation.isPending}
+              disabled={chatMutation.isPending || isChatLocked}
               className="min-h-0 flex-1 resize-none"
             />
             <Button
               type="button"
               size="icon"
               onClick={handleSend}
-              disabled={!input.trim() || chatMutation.isPending}
+              disabled={!input.trim() || chatMutation.isPending || isChatLocked}
               aria-label="메시지 보내기"
             >
               {chatMutation.isPending ? (
@@ -490,8 +567,15 @@ export function BulkGradingPanel({
             </Button>
           </div>
 
-          {/* 채점 시작 버튼: 기준 논의 후 draft 상태에서만 */}
-          {canStartGrading && !isGrading && !gradingDone && sessionStatus !== "committed" && (
+          {showActiveGrading && (
+            <Button type="button" variant="secondary" className="w-full" disabled>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              채점 진행 중
+            </Button>
+          )}
+
+          {/* 채점 시작 버튼: 기준 논의 후 draft/failed 상태에서만 */}
+          {canShowStartButton && (
             <Button
               type="button"
               variant="default"
@@ -502,8 +586,12 @@ export function BulkGradingPanel({
               {startGradingMutation.isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  채점 준비 중…
+                  채점 작업 등록 중…
                 </>
+              ) : gradingFailed ? (
+                "다시 채점 시작"
+              ) : hasPartialFailure ? (
+                "전체 다시 채점 시작"
               ) : (
                 `채점 시작 (${data?.studentCount ?? 0}명)`
               )}
@@ -511,11 +599,11 @@ export function BulkGradingPanel({
           )}
 
           {/* 채점 확정: grading_done이거나 레거시 draft+proposed_grades */}
-          {editedGrades && Object.keys(editedGrades).length > 0 && !isGrading && (
+          {editedGrades && Object.keys(editedGrades).length > 0 && !showActiveGrading && !gradingFailed && (
             <Button
               type="button"
               className="w-full"
-              onClick={() => commitMutation.mutate()}
+              onClick={handleCommit}
               disabled={commitMutation.isPending || chatMutation.isPending}
             >
               {commitMutation.isPending ? (

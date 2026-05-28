@@ -87,6 +87,14 @@ export async function POST(
 
     const studentSessionIds = (sessionsResult.data ?? []).map((s) => s.id as string);
 
+    if (!isQStashEnabled() && process.env.VERCEL) {
+      return errorJson(
+        "INTERNAL_ERROR",
+        "QStash가 설정되지 않았습니다. 환경 변수를 확인해주세요.",
+        500,
+      );
+    }
+
     // Load chat history for criteria extraction
     const sessionUpsertResult = await supabase
       .from("exam_grading_sessions")
@@ -127,7 +135,6 @@ export async function POST(
     try {
       const criteriaResponse = await getOpenAI().chat.completions.create({
         model: AI_MODEL,
-        temperature: 0,
         messages: [
           { role: "system", content: buildCriteriaExtractionSystemPrompt(examMeta.examLanguage) },
           { role: "user", content: historyText || "(채팅 기록 없음)" },
@@ -160,6 +167,7 @@ export async function POST(
       .from("exam_grading_sessions")
       .update({
         grading_criteria: JSON.stringify(criteria),
+        proposed_grades: {},
         grading_total: studentSessionIds.length,
         grading_completed: 0,
         grading_failed_count: 0,
@@ -178,23 +186,18 @@ export async function POST(
 
     // Dev fallback: no QStash → inline sequential (non-Vercel only)
     if (!isQStashEnabled()) {
-      if (process.env.VERCEL) {
-        return errorJson(
-          "INTERNAL_ERROR",
-          "QStash가 설정되지 않았습니다. 환경 변수를 확인해주세요.",
-          500,
-        );
-      }
       // Dev: run inline (import lazily to avoid bundling in prod)
       await runBulkGradeInline(gradingSessionId, studentSessionIds, examId);
       return successJson({ ok: true, total: studentSessionIds.length, mode: "inline" });
     }
 
     // Enqueue QStash jobs
+    const attemptId = globalThis.crypto.randomUUID();
     const jobs: BulkGradeJobPayload[] = studentSessionIds.map((sid) => ({
       gradingSessionId,
       studentSessionId: sid,
       examId,
+      attemptId,
     }));
 
     const { published, failed: publishFailed } = await enqueueBulkGradeJobs(jobs);

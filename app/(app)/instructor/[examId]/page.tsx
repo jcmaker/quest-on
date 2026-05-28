@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { useAppUser } from "@/components/providers/AppAuthProvider";
 import React, { useState, useEffect, use, useMemo, useCallback } from "react";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ExamDetailHeader } from "@/components/instructor/ExamDetailHeader";
@@ -50,6 +50,20 @@ import { BulkGradingPanel } from "@/components/instructor/BulkGradingPanel";
 function isCaseGradingQuestionType(type?: string): boolean {
   return type === "case" || type === "essay" || type === "short-answer";
 }
+
+type BulkGradeProgress = {
+  total: number;
+  completed: number;
+  failed: number;
+};
+
+type BulkGradeStatusData = {
+  session: {
+    status: string;
+    progress?: BulkGradeProgress;
+  } | null;
+  studentCount: number;
+};
 
 export default function ExamDetail({
   params,
@@ -108,6 +122,24 @@ export default function ExamDetail({
   });
 
   const queryClient = useQueryClient();
+
+  const { data: bulkGradeStatus } = useQuery<BulkGradeStatusData>({
+    queryKey: qk.instructor.bulkGradeSession(resolvedParams.examId),
+    queryFn: async ({ signal }) => {
+      const response = await fetch(`/api/exam/${resolvedParams.examId}/bulk-grade`, { signal });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "일괄 채점 상태를 불러오지 못했습니다.");
+      }
+      return response.json() as Promise<BulkGradeStatusData>;
+    },
+    enabled: !!exam && exam.status === "closed" && isLoaded && !!isSignedIn,
+    staleTime: 0,
+    refetchInterval: (query) => {
+      const status = query.state.data?.session?.status;
+      return status === "grading" ? 3000 : false;
+    },
+  });
 
   const releaseGradesMutation = useMutation({
     mutationFn: async (release: boolean) => {
@@ -197,6 +229,37 @@ export default function ExamDetail({
     () => exam?.status === "closed" && hasCaseQuestions && hasIncompleteGrading,
     [exam?.status, hasCaseQuestions, hasIncompleteGrading],
   );
+
+  const bulkGradeSessionStatus = bulkGradeStatus?.session?.status ?? null;
+  const bulkGradeProgress = bulkGradeStatus?.session?.progress;
+  const bulkGradeProcessed =
+    bulkGradeProgress
+      ? Math.min(bulkGradeProgress.total, bulkGradeProgress.completed + bulkGradeProgress.failed)
+      : 0;
+  const isBulkGrading = bulkGradeSessionStatus === "grading";
+  const bulkGradingFailed = bulkGradeSessionStatus === "grading_failed";
+  const bulkGradingDone = bulkGradeSessionStatus === "grading_done";
+  const bulkCtaTitle = isBulkGrading
+    ? "Case AI 채점 진행 중"
+    : bulkGradingFailed
+      ? "Case AI 채점 실패"
+      : bulkGradingDone
+        ? "AI 제안 점수 생성 완료"
+        : "Case AI 자동 채점하기";
+  const bulkCtaDescription = isBulkGrading && bulkGradeProgress && bulkGradeProgress.total > 0
+    ? `백그라운드 채점 중 · ${bulkGradeProcessed}/${bulkGradeProgress.total}명 처리`
+    : bulkGradingFailed
+      ? "실패 원인을 확인하고 다시 채점을 시작할 수 있습니다"
+      : bulkGradingDone
+        ? "제안 점수를 검토한 뒤 확정해주세요"
+        : "강사 인터뷰 후 AI가 서술형 문제를 일괄 채점합니다";
+  const bulkCtaButtonLabel = isBulkGrading
+    ? "진행 상황 보기"
+    : bulkGradingDone
+      ? "검토/확정"
+      : bulkGradingFailed
+        ? "다시 보기"
+        : "채점 시작";
 
   const handleExcelDownload = useCallback(() => {
     if (!exam || !allStudentsManuallyGraded) return;
@@ -415,13 +478,17 @@ export default function ExamDetail({
             {showBulkCaseGradingCta && (
               <div className="flex items-center justify-between p-3 border border-blue-200 dark:border-blue-800 rounded-lg bg-blue-50 dark:bg-blue-950/30">
                 <div className="flex items-center gap-2">
-                  <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
+                  {isBulkGrading ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <Bot className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" aria-hidden="true" />
+                  )}
                   <div>
                     <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                      Case AI 자동 채점하기
+                      {bulkCtaTitle}
                     </span>
                     <span className="text-xs text-blue-600 dark:text-blue-400 hidden sm:inline ml-2">
-                      강사 인터뷰 후 AI가 서술형 문제를 일괄 채점합니다
+                      {bulkCtaDescription}
                     </span>
                   </div>
                 </div>
@@ -430,7 +497,7 @@ export default function ExamDetail({
                   className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 text-white shrink-0"
                   onClick={() => setBulkGradingOpen(true)}
                 >
-                  채점 시작
+                  {bulkCtaButtonLabel}
                 </Button>
               </div>
             )}

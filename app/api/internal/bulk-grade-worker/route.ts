@@ -11,10 +11,13 @@ import {
   callTrackedChatCompletion,
   buildAiTextMetadata,
 } from "@/lib/ai-tracking";
-import { loadSingleStudentCaseData, parseGradesFromAiResponse } from "@/lib/bulk-grading";
+import {
+  hasGradesForEveryExpectedQuestion,
+  loadSingleStudentCaseData,
+  parseGradesFromAiResponse,
+} from "@/lib/bulk-grading";
 import {
   buildPerStudentGradingSystemPrompt,
-  buildCriteriaExtractionSystemPrompt,
   type ExtractedCriteria,
 } from "@/lib/prompts";
 import { normalizeQuestions, isObjectiveQuestion } from "@/lib/grading-helpers";
@@ -117,14 +120,13 @@ async function handler(request: NextRequest): Promise<NextResponse> {
 
     // [CRITICAL-3] Always 200 ack — AI failures recorded via RPC, not throw
     let success = false;
-    let gradesMap: Record<number, { score: number; comment: string }> = {};
+    const gradesMap: Record<number, { score: number; comment: string }> = {};
 
     try {
       const tracked = await callTrackedChatCompletion(
         () =>
           getOpenAI().chat.completions.create({
             model: AI_MODEL,
-            temperature: 0,
             messages: [{ role: "system", content: systemPrompt }],
             max_completion_tokens: 1500,
           }),
@@ -158,7 +160,7 @@ async function handler(request: NextRequest): Promise<NextResponse> {
         validQIdxes,
       );
 
-      if (parsed && parsed.length > 0) {
+      if (parsed && hasGradesForEveryExpectedQuestion(parsed, caseQIdxes)) {
         for (const g of parsed) {
           gradesMap[g.q_idx] = { score: g.score, comment: g.comment };
         }

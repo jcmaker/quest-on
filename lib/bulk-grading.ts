@@ -50,15 +50,22 @@ const CHAT_MAX_CHARS = 2000;
 // ─── Zod schema for AI response parsing ──────────────────────────────────────
 
 const parsedGradeItemSchema = z.object({
-  session_id: z.string().uuid(),
   q_idx: z.number().int().min(0),
   score: z.number(),
   comment: z.string().max(3000).default(""),
 });
 
-const gradesResponseSchema = z.object({
-  grades: z.array(parsedGradeItemSchema).min(1),
-});
+const gradesResponseSchema = z.union([
+  z.object({
+    session_id: z.string().uuid(),
+    grades: z.array(parsedGradeItemSchema).min(1),
+  }),
+  z.object({
+    grades: z
+      .array(parsedGradeItemSchema.extend({ session_id: z.string().uuid() }))
+      .min(1),
+  }),
+]);
 
 // ─── loadExamCaseData ─────────────────────────────────────────────────────────
 
@@ -120,7 +127,7 @@ export async function loadExamCaseData(
     await Promise.all([
       supabase
         .from("submissions")
-        .select("session_id, q_idx, answer, compressed_answer_data, submitted_at, created_at, id")
+        .select("session_id, q_idx, answer, compressed_answer_data, created_at, id")
         .in("session_id", sessionIds)
         .in("q_idx", [...caseQIdxSet]),
       supabase
@@ -141,6 +148,7 @@ export async function loadExamCaseData(
     logError("loadExamCaseData: submissions query failed", submissionsResult.error, {
       path: "lib/bulk-grading.ts",
     });
+    throw new Error("Failed to load submissions");
   }
   if (messagesResult.error) {
     logError("loadExamCaseData: messages query failed", messagesResult.error, {
@@ -245,12 +253,10 @@ export function parseGradesFromAiResponse(
   validSessionIds: Set<string>,
   validQIdxes: Set<number>,
 ): ParsedGrade[] | null {
-  // Extract ```json ... ``` block (last occurrence wins if multiple)
+  // Extract ```json ... ``` block (last occurrence wins if multiple), or accept raw JSON.
   const matches = [...content.matchAll(/```json\s*([\s\S]*?)```/g)];
-  if (matches.length === 0) return null;
-
   const lastMatch = matches[matches.length - 1];
-  const jsonStr = lastMatch[1]?.trim();
+  const jsonStr = (lastMatch?.[1] ?? content).trim();
   if (!jsonStr) return null;
 
   let parsed: unknown;
@@ -265,15 +271,18 @@ export function parseGradesFromAiResponse(
 
   // Deduplicate by (session_id, q_idx) — last occurrence wins
   const seen = new Map<string, ParsedGrade>();
+  const topLevelSessionId =
+    "session_id" in result.data ? result.data.session_id : null;
 
   for (const g of result.data.grades) {
+    const sessionId = "session_id" in g ? g.session_id : topLevelSessionId;
     // Whitelist check
-    if (!validSessionIds.has(g.session_id)) continue;
+    if (!sessionId || !validSessionIds.has(sessionId)) continue;
     if (!validQIdxes.has(g.q_idx)) continue;
 
-    const key = `${g.session_id}:${g.q_idx}`;
+    const key = `${sessionId}:${g.q_idx}`;
     seen.set(key, {
-      session_id: g.session_id,
+      session_id: sessionId,
       q_idx: g.q_idx,
       score: Math.min(100, Math.max(0, Math.round(g.score))),
       comment: g.comment,
@@ -296,6 +305,17 @@ export function buildProposedGradesMap(grades: ParsedGrade[]): ProposedGradesMap
     map[g.session_id][g.q_idx] = { score: g.score, comment: g.comment };
   }
   return map;
+}
+
+export function hasGradesForEveryExpectedQuestion(
+  grades: ParsedGrade[],
+  expectedQIdxes: Iterable<number>,
+): boolean {
+  const gradedQIdxes = new Set(grades.map((g) => g.q_idx));
+  for (const qIdx of expectedQIdxes) {
+    if (!gradedQIdxes.has(qIdx)) return false;
+  }
+  return true;
 }
 
 // ─── estimateTokenCount ───────────────────────────────────────────────────────
@@ -363,7 +383,7 @@ export async function loadSingleStudentCaseData(
   const [submissionsResult, messagesResult, sessionResult] = await Promise.all([
     supabase
       .from("submissions")
-      .select("session_id, q_idx, answer, compressed_answer_data, submitted_at, created_at, id")
+      .select("session_id, q_idx, answer, compressed_answer_data, created_at, id")
       .eq("session_id", studentSessionId)
       .in("q_idx", caseQIdxes),
     supabase
@@ -388,6 +408,21 @@ export async function loadSingleStudentCaseData(
       .eq("student_id", sessionResult.data.student_id as string)
       .maybeSingle();
     if (profile?.name) studentName = profile.name as string;
+  }
+
+  if (submissionsResult.error) {
+    logError("loadSingleStudentCaseData: submissions query failed", submissionsResult.error, {
+      path: "lib/bulk-grading.ts",
+      additionalData: { studentSessionId, caseQIdxes },
+    });
+    throw new Error("Failed to load submissions");
+  }
+
+  if (messagesResult.error) {
+    logError("loadSingleStudentCaseData: messages query failed", messagesResult.error, {
+      path: "lib/bulk-grading.ts",
+      additionalData: { studentSessionId, caseQIdxes },
+    });
   }
 
   const decompressedSubs = decompressSubmissions(
