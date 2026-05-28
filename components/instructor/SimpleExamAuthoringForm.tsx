@@ -206,9 +206,9 @@ const SCORE_BUCKET_LABELS: Record<ScoreWeightBucket, string> = {
 };
 
 const SCORE_BUCKET_COLORS: Record<ScoreWeightBucket, string> = {
-  "multiple-choice": "bg-sky-500",
-  "true-false": "bg-emerald-500",
-  case: "bg-amber-500",
+  "multiple-choice": "bg-foreground/70",
+  "true-false": "bg-foreground/50",
+  case: "bg-foreground/30",
 };
 
 function getPresentScoreBuckets(questions: Question[]): ScoreWeightBucket[] {
@@ -452,16 +452,6 @@ export function SimpleExamAuthoringForm({
     });
     return counts;
   }, [questions]);
-  const scoreWeightSum = useMemo(
-    () =>
-      scoreWeights
-        ? Object.values(scoreWeights.typeWeights).reduce(
-            (sum, weight) => sum + (weight ?? 0),
-            0
-          )
-        : 0,
-    [scoreWeights]
-  );
   const scoreWeightErrors = useMemo(
     () =>
       validateScoreWeightsForQuestions(
@@ -965,16 +955,11 @@ export function SimpleExamAuthoringForm({
         >
           <div className="rounded-md border bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-3">
-              {scoreWeights && presentScoreBuckets.length > 0 ? (
-                <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-1 text-sm font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  총 {scoreWeightSum}점 자동 유지
-                </span>
-              ) : (
-                <span className="text-sm text-muted-foreground">
-                  문항을 추가하면 문제 유형별 점수 배분이 자동으로 설정됩니다.
-                </span>
-              )}
+              <span className="text-sm text-muted-foreground">
+                {scoreWeights && presentScoreBuckets.length > 0
+                  ? "한 유형을 조정하면 나머지 유형이 자동으로 맞춰집니다."
+                  : "문항을 추가하면 문제 유형별 점수 배분이 자동으로 설정됩니다."}
+              </span>
               {scoreWeights && presentScoreBuckets.length > 1 && (
                 <Button
                   type="button"
@@ -992,7 +977,7 @@ export function SimpleExamAuthoringForm({
             {scoreWeights && (
               <div className="mt-4 space-y-4">
                 <div className="space-y-2">
-                  <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
+                  <div className="flex h-2.5 gap-px overflow-hidden rounded-full bg-muted">
                     {presentScoreBuckets.map((bucket) => {
                       const weight = getScoreWeightValue(bucket);
                       return (
