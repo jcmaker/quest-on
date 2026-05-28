@@ -432,7 +432,8 @@ export async function GET(
         return {
           qIdx: q.idx,
           type: q.type,
-          score: best && isCaseGraded(best.grade_type) ? best.score : undefined,
+          // grade_type이 null인 legacy grade도 점수 계산에 포함 (isCaseGraded 제외)
+          score: best?.score,
         };
       });
       const scoreResult = calculateScoreFromItems(scoreItems, scoreWeights);

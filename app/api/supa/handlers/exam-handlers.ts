@@ -355,7 +355,7 @@ export async function updateExam(data: {
           : [];
       const currentScoreWeights = normalizeScoreWeights(currentExam?.score_weights);
       const hasScoreWeightsUpdate = "score_weights" in updateWithoutRubric;
-      const scoreWeights = hasScoreWeightsUpdate
+      let scoreWeights = hasScoreWeightsUpdate
         ? normalizeScoreWeights(updateWithoutRubric.score_weights)
         : currentScoreWeights;
       if (
@@ -378,11 +378,8 @@ export async function updateExam(data: {
         return typeof type === "string" ? type : undefined;
       });
       if (nextQuestionTypes.length > 0 && !scoreWeights) {
-        return errorJson(
-          "INVALID_SCORE_WEIGHTS",
-          "문항이 있는 시험에는 최종 점수 비중을 설정해야 합니다.",
-          400
-        );
+        // 기존 시험(score_weights null)을 편집할 때 기본 비중으로 자동 설정
+        scoreWeights = buildDefaultScoreWeightsForQuestionTypes(nextQuestionTypes);
       }
       const scoreWeightErrors = validateScoreWeightsForQuestions(
         scoreWeights,

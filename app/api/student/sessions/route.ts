@@ -215,7 +215,7 @@ export async function GET(request: NextRequest) {
             scoreItems,
             normalizeScoreWeights(exam.score_weights)
           );
-          isGraded = scoreResult.overallScore !== null && scoreResult.gradedCount > 0;
+          isGraded = scoreResult.overallScore !== null && (scoreResult.mode === "weighted" || scoreResult.gradedCount > 0);
           if (isGraded) {
             averageScore = scoreResult.overallScore;
             totalScore = scoreResult.overallScore;
