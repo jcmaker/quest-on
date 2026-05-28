@@ -377,6 +377,13 @@ export async function updateExam(data: {
             : undefined;
         return typeof type === "string" ? type : undefined;
       });
+      if (nextQuestionTypes.length > 0 && !scoreWeights) {
+        return errorJson(
+          "INVALID_SCORE_WEIGHTS",
+          "문항이 있는 시험에는 최종 점수 비중을 설정해야 합니다.",
+          400
+        );
+      }
       const scoreWeightErrors = validateScoreWeightsForQuestions(
         scoreWeights,
         nextQuestionTypes

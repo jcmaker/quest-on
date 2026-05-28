@@ -519,6 +519,43 @@ test.describe("Supa — POST /api/supa (core actions)", () => {
     expect(body.error).toBe("INVALID_SCORE_WEIGHTS");
   });
 
+  test("rejects null score weights when questions exist → 400", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({
+      status: "draft",
+      questions: [
+        {
+          id: "q-0",
+          idx: 0,
+          type: "multiple-choice",
+          text: "Pick A",
+          options: ["A", "B", "C", "D"],
+          correctOptionIndex: 0,
+        },
+      ],
+      score_weights: {
+        version: 1,
+        distribution: "equal_by_type",
+        typeWeights: { "multiple-choice": 100 },
+      },
+    });
+
+    const res = await instructorRequest.post("/api/supa", {
+      data: {
+        action: "update_exam",
+        data: {
+          id: exam.id,
+          update: { score_weights: null },
+        },
+      },
+    });
+
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("INVALID_SCORE_WEIGHTS");
+  });
+
   test("validates existing score weights when questions change → 400", async ({
     instructorRequest,
   }) => {

@@ -8,6 +8,7 @@ import {
   isSuccessfulGradeType,
   normalizeScoreWeights,
   rebalanceScoreWeightsForBucket,
+  syncScoreWeightsForBuckets,
   type ScoreWeights,
 } from "@/lib/grade-utils";
 
@@ -264,6 +265,46 @@ describe("grade-utils", () => {
       "multiple-choice": 98,
       "true-false": 1,
       case: 1,
+    });
+  });
+
+  it("preserves existing intent when syncing score weights after a bucket is added", () => {
+    const result = syncScoreWeightsForBuckets(
+      {
+        version: 1,
+        distribution: "equal_by_type",
+        typeWeights: {
+          "multiple-choice": 80,
+          case: 20,
+        },
+      },
+      ["multiple-choice", "true-false", "case"]
+    );
+
+    expect(result?.typeWeights).toEqual({
+      "multiple-choice": 78,
+      "true-false": 2,
+      case: 20,
+    });
+  });
+
+  it("drops stale buckets and normalizes remaining score weights to 100", () => {
+    const result = syncScoreWeightsForBuckets(
+      {
+        version: 1,
+        distribution: "equal_by_type",
+        typeWeights: {
+          "multiple-choice": 50,
+          "true-false": 30,
+          case: 20,
+        },
+      },
+      ["multiple-choice", "case"]
+    );
+
+    expect(result?.typeWeights).toEqual({
+      "multiple-choice": 71,
+      case: 29,
     });
   });
 

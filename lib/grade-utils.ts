@@ -265,6 +265,102 @@ export function buildDefaultScoreWeightsForQuestionTypes(
   };
 }
 
+function buildScoreWeightsFromBuckets(
+  buckets: ScoreWeightBucket[]
+): ScoreWeights | null {
+  if (buckets.length === 0) return null;
+  const base = Math.floor(100 / buckets.length);
+  let remainder = 100 - base * buckets.length;
+  const typeWeights: Partial<Record<ScoreWeightBucket, number>> = {};
+  for (const bucket of buckets) {
+    typeWeights[bucket] = base + (remainder > 0 ? 1 : 0);
+    remainder -= 1;
+  }
+
+  return {
+    version: 1,
+    typeWeights,
+    distribution: "equal_by_type",
+  };
+}
+
+export function syncScoreWeightsForBuckets(
+  scoreWeights: ScoreWeights | null | undefined,
+  buckets: ScoreWeightBucket[]
+): ScoreWeights | null {
+  if (buckets.length === 0) return null;
+  if (!scoreWeights) return buildScoreWeightsFromBuckets(buckets);
+  if (buckets.length === 1) {
+    return {
+      version: 1,
+      distribution: "equal_by_type",
+      typeWeights: { [buckets[0]]: 100 },
+    };
+  }
+
+  const visibleBucketSet = new Set(buckets);
+  const configuredBuckets = Object.entries(scoreWeights.typeWeights)
+    .filter(([, weight]) => typeof weight === "number" && weight > 0)
+    .map(([bucket]) => bucket as ScoreWeightBucket);
+  const hasMissingBucket = buckets.some(
+    (bucket) => typeof scoreWeights.typeWeights[bucket] !== "number"
+  );
+  const hasStaleBucket = configuredBuckets.some(
+    (bucket) => !visibleBucketSet.has(bucket)
+  );
+  const visibleSum = buckets.reduce(
+    (sum, bucket) => sum + (scoreWeights.typeWeights[bucket] ?? 0),
+    0
+  );
+  if (!hasMissingBucket && !hasStaleBucket && visibleSum === 100) {
+    return {
+      version: 1,
+      distribution: "equal_by_type",
+      typeWeights: Object.fromEntries(
+        buckets.map((bucket) => [bucket, scoreWeights.typeWeights[bucket]])
+      ) as Partial<Record<ScoreWeightBucket, number>>,
+    };
+  }
+
+  const basis = buckets.map((bucket) => {
+    const weight = scoreWeights.typeWeights[bucket];
+    return typeof weight === "number" && Number.isFinite(weight) && weight > 0
+      ? weight
+      : 1;
+  });
+  const basisTotal = basis.reduce((sum, weight) => sum + weight, 0);
+  const distributable = 100 - buckets.length;
+  const rawShares = buckets.map((bucket, index) => {
+    const raw = basisTotal > 0 ? (distributable * basis[index]) / basisTotal : 0;
+    return {
+      bucket,
+      whole: Math.floor(raw),
+      fraction: raw - Math.floor(raw),
+    };
+  });
+  let remainder =
+    distributable - rawShares.reduce((sum, share) => sum + share.whole, 0);
+  rawShares
+    .slice()
+    .sort((a, b) => b.fraction - a.fraction)
+    .forEach((share) => {
+      if (remainder <= 0) return;
+      share.whole += 1;
+      remainder -= 1;
+    });
+
+  const typeWeights: Partial<Record<ScoreWeightBucket, number>> = {};
+  for (const share of rawShares) {
+    typeWeights[share.bucket] = share.whole + 1;
+  }
+
+  return {
+    version: 1,
+    distribution: "equal_by_type",
+    typeWeights,
+  };
+}
+
 export function rebalanceScoreWeightsForBucket(
   scoreWeights: ScoreWeights,
   buckets: ScoreWeightBucket[],

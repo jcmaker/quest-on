@@ -333,6 +333,9 @@ export default function EditExam({
       questions.some((q) => isObjectiveQuestionIncomplete(q))
         ? "객관식 문제의 선택지와 정답을 입력해주세요"
         : null,
+      questions.length > 0 && !scoreWeights
+        ? "최종 점수 비중을 설정해주세요"
+        : null,
       ...validateScoreWeightsForQuestions(
         scoreWeights,
         questions.map((q) => q.type)

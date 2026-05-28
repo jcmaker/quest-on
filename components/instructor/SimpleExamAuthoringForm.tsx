@@ -42,6 +42,7 @@ import {
   buildDefaultScoreWeightsForQuestionTypes,
   rebalanceScoreWeightsForBucket,
   scoreBucketForQuestionType,
+  syncScoreWeightsForBuckets,
   validateScoreWeightsForQuestions,
   type ScoreWeightBucket,
   type ScoreWeights,
@@ -204,6 +205,12 @@ const SCORE_BUCKET_LABELS: Record<ScoreWeightBucket, string> = {
   case: "사례형",
 };
 
+const SCORE_BUCKET_COLORS: Record<ScoreWeightBucket, string> = {
+  "multiple-choice": "bg-sky-500",
+  "true-false": "bg-emerald-500",
+  case: "bg-amber-500",
+};
+
 function getPresentScoreBuckets(questions: Question[]): ScoreWeightBucket[] {
   const buckets = new Set<ScoreWeightBucket>();
   questions.forEach((question) => {
@@ -219,6 +226,11 @@ function buildDefaultScoreWeights(questions: Question[]): ScoreWeights | null {
   return buildDefaultScoreWeightsForQuestionTypes(
     questions.map((question) => question.type)
   );
+}
+
+function formatScoreValue(value: number): string {
+  if (Number.isInteger(value)) return value.toString();
+  return value.toFixed(1).replace(/\.0$/, "");
 }
 
 /**
@@ -428,6 +440,18 @@ export function SimpleExamAuthoringForm({
     () => getPresentScoreBuckets(questions),
     [questions]
   );
+  const scoreBucketCounts = useMemo(() => {
+    const counts: Record<ScoreWeightBucket, number> = {
+      "multiple-choice": 0,
+      "true-false": 0,
+      case: 0,
+    };
+    questions.forEach((question) => {
+      const bucket = scoreBucketForQuestionType(question.type);
+      if (bucket) counts[bucket] += 1;
+    });
+    return counts;
+  }, [questions]);
   const scoreWeightSum = useMemo(
     () =>
       scoreWeights
@@ -448,22 +472,23 @@ export function SimpleExamAuthoringForm({
   );
 
   useEffect(() => {
-    if (!scoreWeights) return;
+    const synced = syncScoreWeightsForBuckets(scoreWeights, presentScoreBuckets);
+    if (JSON.stringify(synced) === JSON.stringify(scoreWeights)) return;
 
-    const expectedBuckets = new Set(presentScoreBuckets);
-    const configuredBuckets = Object.entries(scoreWeights.typeWeights)
-      .filter(([, weight]) => typeof weight === "number" && weight > 0)
-      .map(([bucket]) => bucket as ScoreWeightBucket);
-    const hasMissingBucket = presentScoreBuckets.some(
-      (bucket) => typeof scoreWeights.typeWeights[bucket] !== "number"
-    );
-    const hasStaleBucket = configuredBuckets.some(
-      (bucket) => !expectedBuckets.has(bucket)
-    );
-    if (!hasMissingBucket && !hasStaleBucket) return;
+    onScoreWeightsChange(synced);
+  }, [onScoreWeightsChange, presentScoreBuckets, scoreWeights]);
 
-    onScoreWeightsChange(buildDefaultScoreWeights(questions));
-  }, [onScoreWeightsChange, presentScoreBuckets, questions, scoreWeights]);
+  const getScoreWeightValue = (bucket: ScoreWeightBucket) =>
+    scoreWeights?.typeWeights[bucket] ?? 0;
+
+  const getMaxScoreWeight = () =>
+    presentScoreBuckets.length <= 1 ? 100 : 100 - (presentScoreBuckets.length - 1);
+
+  const getPerQuestionScore = (bucket: ScoreWeightBucket) => {
+    const count = scoreBucketCounts[bucket];
+    if (count === 0) return null;
+    return getScoreWeightValue(bucket) / count;
+  };
 
   const setScoreWeight = (bucket: ScoreWeightBucket, value: number) => {
     const current = scoreWeights ?? buildDefaultScoreWeights(questions);
@@ -935,64 +960,141 @@ export function SimpleExamAuthoringForm({
         {/* 최종 점수 비중 */}
         <Field
           label="최종 점수 비중"
-          optional
+          required
           helper="전체 100점 중 문제 유형별 반영 비율입니다. 학습 목표의 중요도에 맞춰 정하고, 같은 유형 안의 문항은 동일하게 나눠 계산됩니다."
         >
           <div className="rounded-md border bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-3">
-              <Switch
-                id="simple-score-weights"
-                checked={scoreWeights !== null}
-                disabled={presentScoreBuckets.length === 0}
-                onCheckedChange={(checked) =>
-                  onScoreWeightsChange(
-                    checked ? buildDefaultScoreWeights(questions) : null
-                  )
-                }
-              />
-              <Label htmlFor="simple-score-weights" className="text-sm">
-                유형별 비중 사용
-              </Label>
-              <span className="text-sm text-muted-foreground">
-                {scoreWeights
-                  ? `현재 합계 ${scoreWeightSum}점`
-                  : "사용하지 않으면 기존 문항 평균으로 계산"}
-              </span>
+              {scoreWeights && presentScoreBuckets.length > 0 ? (
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-1 text-sm font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  총 {scoreWeightSum}점 자동 유지
+                </span>
+              ) : (
+                <span className="text-sm text-muted-foreground">
+                  문항을 추가하면 문제 유형별 점수 배분이 자동으로 설정됩니다.
+                </span>
+              )}
+              {scoreWeights && presentScoreBuckets.length > 1 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    onScoreWeightsChange(buildDefaultScoreWeights(questions))
+                  }
+                  className="ml-auto"
+                >
+                  균등 재분배
+                </Button>
+              )}
             </div>
             {scoreWeights && (
-              <div className="mt-3 space-y-3">
-                {presentScoreBuckets.map((bucket) => (
-                  <div
-                    key={bucket}
-                    className="flex flex-wrap items-center gap-3"
-                  >
-                    <Label className="w-20 text-sm">
-                      {SCORE_BUCKET_LABELS[bucket]}
-                    </Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={scoreWeights.typeWeights[bucket] ?? ""}
-                      onChange={(e) =>
-                        setScoreWeight(
-                          bucket,
-                          Number.parseInt(e.target.value, 10) || 1
-                        )
-                      }
-                      className="h-9 w-24 bg-white text-center"
-                      aria-label={`${SCORE_BUCKET_LABELS[bucket]} 비중`}
-                    />
-                    <span className="text-sm text-muted-foreground">점</span>
+              <div className="mt-4 space-y-4">
+                <div className="space-y-2">
+                  <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
+                    {presentScoreBuckets.map((bucket) => {
+                      const weight = getScoreWeightValue(bucket);
+                      return (
+                        <div
+                          key={bucket}
+                          className={SCORE_BUCKET_COLORS[bucket]}
+                          style={{ width: `${weight}%` }}
+                          title={`${SCORE_BUCKET_LABELS[bucket]} ${weight}점`}
+                        />
+                      );
+                    })}
                   </div>
-                ))}
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    {presentScoreBuckets.map((bucket) => {
+                      const weight = getScoreWeightValue(bucket);
+                      return (
+                        <span
+                          key={bucket}
+                          className="inline-flex items-center gap-1.5"
+                        >
+                          <span
+                            className={`h-2 w-2 rounded-full ${SCORE_BUCKET_COLORS[bucket]}`}
+                          />
+                          {SCORE_BUCKET_LABELS[bucket]} {weight}점
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {presentScoreBuckets.length === 1 && (
+                  <p className="rounded-md bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
+                    현재 문제 유형이 하나뿐이라 전체 점수를 이 유형에 배정합니다.
+                  </p>
+                )}
+
+                <div className="divide-y rounded-md border bg-background">
+                  {presentScoreBuckets.map((bucket) => {
+                    const weight = getScoreWeightValue(bucket);
+                    const maxWeight = getMaxScoreWeight();
+                    const perQuestionScore = getPerQuestionScore(bucket);
+                    const isOnlyBucket = presentScoreBuckets.length === 1;
+                    return (
+                      <div
+                        key={bucket}
+                        className="grid gap-3 p-3 sm:grid-cols-[8rem_1fr_7rem] sm:items-center"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`h-2.5 w-2.5 rounded-full ${SCORE_BUCKET_COLORS[bucket]}`}
+                            />
+                            <span className="text-sm font-medium">
+                              {SCORE_BUCKET_LABELS[bucket]}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {scoreBucketCounts[bucket]}문항
+                            {perQuestionScore !== null
+                              ? ` · 문항당 ${formatScoreValue(perQuestionScore)}점`
+                              : ""}
+                          </p>
+                        </div>
+                        <Slider
+                          value={[weight]}
+                          onValueChange={([value]) => setScoreWeight(bucket, value)}
+                          min={1}
+                          max={maxWeight}
+                          step={1}
+                          disabled={isOnlyBucket}
+                          aria-label={`${SCORE_BUCKET_LABELS[bucket]} 비중`}
+                        />
+                        <div className="flex items-center gap-2 sm:justify-end">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={maxWeight}
+                            value={weight}
+                            disabled={isOnlyBucket}
+                            onChange={(e) =>
+                              setScoreWeight(
+                                bucket,
+                                Number.parseInt(e.target.value, 10) || 1
+                              )
+                            }
+                            className="h-9 w-20 bg-white text-center"
+                            aria-label={`${SCORE_BUCKET_LABELS[bucket]} 비중`}
+                          />
+                          <span className="text-sm text-muted-foreground">점</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
                 {scoreWeightErrors.length > 0 && (
                   <div className="flex flex-wrap items-start justify-between gap-2 text-sm text-amber-600 dark:text-amber-400">
                     <div className="space-y-1">
                       {scoreWeightErrors.map((error) => (
                         <p key={error} className="flex items-center gap-1.5">
                           <AlertTriangle className="h-4 w-4" />
-                          {error}
+                          저장된 비중이 현재 문제 구성과 맞지 않습니다. {error}
                         </p>
                       ))}
                     </div>
@@ -1004,7 +1106,7 @@ export function SimpleExamAuthoringForm({
                         onScoreWeightsChange(buildDefaultScoreWeights(questions))
                       }
                     >
-                      현재 문항 기준 재설정
+                      현재 문제 기준으로 복구
                     </Button>
                   </div>
                 )}
