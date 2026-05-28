@@ -347,6 +347,33 @@ export async function updateExam(data: {
     delete updateWithoutRubric.rubric;
     delete updateWithoutRubric.rubric_public;
 
+    if ("questions" in updateWithoutRubric) {
+      const currentQuestions = Array.isArray(currentExam?.questions)
+        ? currentExam.questions
+        : [];
+      const nextQuestions = Array.isArray(updateWithoutRubric.questions)
+        ? updateWithoutRubric.questions
+        : [];
+      const questionsChanged =
+        JSON.stringify(currentQuestions) !== JSON.stringify(nextQuestions);
+
+      if (questionsChanged) {
+        const { data: sessions } = await getSupabase()
+          .from("sessions")
+          .select("id")
+          .eq("exam_id", data.id)
+          .limit(1);
+
+        if (sessions && sessions.length > 0) {
+          return errorJson(
+            "QUESTIONS_LOCKED",
+            "학생이 이미 참여한 시험의 문항은 변경할 수 없습니다.",
+            409
+          );
+        }
+      }
+    }
+
     if ("score_weights" in updateWithoutRubric || "questions" in updateWithoutRubric) {
       const nextQuestions = Array.isArray(updateWithoutRubric.questions)
         ? updateWithoutRubric.questions
@@ -559,7 +586,18 @@ export async function getExamById(data: { id: string }) {
       return errorJson("EXAM_NOT_FOUND", "Exam not found", 404);
     }
 
-    return successJson({ exam });
+    const { data: sessions } = await getSupabase()
+      .from("sessions")
+      .select("id")
+      .eq("exam_id", data.id)
+      .limit(1);
+
+    return successJson({
+      exam: {
+        ...exam,
+        has_sessions: Boolean(sessions && sessions.length > 0),
+      },
+    });
   } catch (error) {
     logError("[getExamById] Failed to get exam", error, { path: "/api/supa/exam-handlers" });
     return errorJson("GET_EXAM_FAILED", "Failed to get exam", 500);

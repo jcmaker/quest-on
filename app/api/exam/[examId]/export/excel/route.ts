@@ -256,7 +256,8 @@ export async function GET(
       );
       const submissionsByQuestion =
         submissionsBySessionQuestion.get(session.id) ?? new Map();
-      const questionScores = orderedQuestions.map((question) => {
+      const hasSubmitted = session.submitted_at != null;
+      const questionScores = hasSubmitted ? orderedQuestions.map((question) => {
         if (isObjectiveQuestion(question.type)) {
           const submission = submissionsByQuestion.get(question.qIdx);
           const objective = gradeObjectiveAnswer({
@@ -267,7 +268,7 @@ export async function GET(
           return objective ? objective.score : undefined;
         }
         return scoreByQuestion.get(question.qIdx);
-      });
+      }) : orderedQuestions.map(() => undefined);
       const scoreItems = orderedQuestions.map((question, index) => ({
         qIdx: question.qIdx,
         type: question.type,
@@ -282,6 +283,7 @@ export async function GET(
         studentNumber: profile?.student_number ?? "",
         scores: questionScores,
         finalScore:
+          hasSubmitted &&
           scoreResult.overallScore !== null &&
           (scoreResult.mode === "weighted" || scoreResult.gradedCount > 0)
             ? scoreResult.overallScore

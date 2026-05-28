@@ -19,6 +19,7 @@ import { SimpleExamAuthoringForm } from "@/components/instructor/SimpleExamAutho
 import type { Question } from "@/components/instructor/QuestionEditor";
 import { useFileUpload } from "@/hooks/useFileUpload";
 import {
+  buildDefaultScoreWeightsForQuestionTypes,
   validateScoreWeightsForQuestions,
   type ScoreWeights,
 } from "@/lib/grade-utils";
@@ -66,8 +67,10 @@ export default function EditExam({
   const [questions, setQuestions] = useState<Question[]>([]);
   const [chatWeight, setChatWeight] = useState<number | null>(null);
   const [scoreWeights, setScoreWeights] = useState<ScoreWeights | null>(null);
+  const [hasSessions, setHasSessions] = useState(false);
   const fileUpload = useFileUpload();
   const isSubmittingRef = useRef(false);
+  const initialScoreWeightsRef = useRef<ScoreWeights | null>(null);
   // 무제한 토글 OFF 시 이전 duration 복원
   const prevDurationRef = useRef<number>(60);
 
@@ -98,7 +101,10 @@ export default function EditExam({
         setQuestions(exam.questions || []);
         const loadedWeight = exam.chat_weight ?? null;
         setChatWeight(loadedWeight);
-        setScoreWeights(exam.score_weights ?? null);
+        const loadedScoreWeights = exam.score_weights ?? null;
+        initialScoreWeightsRef.current = loadedScoreWeights;
+        setScoreWeights(loadedScoreWeights);
+        setHasSessions(Boolean(exam.has_sessions));
         fileUpload.initExistingData(exam.materials || [], exam.materials_text);
       } catch {
         toast.error("시험 데이터를 불러오는 중 오류가 발생했습니다.");
@@ -285,18 +291,40 @@ export default function EditExam({
     isSubmittingRef.current = true;
     setIsLoading(true);
     try {
-      const updateData = {
+      const defaultScoreWeights = buildDefaultScoreWeightsForQuestionTypes(
+        questions.map((question) => question.type)
+      );
+      const shouldOmitAutoDefaultScoreWeights =
+        hasSessions &&
+        initialScoreWeightsRef.current === null &&
+        scoreWeights !== null &&
+        JSON.stringify(scoreWeights) === JSON.stringify(defaultScoreWeights);
+
+      const updateData: {
+        title: string;
+        code: string;
+        duration: number;
+        questions: Question[];
+        chat_weight: number | null;
+        score_weights?: ScoreWeights | null;
+        materials: string[];
+        materials_text: Array<{ url: string; text: string; fileName: string }>;
+        language: "ko" | "en";
+        updated_at: string;
+      } = {
         title: examData.title,
         code: examData.code,
         duration: examData.duration,
         questions,
         chat_weight: chatWeight,
-        score_weights: scoreWeights,
         materials: fileUpload.getUploadedUrls(),
         materials_text: fileUpload.getMaterialsText(),
         language: examData.language,
         updated_at: new Date().toISOString(),
       };
+      if (!shouldOmitAutoDefaultScoreWeights) {
+        updateData.score_weights = scoreWeights;
+      }
       const response = await fetch("/api/supa", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -316,7 +344,7 @@ export default function EditExam({
       setIsLoading(false);
       isSubmittingRef.current = false;
     }
-  }, [examData, questions, chatWeight, scoreWeights, fileUpload, resolvedParams.examId]);
+  }, [examData, questions, chatWeight, scoreWeights, hasSessions, fileUpload, resolvedParams.examId]);
 
   // ── 제출 사유 ─────────────────────────────────────────────────────────────
   const submitReasons = useMemo(() => {

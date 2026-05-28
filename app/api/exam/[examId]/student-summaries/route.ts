@@ -13,6 +13,7 @@ import {
 import {
   calculateScoreFromItems,
   deduplicateGrades,
+  isScoringGrade,
   normalizeScoreWeights,
   type ScoreItem,
 } from "@/lib/grade-utils";
@@ -432,8 +433,8 @@ export async function GET(
         return {
           qIdx: q.idx,
           type: q.type,
-          // grade_type이 null인 legacy grade도 점수 계산에 포함 (isCaseGraded 제외)
-          score: best?.score,
+          // grade_type이 null인 legacy grade는 포함하되 ai_failed/ai_summary는 제외
+          score: isScoringGrade(best) ? best.score : undefined,
         };
       });
       const scoreResult = calculateScoreFromItems(scoreItems, scoreWeights);
@@ -442,6 +443,9 @@ export async function GET(
         (scoreResult.mode === "weighted" || scoreResult.gradedCount > 0)
           ? scoreResult.overallScore
           : undefined;
+      const canShowSessionFinalScores =
+        canShowFinalScores &&
+        (session.submitted_at != null || session.status === "auto_submitted");
 
       return {
         sessionId: session.id,
@@ -456,8 +460,8 @@ export async function GET(
         ox: { correct: oxCorrect, total: oxIndices.length },
         caseProgress: { graded: caseGraded, total: caseIndices.length },
         overallStatus,
-        caseScore: canShowFinalScores ? caseScore : undefined,
-        overallScore: canShowFinalScores ? overallScore : undefined,
+        caseScore: canShowSessionFinalScores ? caseScore : undefined,
+        overallScore: canShowSessionFinalScores ? overallScore : undefined,
       };
     });
 
