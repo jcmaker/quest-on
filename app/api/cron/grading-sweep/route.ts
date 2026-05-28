@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { triggerGradingIfNeeded } from "@/lib/grading-trigger";
 import { listQuestionsToGrade } from "@/lib/grading";
+import { isSuccessfulGradeType } from "@/lib/grade-utils";
 import { logError } from "@/lib/logger";
 import type { GradingProgress } from "@/lib/types/grading";
 
@@ -122,7 +123,7 @@ async function decideAction(
   const successfulGradedIdxs = new Set<number>(
     (gradeRows || [])
       .filter(
-        (g) => (g as { grade_type?: string }).grade_type !== "ai_failed"
+        (g) => isSuccessfulGradeType((g as { grade_type?: string }).grade_type)
       )
       .map((g) => (g as { q_idx: number }).q_idx)
   );

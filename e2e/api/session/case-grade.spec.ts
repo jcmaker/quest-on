@@ -6,6 +6,14 @@ import {
   cleanupTestData,
 } from "../../helpers/seed";
 
+const essayQuestion = {
+  id: "q0",
+  idx: 0,
+  type: "essay",
+  text: "Explain polymorphism.",
+  prompt: "Explain polymorphism.",
+};
+
 test.describe("Case grading chat API", () => {
   test.afterEach(async () => {
     await cleanupTestData();
@@ -15,15 +23,8 @@ test.describe("Case grading chat API", () => {
     instructorRequest,
   }) => {
     const exam = await seedExam({
-      questions: [
-        {
-          id: "q0",
-          idx: 0,
-          type: "essay",
-          text: "Explain polymorphism.",
-          prompt: "Explain polymorphism.",
-        },
-      ],
+      status: "closed",
+      questions: [essayQuestion],
     });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
@@ -41,19 +42,35 @@ test.describe("Case grading chat API", () => {
     expect(body.messages).toEqual([]);
   });
 
+  test("GET accepts explicit non-contiguous qIdx", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({
+      status: "closed",
+      questions: [{ ...essayQuestion, idx: 20 }],
+    });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+    });
+    await seedSubmission(session.id, 20, { answer: "Student answer" });
+
+    const res = await instructorRequest.get(
+      `/api/session/${session.id}/case-grade/chat?qIdx=20`,
+    );
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.messages).toEqual([]);
+  });
+
   test("POST chat saves user and assistant messages", async ({
     instructorRequest,
   }) => {
     const exam = await seedExam({
-      questions: [
-        {
-          id: "q0",
-          idx: 0,
-          type: "essay",
-          text: "Explain polymorphism.",
-          prompt: "Explain polymorphism.",
-        },
-      ],
+      status: "closed",
+      questions: [essayQuestion],
     });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
@@ -83,15 +100,8 @@ test.describe("Case grading chat API", () => {
 
   test("POST commit upserts manual grade", async ({ instructorRequest }) => {
     const exam = await seedExam({
-      questions: [
-        {
-          id: "q0",
-          idx: 0,
-          type: "essay",
-          text: "Explain polymorphism.",
-          prompt: "Explain polymorphism.",
-        },
-      ],
+      status: "closed",
+      questions: [essayQuestion],
     });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
@@ -121,19 +131,34 @@ test.describe("Case grading chat API", () => {
     expect(g?.grade_type).toBe("manual");
   });
 
-  test("student cannot access case-grade chat", async ({
-    studentRequest,
+  test("instructor cannot grade before exam is closed", async ({
+    instructorRequest,
   }) => {
     const exam = await seedExam({
-      questions: [
-        {
-          id: "q0",
-          idx: 0,
-          type: "essay",
-          text: "Q",
-          prompt: "Q",
-        },
-      ],
+      status: "running",
+      questions: [essayQuestion],
+    });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+    });
+
+    const res = await instructorRequest.post(
+      `/api/session/${session.id}/case-grade/commit`,
+      {
+        data: { qIdx: 0, score: 88, comment: "Well reasoned answer." },
+      },
+    );
+
+    expect(res.status()).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe("EXAM_NOT_CLOSED");
+  });
+
+  test("student cannot access case-grade chat", async ({ studentRequest }) => {
+    const exam = await seedExam({
+      status: "closed",
+      questions: [{ ...essayQuestion, text: "Q", prompt: "Q" }],
     });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",

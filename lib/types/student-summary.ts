@@ -34,6 +34,10 @@ export interface ExamStudentSummary {
   ox: QuestionCountPair;
   caseProgress: CaseProgress;
   overallStatus: ExamStudentOverallStatus;
+  /** AI 가채점 또는 수동 채점된 Case 문제들의 평균 점수 (0-100). 채점 전이면 undefined. */
+  caseScore?: number;
+  /** MCQ/OX/Case 전체 채점된 문제의 단순 평균 점수 (0-100). 채점 전이면 undefined. */
+  overallScore?: number;
 }
 
 export type ExamStudentSummarySortOption =

@@ -12,7 +12,7 @@ export class InstructorEditExamPage {
   }
 
   get submitDisabledReasons(): Locator {
-    return this.page.getByTestId("edit-exam-submit-reasons");
+    return this.page.getByTestId("create-exam-submit-reasons");
   }
 
   questionArea(index = 0): Locator {

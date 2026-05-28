@@ -24,7 +24,7 @@ function getSupabase() {
 }
 
 function isCaseQuestion(type?: string): boolean {
-  return type === "essay" || type === "short-answer";
+  return type === "case" || type === "essay" || type === "short-answer";
 }
 
 function isCaseGraded(gradeType?: string): boolean {
@@ -136,20 +136,27 @@ function deriveOverallStatus(params: {
 
 function isObjectiveCorrect(params: {
   qIdx: number;
-  gradeScore: number | undefined;
   rawAnswer: string;
   options?: string[];
   correctOptionIndex?: number;
 }): boolean {
-  if (params.gradeScore === 100) return true;
-  if (params.gradeScore !== undefined && params.gradeScore !== 100) return false;
-
   const result = gradeObjectiveAnswer({
     rawAnswer: params.rawAnswer,
     options: params.options,
     correctOptionIndex: params.correctOptionIndex,
   });
-  return result?.score === 100;
+  if (result) return result.score === 100;
+
+  return false;
+}
+
+function objectiveScoreFromRawAnswer(params: {
+  rawAnswer: string;
+  options?: string[];
+  correctOptionIndex?: number;
+}): number | undefined {
+  const result = gradeObjectiveAnswer(params);
+  return result?.score;
 }
 
 export async function GET(
@@ -183,7 +190,7 @@ export async function GET(
 
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, instructor_id, questions")
+      .select("id, instructor_id, questions, status")
       .eq("id", examId)
       .single();
 
@@ -196,6 +203,7 @@ export async function GET(
     }
 
     const questions = normalizeQuestions(exam.questions);
+    const canShowFinalScores = exam.status === "closed";
     const mcqIndices = questions
       .filter((q) => q.type === "multiple-choice")
       .map((q) => q.idx);
@@ -293,14 +301,14 @@ export async function GET(
     }
 
     const gradesBySession = new Map<string, ReturnType<typeof deduplicateGrades>>();
-    const rawGradesBySession = new Map<string, typeof gradesResult.data>();
+    const rawGradesBySesTemp = new Map<string, typeof gradesResult.data>();
     for (const grade of gradesResult.data ?? []) {
-      if (!rawGradesBySession.has(grade.session_id)) {
-        rawGradesBySession.set(grade.session_id, []);
+      if (!rawGradesBySesTemp.has(grade.session_id)) {
+        rawGradesBySesTemp.set(grade.session_id, []);
       }
-      rawGradesBySession.get(grade.session_id)!.push(grade);
+      rawGradesBySesTemp.get(grade.session_id)!.push(grade);
     }
-    rawGradesBySession.forEach((grades, sessionId) => {
+    rawGradesBySesTemp.forEach((grades, sessionId) => {
       gradesBySession.set(sessionId, deduplicateGrades(grades));
     });
 
@@ -315,66 +323,73 @@ export async function GET(
       const sessionStatus = deriveSessionStatus(session);
       const dedupedGrades = gradesBySession.get(session.id) ?? [];
       const gradeByQ = new Map(dedupedGrades.map((g) => [g.q_idx, g]));
-      const rawGrades = rawGradesBySession.get(session.id) ?? [];
       const subsByQ = submissionsBySession.get(session.id) ?? new Map();
 
       let mcqCorrect = 0;
+      const mcqScores: number[] = [];
       for (const qIdx of mcqIndices) {
         const q = questionByIdx.get(qIdx);
-        const grade = gradeByQ.get(qIdx);
         const sub = subsByQ.get(qIdx);
         const rawAnswer = (sub?.answer as string) ?? "";
-        if (
-          isObjectiveCorrect({
-            qIdx,
-            gradeScore: grade?.score,
-            rawAnswer,
-            options: q?.options,
-            correctOptionIndex: q?.correctOptionIndex,
-          })
-        ) {
-          mcqCorrect += 1;
+        const correct = isObjectiveCorrect({
+          qIdx,
+          rawAnswer,
+          options: q?.options,
+          correctOptionIndex: q?.correctOptionIndex,
+        });
+        if (correct) mcqCorrect += 1;
+        const rawScore = objectiveScoreFromRawAnswer({
+          rawAnswer,
+          options: q?.options,
+          correctOptionIndex: q?.correctOptionIndex,
+        });
+        if (sub && rawScore !== undefined) {
+          mcqScores.push(rawScore);
         }
       }
 
       let oxCorrect = 0;
+      const oxScores: number[] = [];
       for (const qIdx of oxIndices) {
         const q = questionByIdx.get(qIdx);
-        const grade = gradeByQ.get(qIdx);
         const sub = subsByQ.get(qIdx);
         const rawAnswer = (sub?.answer as string) ?? "";
-        if (
-          isObjectiveCorrect({
-            qIdx,
-            gradeScore: grade?.score,
-            rawAnswer,
-            options: q?.options,
-            correctOptionIndex: q?.correctOptionIndex,
-          })
-        ) {
-          oxCorrect += 1;
+        const correct = isObjectiveCorrect({
+          qIdx,
+          rawAnswer,
+          options: q?.options,
+          correctOptionIndex: q?.correctOptionIndex,
+        });
+        if (correct) oxCorrect += 1;
+        const rawScore = objectiveScoreFromRawAnswer({
+          rawAnswer,
+          options: q?.options,
+          correctOptionIndex: q?.correctOptionIndex,
+        });
+        if (sub && rawScore !== undefined) {
+          oxScores.push(rawScore);
         }
       }
 
       let caseGraded = 0;
       let hasManualCase = false;
       let hasFailed = false;
+      const caseScores: number[] = [];
 
+      // dedupedGrades(gradeByQ)는 이미 manual>auto>ai_failed 우선순위로 중복 제거됨
       for (const qIdx of caseIndices) {
-        const caseGrades = rawGrades.filter((g) => g.q_idx === qIdx);
-        const best = caseGrades.sort((a, b) => {
-          const prio = (t?: string) =>
-            t === "manual" ? 3 : t === "auto" ? 2 : t === "ai_failed" ? 1 : 0;
-          return prio(b.grade_type) - prio(a.grade_type);
-        })[0];
+        const best = gradeByQ.get(qIdx);
 
         if (best?.grade_type === "ai_failed") {
           hasFailed = true;
         }
-        if (isCaseGraded(best?.grade_type)) {
+        if (best && isCaseGraded(best.grade_type)) {
           caseGraded += 1;
           if (best.grade_type === "manual") {
             hasManualCase = true;
+          }
+          if (best.score !== undefined) {
+            caseScores.push(best.score);
           }
         }
       }
@@ -387,6 +402,17 @@ export async function GET(
         hasFailed,
         gradingProgress: session.grading_progress,
       });
+
+      const caseScore =
+        caseScores.length > 0
+          ? Math.round(caseScores.reduce((a, b) => a + b, 0) / caseScores.length)
+          : undefined;
+
+      const allScores = [...mcqScores, ...oxScores, ...caseScores];
+      const overallScore =
+        allScores.length > 0
+          ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length)
+          : undefined;
 
       return {
         sessionId: session.id,
@@ -401,6 +427,8 @@ export async function GET(
         ox: { correct: oxCorrect, total: oxIndices.length },
         caseProgress: { graded: caseGraded, total: caseIndices.length },
         overallStatus,
+        caseScore: canShowFinalScores ? caseScore : undefined,
+        overallScore: canShowFinalScores ? overallScore : undefined,
       };
     });
 

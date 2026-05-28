@@ -46,6 +46,25 @@ test.describe("GET /api/student/sessions/stats", () => {
     expect(body.overallAverageScore).toBe(85); // (80 + 90) / 2
   });
 
+  test("ai_summary placeholders do not affect released score average", async ({
+    studentRequest,
+  }) => {
+    const exam = await seedExam({ status: "closed", grades_released: true });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+    });
+    await seedGrade(session.id, 0, 0, "Summary placeholder", "ai_summary");
+
+    const res = await studentRequest.get("/api/student/sessions/stats");
+
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.totalSessions).toBe(1);
+    expect(body.completedSessions).toBe(1);
+    expect(body.overallAverageScore).toBeNull();
+  });
+
   test("mix of completed and in-progress sessions", async ({
     studentRequest,
   }) => {

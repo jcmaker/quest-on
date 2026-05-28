@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { isScoringGrade } from "@/lib/grade-utils";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -131,7 +132,7 @@ export async function GET(request: NextRequest) {
     // Fetch all grades for all sessions in one query
     const { data: allGrades, error: gradesError } = await supabase
       .from("grades")
-      .select("session_id, score")
+      .select("session_id, score, grade_type")
       .in("session_id", sessionIds);
 
     if (gradesError) {
@@ -163,7 +164,7 @@ export async function GET(request: NextRequest) {
     const sessionsWithDetails = sessions.map((session) => {
       const exam = examMap.get(session.exam_id);
       const submissions = submissionsBySession.get(session.id) || [];
-      const grades = gradesBySession.get(session.id) || [];
+      const grades = (gradesBySession.get(session.id) || []).filter(isScoringGrade);
       const gradesReleased = exam?.grades_released === true;
 
       // Calculate score - each grade is 0-100, calculate average

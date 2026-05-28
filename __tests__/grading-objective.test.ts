@@ -238,6 +238,32 @@ describe("gradeOneQuestion — objective vs case", () => {
     expect(grades[0].score).toBe(0);
   });
 
+  it("objective question ignores existing ai_summary placeholder row", async () => {
+    supabaseMock.from.mockImplementation(
+      buildSupabase({
+        questions: [
+          {
+            id: "q1",
+            text: "정답은?",
+            type: "multiple-choice",
+            options: ["A", "B", "C", "D"],
+            correctOptionIndex: 3,
+          },
+        ],
+        submissionAnswer: "3",
+        existingGrade: { id: "summary", grade_type: "ai_summary" },
+      })
+    );
+
+    const result = await gradeOneQuestion(SESSION_ID, 0);
+
+    expect(result).toEqual({ skipped: false, graded: true });
+    expect(callOpenAIMock).not.toHaveBeenCalled();
+    const [, grades] = upsertGradesMock.mock.calls[0];
+    expect(grades[0].score).toBe(100);
+    expect(grades[0].grade_type).toBe("auto");
+  });
+
   it("case question → skipped without OpenAI grading", async () => {
     supabaseMock.from.mockImplementation(
       buildSupabase({

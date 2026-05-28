@@ -18,7 +18,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
   test("instructor gets grading data → 200", async ({
     instructorRequest,
   }) => {
-    const exam = await seedExam({});
+    const exam = await seedExam({ status: "closed" });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: new Date().toISOString(),
@@ -42,7 +42,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
   });
 
   test("student cannot access grading → 403", async ({ studentRequest }) => {
-    const exam = await seedExam({});
+    const exam = await seedExam({ status: "closed" });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: new Date().toISOString(),
@@ -60,7 +60,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
   test("instructor saves manual grade → 200", async ({
     instructorRequest,
   }) => {
-    const exam = await seedExam({});
+    const exam = await seedExam({ status: "closed" });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: new Date().toISOString(),
@@ -97,7 +97,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
   test("instructor upserts grade (idempotent) → 200", async ({
     instructorRequest,
   }) => {
-    const exam = await seedExam({});
+    const exam = await seedExam({ status: "closed" });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: new Date().toISOString(),
@@ -128,6 +128,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
 
   test("non-owner instructor cannot grade → 403", async ({ playwright }) => {
     const exam = await seedExam({
+      status: "closed",
       instructor_id: "other-instructor-id",
     });
     const session = await seedSession(exam.id, "test-student-id", {
@@ -156,12 +157,37 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
     await instructorReq.dispose();
   });
 
+  test("instructor cannot save manual grade before exam is closed → 409", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({ status: "running" });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+    });
+
+    const res = await instructorRequest.post(
+      `/api/session/${session.id}/grade`,
+      {
+        data: {
+          questionIdx: 0,
+          score: 85,
+          comment: "Too early",
+        },
+      }
+    );
+
+    expect(res.status()).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe("EXAM_NOT_CLOSED");
+  });
+
   // ── PUT — AI auto-grade ──
 
   test("instructor triggers AI auto-grade → 200, grades saved", async ({
     instructorRequest,
   }) => {
-    const exam = await seedExam({});
+    const exam = await seedExam({ status: "closed" });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: new Date().toISOString(),
@@ -199,7 +225,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
   test("student cannot trigger auto-grade → 403", async ({
     studentRequest,
   }) => {
-    const exam = await seedExam({});
+    const exam = await seedExam({ status: "closed" });
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: new Date().toISOString(),
@@ -216,7 +242,7 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
   test("auto-grade without rubric completes objective-only path", async ({
     instructorRequest,
   }) => {
-    const exam = await seedExam({ rubric: [] }); // empty rubric
+    const exam = await seedExam({ status: "closed", rubric: [] }); // empty rubric
     const session = await seedSession(exam.id, "test-student-id", {
       status: "submitted",
       submitted_at: new Date().toISOString(),
@@ -231,5 +257,24 @@ test.describe("Grading — /api/session/[sessionId]/grade", () => {
     expect(res.status()).toBe(200);
     const body = await res.json();
     expect(body.reason).toBeDefined();
+  });
+
+  test("instructor cannot trigger auto-grade before exam is closed → 409", async ({
+    instructorRequest,
+  }) => {
+    const exam = await seedExam({ status: "running" });
+    const session = await seedSession(exam.id, "test-student-id", {
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+    });
+
+    const res = await instructorRequest.put(
+      `/api/session/${session.id}/grade`,
+      { data: {} }
+    );
+
+    expect(res.status()).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe("EXAM_NOT_CLOSED");
   });
 });

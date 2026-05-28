@@ -46,7 +46,7 @@ test.describe("Instructor — Edit Exam Flow", () => {
 
     // Should show success toast or redirect
     await expect(
-      instructorPage.getByText(/수정.*완료|저장.*완료|성공/i)
+      instructorPage.getByText(/수정.*완료|저장.*완료|저장되었습니다|성공/i)
     ).toBeVisible({ timeout: TIMEOUTS.PAGE_LOAD });
   });
 

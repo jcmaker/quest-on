@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, use, useRef } from "react";
+import { useState, useEffect, useCallback, use, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { extractErrorMessage, getErrorMessage } from "@/lib/error-messages";
 import { useAppUser } from "@/components/providers/AppAuthProvider";
 import {
+  ArrowLeft,
   FileText,
   Presentation,
   FileSpreadsheet,
@@ -14,16 +15,29 @@ import {
   File,
   ClipboardList,
 } from "lucide-react";
-import { ExamInfoForm } from "@/components/instructor/ExamInfoForm";
-import { FileUpload } from "@/components/instructor/FileUpload";
-import { QuestionsList } from "@/components/instructor/QuestionsList";
+import { SimpleExamAuthoringForm } from "@/components/instructor/SimpleExamAuthoringForm";
 import type { Question } from "@/components/instructor/QuestionEditor";
-import { CaseQuestionGenerator } from "@/components/instructor/CaseQuestionGenerator";
 import { useFileUpload } from "@/hooks/useFileUpload";
+
+// ─── 헬퍼 ────────────────────────────────────────────────────────────────────
 
 function isQuestionContentEmpty(text: string): boolean {
   return text.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim() === "";
 }
+
+/** 객관식/OX 문제의 선택지·정답이 덜 채워졌는지 검사 (new/page.tsx와 동일). */
+function isObjectiveQuestionIncomplete(q: Question): boolean {
+  if (q.type !== "multiple-choice" && q.type !== "true-false") return false;
+  if (typeof q.correctOptionIndex !== "number") return true;
+  if (q.type === "multiple-choice") {
+    const opts = q.options ?? [];
+    if (opts.length < 4) return true;
+    return opts.slice(0, 4).some((o) => o.trim() === "");
+  }
+  return false;
+}
+
+// ─── 페이지 ─────────────────────────────────────────────────────────────────
 
 export default function EditExam({
   params,
@@ -32,7 +46,7 @@ export default function EditExam({
 }) {
   const resolvedParams = use(params);
   const router = useRouter();
-  const { user, profile, isLoaded } = useAppUser();
+  const { user, isLoaded } = useAppUser();
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingExam, setIsLoadingExam] = useState(true);
   const [examData, setExamData] = useState({
@@ -40,7 +54,6 @@ export default function EditExam({
     duration: 60,
     code: "",
     materials: [] as File[],
-    existingMaterials: [] as string[], // 기존에 업로드된 파일 URL들
     language: "ko" as "ko" | "en",
   });
   const [disabledFiles, setDisabledFiles] = useState<Set<number>>(new Set());
@@ -50,48 +63,37 @@ export default function EditExam({
   const [chatWeight, setChatWeight] = useState<number | null>(null);
   const fileUpload = useFileUpload();
   const isSubmittingRef = useRef(false);
+  // 무제한 토글 OFF 시 이전 duration 복원
+  const prevDurationRef = useRef<number>(60);
 
-  // 기존 시험 데이터 불러오기
+  // ── 기존 시험 데이터 로드 ──────────────────────────────────────────────────
   useEffect(() => {
     const fetchExam = async () => {
       if (!isLoaded || !user) return;
-
       try {
         setIsLoadingExam(true);
         const response = await fetch("/api/supa", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "get_exam_by_id",
             data: { id: resolvedParams.examId },
           }),
         });
-
-        if (!response.ok) {
-          throw new Error("시험 데이터를 불러올 수 없습니다.");
-        }
-
+        if (!response.ok) throw new Error("시험 데이터를 불러올 수 없습니다.");
         const result = await response.json();
         const exam = result.exam;
-
         setExamData({
           title: exam.title || "",
           duration: exam.duration || 60,
           code: exam.code || "",
           materials: [],
-          existingMaterials: exam.materials || [],
           language: (exam.language === "en" ? "en" : "ko") as "ko" | "en",
         });
         setQuestions(exam.questions || []);
-        setChatWeight(exam.chat_weight ?? null);
-
-        // 기존 materials + materials_text를 fileUpload hook에 로드
-        fileUpload.initExistingData(
-          exam.materials || [],
-          exam.materials_text
-        );
+        const loadedWeight = exam.chat_weight ?? null;
+        setChatWeight(loadedWeight);
+        fileUpload.initExistingData(exam.materials || [], exam.materials_text);
       } catch {
         toast.error("시험 데이터를 불러오는 중 오류가 발생했습니다.");
         router.push(`/instructor/${resolvedParams.examId}`);
@@ -99,143 +101,70 @@ export default function EditExam({
         setIsLoadingExam(false);
       }
     };
-
     fetchExam();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolvedParams.examId, isLoaded, user?.id]);
 
-  // 폼 변경 감지 (이탈 경고용)
-  const [initialDataLoaded, setInitialDataLoaded] = useState(false);
-  const hasFormChanges = useCallback(() => {
-    if (!initialDataLoaded) return false;
-    return true; // 편집 모드에서는 데이터 로드 후 항상 변경 가능성이 있으므로 경고
-  }, [initialDataLoaded]);
-
-  // 이탈 경고
+  // ── 이탈 경고 ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (hasFormChanges()) {
-        e.preventDefault();
-      }
+      e.preventDefault();
+      e.returnValue = "";
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
-  }, [hasFormChanges]);
+  }, []);
 
-  // 초기 데이터 로드 완료 표시
-  useEffect(() => {
-    if (!isLoadingExam) {
-      // 약간의 딜레이로 초기 렌더링 후 활성화
-      const timer = setTimeout(() => setInitialDataLoaded(true), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [isLoadingExam]);
 
-  const generateExamCode = () => {
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let result = "";
-    for (let i = 0; i < 6; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    setExamData((prev) => ({ ...prev, code: result }));
-  };
+  // ── 파일 관련 ─────────────────────────────────────────────────────────────
+  const calculateTotalSize = (files: File[]) =>
+    files.reduce((total, file) => total + file.size, 0);
 
-  // 파일 용량 계산 함수
-  const calculateTotalSize = (files: File[]) => {
-    return files.reduce((total, file) => total + file.size, 0);
-  };
-
-  // 파일 용량 검증 및 비활성화 처리
   const validateAndManageFileSize = (files: File[]) => {
-    const MAX_SIZE = 50 * 1024 * 1024; // 50MB
-    const totalSize = calculateTotalSize(files);
-
-    if (totalSize <= MAX_SIZE) {
+    const MAX = 50 * 1024 * 1024;
+    const total = calculateTotalSize(files);
+    if (total <= MAX) {
       setDisabledFiles(new Set());
       setCanAddMoreFiles(true);
       return true;
     }
-
     setCanAddMoreFiles(false);
     toast.error("파일 용량이 50MB를 초과했습니다. 일부 파일이 비활성화됩니다.");
-
-    const newDisabledFiles = new Set<number>();
-    let currentSize = 0;
-
+    const disabled = new Set<number>();
+    let cur = 0;
     for (let i = files.length - 1; i >= 0; i--) {
-      currentSize += files[i].size;
-      if (currentSize > MAX_SIZE) {
-        newDisabledFiles.add(i);
-        currentSize -= files[i].size;
-      }
+      cur += files[i].size;
+      if (cur > MAX) { disabled.add(i); cur -= files[i].size; }
     }
-
-    setDisabledFiles(newDisabledFiles);
+    setDisabledFiles(disabled);
     return false;
   };
 
   const validateFile = (file: File): boolean => {
     const allowedTypes = [
-      "application/pdf",
-      "application/vnd.ms-powerpoint",
+      "application/pdf", "application/vnd.ms-powerpoint",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "application/vnd.ms-excel",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "text/csv",
-      "application/csv",
-      "application/x-hwp",
-      "application/haansofthwp",
-      "application/vnd.hancom.hwp",
-      "application/vnd.hancom.hwpx",
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
+      "text/csv", "application/csv", "application/x-hwp",
+      "application/haansofthwp", "application/vnd.hancom.hwp",
+      "application/vnd.hancom.hwpx", "image/jpeg", "image/png",
+      "image/gif", "image/webp",
     ];
-
-    const maxSize = 50 * 1024 * 1024; // 50MB
-
-    // 파일 확장자로도 체크 (MIME 타입이 없는 경우 대비)
-    const extension = file.name.split(".").pop()?.toLowerCase();
-    const allowedExtensions = [
-      "pdf",
-      "ppt",
-      "pptx",
-      "doc",
-      "docx",
-      "xls",
-      "xlsx",
-      "csv",
-      "hwp",
-      "hwpx",
-      "jpg",
-      "jpeg",
-      "png",
-      "gif",
-      "webp",
-    ];
-
-    if (
-      !allowedTypes.includes(file.type) &&
-      !allowedExtensions.includes(extension || "")
-    ) {
-      toast.error(
-        "지원되지 않는 파일 형식입니다. PPT, PDF, 워드, 엑셀, CSV, 한글, 이미지 파일만 업로드 가능합니다."
-      );
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    const allowedExt = ["pdf","ppt","pptx","doc","docx","xls","xlsx","csv","hwp","hwpx","jpg","jpeg","png","gif","webp"];
+    if (!allowedTypes.includes(file.type) && !allowedExt.includes(ext || "")) {
+      toast.error("지원되지 않는 파일 형식입니다.");
       return false;
     }
-
-    if (file.size > maxSize) {
+    if (file.size > 50 * 1024 * 1024) {
       toast.error("파일 크기가 50MB를 초과합니다.");
       return false;
     }
-
     return true;
   };
-
-  // 파일 업로드 + 텍스트 추출은 useFileUpload hook이 처리
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!canAddMoreFiles) {
@@ -243,430 +172,256 @@ export default function EditExam({
       e.target.value = "";
       return;
     }
-
-    const files = Array.from(e.target.files || []);
-    const validFiles = files.filter(validateFile);
-
-    if (validFiles.length === 0) {
-      e.target.value = "";
-      return;
-    }
-
-    const newMaterials = [...examData.materials, ...validFiles];
+    const files = Array.from(e.target.files || []).filter(validateFile);
+    if (files.length === 0) { e.target.value = ""; return; }
+    const newMaterials = [...examData.materials, ...files];
     validateAndManageFileSize(newMaterials);
-
-    setExamData((prev) => ({
-      ...prev,
-      materials: newMaterials,
-    }));
-
-    // 파일 업로드 + 텍스트 추출 (서버 경유, URL 재사용)
-    validFiles.forEach((file) => {
-      fileUpload.upload(file);
-    });
-
+    setExamData((prev) => ({ ...prev, materials: newMaterials }));
+    files.forEach((f) => fileUpload.upload(f));
     e.target.value = "";
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (canAddMoreFiles) {
-      setIsDragOver(true);
-    }
+    e.preventDefault(); e.stopPropagation();
+    if (canAddMoreFiles) setIsDragOver(true);
   };
-
   const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
     setIsDragOver(false);
   };
-
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-
+    e.preventDefault(); e.stopPropagation(); setIsDragOver(false);
     if (!canAddMoreFiles) {
       toast.error("파일 용량이 초과되어 더 이상 파일을 추가할 수 없습니다.");
       return;
     }
-
-    const files = Array.from(e.dataTransfer.files);
-    const validFiles = files.filter(validateFile);
-
-    if (validFiles.length === 0) {
-      return;
-    }
-
-    const newMaterials = [...examData.materials, ...validFiles];
+    const files = Array.from(e.dataTransfer.files).filter(validateFile);
+    if (files.length === 0) return;
+    const newMaterials = [...examData.materials, ...files];
     validateAndManageFileSize(newMaterials);
-
-    setExamData((prev) => ({
-      ...prev,
-      materials: newMaterials,
-    }));
-
-    // 파일 업로드 + 텍스트 추출 (서버 경유, URL 재사용)
-    validFiles.forEach((file) => {
-      fileUpload.upload(file);
-    });
+    setExamData((prev) => ({ ...prev, materials: newMaterials }));
+    files.forEach((f) => fileUpload.upload(f));
   };
-
   const handleDragAreaClick = () => {
-    if (canAddMoreFiles) {
-      document.getElementById("materials")?.click();
-    }
+    if (canAddMoreFiles) document.getElementById("materials")?.click();
   };
-
   const removeFile = (index: number) => {
-    const removedFile = examData.materials[index];
+    const removed = examData.materials[index];
     const newMaterials = examData.materials.filter((_, i) => i !== index);
     validateAndManageFileSize(newMaterials);
-
-    setExamData((prev) => ({
-      ...prev,
-      materials: newMaterials,
-    }));
-
-    // hook에서도 업로드된 파일 정보 제거
-    if (removedFile) {
-      fileUpload.removeFile(removedFile.name);
-    }
+    setExamData((prev) => ({ ...prev, materials: newMaterials }));
+    if (removed) fileUpload.removeFile(removed.name);
   };
-
-  const removeExistingFile = (index: number) => {
-    fileUpload.removeExistingUrl(index);
-  };
+  const removeExistingFile = (index: number) => fileUpload.removeExistingUrl(index);
 
   const getFileIcon = (fileName: string) => {
-    const extension = fileName.split(".").pop()?.toLowerCase();
-    const iconClass = "w-4 h-4 shrink-0";
-    switch (extension) {
-      case "pdf":
-        return <FileText className={`${iconClass} text-red-500`} />;
-      case "ppt":
-      case "pptx":
-        return <Presentation className={`${iconClass} text-orange-500`} />;
-      case "doc":
-      case "docx":
-        return <FileText className={`${iconClass} text-blue-500`} />;
-      case "xls":
-      case "xlsx":
-      case "csv":
-        return <FileSpreadsheet className={`${iconClass} text-green-500`} />;
-      case "hwp":
-      case "hwpx":
-        return <ClipboardList className={`${iconClass} text-sky-500`} />;
-      case "jpg":
-      case "jpeg":
-      case "png":
-      case "gif":
-      case "webp":
-        return <FileImage className={`${iconClass} text-purple-500`} />;
-      default:
-        return <File className={`${iconClass} text-muted-foreground`} />;
+    const ext = fileName.split(".").pop()?.toLowerCase();
+    const cls = "w-4 h-4 shrink-0";
+    switch (ext) {
+      case "pdf": return <FileText className={`${cls} text-red-500`} />;
+      case "ppt": case "pptx": return <Presentation className={`${cls} text-orange-500`} />;
+      case "doc": case "docx": return <FileText className={`${cls} text-blue-500`} />;
+      case "xls": case "xlsx": case "csv": return <FileSpreadsheet className={`${cls} text-green-500`} />;
+      case "hwp": case "hwpx": return <ClipboardList className={`${cls} text-sky-500`} />;
+      case "jpg": case "jpeg": case "png": case "gif": case "webp":
+        return <FileImage className={`${cls} text-purple-500`} />;
+      default: return <File className={`${cls} text-muted-foreground`} />;
     }
   };
 
   const getFileNameFromUrl = (url: string) => {
-    try {
-      const urlObj = new URL(url);
-      const pathname = urlObj.pathname;
-      const fileName = pathname.split("/").pop() || "파일";
-      return decodeURIComponent(fileName);
-    } catch {
-      return "파일";
-    }
+    try { return decodeURIComponent(new URL(url).pathname.split("/").pop() || "파일"); }
+    catch { return "파일"; }
   };
 
-  const addQuestion = () => {
-    const newQuestion: Question = {
-      id: Date.now().toString(),
+  // ── 문제 CRUD ──────────────────────────────────────────────────────────────
+  const addQuestion = useCallback((type?: Question["type"], count?: number) => {
+    const qType = type ?? "essay";
+    const qCount = count ?? 1;
+    const newQs: Question[] = Array.from({ length: qCount }, (_, i) => ({
+      id: `${Date.now()}-${i}`,
       text: "",
-      type: "essay",
-    };
-    setQuestions([...questions, newQuestion]);
-  };
+      type: qType,
+      ...(qType === "multiple-choice"
+        ? { options: ["", "", "", ""], correctOptionIndex: 0 }
+        : qType === "true-false"
+        ? { options: ["O", "X"] }
+        : {}),
+    }));
+    setQuestions((prev) => [...prev, ...newQs]);
+  }, []);
 
-  const updateQuestion = (
-    id: string,
-    field: keyof Question,
-    value: string | boolean | number | string[]
-  ) => {
-    setQuestions(
-      questions.map((q) => (q.id === id ? { ...q, [field]: value } : q))
-    );
-  };
+  const updateQuestion = useCallback(
+    (id: string, field: keyof Question, value: string | boolean | number | string[]) => {
+      setQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, [field]: value } : q)));
+    },
+    []
+  );
 
-  const moveQuestion = (index: number, direction: "up" | "down") => {
+  const moveQuestion = useCallback((index: number, direction: "up" | "down") => {
     setQuestions((prev) => {
-      const newQuestions = [...prev];
-      const targetIndex = direction === "up" ? index - 1 : index + 1;
-      if (targetIndex < 0 || targetIndex >= newQuestions.length) return prev;
-      [newQuestions[index], newQuestions[targetIndex]] = [newQuestions[targetIndex], newQuestions[index]];
-      return newQuestions;
+      const next = [...prev];
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
     });
-  };
+  }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleQuestionsAppend = useCallback((newQs: Question[]) => {
+    setQuestions((prev) => [...prev, ...newQs]);
+  }, []);
+
+  // ── 저장 ──────────────────────────────────────────────────────────────────
+  const handleSubmit = useCallback(async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
-
-    if (!examData.title) {
-      isSubmittingRef.current = false;
-      toast.error("시험 제목을 입력해주세요.");
-      return;
-    }
-    if (!examData.code) {
-      isSubmittingRef.current = false;
-      toast.error("시험 코드를 생성해주세요.");
-      return;
-    }
-    if (questions.length === 0) {
-      isSubmittingRef.current = false;
-      toast.error("최소 1개 이상의 문제를 추가해주세요.");
-      return;
-    }
-    if (questions.some((q) => isQuestionContentEmpty(q.text))) {
-      isSubmittingRef.current = false;
-      toast.error("문제 내용을 입력해주세요.");
-      return;
-    }
-    if (!canAddMoreFiles) {
-      isSubmittingRef.current = false;
-      toast.error("파일 용량이 50MB를 초과했습니다. 일부 파일을 삭제해주세요.");
-      return;
-    }
-    // duration 검증: 0(무제한)이 아니고 15 미만이면 에러
-    if (examData.duration !== 0 && examData.duration < 15) {
-      isSubmittingRef.current = false;
-      toast.error("시험 시간은 최소 15분 이상이거나 무제한이어야 합니다.");
-      return;
-    }
-
     setIsLoading(true);
-
     try {
-      // 파일은 이미 선택 시점에 업로드 완료됨 → URL 재사용
-      const materialUrls = fileUpload.getUploadedUrls();
-      const materialsText = fileUpload.getMaterialsText();
-
-      // 시험 데이터 업데이트
       const updateData = {
         title: examData.title,
         code: examData.code,
         duration: examData.duration,
-        questions: questions,
+        questions,
         chat_weight: chatWeight,
-        materials: materialUrls,
-        materials_text: materialsText,
+        materials: fileUpload.getUploadedUrls(),
+        materials_text: fileUpload.getMaterialsText(),
         language: examData.language,
         updated_at: new Date().toISOString(),
       };
-
-      // Update exam in Supabase
       const response = await fetch("/api/supa", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "update_exam",
-          data: {
-            id: resolvedParams.examId,
-            update: updateData,
-          },
+          data: { id: resolvedParams.examId, update: updateData },
         }),
       });
-
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = extractErrorMessage(
-          errorData,
-          "시험 수정에 실패했습니다",
-          response.status
-        );
-        throw new Error(errorMessage);
+        const err = await response.json().catch(() => ({}));
+        throw new Error(extractErrorMessage(err, "시험 수정에 실패했습니다", response.status));
       }
-
-      await response.json();
-
-      toast.success("시험이 성공적으로 수정되었습니다.");
-      router.push(`/instructor/${resolvedParams.examId}`);
+      toast.success("변경사항이 저장되었습니다.");
     } catch (error) {
-      const errorMessage = getErrorMessage(
-        error,
-        "시험 수정 중 오류가 발생했습니다. 다시 시도해주세요"
-      );
-      toast.error(errorMessage, {
-        duration: 5000, // 에러 메시지가 길 수 있으므로 더 길게 표시
-      });
+      toast.error(getErrorMessage(error, "시험 수정 중 오류가 발생했습니다."), { duration: 5000 });
     } finally {
       setIsLoading(false);
       isSubmittingRef.current = false;
     }
-  };
+  }, [examData, questions, chatWeight, fileUpload, resolvedParams.examId]);
 
+  // ── 제출 사유 ─────────────────────────────────────────────────────────────
+  const submitReasons = useMemo(() => {
+    return [
+      !examData.title ? "시험 제목을 입력해주세요" : null,
+      questions.length === 0 ? "문제를 1개 이상 추가해주세요" : null,
+      questions.length > 0 && questions.every((q) => isQuestionContentEmpty(q.text))
+        ? "문제 내용을 입력해주세요"
+        : null,
+      !canAddMoreFiles ? "파일 용량이 50MB를 초과했습니다" : null,
+      examData.duration !== 0 && examData.duration < 15
+        ? "시험 시간은 최소 15분 이상이어야 합니다"
+        : null,
+      questions.some((q) => isObjectiveQuestionIncomplete(q))
+        ? "객관식 문제의 선택지와 정답을 입력해주세요"
+        : null,
+    ].filter(Boolean) as string[];
+  }, [examData.title, examData.code, examData.duration, questions, canAddMoreFiles]);
+
+  // ── 로딩 스피너 ───────────────────────────────────────────────────────────
   if (isLoadingExam) {
     return (
-      <div className="container mx-auto p-6 max-w-4xl">
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent"></div>
-          <span className="ml-2 text-muted-foreground">
-            시험 데이터를 불러오는 중...
-          </span>
-        </div>
+      <div className="flex h-64 items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" />
+        <span className="ml-2 text-muted-foreground">시험 데이터를 불러오는 중...</span>
       </div>
     );
   }
 
+  // ── 렌더 ──────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-      <div className="max-w-4xl mx-auto">
-      <div className="mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">시험 편집</h1>
-            <p className="text-muted-foreground">
-              문제와 설정으로 시험을 수정하세요
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <form
-        onSubmit={handleSubmit}
-        onKeyDown={(e) => {
-          if (
-            e.key === "Enter" &&
-            (e.target as HTMLElement).tagName !== "TEXTAREA"
-          ) {
-            e.preventDefault();
-          }
-        }}
-        className="space-y-6"
-      >
-        <ExamInfoForm
-          title={examData.title}
-          code={examData.code}
-          duration={examData.duration}
-          onTitleChange={(value) =>
-            setExamData((prev) => ({ ...prev, title: value }))
-          }
-          onCodeChange={(value) =>
-            setExamData((prev) => ({ ...prev, code: value }))
-          }
-          onDurationChange={(value) =>
-            setExamData((prev) => ({ ...prev, duration: value }))
-          }
-          onGenerateCode={generateExamCode}
-          language={examData.language}
-          onLanguageChange={(value) =>
-            setExamData((prev) => ({ ...prev, language: value }))
-          }
-        />
-
-        <FileUpload
-          files={examData.materials}
-          disabledFiles={disabledFiles}
-          canAddMoreFiles={canAddMoreFiles}
-          isDragOver={isDragOver}
-          totalSize={calculateTotalSize(examData.materials)}
-          onFileSelect={handleFileSelect}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onDragAreaClick={handleDragAreaClick}
-          onRemoveFile={removeFile}
-          getFileIcon={getFileIcon}
-          existingFiles={fileUpload.existingUrls.map((url, index) => ({
-            url,
-            name: getFileNameFromUrl(url),
-            index,
-          }))}
-          onRemoveExistingFile={removeExistingFile}
-          extractionStatus={fileUpload.fileStatus}
-        />
-
-        <CaseQuestionGenerator
-          examTitle={examData.title}
-          extractedTexts={fileUpload.extractedTexts}
-          extractionStatus={fileUpload.fileStatus}
-          language={examData.language}
-          onQuestionsAccepted={(newQuestions) => {
-            setQuestions((prev) => [
-              ...prev,
-              ...newQuestions.map((q) => ({
-                id: q.id,
-                text: q.text,
-                type: q.type,
-                options: q.options,
-                correctOptionIndex: q.correctOptionIndex,
-              })),
-            ]);
-          }}
-        />
-
-        <QuestionsList
-          questions={questions}
-          defaultOpen={true}
-          language={examData.language}
-          onUpdate={updateQuestion}
-          onRemove={(id) => {
-            setQuestions((prev) => prev.filter((q) => q.id !== id));
-          }}
-          onAdd={addQuestion}
-          onMove={moveQuestion}
-        />
-
-        {/* Submit */}
-        <div className="flex gap-4">
+    <div className="min-h-screen bg-muted/40">
+      {/* Sticky 헤더 */}
+      <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur-sm">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
           <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5"
             type="button"
-            variant="outline"
             onClick={() => router.push(`/instructor/${resolvedParams.examId}`)}
           >
-            취소
+            <ArrowLeft className="h-4 w-4" />
+            대시보드
           </Button>
-          <Button
-            type="submit"
-            disabled={
-              isLoading ||
-              !examData.title ||
-              !examData.code ||
-              questions.length === 0 ||
-              questions.some((q) => isQuestionContentEmpty(q.text)) ||
-              !canAddMoreFiles
-            }
-          >
-            {isLoading ? "수정 중..." : "시험 수정하기"}
-          </Button>
+          <div className="h-4 w-px bg-border" />
+          <h1 className="font-semibold text-sm sm:text-base truncate">
+            {examData.title ? `${examData.title} 편집` : "시험 편집"}
+          </h1>
         </div>
-        {!isLoading && (
-          !examData.title ||
-          !examData.code ||
-          questions.length === 0 ||
-          questions.some((q) => isQuestionContentEmpty(q.text)) ||
-          !canAddMoreFiles
-        ) && (
-          <div
-            className="mt-2 text-xs text-muted-foreground space-y-0.5"
-            data-testid="edit-exam-submit-reasons"
-          >
-            {!examData.title && <p>• 시험 제목을 입력해주세요</p>}
-            {!examData.code && <p>• 시험 코드를 생성해주세요</p>}
-            {questions.length === 0 && <p>• 문제를 1개 이상 추가해주세요</p>}
-            {questions.length > 0 &&
-              questions.some((q) => isQuestionContentEmpty(q.text)) && (
-                <p>• 문제 내용을 입력해주세요</p>
-              )}
-            {!canAddMoreFiles && <p>• 파일 용량이 50MB를 초과했습니다</p>}
-          </div>
-        )}
-      </form>
+      </header>
+
+      {/* 폼 */}
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <form
+          onSubmit={handleSubmit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA")
+              e.preventDefault();
+          }}
+        >
+          <SimpleExamAuthoringForm
+            // ── 기본 시험 정보 ──────────────────────────────────────────────
+            title={examData.title}
+            duration={examData.duration}
+            language={examData.language}
+            onTitleChange={(v) => setExamData((p) => ({ ...p, title: v }))}
+            onDurationChange={(v) => {
+              if (examData.duration !== 0) prevDurationRef.current = examData.duration;
+              setExamData((p) => ({ ...p, duration: v === 0 ? 0 : v || prevDurationRef.current }));
+            }}
+            onLanguageChange={(v) => setExamData((p) => ({ ...p, language: v }))}
+            // ── 파일 업로드 ─────────────────────────────────────────────────
+            files={examData.materials}
+            disabledFiles={disabledFiles}
+            canAddMoreFiles={canAddMoreFiles}
+            isDragOver={isDragOver}
+            totalSize={calculateTotalSize(examData.materials)}
+            extractionStatus={fileUpload.fileStatus}
+            onFileSelect={handleFileSelect}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onDragAreaClick={handleDragAreaClick}
+            onRemoveFile={removeFile}
+            getFileIcon={getFileIcon}
+            // ── 문제 관리 ───────────────────────────────────────────────────
+            questions={questions}
+            onQuestionAdd={addQuestion}
+            onQuestionUpdate={updateQuestion}
+            onQuestionRemove={(id) => setQuestions((prev) => prev.filter((q) => q.id !== id))}
+            onQuestionMove={moveQuestion}
+            // ── 채점 비중 ───────────────────────────────────────────────────
+            chatWeight={chatWeight}
+            onChatWeightChange={setChatWeight}
+            // ── 폼 제출 제어 ────────────────────────────────────────────────
+            submitReasons={submitReasons}
+            isSubmitting={isLoading}
+            onCancel={() => router.push(`/instructor/${resolvedParams.examId}`)}
+            // ── AI 문제 생성 지원 ───────────────────────────────────────────
+            materialsText={fileUpload.getMaterialsText()}
+            onQuestionsAppend={handleQuestionsAppend}
+            // ── 편집 전용 ───────────────────────────────────────────────────
+            submitButtonText="변경사항 저장"
+            existingFiles={fileUpload.existingUrls.map((url, i) => ({
+              url,
+              name: getFileNameFromUrl(url),
+              index: i,
+            }))}
+            onRemoveExistingFile={removeExistingFile}
+          />
+        </form>
       </div>
     </div>
   );

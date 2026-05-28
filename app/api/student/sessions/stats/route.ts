@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
+import { isScoringGrade } from "@/lib/grade-utils";
 
 // Initialize Supabase client
 const supabase = getSupabaseServer();
@@ -146,7 +146,7 @@ export async function GET() {
     if (releasedSessionIds.length > 0) {
       const { data: allGrades, error: gradesError } = await supabase
         .from("grades")
-        .select("session_id, score")
+        .select("session_id, score, grade_type")
         .in("session_id", releasedSessionIds);
 
       if (gradesError) {
@@ -156,7 +156,7 @@ export async function GET() {
       if (allGrades && allGrades.length > 0) {
         // Group grades by session_id
         const gradesBySession = new Map<string, number[]>();
-        allGrades.forEach((grade) => {
+        allGrades.filter(isScoringGrade).forEach((grade) => {
           if (!gradesBySession.has(grade.session_id)) {
             gradesBySession.set(grade.session_id, []);
           }
@@ -186,8 +186,7 @@ export async function GET() {
       unsubmittedAssignmentItems,
       overallAverageScore,
     });
-  } catch (error) {
+  } catch {
     return errorJson("FETCH_STATS_FAILED", "Failed to get student stats", 500);
   }
 }
-
