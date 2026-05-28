@@ -27,6 +27,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, ChevronDown, ChevronUp, RefreshCw, Loader2, Eye, EyeOff, Download, Bot } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { StudentLiveMonitoring } from "@/components/instructor/StudentLiveMonitoring";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
@@ -167,6 +172,17 @@ export default function ExamDetail({
     );
   }, [students]);
 
+  // 제출한 학생 전원의 채점 확정 여부
+  // - manually_graded: 강사 직접 확정 (Case 있는 시험)
+  // - ai_graded: 자동 채점 완료 (MCQ/OX 전용 시험 또는 전원 AI 일괄채점 확정)
+  const allStudentsManuallyGraded = useMemo(() => {
+    const submitted = students.filter((s) => s.status === "submitted");
+    if (submitted.length === 0) return false;
+    return submitted.every(
+      (s) => s.overallStatus === "manually_graded" || s.overallStatus === "ai_graded"
+    );
+  }, [students]);
+
   const hasCaseQuestions = useMemo(() => {
     const detailQuestions = Array.isArray(examDetailData?.questionsRaw)
       ? examDetailData.questionsRaw
@@ -183,17 +199,9 @@ export default function ExamDetail({
   );
 
   const handleExcelDownload = useCallback(() => {
-    if (!exam) return;
-    if (exam.status !== "closed") {
-      window.alert("시험 종료 후에 이용해주세요");
-      return;
-    }
-    if (hasIncompleteGrading) {
-      window.alert("채점이 완료돼지 않았습니다. 채점을 완료한 후에 이용해주세요");
-      return;
-    }
+    if (!exam || !allStudentsManuallyGraded) return;
     window.location.href = `/api/exam/${exam.id}/export/excel`;
-  }, [exam, hasIncompleteGrading]);
+  }, [exam, allStudentsManuallyGraded]);
 
   const examContext = useMemo(() => {
     if (!exam) return "";
@@ -250,14 +258,26 @@ export default function ExamDetail({
                     Gate: {!!(exam.open_at || exam.close_at) ? "true" : "false"}
                   </div>
                 )}
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:ring-emerald-500"
-                  onClick={handleExcelDownload}
-                >
-                  <Download className="h-4 w-4 mr-1.5" />
-                  Excel 다운로드
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className={!allStudentsManuallyGraded ? "cursor-not-allowed" : undefined}>
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 focus-visible:ring-emerald-500"
+                        onClick={handleExcelDownload}
+                        disabled={!allStudentsManuallyGraded}
+                      >
+                        <Download className="h-4 w-4 mr-1.5" />
+                        Excel 다운로드
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  {!allStudentsManuallyGraded && (
+                    <TooltipContent side="bottom">
+                      모든 학생 채점을 완료해주세요
+                    </TooltipContent>
+                  )}
+                </Tooltip>
                 <ExamControlButtons
                   examId={exam.id}
                   examStatus={exam.status || "draft"}

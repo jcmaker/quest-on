@@ -60,7 +60,8 @@ function sanitizeWorksheetName(name: string) {
 
 function buildFileName(title: string) {
   const normalized = title.replace(/[\\/:*?"<>|]/g, " ").trim() || "시험";
-  return `${normalized}_시험결과.xlsx`;
+  const date = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Seoul" }).format(new Date());
+  return `${normalized}_${date}.xlsx`;
 }
 
 function stripHtml(value: string | null) {
@@ -368,10 +369,22 @@ export async function GET(
     ];
     worksheet.addRow([]);
     worksheet.addRow([]);
+    // 유형별 카운터로 MCQ1, OX1, Case1 형식 헤더 생성
+    const typeCounters: Record<string, number> = {};
+    const questionHeaders = orderedQuestions.map((q) => {
+      const type = q.type ?? "essay";
+      const prefix =
+        type === "multiple-choice" ? "MCQ" :
+        type === "true-false" ? "OX" :
+        "Case";
+      typeCounters[prefix] = (typeCounters[prefix] ?? 0) + 1;
+      return `${prefix}${typeCounters[prefix]}`;
+    });
+
     const tableHeaderRow = worksheet.addRow([
       "이름",
       "학번",
-      ...orderedQuestions.map((_, index) => `문제${index + 1}점수`),
+      ...questionHeaders,
       "최종 점수",
     ]);
     const tableHeaderRowNumber = tableHeaderRow.number;
