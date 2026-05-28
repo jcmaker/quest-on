@@ -7,6 +7,7 @@ import {
   isScoringGrade,
   isSuccessfulGradeType,
   normalizeScoreWeights,
+  rebalanceScoreWeightsForBucket,
   type ScoreWeights,
 } from "@/lib/grade-utils";
 
@@ -212,6 +213,58 @@ describe("grade-utils", () => {
         typeWeights: { "multiple-choice": 60 },
       })
     ).toBeNull();
+  });
+
+  it("rebalances score weights around the edited bucket while keeping total 100", () => {
+    const result = rebalanceScoreWeightsForBucket(
+      {
+        version: 1,
+        distribution: "equal_by_type",
+        typeWeights: {
+          "multiple-choice": 34,
+          "true-false": 33,
+          case: 33,
+        },
+      },
+      ["multiple-choice", "true-false", "case"],
+      "multiple-choice",
+      50
+    );
+
+    expect(result.typeWeights).toEqual({
+      "multiple-choice": 50,
+      "true-false": 25,
+      case: 25,
+    });
+    expect(
+      Object.values(result.typeWeights).reduce(
+        (sum, weight) => sum + (weight ?? 0),
+        0
+      )
+    ).toBe(100);
+  });
+
+  it("clamps edited score weight so every present type keeps at least one point", () => {
+    const result = rebalanceScoreWeightsForBucket(
+      {
+        version: 1,
+        distribution: "equal_by_type",
+        typeWeights: {
+          "multiple-choice": 34,
+          "true-false": 33,
+          case: 33,
+        },
+      },
+      ["multiple-choice", "true-false", "case"],
+      "multiple-choice",
+      100
+    );
+
+    expect(result.typeWeights).toEqual({
+      "multiple-choice": 98,
+      "true-false": 1,
+      case: 1,
+    });
   });
 
   it("keeps legacy calculateOverallScore behavior when score weights are absent", () => {

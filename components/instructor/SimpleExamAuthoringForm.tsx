@@ -40,6 +40,7 @@ import type { Question } from "@/components/instructor/QuestionEditor";
 import { QuestionEditor } from "@/components/instructor/QuestionEditor";
 import {
   buildDefaultScoreWeightsForQuestionTypes,
+  rebalanceScoreWeightsForBucket,
   scoreBucketForQuestionType,
   validateScoreWeightsForQuestions,
   type ScoreWeightBucket,
@@ -467,13 +468,14 @@ export function SimpleExamAuthoringForm({
   const setScoreWeight = (bucket: ScoreWeightBucket, value: number) => {
     const current = scoreWeights ?? buildDefaultScoreWeights(questions);
     if (!current) return;
-    onScoreWeightsChange({
-      ...current,
-      typeWeights: {
-        ...current.typeWeights,
-        [bucket]: Math.max(1, Math.min(100, value)),
-      },
-    });
+    onScoreWeightsChange(
+      rebalanceScoreWeightsForBucket(
+        current,
+        presentScoreBuckets,
+        bucket,
+        value
+      )
+    );
   };
 
   const materialSummary = useMemo(() => {

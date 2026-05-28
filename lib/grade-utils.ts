@@ -265,6 +265,71 @@ export function buildDefaultScoreWeightsForQuestionTypes(
   };
 }
 
+export function rebalanceScoreWeightsForBucket(
+  scoreWeights: ScoreWeights,
+  buckets: ScoreWeightBucket[],
+  targetBucket: ScoreWeightBucket,
+  targetValue: number
+): ScoreWeights {
+  if (!buckets.includes(targetBucket)) return scoreWeights;
+  if (buckets.length === 0) return scoreWeights;
+  if (buckets.length === 1) {
+    return {
+      version: 1,
+      distribution: "equal_by_type",
+      typeWeights: { [targetBucket]: 100 },
+    };
+  }
+
+  const otherBuckets = buckets.filter((bucket) => bucket !== targetBucket);
+  const maxTarget = 100 - otherBuckets.length;
+  const targetWeight = Math.max(
+    1,
+    Math.min(maxTarget, Number.isFinite(targetValue) ? Math.round(targetValue) : 1)
+  );
+  const remaining = 100 - targetWeight;
+  const reservedForMinimums = otherBuckets.length;
+  const distributable = remaining - reservedForMinimums;
+  const basis = otherBuckets.map((bucket) => {
+    const weight = scoreWeights.typeWeights[bucket];
+    return typeof weight === "number" && Number.isFinite(weight) && weight > 0
+      ? weight
+      : 1;
+  });
+  const basisTotal = basis.reduce((sum, weight) => sum + weight, 0);
+  const rawShares = otherBuckets.map((bucket, index) => {
+    const raw = basisTotal > 0 ? (distributable * basis[index]) / basisTotal : 0;
+    return {
+      bucket,
+      whole: Math.floor(raw),
+      fraction: raw - Math.floor(raw),
+    };
+  });
+  let remainder =
+    distributable - rawShares.reduce((sum, share) => sum + share.whole, 0);
+  rawShares
+    .slice()
+    .sort((a, b) => b.fraction - a.fraction)
+    .forEach((share) => {
+      if (remainder <= 0) return;
+      share.whole += 1;
+      remainder -= 1;
+    });
+
+  const typeWeights: Partial<Record<ScoreWeightBucket, number>> = {
+    [targetBucket]: targetWeight,
+  };
+  for (const share of rawShares) {
+    typeWeights[share.bucket] = share.whole + 1;
+  }
+
+  return {
+    version: 1,
+    distribution: "equal_by_type",
+    typeWeights,
+  };
+}
+
 export function validateScoreWeightsForQuestions(
   scoreWeights: ScoreWeights | null | undefined,
   questionTypes: Array<string | null | undefined>
