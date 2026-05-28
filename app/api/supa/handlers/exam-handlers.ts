@@ -377,10 +377,12 @@ export async function updateExam(data: {
             : undefined;
         return typeof type === "string" ? type : undefined;
       });
+      const defaultScoreWeights =
+        buildDefaultScoreWeightsForQuestionTypes(nextQuestionTypes);
       if (
         hasScoreWeightsUpdate &&
         updateWithoutRubric.score_weights === null &&
-        nextQuestionTypes.length > 0
+        defaultScoreWeights
       ) {
         return errorJson(
           "INVALID_SCORE_WEIGHTS",
@@ -390,7 +392,7 @@ export async function updateExam(data: {
       }
       if (nextQuestionTypes.length > 0 && !scoreWeights) {
         // 기존 시험(score_weights null)을 편집할 때 기본 비중으로 자동 설정
-        scoreWeights = buildDefaultScoreWeightsForQuestionTypes(nextQuestionTypes);
+        scoreWeights = defaultScoreWeights;
       }
       const scoreWeightErrors = validateScoreWeightsForQuestions(
         scoreWeights,
