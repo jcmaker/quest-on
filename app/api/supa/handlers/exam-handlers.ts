@@ -377,6 +377,17 @@ export async function updateExam(data: {
             : undefined;
         return typeof type === "string" ? type : undefined;
       });
+      if (
+        hasScoreWeightsUpdate &&
+        updateWithoutRubric.score_weights === null &&
+        nextQuestionTypes.length > 0
+      ) {
+        return errorJson(
+          "INVALID_SCORE_WEIGHTS",
+          "문항이 있는 시험에는 최종 점수 비중을 설정해야 합니다.",
+          400
+        );
+      }
       if (nextQuestionTypes.length > 0 && !scoreWeights) {
         // 기존 시험(score_weights null)을 편집할 때 기본 비중으로 자동 설정
         scoreWeights = buildDefaultScoreWeightsForQuestionTypes(nextQuestionTypes);
