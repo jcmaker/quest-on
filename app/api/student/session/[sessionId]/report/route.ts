@@ -5,7 +5,14 @@ import { currentUser } from "@/lib/get-current-user";
 import { successJson, errorJson } from "@/lib/api-response";
 import { logError } from "@/lib/logger";
 import { validateUUID } from "@/lib/validate-params";
-import { deduplicateGrades, calculateOverallScore } from "@/lib/grade-utils";
+import {
+  calculateScoreFromItems,
+  deduplicateGrades,
+  isScoringGrade,
+  normalizeScoreWeights,
+  type ScoreItem,
+} from "@/lib/grade-utils";
+import { gradeObjectiveAnswer, isObjectiveQuestion } from "@/lib/grading-helpers";
 import { checkRateLimitAsync, RATE_LIMITS } from "@/lib/rate-limit";
 
 // P1-4: Lazy Supabase getter to avoid stale connections in serverless
@@ -64,7 +71,7 @@ export async function GET(
     // Get exam data
     const { data: exam, error: examError } = await getSupabase()
       .from("exams")
-      .select("id, title, code, description, duration, questions, grades_released")
+      .select("id, title, code, description, duration, questions, grades_released, score_weights")
       .eq("id", session.exam_id)
       .single();
 
@@ -80,6 +87,14 @@ export async function GET(
         type: q.type,
         prompt: q.prompt || q.text,
         ai_context: q.ai_context,
+        options: Array.isArray(q.options)
+          ? (q.options as unknown[]).filter((o): o is string => typeof o === "string")
+          : undefined,
+        correctOptionIndex:
+          typeof q.correctOptionIndex === "number" &&
+          Number.isInteger(q.correctOptionIndex)
+            ? q.correctOptionIndex
+            : undefined,
       }));
     }
 
@@ -270,8 +285,8 @@ export async function GET(
     let gradedCount = 0;
     const totalQuestionCount = exam.questions?.length || 0;
 
-    if (grades && grades.length > 0) {
-      const deduped = deduplicateGrades(grades);
+    const deduped = deduplicateGrades(grades ?? []);
+    if (deduped.length > 0) {
       deduped.forEach((grade) => {
         gradesByQuestion[grade.q_idx] = {
           id: grade.id,
@@ -279,11 +294,33 @@ export async function GET(
           score: grade.score,
         };
       });
-
-      const result = calculateOverallScore(grades, totalQuestionCount);
+    }
+    if (Array.isArray(exam.questions)) {
+      const gradeByQ = new Map(
+        deduped.filter(isScoringGrade).map((grade) => [grade.q_idx, grade])
+      );
+      const scoreWeights = normalizeScoreWeights(exam.score_weights);
+      const scoreItems: ScoreItem[] = exam.questions.map(
+        (question: { idx?: number; type?: string; options?: string[]; correctOptionIndex?: number }, index: number) => {
+          const qIdx = typeof question.idx === "number" ? question.idx : index;
+          if (isObjectiveQuestion(question.type)) {
+            const objective = gradeObjectiveAnswer({
+              rawAnswer: submissionsByQuestion[qIdx]?.answer ?? "",
+              options: question.options,
+              correctOptionIndex: question.correctOptionIndex,
+            });
+            return { qIdx, type: question.type, score: objective?.score };
+          }
+          return { qIdx, type: question.type, score: gradeByQ.get(qIdx)?.score };
+        }
+      );
+      const result = calculateScoreFromItems(scoreItems, scoreWeights);
       gradedCount = result.gradedCount;
-      // Only set overallScore when there are real grades (not just ai_failed)
-      overallScore = gradedCount > 0 ? result.overallScore : null;
+      overallScore =
+        result.overallScore !== null &&
+        (result.mode === "weighted" || result.gradedCount > 0)
+          ? result.overallScore
+          : null;
     }
 
     const gradesReleased = exam.grades_released === true;

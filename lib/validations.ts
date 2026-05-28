@@ -2,7 +2,6 @@ import { z } from "zod";
 import { sanitizeUserInput } from "@/lib/sanitize";
 
 // Reusable field schemas
-const uuid = z.string().uuid();
 const sessionId = z.string().uuid("Invalid session ID format");
 
 // Sanitized string: strips XSS vectors at validation time
@@ -96,6 +95,31 @@ export const questionTypeEnum = z.enum([
 export const examQuestionsSchema = z.array(examQuestionItemSchema);
 
 export const examMaterialsSchema = z.array(z.string());
+
+export const scoreWeightsSchema = z
+  .object({
+    version: z.literal(1).default(1),
+    typeWeights: z
+      .object({
+        "multiple-choice": z.number().int().min(1).max(100).optional(),
+        "true-false": z.number().int().min(1).max(100).optional(),
+        case: z.number().int().min(1).max(100).optional(),
+      })
+      .strict(),
+    distribution: z.literal("equal_by_type").default("equal_by_type"),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      Object.values(value.typeWeights).reduce(
+        (sum, weight) => sum + (weight ?? 0),
+        0
+      ) === 100,
+    {
+      message: "유형별 비중의 합은 반드시 100점이어야 합니다.",
+      path: ["typeWeights"],
+    }
+  );
 
 /** Safely parse JSON column with Zod schema, returning fallback on failure */
 export function safeParseJson<T>(
@@ -240,6 +264,7 @@ export const createExamSchema = z.object({
   code: z.string().min(1).max(20),
   duration: z.number().int().min(0),
   chat_weight: z.number().min(0).max(100).nullable().optional(),
+  score_weights: scoreWeightsSchema.nullable().optional(),
   questions: z.array(z.object({
     id: z.string(),
     text: z.string(),
@@ -321,6 +346,7 @@ export const updateExamSchema = z.object({
     status: z.string().optional(),
     code: z.string().min(1).max(20).optional(),
     chat_weight: z.number().min(0).max(100).nullable().optional(),
+    score_weights: scoreWeightsSchema.nullable().optional(),
     open_at: z.string().nullable().optional(),
     close_at: z.string().nullable().optional(),
     started_at: z.string().nullable().optional(),

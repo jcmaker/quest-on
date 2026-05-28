@@ -81,6 +81,29 @@ async function applyMigrations() {
     console.warn("[global-setup] chat_weight migration failed:", err);
   }
 
+  // Migration: add score_weights column if missing (database/014_add_score_weights_to_exams.sql)
+  try {
+    const { error } = await supabase
+      .from("exams")
+      .select("score_weights")
+      .limit(0);
+
+    if (error && error.message.includes("does not exist")) {
+      console.log("[global-setup] Adding score_weights column to exams table...");
+      if (!process.env.CI) {
+        execSync(
+          `docker exec -i supabase_db_quest-on-mvp psql -U postgres -d postgres -c "ALTER TABLE exams ADD COLUMN IF NOT EXISTS score_weights JSONB DEFAULT NULL;"`,
+          { stdio: "pipe" }
+        );
+        console.log("[global-setup] score_weights column added.");
+      } else {
+        console.log("[global-setup] CI: skipping docker exec for score_weights migration.");
+      }
+    }
+  } catch (err) {
+    console.warn("[global-setup] score_weights migration failed:", err);
+  }
+
   // Migration: add updated_at column to grades table if missing
   try {
     const { error: gradeColErr } = await supabase

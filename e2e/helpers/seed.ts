@@ -33,6 +33,7 @@ interface SeedExamOverrides {
   allow_draft_in_waiting?: boolean;
   allow_chat_in_waiting?: boolean;
   grades_released?: boolean;
+  score_weights?: unknown;
 }
 
 export async function seedExam(overrides: SeedExamOverrides = {}) {
@@ -81,6 +82,9 @@ export async function seedExam(overrides: SeedExamOverrides = {}) {
     allow_chat_in_waiting: overrides.allow_chat_in_waiting ?? false,
     grades_released: overrides.grades_released ?? false,
   };
+  if ("score_weights" in overrides) {
+    (data as Record<string, unknown>).score_weights = overrides.score_weights ?? null;
+  }
 
   const { error } = await supabase.from("exams").insert(data);
   if (error) throw new Error(`seedExam failed: ${error.message}`);

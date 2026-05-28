@@ -4,7 +4,12 @@ import { getSupabaseServer } from "@/lib/supabase-server";
 import { currentUser } from "@/lib/get-current-user";
 import { errorJson } from "@/lib/api-response";
 import { batchGetUserInfo } from "@/lib/app-users";
-import { deduplicateGrades, isScoringGrade } from "@/lib/grade-utils";
+import {
+  calculateScoreFromItems,
+  deduplicateGrades,
+  isScoringGrade,
+  normalizeScoreWeights,
+} from "@/lib/grade-utils";
 import {
   gradeObjectiveAnswer,
   isObjectiveQuestion,
@@ -42,7 +47,7 @@ type StudentExportRow = {
   name: string;
   studentNumber: string;
   scores: Array<number | undefined>;
-  finalScore: number;
+  finalScore: number | null;
 };
 
 function getSupabase() {
@@ -109,7 +114,7 @@ export async function GET(
     const supabase = getSupabase();
     const { data: exam, error: examError } = await supabase
       .from("exams")
-      .select("id, title, code, description, duration, instructor_id, questions, status")
+      .select("id, title, code, description, duration, instructor_id, questions, status, score_weights")
       .eq("id", examId)
       .single();
 
@@ -149,6 +154,7 @@ export async function GET(
         qIdx: typeof question.idx === "number" ? question.idx : index,
       }))
       .sort((a, b) => a.qIdx - b.qIdx);
+    const scoreWeights = normalizeScoreWeights(exam.score_weights);
 
     const sessionIds = (sessions ?? []).map((session) => session.id);
     const studentIds = [
@@ -258,25 +264,37 @@ export async function GET(
             options: question.options,
             correctOptionIndex: question.correctOptionIndex,
           });
-          return submission && objective ? objective.score : undefined;
+          return objective ? objective.score : undefined;
         }
         return scoreByQuestion.get(question.qIdx);
       });
-      const gradedScores = questionScores.filter(
-        (score): score is number => typeof score === "number"
+      const scoreItems = orderedQuestions.map((question, index) => ({
+        qIdx: question.qIdx,
+        type: question.type,
+        score: questionScores[index],
+      }));
+      const scoreResult = calculateScoreFromItems(
+        scoreItems,
+        scoreWeights
       );
       return {
         name: studentName,
         studentNumber: profile?.student_number ?? "",
         scores: questionScores,
-        finalScore: average(gradedScores),
+        finalScore:
+          scoreResult.overallScore !== null &&
+          (scoreResult.mode === "weighted" || scoreResult.gradedCount > 0)
+            ? scoreResult.overallScore
+            : null,
       };
     });
 
     const gradedRows = studentRows.filter((row) =>
-      row.scores.some((score) => score !== undefined)
+      row.finalScore !== null
     );
-    const finalScores = gradedRows.map((row) => row.finalScore);
+    const finalScores = gradedRows
+      .map((row) => row.finalScore)
+      .filter((score): score is number => typeof score === "number");
     const questionAverages = orderedQuestions.map((_, questionIndex) =>
       average(
         studentRows
@@ -398,7 +416,7 @@ export async function GET(
         studentRow.name,
         studentRow.studentNumber,
         ...studentRow.scores.map((score) => score ?? ""),
-        studentRow.finalScore,
+        studentRow.finalScore ?? "",
       ]);
       excelRow.getCell(scoreTableColumns).font = { bold: true };
     });
