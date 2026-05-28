@@ -446,6 +446,24 @@ export function SimpleExamAuthoringForm({
     [questions, scoreWeights]
   );
 
+  useEffect(() => {
+    if (!scoreWeights) return;
+
+    const expectedBuckets = new Set(presentScoreBuckets);
+    const configuredBuckets = Object.entries(scoreWeights.typeWeights)
+      .filter(([, weight]) => typeof weight === "number" && weight > 0)
+      .map(([bucket]) => bucket as ScoreWeightBucket);
+    const hasMissingBucket = presentScoreBuckets.some(
+      (bucket) => typeof scoreWeights.typeWeights[bucket] !== "number"
+    );
+    const hasStaleBucket = configuredBuckets.some(
+      (bucket) => !expectedBuckets.has(bucket)
+    );
+    if (!hasMissingBucket && !hasStaleBucket) return;
+
+    onScoreWeightsChange(buildDefaultScoreWeights(questions));
+  }, [onScoreWeightsChange, presentScoreBuckets, questions, scoreWeights]);
+
   const setScoreWeight = (bucket: ScoreWeightBucket, value: number) => {
     const current = scoreWeights ?? buildDefaultScoreWeights(questions);
     if (!current) return;
