@@ -309,6 +309,13 @@ export async function GET(
               options: question.options,
               correctOptionIndex: question.correctOptionIndex,
             });
+            if (objective) {
+              gradesByQuestion[qIdx] = {
+                id: gradeByQ.get(qIdx)?.id ?? `objective-${qIdx}`,
+                q_idx: qIdx,
+                score: objective.score,
+              };
+            }
             return { qIdx, type: question.type, score: objective?.score };
           }
           return { qIdx, type: question.type, score: gradeByQ.get(qIdx)?.score };
