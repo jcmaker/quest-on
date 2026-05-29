@@ -40,7 +40,6 @@ import type { Question } from "@/components/instructor/QuestionEditor";
 import { QuestionEditor } from "@/components/instructor/QuestionEditor";
 import {
   buildDefaultScoreWeightsForQuestionTypes,
-  rebalanceScoreWeightsForBucket,
   scoreBucketForQuestionType,
   syncScoreWeightsForBuckets,
   validateScoreWeightsForQuestions,
@@ -471,8 +470,12 @@ export function SimpleExamAuthoringForm({
   const getScoreWeightValue = (bucket: ScoreWeightBucket) =>
     scoreWeights?.typeWeights[bucket] ?? 0;
 
-  const getMaxScoreWeight = () =>
-    presentScoreBuckets.length <= 1 ? 100 : 100 - (presentScoreBuckets.length - 1);
+  const getMaxScoreWeight = () => 100;
+
+  const totalScoreWeight = presentScoreBuckets.reduce(
+    (sum, bucket) => sum + getScoreWeightValue(bucket),
+    0,
+  );
 
   const getPerQuestionScore = (bucket: ScoreWeightBucket) => {
     const count = scoreBucketCounts[bucket];
@@ -483,14 +486,15 @@ export function SimpleExamAuthoringForm({
   const setScoreWeight = (bucket: ScoreWeightBucket, value: number) => {
     const current = scoreWeights ?? buildDefaultScoreWeights(questions);
     if (!current) return;
-    onScoreWeightsChange(
-      rebalanceScoreWeightsForBucket(
-        current,
-        presentScoreBuckets,
-        bucket,
-        value
-      )
-    );
+    const clamped = Math.max(1, Math.min(100, Number.isFinite(value) ? Math.round(value) : 1));
+    onScoreWeightsChange({
+      version: 1,
+      distribution: "equal_by_type",
+      typeWeights: {
+        ...current.typeWeights,
+        [bucket]: clamped,
+      },
+    });
   };
 
   const materialSummary = useMemo(() => {
@@ -951,13 +955,13 @@ export function SimpleExamAuthoringForm({
         <Field
           label="최종 점수 비중"
           required
-          helper="전체 100점 중 문제 유형별 반영 비율입니다. 학습 목표의 중요도에 맞춰 정하고, 같은 유형 안의 문항은 동일하게 나눠 계산됩니다."
+          helper="유형별 배점을 직접 정하세요. 합계는 자유이며 최종 점수는 100점 만점으로 환산됩니다. 같은 유형 안의 문항은 동일하게 나눠 계산됩니다."
         >
           <div className="rounded-md border bg-muted/20 p-3">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-sm text-muted-foreground">
                 {scoreWeights && presentScoreBuckets.length > 0
-                  ? "한 유형을 조정하면 나머지 유형이 자동으로 맞춰집니다."
+                  ? "유형별 배점을 자유롭게 정할 수 있습니다."
                   : "문항을 추가하면 문제 유형별 점수 배분이 자동으로 설정됩니다."}
               </span>
               {scoreWeights && presentScoreBuckets.length > 1 && (
@@ -984,8 +988,10 @@ export function SimpleExamAuthoringForm({
                         <div
                           key={bucket}
                           className={SCORE_BUCKET_COLORS[bucket]}
-                          style={{ width: `${weight}%` }}
-                          title={`${SCORE_BUCKET_LABELS[bucket]} ${weight}점`}
+                          style={{
+                            width: `${totalScoreWeight > 0 ? (weight / totalScoreWeight) * 100 : 0}%`,
+                          }}
+                          title={`${SCORE_BUCKET_LABELS[bucket]} ${weight}%`}
                         />
                       );
                     })}
@@ -1001,7 +1007,7 @@ export function SimpleExamAuthoringForm({
                           <span
                             className={`h-2 w-2 rounded-full ${SCORE_BUCKET_COLORS[bucket]}`}
                           />
-                          {SCORE_BUCKET_LABELS[bucket]} {weight}점
+                          {SCORE_BUCKET_LABELS[bucket]} {weight}%
                         </span>
                       );
                     })}
@@ -1066,7 +1072,7 @@ export function SimpleExamAuthoringForm({
                             className="h-9 w-20 bg-white text-center"
                             aria-label={`${SCORE_BUCKET_LABELS[bucket]} 비중`}
                           />
-                          <span className="text-sm text-muted-foreground">점</span>
+                          <span className="text-sm text-muted-foreground">%</span>
                         </div>
                       </div>
                     );

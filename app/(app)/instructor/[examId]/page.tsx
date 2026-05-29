@@ -43,6 +43,7 @@ import {
 } from "@/hooks/useStudentFiltering";
 import { buildInstructorExamContext } from "@/lib/instructor-utils";
 import { qk } from "@/lib/query-keys";
+import { cn } from "@/lib/utils";
 import type { InstructorExam } from "@/lib/types/exam";
 import type { ExamStudentSummary } from "@/lib/types/student-summary";
 import { BulkGradingPanel } from "@/components/instructor/BulkGradingPanel";
@@ -60,6 +61,7 @@ type BulkGradeProgress = {
 type BulkGradeStatusData = {
   session: {
     status: string;
+    grading_scope?: string;
     progress?: BulkGradeProgress;
   } | null;
   studentCount: number;
@@ -240,26 +242,26 @@ export default function ExamDetail({
   const bulkGradingFailed = bulkGradeSessionStatus === "grading_failed";
   const bulkGradingDone = bulkGradeSessionStatus === "grading_done";
   const bulkCtaTitle = isBulkGrading
-    ? "Case AI 채점 진행 중"
+    ? "CASE AI 가채점 진행 중"
     : bulkGradingFailed
-      ? "Case AI 채점 실패"
+      ? "CASE AI 가채점 실패"
       : bulkGradingDone
-        ? "AI 제안 점수 생성 완료"
-        : "Case AI 자동 채점하기";
+        ? "CASE 제안 점수 생성 완료"
+        : "CASE AI 가채점하기";
   const bulkCtaDescription = isBulkGrading && bulkGradeProgress && bulkGradeProgress.total > 0
-    ? `백그라운드 채점 중 · ${bulkGradeProcessed}/${bulkGradeProgress.total}명 처리`
+    ? `백그라운드 가채점 중 · ${bulkGradeProcessed}/${bulkGradeProgress.total}명 처리`
     : bulkGradingFailed
       ? "실패 원인을 확인하고 다시 채점을 시작할 수 있습니다"
       : bulkGradingDone
         ? "제안 점수를 검토한 뒤 확정해주세요"
-        : "강사 인터뷰 후 AI가 서술형 문제를 일괄 채점합니다";
+        : "강사의 자연어 기준으로 CASE 답안을 일괄 가채점합니다";
   const bulkCtaButtonLabel = isBulkGrading
     ? "진행 상황 보기"
     : bulkGradingDone
       ? "검토/확정"
       : bulkGradingFailed
         ? "다시 보기"
-        : "채점 시작";
+        : "가채점 시작";
 
   const handleExcelDownload = useCallback(() => {
     if (!exam || !allStudentsManuallyGraded) return;
@@ -307,7 +309,12 @@ export default function ExamDetail({
         subtitle="이 화면에 보이는 데이터 범위 안에서만 답변합니다."
       />
 
-      <SidebarInset>
+      <SidebarInset
+        className={cn(
+          "transition-[padding] duration-300 ease-in-out",
+          bulkGradingOpen && "lg:pr-[500px]",
+        )}
+      >
         <div className="container mx-auto p-4 sm:p-6">
           <ExamDetailHeader
             title={exam.title}

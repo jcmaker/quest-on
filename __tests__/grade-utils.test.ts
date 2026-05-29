@@ -7,7 +7,6 @@ import {
   isScoringGrade,
   isSuccessfulGradeType,
   normalizeScoreWeights,
-  rebalanceScoreWeightsForBucket,
   syncScoreWeightsForBuckets,
   type ScoreWeights,
 } from "@/lib/grade-utils";
@@ -113,6 +112,34 @@ describe("grade-utils", () => {
     });
   });
 
+  it("normalizes overall score to 0-100 when configured weights do not sum to 100", () => {
+    // Absolute-points model: weights act as relative weights, final score is
+    // always a 0-100 weighted average regardless of the weight sum.
+    const result = calculateWeightedOverallScore({
+      questions: [
+        { idx: 0, type: "multiple-choice" },
+        { idx: 1, type: "true-false" },
+        { idx: 2, type: "case" },
+      ],
+      objectiveScores: [
+        { qIdx: 0, score: 100 },
+        { q_idx: 1, score: 0 },
+      ],
+      caseGrades: [{ q_idx: 2, score: 90, grade_type: "manual" }],
+      scoreWeights: {
+        version: 1,
+        distribution: "equal_by_type",
+        typeWeights: { "multiple-choice": 40, "true-false": 3, case: 2 },
+      },
+    });
+
+    // total weight = 45; 100*(40/45) + 0*(3/45) + 90*(2/45) = 92.888... → 93
+    expect(result.mode).toBe("weighted");
+    expect(result.isComplete).toBe(true);
+    expect(result.totalConfiguredWeight).toBe(45);
+    expect(result.overallScore).toBe(93);
+  });
+
   it("returns null overall score metadata when a weighted type has no questions", () => {
     const result = calculateWeightedOverallScore({
       questions: [
@@ -207,104 +234,64 @@ describe("grade-utils", () => {
         typeWeights: { "multiple-choice": 100 },
       })
     ).toBeNull();
+    // valid shape — non-100 sum is now accepted
     expect(
       normalizeScoreWeights({
         version: 1,
         distribution: "equal_by_type",
         typeWeights: { "multiple-choice": 60 },
       })
-    ).toBeNull();
+    ).toMatchObject({ version: 1, typeWeights: { "multiple-choice": 60 } });
   });
 
-  it("rebalances score weights around the edited bucket while keeping total 100", () => {
-    const result = rebalanceScoreWeightsForBucket(
-      {
-        version: 1,
-        distribution: "equal_by_type",
-        typeWeights: {
-          "multiple-choice": 34,
-          "true-false": 33,
-          case: 33,
-        },
-      },
-      ["multiple-choice", "true-false", "case"],
+  it("editing one bucket does not move others (no auto-rebalance)", () => {
+    // syncScoreWeightsForBuckets keeps existing values unchanged when no buckets
+    // are added or removed — mirrors what setScoreWeight now does in the form.
+    const base: ScoreWeights = {
+      version: 1,
+      distribution: "equal_by_type",
+      typeWeights: { "multiple-choice": 50, "true-false": 30, case: 40 },
+    };
+    const result = syncScoreWeightsForBuckets(base, [
       "multiple-choice",
-      50
-    );
-
-    expect(result.typeWeights).toEqual({
+      "true-false",
+      "case",
+    ]);
+    expect(result?.typeWeights).toEqual({
       "multiple-choice": 50,
-      "true-false": 25,
-      case: 25,
-    });
-    expect(
-      Object.values(result.typeWeights).reduce(
-        (sum, weight) => sum + (weight ?? 0),
-        0
-      )
-    ).toBe(100);
-  });
-
-  it("clamps edited score weight so every present type keeps at least one point", () => {
-    const result = rebalanceScoreWeightsForBucket(
-      {
-        version: 1,
-        distribution: "equal_by_type",
-        typeWeights: {
-          "multiple-choice": 34,
-          "true-false": 33,
-          case: 33,
-        },
-      },
-      ["multiple-choice", "true-false", "case"],
-      "multiple-choice",
-      100
-    );
-
-    expect(result.typeWeights).toEqual({
-      "multiple-choice": 98,
-      "true-false": 1,
-      case: 1,
+      "true-false": 30,
+      case: 40,
     });
   });
 
-  it("preserves existing intent when syncing score weights after a bucket is added", () => {
+  it("assigns a sensible default when a new bucket is added", () => {
     const result = syncScoreWeightsForBuckets(
       {
         version: 1,
         distribution: "equal_by_type",
-        typeWeights: {
-          "multiple-choice": 80,
-          case: 20,
-        },
+        typeWeights: { "multiple-choice": 80, case: 20 },
       },
       ["multiple-choice", "true-false", "case"]
     );
-
-    expect(result?.typeWeights).toEqual({
-      "multiple-choice": 78,
-      "true-false": 2,
-      case: 20,
-    });
+    // existing values stay; new bucket gets average of 80+20 = 50
+    expect(result?.typeWeights["multiple-choice"]).toBe(80);
+    expect(result?.typeWeights["case"]).toBe(20);
+    expect(result?.typeWeights["true-false"]).toBe(50);
   });
 
-  it("drops stale buckets and normalizes remaining score weights to 100", () => {
+  it("drops stale buckets and keeps remaining values unchanged", () => {
     const result = syncScoreWeightsForBuckets(
       {
         version: 1,
         distribution: "equal_by_type",
-        typeWeights: {
-          "multiple-choice": 50,
-          "true-false": 30,
-          case: 20,
-        },
+        typeWeights: { "multiple-choice": 50, "true-false": 30, case: 20 },
       },
       ["multiple-choice", "case"]
     );
 
     expect(result?.typeWeights).toEqual({
-      "multiple-choice": 71,
-      case: 29,
+      "multiple-choice": 50,
+      case: 20,
     });
   });
 

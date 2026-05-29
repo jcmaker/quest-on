@@ -82,6 +82,14 @@ export function ExamStudentRow({
   const subInfo = [student.studentNumber, student.school]
     .filter(Boolean)
     .join(" · ");
+  const primaryGradingHref =
+    student.caseProgress.total > 0
+      ? `/instructor/${examId}/grade/${student.sessionId}?questionType=case`
+      : student.mcq.total > 0
+        ? `/instructor/${examId}/grade/${student.sessionId}?questionType=multiple-choice`
+        : student.ox.total > 0
+          ? `/instructor/${examId}/grade/${student.sessionId}?questionType=true-false`
+          : `/instructor/${examId}/grade/${student.sessionId}`;
 
   return (
     <div
@@ -187,7 +195,7 @@ export function ExamStudentRow({
         )}
         {canOpenGrading && student.status === "submitted" && (
           <AnimateIcon animateOnHover loop loopDelay={700} asChild>
-            <Link href={`/instructor/${examId}/grade/${student.sessionId}`}>
+            <Link href={primaryGradingHref}>
               <Button
                 size="sm"
                 variant="outline"

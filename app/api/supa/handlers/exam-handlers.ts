@@ -130,7 +130,7 @@ export async function createExam(data: {
     if (data.score_weights !== null && data.score_weights !== undefined && !normalizedScoreWeights) {
       return errorJson(
         "INVALID_SCORE_WEIGHTS",
-        "유형별 비중의 합은 반드시 100점이어야 합니다.",
+        "유효하지 않은 점수 배점입니다.",
         400
       );
     }
@@ -392,7 +392,7 @@ export async function updateExam(data: {
       ) {
         return errorJson(
           "INVALID_SCORE_WEIGHTS",
-          "유형별 비중의 합은 반드시 100점이어야 합니다.",
+          "유효하지 않은 점수 배점입니다.",
           400
         );
       }

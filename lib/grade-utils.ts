@@ -224,11 +224,7 @@ export function normalizeScoreWeights(value: unknown): ScoreWeights | null {
     typeWeights[bucket] = weight;
   }
 
-  const total = Object.values(typeWeights).reduce(
-    (sum, weight) => sum + (weight ?? 0),
-    0
-  );
-  if (total !== 100) return null;
+  if (Object.keys(typeWeights).length === 0) return null;
 
   return {
     version: 1,
@@ -290,29 +286,21 @@ export function syncScoreWeightsForBuckets(
 ): ScoreWeights | null {
   if (buckets.length === 0) return null;
   if (!scoreWeights) return buildScoreWeightsFromBuckets(buckets);
-  if (buckets.length === 1) {
-    return {
-      version: 1,
-      distribution: "equal_by_type",
-      typeWeights: { [buckets[0]]: 100 },
-    };
-  }
 
   const visibleBucketSet = new Set(buckets);
   const configuredBuckets = Object.entries(scoreWeights.typeWeights)
     .filter(([, weight]) => typeof weight === "number" && weight > 0)
     .map(([bucket]) => bucket as ScoreWeightBucket);
+
   const hasMissingBucket = buckets.some(
     (bucket) => typeof scoreWeights.typeWeights[bucket] !== "number"
   );
   const hasStaleBucket = configuredBuckets.some(
     (bucket) => !visibleBucketSet.has(bucket)
   );
-  const visibleSum = buckets.reduce(
-    (sum, bucket) => sum + (scoreWeights.typeWeights[bucket] ?? 0),
-    0
-  );
-  if (!hasMissingBucket && !hasStaleBucket && visibleSum === 100) {
+
+  // Fast path: nothing to do — keep all existing per-bucket values as-is
+  if (!hasMissingBucket && !hasStaleBucket) {
     return {
       version: 1,
       distribution: "equal_by_type",
@@ -322,36 +310,23 @@ export function syncScoreWeightsForBuckets(
     };
   }
 
-  const basis = buckets.map((bucket) => {
-    const weight = scoreWeights.typeWeights[bucket];
-    return typeof weight === "number" && Number.isFinite(weight) && weight > 0
-      ? weight
-      : 1;
-  });
-  const basisTotal = basis.reduce((sum, weight) => sum + weight, 0);
-  const distributable = 100 - buckets.length;
-  const rawShares = buckets.map((bucket, index) => {
-    const raw = basisTotal > 0 ? (distributable * basis[index]) / basisTotal : 0;
-    return {
-      bucket,
-      whole: Math.floor(raw),
-      fraction: raw - Math.floor(raw),
-    };
-  });
-  let remainder =
-    distributable - rawShares.reduce((sum, share) => sum + share.whole, 0);
-  rawShares
-    .slice()
-    .sort((a, b) => b.fraction - a.fraction)
-    .forEach((share) => {
-      if (remainder <= 0) return;
-      share.whole += 1;
-      remainder -= 1;
-    });
+  // Build new typeWeights:
+  //   - keep existing values for still-present buckets
+  //   - drop stale buckets
+  //   - assign a sensible default for newly-present buckets
+  const presentValues = buckets
+    .map((b) => scoreWeights.typeWeights[b])
+    .filter((w): w is number => typeof w === "number" && w > 0);
+  const defaultForNew =
+    presentValues.length > 0
+      ? Math.max(1, Math.round(presentValues.reduce((a, b) => a + b, 0) / presentValues.length))
+      : 100;
 
   const typeWeights: Partial<Record<ScoreWeightBucket, number>> = {};
-  for (const share of rawShares) {
-    typeWeights[share.bucket] = share.whole + 1;
+  for (const bucket of buckets) {
+    const existing = scoreWeights.typeWeights[bucket];
+    typeWeights[bucket] =
+      typeof existing === "number" && existing > 0 ? existing : defaultForNew;
   }
 
   return {
@@ -361,70 +336,6 @@ export function syncScoreWeightsForBuckets(
   };
 }
 
-export function rebalanceScoreWeightsForBucket(
-  scoreWeights: ScoreWeights,
-  buckets: ScoreWeightBucket[],
-  targetBucket: ScoreWeightBucket,
-  targetValue: number
-): ScoreWeights {
-  if (!buckets.includes(targetBucket)) return scoreWeights;
-  if (buckets.length === 0) return scoreWeights;
-  if (buckets.length === 1) {
-    return {
-      version: 1,
-      distribution: "equal_by_type",
-      typeWeights: { [targetBucket]: 100 },
-    };
-  }
-
-  const otherBuckets = buckets.filter((bucket) => bucket !== targetBucket);
-  const maxTarget = 100 - otherBuckets.length;
-  const targetWeight = Math.max(
-    1,
-    Math.min(maxTarget, Number.isFinite(targetValue) ? Math.round(targetValue) : 1)
-  );
-  const remaining = 100 - targetWeight;
-  const reservedForMinimums = otherBuckets.length;
-  const distributable = remaining - reservedForMinimums;
-  const basis = otherBuckets.map((bucket) => {
-    const weight = scoreWeights.typeWeights[bucket];
-    return typeof weight === "number" && Number.isFinite(weight) && weight > 0
-      ? weight
-      : 1;
-  });
-  const basisTotal = basis.reduce((sum, weight) => sum + weight, 0);
-  const rawShares = otherBuckets.map((bucket, index) => {
-    const raw = basisTotal > 0 ? (distributable * basis[index]) / basisTotal : 0;
-    return {
-      bucket,
-      whole: Math.floor(raw),
-      fraction: raw - Math.floor(raw),
-    };
-  });
-  let remainder =
-    distributable - rawShares.reduce((sum, share) => sum + share.whole, 0);
-  rawShares
-    .slice()
-    .sort((a, b) => b.fraction - a.fraction)
-    .forEach((share) => {
-      if (remainder <= 0) return;
-      share.whole += 1;
-      remainder -= 1;
-    });
-
-  const typeWeights: Partial<Record<ScoreWeightBucket, number>> = {
-    [targetBucket]: targetWeight,
-  };
-  for (const share of rawShares) {
-    typeWeights[share.bucket] = share.whole + 1;
-  }
-
-  return {
-    version: 1,
-    distribution: "equal_by_type",
-    typeWeights,
-  };
-}
 
 export function validateScoreWeightsForQuestions(
   scoreWeights: ScoreWeights | null | undefined,
@@ -445,10 +356,6 @@ export function validateScoreWeightsForQuestions(
   >;
 
   const errors: string[] = [];
-  const sum = activeEntries.reduce((acc, [, weight]) => acc + (weight ?? 0), 0);
-  if (Math.round(sum * 1000) / 1000 !== 100) {
-    errors.push(`유형별 비중의 합은 반드시 100점이어야 합니다. 현재 합계: ${sum}점`);
-  }
 
   for (const [bucket, weight] of activeEntries) {
     if (!Number.isInteger(weight) || weight < 1 || weight > 100) {
@@ -609,7 +516,10 @@ export function calculateScoreFromItems(
     const bucketAverage =
       valid.reduce((acc, item) => acc + item.score, 0) / valid.length;
     const roundedBucketAverage = roundScore(bucketAverage);
-    const contribution = bucketAverage * (weight / 100);
+    const contribution =
+      totalConfiguredWeight > 0
+        ? bucketAverage * (weight / totalConfiguredWeight)
+        : 0;
     bucketScores[bucket] = roundedBucketAverage;
     weightedTotal += contribution;
     bucketMeta[bucket] = {
