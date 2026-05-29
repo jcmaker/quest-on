@@ -54,6 +54,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { RichTextViewer } from "@/components/ui/rich-text-viewer";
 import { ChartContainer } from "@/components/ui/chart";
 import {
   XAxis,
@@ -187,6 +188,49 @@ function findFirstQuestionArrayIndexByType(
     if (questionType === "case") return isCaseNavigationQuestionType(q.type);
     return q.type === questionType;
   });
+}
+
+function getSubmissionForQuestion(
+  submissions: Record<string, Submission> | undefined,
+  question: Question,
+  arrayIndex: number,
+): Submission | undefined {
+  if (!submissions) return undefined;
+
+  const candidates = [
+    Number.isInteger(question.idx) ? question.idx : null,
+    arrayIndex,
+    Number.isInteger(Number(question.id)) ? Number(question.id) : null,
+  ].filter((value): value is number => value !== null);
+
+  const seen = new Set<number>();
+  for (const key of candidates) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const submission = submissions[String(key)];
+    if (submission) return submission;
+  }
+
+  return undefined;
+}
+
+function getSubmittedAnswer(submission: Submission | undefined): string {
+  if (!submission) return "";
+
+  if (typeof submission.answer === "string" && submission.answer.trim() !== "") {
+    return submission.answer;
+  }
+
+  const answerData = submission.decompressed?.answerData;
+  if (!answerData) return "";
+
+  const fallback =
+    answerData.answer ?? answerData.text ?? answerData.selectedIndex ?? answerData.value;
+  if (typeof fallback === "number") return String(fallback);
+  if (typeof fallback === "string") return fallback;
+
+  return "";
 }
 
 export default function GradeStudentPage({
@@ -597,37 +641,126 @@ export default function GradeStudentPage({
       gp?.phase === "qsummary" ||
       gp?.phase === "grade");
 
+  const objectiveQuestionType =
+    questionType === "multiple-choice" || questionType === "true-false"
+      ? questionType
+      : null;
+  const objectiveQuestions = objectiveQuestionType
+    ? sessionData.exam.questions.filter((q) => q.type === objectiveQuestionType)
+    : [];
+  const objectiveTitle =
+    objectiveQuestionType === "multiple-choice" ? "사지선다 정답 확인" : "O/X 정답 확인";
+  const caseQuestionEntries = (sessionData.exam?.questions || [])
+    .map((q, arrIdx) => ({ q, arrIdx }))
+    .filter(({ q }) => isCaseNavigationQuestionType(q.type));
+  const selectedCaseVisibleIdx = Math.max(
+    0,
+    caseQuestionEntries.findIndex(({ arrIdx }) => arrIdx === selectedQuestionIdx),
+  );
+
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
-      <InstructorChatSidebar
-        context={chatContext}
-        sessionIdSeed={`grade_${sessionData.session.id}`}
-        scopeDescription="문항/답안/채점 데이터"
-        title="채점 도우미"
-        subtitle="이 화면에 보이는 데이터 범위 안에서만 답변합니다."
-      />
+      {!objectiveQuestionType && (
+        <InstructorChatSidebar
+          context={chatContext}
+          sessionIdSeed={`grade_${sessionData.session.id}`}
+          scopeDescription="CASE 문항/답안/채점 데이터"
+          title="채점 도우미"
+          subtitle="이 화면에 보이는 CASE 데이터 범위 안에서만 답변합니다."
+        />
+      )}
       <SidebarInset>
         <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
           <div className="mb-8">
             <GradeHeader
               studentName={sessionData.student.name}
               submittedAt={sessionData.session.submitted_at}
-              overallScore={sessionData.overallScore}
+              overallScore={objectiveQuestionType ? null : sessionData.overallScore}
               examId={resolvedParams.examId}
               studentNumber={sessionData.student.student_number}
               school={sessionData.student.school}
               onBackClick={handleBackClick}
               questionNavigation={
-                <QuestionNavigation
-                  questions={sessionData.exam?.questions || []}
-                  selectedQuestionIdx={selectedQuestionIdx}
-                  onSelectQuestion={setSelectedQuestionIdx}
-                  grades={sessionData.grades}
-                  initialFilter={questionType}
-                />
+                objectiveQuestionType ? undefined : (
+                  <QuestionNavigation
+                    questions={caseQuestionEntries.map(({ q }) => q)}
+                    selectedQuestionIdx={selectedCaseVisibleIdx}
+                    onSelectQuestion={(visibleIdx) => {
+                      const target = caseQuestionEntries[visibleIdx];
+                      if (target) setSelectedQuestionIdx(target.arrIdx);
+                    }}
+                    grades={sessionData.grades}
+                    initialFilter="case"
+                  />
+                )
               }
             />
           </div>
+
+          {objectiveQuestionType && (
+            <div className="space-y-5">
+              <Card>
+                <CardHeader>
+                  <CardTitle>{objectiveTitle}</CardTitle>
+                  <CardDescription>
+                    이 화면은 {objectiveQuestionType === "multiple-choice" ? "사지선다" : "O/X"} 문제의 학생 선택과 정답만 표시합니다.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+
+              {objectiveQuestions.length === 0 ? (
+                <Card>
+                  <CardContent className="py-8 text-center text-sm text-muted-foreground">
+                    표시할 문제가 없습니다.
+                  </CardContent>
+                </Card>
+              ) : (
+                objectiveQuestions.map((question, index) => {
+                  const submission = getSubmissionForQuestion(
+                    sessionData.submissions,
+                    question,
+                    index,
+                  );
+                  const studentAnswer = getSubmittedAnswer(submission);
+                  return (
+                    <Card key={question.id || `${question.type}-${index}`}>
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                          <FileText className="h-5 w-5 text-blue-600" />
+                          문제 {index + 1}
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div className="rounded-lg bg-muted/40 p-4">
+                          <RichTextViewer content={question.prompt} className="text-sm" />
+                          {question.ai_context && (
+                            <div className="mt-4 border-t pt-4">
+                              <p className="mb-2 text-xs text-muted-foreground">
+                                AI 컨텍스트:
+                              </p>
+                              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                                {question.ai_context}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        <ObjectiveGradeCard
+                          type={question.type}
+                          options={question.options}
+                          correctOptionIndex={question.correctOptionIndex}
+                          studentAnswer={studentAnswer}
+                          embedded
+                        />
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {!objectiveQuestionType && (
+            <>
 
           {/* 강제 종료 자동 제출 안내 배너 */}
           {sessionData.session.auto_submitted && (
@@ -1547,7 +1680,7 @@ export default function GradeStudentPage({
             </div>
           )}
 
-          {/* 케이스 문제일 때: 시험 응시 데이터와 문제 사이에 채팅/답안 요약문 표시 */}
+          {/* 케이스 문제일 때: 시험 응시 데이터와 문제 사이에 CASE 종합 평가 표시 */}
           {!isObjectiveQuestion(currentQuestion?.type) && (
             <div className="mb-6 space-y-4">
               <AIOverallSummary
@@ -1670,6 +1803,8 @@ export default function GradeStudentPage({
               />
             </div>
           </div>
+        </>
+          )}
         </div>
       </SidebarInset>
 

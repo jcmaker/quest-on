@@ -41,7 +41,7 @@ export async function GET(
         .not("submitted_at", "is", null),
       supabase
         .from("exam_grading_sessions")
-        .select("id, proposed_grades, status, committed_at, updated_at, grading_total, grading_completed, grading_failed_count")
+        .select("id, proposed_grades, status, committed_at, updated_at, grading_total, grading_completed, grading_failed_count, grading_scope")
         .eq("exam_id", examId)
         .eq("instructor_id", access.ctx.user.id)
         .maybeSingle(),
@@ -57,33 +57,16 @@ export async function GET(
     }
 
     const session = gradingSessionResult.data;
-    let messages: Array<{ role: string; content: string; created_at: string }> = [];
-
-    if (session) {
-      const { data: msgs, error: msgsError } = await supabase
-        .from("bulk_grading_messages")
-        .select("role, content, created_at")
-        .eq("session_id", session.id)
-        .order("created_at", { ascending: true });
-
-      if (msgsError) {
-        logError("bulk-grade GET: messages query failed", msgsError, {
-          path: `/api/exam/${examId}/bulk-grade`,
-        });
-      } else {
-        messages = (msgs ?? []) as typeof messages;
-      }
-    }
 
     return successJson({
       session: session
         ? {
             id: session.id as string,
             proposed_grades: session.proposed_grades as Record<string, unknown>,
+            grading_scope: session.grading_scope as string,
             status: session.status as string,
             committed_at: session.committed_at as string | null,
             updated_at: session.updated_at as string,
-            messages,
             progress: {
               total: (session.grading_total as number) ?? 0,
               completed: (session.grading_completed as number) ?? 0,

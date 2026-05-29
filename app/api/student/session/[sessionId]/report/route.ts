@@ -325,24 +325,35 @@ export async function GET(
 
     const gradesReleased = exam.grades_released === true;
 
+    // 정답 누출 방지: 점수 계산은 끝났으므로 응답에서 correctOptionIndex를 제거한다.
+    // 학생은 정오답을 문항별 점수(공개 후에만 노출)로 확인하고, 정답 선택지는 보지 않는다.
+    const examForClient = {
+      ...exam,
+      questions: Array.isArray(exam.questions)
+        ? exam.questions.map((q: Record<string, unknown>) => {
+            const rest = { ...q };
+            delete rest.correctOptionIndex;
+            return rest;
+          })
+        : exam.questions,
+    };
+
     return successJson({
       session: {
         id: session.id,
         exam_id: session.exam_id,
         student_id: session.student_id,
         submitted_at: session.submitted_at,
-        used_clarifications: session.used_clarifications,
         created_at: session.created_at,
         decompressed: decompressedSessionData,
       },
-      exam: exam,
+      exam: examForClient,
       submissions: submissionsByQuestion,
       messages: messagesByQuestion,
       grades: gradesReleased ? gradesByQuestion : {},
       overallScore: gradesReleased ? overallScore : null,
       gradedCount: gradesReleased ? gradedCount : 0,
       totalQuestionCount,
-      aiSummary: session.ai_summary || null,
       assignmentQuiz: quizAttempt || null,
       gradesReleased,
       // Progress is safe to expose even before grades_released — it only contains counts/status,

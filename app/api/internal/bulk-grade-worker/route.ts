@@ -12,6 +12,7 @@ import {
   buildAiTextMetadata,
 } from "@/lib/ai-tracking";
 import {
+  asStringArray,
   hasGradesForEveryExpectedQuestion,
   loadSingleStudentCaseData,
   parseGradesFromAiResponse,
@@ -20,7 +21,7 @@ import {
   buildPerStudentGradingSystemPrompt,
   type ExtractedCriteria,
 } from "@/lib/prompts";
-import { normalizeQuestions, isObjectiveQuestion } from "@/lib/grading-helpers";
+import { normalizeQuestions, isCaseQuestion } from "@/lib/grading-helpers";
 
 async function handler(request: NextRequest): Promise<NextResponse> {
   try {
@@ -35,7 +36,7 @@ async function handler(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ ok: false, reason: "invalid_payload" }, { status: 200 });
     }
 
-    const { gradingSessionId, studentSessionId, examId } = validation.data;
+    const { gradingSessionId, studentSessionId, examId, scope, attemptId } = validation.data;
     const supabase = getSupabaseServer();
 
     // [CRITICAL-1] 4-way join ownership check
@@ -58,6 +59,11 @@ async function handler(request: NextRequest): Promise<NextResponse> {
         additionalData: { gradingSessionId, examId },
       });
       return NextResponse.json({ ok: false, reason: "session_not_found" }, { status: 200 });
+    }
+
+    const expectedSessionIds = asStringArray(ownershipCheck.expected_session_ids);
+    if (expectedSessionIds.length > 0 && !expectedSessionIds.includes(studentSessionId)) {
+      return NextResponse.json({ ok: false, reason: "unexpected_student_session" }, { status: 200 });
     }
 
     // Verify student session belongs to this exam and is submitted
@@ -91,7 +97,7 @@ async function handler(request: NextRequest): Promise<NextResponse> {
     const examData = (ownershipCheck.exams as unknown as ExamRow);
     const questions = normalizeQuestions(examData.questions);
     const caseQuestions = questions
-      .filter((q) => !isObjectiveQuestion(q.type))
+      .filter((q) => isCaseQuestion(q.type))
       .map((q) => ({ qIdx: q.idx, questionPrompt: q.prompt ?? "" }));
 
     if (caseQuestions.length === 0) {
@@ -174,12 +180,14 @@ async function handler(request: NextRequest): Promise<NextResponse> {
     }
 
     // [CRITICAL-2] Atomic update via RPC
-    await supabase.rpc("merge_bulk_grading_result", {
-      p_session_id: gradingSessionId,
-      p_student_sid: studentSessionId,
-      p_grades_json: gradesMap,
-      p_success: success,
-    });
+      await supabase.rpc("merge_bulk_grading_result", {
+        p_session_id: gradingSessionId,
+        p_student_sid: studentSessionId,
+        p_grades_json: gradesMap,
+        p_success: success,
+        p_scope: scope,
+        p_attempt_id: attemptId ?? null,
+      });
 
     return NextResponse.json({ ok: true, success, studentSessionId }, { status: 200 });
   } catch (error) {

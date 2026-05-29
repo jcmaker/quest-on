@@ -108,18 +108,7 @@ export const scoreWeightsSchema = z
       .strict(),
     distribution: z.literal("equal_by_type").default("equal_by_type"),
   })
-  .strict()
-  .refine(
-    (value) =>
-      Object.values(value.typeWeights).reduce(
-        (sum, weight) => sum + (weight ?? 0),
-        0
-      ) === 100,
-    {
-      message: "유형별 비중의 합은 반드시 100점이어야 합니다.",
-      path: ["typeWeights"],
-    }
-  );
+  .strict();
 
 /** Safely parse JSON column with Zod schema, returning fallback on failure */
 export function safeParseJson<T>(

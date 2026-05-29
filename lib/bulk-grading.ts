@@ -4,7 +4,7 @@ import {
   normalizeQuestions,
   decompressSubmissions,
   decompressMessages,
-  isObjectiveQuestion,
+  isCaseQuestion,
 } from "@/lib/grading-helpers";
 import { batchGetUserInfo } from "@/lib/app-users";
 import { logError } from "@/lib/logger";
@@ -93,7 +93,7 @@ export async function loadExamCaseData(
 
   const questions = normalizeQuestions(exam.questions);
   const caseQuestions = questions
-    .filter((q) => !isObjectiveQuestion(q.type))
+    .filter((q) => isCaseQuestion(q.type))
     .map((q) => ({
       qIdx: q.idx,
       questionPrompt: q.prompt ?? "",
@@ -409,7 +409,7 @@ export async function loadExamMetaOnly(
 
   const questions = normalizeQuestions(exam.questions);
   const caseQuestions = questions
-    .filter((q) => !isObjectiveQuestion(q.type))
+    .filter((q) => isCaseQuestion(q.type))
     .map((q) => ({ qIdx: q.idx, questionPrompt: q.prompt ?? "" }));
 
   return {
