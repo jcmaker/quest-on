@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { useAppUser } from "@/components/providers/AppAuthProvider";
-import React, { useState, useEffect, use, useMemo } from "react";
+import React, { useState, useEffect, use } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -31,10 +31,8 @@ import {
   FileText,
 } from "lucide-react";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
 import { useExamDetail } from "@/hooks/useExamDetail";
 import { useStudentFiltering } from "@/hooks/useStudentFiltering";
-import { buildInstructorExamContext } from "@/lib/instructor-utils";
 import { qk } from "@/lib/query-keys";
 import type { InstructorStudent } from "@/lib/types/exam";
 import type { StudentFilterSortOption } from "@/hooks/useStudentFiltering";
@@ -133,11 +131,6 @@ export default function AssignmentDashboard({
   const questionsLoading = examDetailLoading;
   const questions = (questionsOpen ? examDetailData?.questionsRaw : null) ?? [];
 
-  const examContext = useMemo(() => {
-    if (!exam) return "";
-    return buildInstructorExamContext(exam, questions);
-  }, [exam, questions]);
-
   // --- Early returns ---
 
   if (!isLoaded) {
@@ -214,14 +207,6 @@ export default function AssignmentDashboard({
 
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
-      <InstructorChatSidebar
-        context={examContext}
-        sessionIdSeed={`assignment_${exam.id}`}
-        scopeDescription="과제/문항/학생 데이터"
-        title="과제 도우미"
-        subtitle="이 화면에 보이는 데이터 범위 안에서만 답변합니다."
-      />
-
       <SidebarInset>
         <div className="container mx-auto p-4 sm:p-6">
           {/* Header */}

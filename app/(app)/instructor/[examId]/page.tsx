@@ -34,14 +34,12 @@ import {
 } from "@/components/ui/tooltip";
 import { StudentLiveMonitoring } from "@/components/instructor/StudentLiveMonitoring";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
 import { useExamDetail } from "@/hooks/useExamDetail";
 import { useExamStudentSummaries } from "@/hooks/useExamStudentSummaries";
 import {
   useStudentFiltering,
   type StudentFilterSortOption,
 } from "@/hooks/useStudentFiltering";
-import { buildInstructorExamContext } from "@/lib/instructor-utils";
 import { qk } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import type { InstructorExam } from "@/lib/types/exam";
@@ -268,11 +266,6 @@ export default function ExamDetail({
     window.location.href = `/api/exam/${exam.id}/export/excel`;
   }, [exam, allStudentsManuallyGraded]);
 
-  const examContext = useMemo(() => {
-    if (!exam) return "";
-    return buildInstructorExamContext(exam, questions);
-  }, [exam, questions]);
-
   const studentsLoading = loading || summariesLoading || summariesFetching;
 
   if (!isLoaded || loading) {
@@ -301,14 +294,6 @@ export default function ExamDetail({
 
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
-      <InstructorChatSidebar
-        context={examContext}
-        sessionIdSeed={`exam_${exam.id}`}
-        scopeDescription="시험/문항/학생 데이터"
-        title="시험 도우미"
-        subtitle="이 화면에 보이는 데이터 범위 안에서만 답변합니다."
-      />
-
       <SidebarInset
         className={cn(
           "transition-[padding] duration-300 ease-in-out",

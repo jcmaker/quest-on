@@ -28,7 +28,6 @@ import { isObjectiveQuestion } from "@/lib/grading-helpers";
 import { QuickActionsCard } from "@/components/instructor/QuickActionsCard";
 import toast from "react-hot-toast";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { InstructorChatSidebar } from "@/components/instructor/InstructorChatSidebar";
 import {
   Card,
   CardContent,
@@ -388,32 +387,6 @@ export default function GradeStudentPage({
     window.location.href = `/instructor/${resolvedParams.examId}`;
   };
 
-  // Compute chat context (must be before conditional returns to follow Rules of Hooks)
-  const chatContext = useMemo(() => {
-    if (!sessionData) return "";
-    const currentQuestion = sessionData.exam?.questions?.[selectedQuestionIdx];
-    const currentQuestionQIdx = currentQuestion?.idx ?? selectedQuestionIdx;
-    const currentSubmission = sessionData.submissions?.[currentQuestionQIdx] as
-      | Submission
-      | undefined;
-    return [
-      `시험 제목: ${sessionData.exam.title}`,
-      `시험 코드: ${sessionData.exam.code}`,
-      `선택된 문항 번호: ${currentQuestionQIdx + 1}`,
-      currentQuestion
-        ? `문항 프롬프트: ${currentQuestion.prompt}`
-        : "현재 문항 정보를 찾을 수 없습니다.",
-      currentSubmission?.answer
-        ? `학생 답안:\n${currentSubmission.answer}`
-        : "학생 답안이 비어 있습니다.",
-      sessionData.overallScore !== null
-        ? `현재 전체 점수: ${sessionData.overallScore}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }, [sessionData, selectedQuestionIdx]);
-
   // Calculate exam participation statistics
   const examStats = useMemo(() => {
     if (!sessionData) return null;
@@ -660,15 +633,6 @@ export default function GradeStudentPage({
 
   return (
     <SidebarProvider defaultOpen={false} className="flex-row-reverse">
-      {!objectiveQuestionType && (
-        <InstructorChatSidebar
-          context={chatContext}
-          sessionIdSeed={`grade_${sessionData.session.id}`}
-          scopeDescription="CASE 문항/답안/채점 데이터"
-          title="채점 도우미"
-          subtitle="이 화면에 보이는 CASE 데이터 범위 안에서만 답변합니다."
-        />
-      )}
       <SidebarInset>
         <div className="container mx-auto p-4 sm:p-6 max-w-7xl">
           <div className="mb-8">
