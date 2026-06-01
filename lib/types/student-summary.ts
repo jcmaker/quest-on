@@ -17,9 +17,17 @@ export interface QuestionCountPair {
 }
 
 export interface CaseProgress {
+  submitted: number;
   graded: number;
   total: number;
 }
+
+export type BulkGradeStatus =
+  | "none"
+  | "grading"
+  | "proposed_ready"
+  | "failed"
+  | "committed";
 
 export interface ExamStudentSummary {
   sessionId: string;
@@ -38,6 +46,9 @@ export interface ExamStudentSummary {
   caseScore?: number;
   /** MCQ/OX/Case 전체 채점된 문제의 단순 평균 점수 (0-100). 채점 전이면 undefined. */
   overallScore?: number;
+  /** 확정 저장 전 CASE 일괄 가채점 기준의 표시 전용 총점. */
+  proposedOverallScore?: number;
+  bulkGradeStatus?: BulkGradeStatus;
 }
 
 export type ExamStudentSummarySortOption =
