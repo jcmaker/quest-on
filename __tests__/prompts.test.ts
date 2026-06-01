@@ -289,12 +289,14 @@ describe("buildAssignmentResearchSummarySystemPrompt", () => {
   it("frames assignment reports around research conversation behavior", () => {
     const prompt = buildAssignmentResearchSummarySystemPrompt();
 
-    expect(prompt).toContain("평가 대상은 학생이 AI와 대화하면서 리서치를 진행한 과정");
+    expect(prompt).toContain("전체 대화 흐름을 종합적으로 분석");
     expect(prompt).toContain("질문 흐름");
-    expect(prompt).toContain("출처 검증");
-    expect(prompt).toContain("교차검증");
-    expect(prompt).toContain("자료의 작성 주체");
-    expect(prompt).toContain("좋은 질문, 검증 시도, 방향 전환, 자료 판단");
+    expect(prompt).toContain("맥락 지속성");
+    expect(prompt).toContain("검증과 비판적 사고");
+    expect(prompt).toContain("최종 답안이 그 리서치 과정과 일관되는지");
+    // 출력 스키마 계약(요약 카드) 유지
+    expect(prompt).toContain("keyQuotes 정확히 2개");
+    // 채팅 기반 리서치 수행 방식 자체를 결함으로 해석하지 않는다
     expect(prompt).not.toContain("제출된 글이 부족하다");
     expect(prompt).not.toContain("정리된 산출물이 없다");
   });
