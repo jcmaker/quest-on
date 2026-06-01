@@ -144,6 +144,8 @@ export async function seedSession(
 interface SeedSubmissionOverrides {
   id?: string;
   answer?: string;
+  compressed_answer_data?: string | null;
+  compression_metadata?: unknown;
 }
 
 export async function seedSubmission(
@@ -157,6 +159,8 @@ export async function seedSubmission(
     session_id: sessionId,
     q_idx: qIdx,
     answer: overrides.answer ?? `Sample answer for question ${qIdx}`,
+    compressed_answer_data: overrides.compressed_answer_data ?? null,
+    compression_metadata: overrides.compression_metadata ?? {},
   };
 
   const { error } = await supabase.from("submissions").insert(data);
