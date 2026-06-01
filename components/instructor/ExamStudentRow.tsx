@@ -69,6 +69,8 @@ function overallStatusBadge(status: ExamStudentOverallStatus) {
 interface ExamStudentRowProps {
   student: ExamStudentSummary;
   examId: string;
+  /** 현재 정렬/검색된 목록 기준 1-based 표시 순번 */
+  rowNumber: number;
   canOpenGrading?: boolean;
   onLiveMonitoring?: (student: ExamStudentSummary) => void;
 }
@@ -76,6 +78,7 @@ interface ExamStudentRowProps {
 export function ExamStudentRow({
   student,
   examId,
+  rowNumber,
   canOpenGrading = false,
   onLiveMonitoring,
 }: ExamStudentRowProps) {
@@ -93,9 +96,13 @@ export function ExamStudentRow({
 
   return (
     <div
-      className="grid grid-cols-[1fr_72px_72px_72px_140px_100px_80px] gap-3 items-center px-4 py-3 hover:bg-muted/50 transition-colors"
+      className="grid grid-cols-[40px_1fr_72px_72px_72px_140px_100px_80px] gap-3 items-center px-4 py-3 hover:bg-muted/50 transition-colors"
       data-testid={`exam-student-row-${student.sessionId}`}
     >
+      <div className="text-sm tabular-nums text-muted-foreground text-center">
+        {rowNumber}
+      </div>
+
       <div className="flex items-center gap-3 min-w-0">
         <Avatar className="h-8 w-8 border shrink-0">
           <AvatarFallback className="bg-primary/10 text-primary font-medium text-sm">

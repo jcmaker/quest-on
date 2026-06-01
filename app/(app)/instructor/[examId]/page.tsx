@@ -41,6 +41,7 @@ import {
   type StudentFilterSortOption,
 } from "@/hooks/useStudentFiltering";
 import { qk } from "@/lib/query-keys";
+import { shouldShowStudentListSkeleton } from "@/lib/instructor-utils";
 import { cn } from "@/lib/utils";
 import type { InstructorExam } from "@/lib/types/exam";
 import type { ExamStudentSummary } from "@/lib/types/student-summary";
@@ -266,7 +267,12 @@ export default function ExamDetail({
     window.location.href = `/api/exam/${exam.id}/export/excel`;
   }, [exam, allStudentsManuallyGraded]);
 
-  const studentsLoading = loading || summariesLoading || summariesFetching;
+  // 스켈레톤은 최초 로드에서만. summariesFetching(10초 폴링 재요청)을 넣으면
+  // 매 폴링마다 목록이 스켈레톤으로 교체돼 스크롤이 맨 위로 튀고 깜빡인다.
+  const studentsLoading = shouldShowStudentListSkeleton({
+    examLoading: loading,
+    summariesLoading,
+  });
 
   if (!isLoaded || loading) {
     return <PageSpinner />;
@@ -533,7 +539,7 @@ export default function ExamDetail({
                 }}
                 title="새로고침"
               >
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className={cn("h-4 w-4", summariesFetching && "animate-spin")} />
               </Button>
             </div>
 
@@ -576,7 +582,8 @@ export default function ExamDetail({
             ) : (
               <div className="border rounded-lg overflow-hidden">
                 <div className="bg-muted/50 border-b px-4 py-3 hidden md:block">
-                  <div className="grid grid-cols-[1fr_72px_72px_72px_140px_100px_80px] gap-3 items-center text-sm font-medium text-muted-foreground">
+                  <div className="grid grid-cols-[40px_1fr_72px_72px_72px_140px_100px_80px] gap-3 items-center text-sm font-medium text-muted-foreground">
+                    <span className="text-center">#</span>
                     <span>학생</span>
                     <span className="text-center">객관식</span>
                     <span className="text-center">O/X</span>
@@ -586,12 +593,13 @@ export default function ExamDetail({
                     <span className="text-center">액션</span>
                   </div>
                 </div>
-                <div className="divide-y max-h-[calc(100vh-400px)] min-h-[320px] overflow-y-auto">
+                <div className="divide-y">
                   {(filteredAndSortedStudents as ExamStudentSummary[]).map(
-                    (student) => (
+                    (student, index) => (
                       <ExamStudentRow
                         key={student.sessionId}
                         student={student}
+                        rowNumber={index + 1}
                         examId={exam.id}
                         canOpenGrading={exam.status === "closed"}
                         onLiveMonitoring={handleLiveMonitoring}
